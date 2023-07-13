@@ -12,11 +12,11 @@ class StreamController extends Controller
     public function play(HookRequest $request)
     {
         Cache::set('stream.online', true);
-        return ['success' => true];
+        return 0;
     }
     public function stop(HookRequest $request)
     {
         Cache::set('stream.online', false);
-        return ['success' => true];
+        return 0;
     }
 }

@@ -9,10 +9,10 @@ class ClientController extends Controller
 {
     public function play(HookRequest $request)
     {
-
+        return 0;
     }
     public function stop(HookRequest $request)
     {
-
+        return 0;
     }
 }
