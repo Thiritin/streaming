@@ -213,11 +213,6 @@
   dependencies:
     mini-svg-data-uri "^1.2.3"
 
-"@videojs-player/vue@^1.0.0":
-  version "1.0.0"
-  resolved "https://registry.yarnpkg.com/@videojs-player/vue/-/vue-1.0.0.tgz#df7db677b43b2d9b6872e71cd0eb2238cc19a8fd"
-  integrity sha512-WonTezRfKu3fYdQLt/ta+nuKH6gMZUv8l40Jke/j4Lae7IqeO/+lLAmBnh3ni88bwR+vkFXIlZ2Ci7VKInIYJg==
-
 "@videojs/http-streaming@3.0.2":
   version "3.0.2"
   resolved "https://registry.yarnpkg.com/@videojs/http-streaming/-/http-streaming-3.0.2.tgz#3498dacf4bc66ec1b663b1ec710ca62a037ea8b2"
