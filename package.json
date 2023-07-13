@@ -16,5 +16,10 @@
         "tailwindcss": "^3.2.1",
         "vite": "^4.0.0",
         "vue": "^3.2.41"
+    },
+    "dependencies": {
+        "@videojs-player/vue": "^1.0.0",
+        "flv.js": "^1.6.2",
+        "video.js": "^8.3.0"
     }
 }

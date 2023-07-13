@@ -37,7 +37,7 @@ export default {
 <template>
     <div class="min-h-screen w-full bg-white flex page">
         <!-- Logo -->
-        <div class="bg-primary-700 block w-full relative overflow-hidden flex justify-center items-center">
+        <div class="bg-primary-700 hidden lg:block w-full relative overflow-hidden flex justify-center items-center">
             <video class="block w-full h-full object-cover top-0 left-0 absolute brightness-75" loop="loop" muted="muted" autoplay="autoplay" playsinline>
                 <source src="../../assets/bg.mp4" type="video/mp4">
             </video>
