@@ -18,8 +18,8 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::get('client/play', 'Api\ClientController@play');
-Route::get('client/stop', 'Api\ClientController@stop');
+Route::post('client/play', [App\Http\Controllers\Api\ClientController::class, 'play']);
+Route::post('client/stop', [App\Http\Controllers\Api\ClientController::class, 'stop']);
 
-Route::get('stream/play', 'Api\StreamController@play');
-Route::get('stream/stop', 'Api\StreamController@stop');
+Route::get('stream/play', [App\Http\Controllers\Api\StreamController::class, 'play']);
+Route::post('stream/stop', [App\Http\Controllers\Api\StreamController::class, 'stop']);

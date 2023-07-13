@@ -12,11 +12,11 @@ class HookRequest extends FormRequest
         return [
             'server_id' => 'required|string',
             'action' => 'required|string',
-            'client_id' => 'required|string',
+            'client_id' => 'nullable|string',
             'ip' => 'required|ip',
             'vhost' => 'required|string',
             'app' => 'required|string',
-            'tcUrl' => 'required|string',
+            'tcUrl' => 'nullable|string',
             'stream' => 'required|string',
             'param' => 'nullable|string',
             'pageUrl' => 'nullable|string',
@@ -25,6 +25,7 @@ class HookRequest extends FormRequest
 
     public function authorize(): bool
     {
+        return true;
         if (app()->environment('local')) {
             return true;
         }
