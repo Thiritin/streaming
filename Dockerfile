@@ -50,6 +50,7 @@ RUN COMPOSER_ALLOW_SUPERUSER=1 | rm composer.lock composer.json && composer requ
 FROM node:16-buster as vite
 WORKDIR /app
 COPY package.json package-lock.json tailwind.config.js vite.config.js postcss.config.js ./
+COPY .env.build ./.env
 RUN npm install
 COPY ./resources /app/resources
 COPY --from=vite-vendor-build /app/vendor/tightenco/ziggy /app/vendor/tightenco/ziggy
