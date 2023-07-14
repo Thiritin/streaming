@@ -15,7 +15,7 @@ class ServerUserActive extends BaseWidget
     protected function getCards(): array
     {
         return [
-            Card::make('Active clients', ServerUser::where('stop', null)->count()),
+            Card::make('Active clients', ServerUser::whereNull('stop')->whereNotNull('start')->count()),
         ];
     }
 }
