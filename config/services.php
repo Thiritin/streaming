@@ -39,5 +39,10 @@ return [
 
     'stream' => [
         'origin_ip' => env('ORIGIN_IP')
+    ],
+
+    'srs' => [
+        'username' => env('SRS_USERNAME'),
+        'password' => env('SRS_PASSWORD'),
     ]
 ];

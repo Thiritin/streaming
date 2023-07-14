@@ -31,7 +31,13 @@ const showingNavigationDropdown = ref(false);
                             <!-- Navigation Links -->
                             <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
                                 <NavLink :href="route('dashboard')" :active="route().current('dashboard')">
-                                    Stream
+                                    Webstream
+                                </NavLink>
+                                <NavLink :href="route('external-stream')" :active="route().current('external-stream')">
+                                    External Stream (VLC)
+                                </NavLink>
+                                <NavLink component="a" v-if="$page.props.auth.user.is_admin" :href="route('filament.pages.dashboard')">
+                                    Admin
                                 </NavLink>
                             </div>
                         </div>
@@ -65,7 +71,7 @@ const showingNavigationDropdown = ref(false);
                                     </template>
 
                                     <template #content>
-                                        <DropdownLink as="a" href="https://identity.eurofurence.org/oauth2/sessions/logout">
+                                        <DropdownLink :as="Link" href="https://identity.eurofurence.org/oauth2/sessions/logout">
                                             Log Out
                                         </DropdownLink>
                                     </template>
@@ -113,7 +119,13 @@ const showingNavigationDropdown = ref(false);
                 >
                     <div class="pt-2 pb-3 space-y-1">
                         <ResponsiveNavLink :href="route('dashboard')" :active="route().current('dashboard')">
-                            Stream
+                            Stream Online
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink :href="route('external-stream')" :active="route().current('external-stream')">
+                            Stream via VLC
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink component="a" v-if="$page.props.auth.user.is_admin" :href="route('filament.pages.dashboard')">
+                            Admin
                         </ResponsiveNavLink>
                     </div>
 

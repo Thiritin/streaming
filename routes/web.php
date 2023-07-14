@@ -26,8 +26,13 @@ Route::middleware('guest')->group(function () {
     Route::get('/error/no-valid-ticket', \App\Http\Controllers\Auth\NoValidTicketController::class)->name('error.no-valid-ticket');
 });
 
+
 Route::get('/auth/frontchannel-logout', \App\Http\Controllers\Auth\FrontChannelLogoutController::class)->name('auth.frontchannel-logout');
 
 Route::middleware('auth:web')->group(function () {
-    Route::get('/', \App\Http\Controllers\StreamController::class)->name('dashboard');
+    Route::get('/', [\App\Http\Controllers\StreamController::class,'online'])->name('dashboard');
+    Route::get('/external-stream', [\App\Http\Controllers\StreamController::class,'external'])->name('external-stream');
+
 });
+
+Broadcast::routes();

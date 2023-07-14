@@ -19,6 +19,8 @@
     },
     "dependencies": {
         "flv.js": "^1.6.2",
+        "laravel-echo": "^1.15.2",
+        "pusher-js": "^8.2.0",
         "video.js": "^8.3.0"
     }
 }

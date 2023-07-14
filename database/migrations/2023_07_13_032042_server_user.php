@@ -11,8 +11,11 @@ return new class extends Migration {
             $table->id();
             $table->foreignIdFor(\App\Models\Server::class)->constrained()->cascadeOnDelete();
             $table->foreignIdFor(\App\Models\User::class)->constrained()->cascadeOnDelete();
-            $table->string('ip');
-            $table->timestamp('start');
+            $table->string('client')->nullable(); // Client type
+            $table->string('streamkey')->unique(); // Stream key of the client
+            $table->string('client_id')->nullable(); // Client ID on the streaming server
+            // This will be used to calculate user view counts for statistics
+            $table->timestamp('start')->nullable();
             $table->timestamp('stop')->nullable();
         });
     }

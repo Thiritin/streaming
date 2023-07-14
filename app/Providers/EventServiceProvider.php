@@ -2,6 +2,12 @@
 
 namespace App\Providers;
 
+use App\Events\StreamListenerChangeEvent;
+use App\Events\StreamStatusEvent;
+use App\Events\UserWaitingForProvisioningEvent;
+use App\Listeners\SaveListenerCountListener;
+use App\Listeners\SetCacheStatusListener;
+use App\Listeners\SetUserWaitingForProvisioningListener;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
@@ -17,6 +23,15 @@ class EventServiceProvider extends ServiceProvider
     protected $listen = [
         Registered::class => [
             SendEmailVerificationNotification::class,
+        ],
+        StreamStatusEvent::class => [
+            SetCacheStatusListener::class,
+        ],
+        StreamListenerChangeEvent::class => [
+            SaveListenerCountListener::class,
+        ],
+        UserWaitingForProvisioningEvent::class => [
+            SetUserWaitingForProvisioningListener::class,
         ],
     ];
 

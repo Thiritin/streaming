@@ -10,6 +10,10 @@ const props = defineProps({
     active: {
         type: Boolean,
     },
+    component: {
+        type: String,
+        default: Link,
+    },
 });
 
 const classes = computed(() =>
@@ -20,7 +24,7 @@ const classes = computed(() =>
 </script>
 
 <template>
-    <a :href="href" :class="classes">
+    <component :is="component" :href="href" :class="classes">
         <slot />
-    </a>
+    </component>
 </template>

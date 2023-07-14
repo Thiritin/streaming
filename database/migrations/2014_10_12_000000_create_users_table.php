@@ -15,6 +15,8 @@ return new class extends Migration
             $table->id();
             $table->string('sub')->unique();
             $table->string('name');
+            $table->boolean('is_provisioning')->default(false);
+            $table->boolean('is_admin')->default(false);
             $table->rememberToken();
             $table->timestamps();
         });

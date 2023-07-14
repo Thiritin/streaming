@@ -14,6 +14,7 @@ return new class extends Migration {
             $table->string('hostname');
             $table->string('ip');
             $table->string('status'); // provisioning, active, deprovisioning, deleted
+            $table->unsignedInteger('max_clients')->default(100);
             $table->timestamps();
         });
     }
