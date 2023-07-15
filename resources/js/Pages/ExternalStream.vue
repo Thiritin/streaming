@@ -8,7 +8,11 @@ const props = defineProps({
     status: {
         type: String,
         required: true,
-    }
+    },
+    streamUrls: {
+        type: Object,
+        required: true,
+    },
 });
 </script>
 
@@ -27,26 +31,46 @@ const props = defineProps({
                     <div v-if="status !== 'offline'">
                         <h2 class="h2 text-xl font-semibold">Choose your stream quality:</h2>
                         <div class="my-4">
-                            <label for="stream-quality-high"
-                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">High Quality
+                            <label for="stream-quality-fhd"
+                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">Full HD
                                 (1080p):</label>
-                            <input id="stream-quality-high" class="text-primary-900 form-input block w-full mt-1"
-                                   type="text" readonly value="Your 1080p stream link here">
+                            <input id="stream-quality-fhd" class="text-primary-900 form-input block w-full mt-1"
+                                   type="text" readonly :value="streamUrls.fhd + '&client=vlc'">
                         </div>
                         <div class="my-4">
-                            <label for="stream-quality-medium"
-                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">Medium Quality
+                            <label for="stream-quality-hd"
+                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">HD
                                 (720p):</label>
-                            <input id="stream-quality-medium" class="text-primary-900 form-input block w-full mt-1"
-                                   type="text" readonly value="Your 720p stream link here">
+                            <input id="stream-quality-hd" class="text-primary-900 form-input block w-full mt-1"
+                                   type="text" readonly :value="streamUrls.hd + '&client=vlc'">
+                        </div>
+                        <div class="my-4">
+                            <label for="stream-quality-sd"
+                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">SD
+                                (480p):</label>
+                            <input id="stream-quality-sd" class="text-primary-900 form-input block w-full mt-1"
+                                   type="text" readonly :value="streamUrls.sd + '&client=vlc'">
                         </div>
                         <div class="my-4">
                             <label for="stream-quality-low"
-                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">Low Quality
+                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">LD
+                                (320p):</label>
+                            <input id="stream-quality-" class="text-primary-900 form-input block w-full mt-1"
+                                   type="text" readonly :value="streamUrls.ld + '&client=vlc'">
+                        </div>
+                        <div class="my-4">
+                            <label for="stream-quality-low"
+                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">Audio HD
                                 (420p):</label>
-                            <input id="stream-quality-low" class="text-primary-900 form-input block w-full mt-1"
-                                   type="text"
-                                   readonly value="Your 420p stream link here">
+                            <input id="stream-quality-" class="text-primary-900 form-input block w-full mt-1"
+                                   type="text" readonly :value="streamUrls.audio_hd + '&client=vlc'">
+                        </div>
+                        <div class="my-4">
+                            <label for="stream-quality-low"
+                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">Audio SD
+                                (420p):</label>
+                            <input id="stream-quality-" class="text-primary-900 form-input block w-full mt-1"
+                                   type="text" readonly :value="streamUrls.audio_sd + '&client=vlc'">
                         </div>
                     </div>
                     <div v-else>

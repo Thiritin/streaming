@@ -38,9 +38,10 @@ class StreamController extends Controller
 
     public function external()
     {
-        $url = Auth::user()->getUserStreamUrls();
+        $urls = Auth::user()->getUserStreamUrls();
         return Inertia::render('ExternalStream', [
             'status' => \Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value),
+            'streamUrls' => $urls,
         ]);
     }
 

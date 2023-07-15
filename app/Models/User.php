@@ -68,10 +68,16 @@ class User extends Authenticatable implements FilamentUser
             }
         }
 
+        $hostname = $server->server->hostname;
+
         return [
-            "low" => "https://test.stream.eurofurence.org/live/livestream.flv?streamkey=" . $server->streamkey,
-            "medium" => "https://test.stream.eurofurence.org/live/livestream.flv?streamkey=" . $server->streamkey,
-            "high" => "https://test.stream.eurofurence.org/live/livestream.flv?streamkey=" . $server->streamkey,
+            "original" => "https://$hostname/live/livestream.flv?streamkey=" . $server->streamkey,
+            "fhd" => "https://$hostname/live/livestream_fhd.flv?streamkey=" . $server->streamkey,
+            "hd" => "https://$hostname/live/livestream_hd.flv?streamkey=" . $server->streamkey,
+            "sd" => "https://$hostname/live/livestream_sd.flv?streamkey=" . $server->streamkey,
+            "ld" => "https://$hostname/live/livestream_ld.flv?streamkey=" . $server->streamkey,
+            "audio_hd" => "https://$hostname/live/livestream_audio_hd.flv?streamkey=" . $server->streamkey,
+            "audio_sd" => "https://$hostname/live/livestream_audio_sd.flv?streamkey=" . $server->streamkey,
         ];
     }
 
