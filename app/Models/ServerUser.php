@@ -12,6 +12,11 @@ class ServerUser extends Pivot
 
     public $timestamps = [];
 
+    protected $casts = [
+        'start' => 'datetime',
+        'stop' => 'datetime',
+    ];
+
     public function user()
     {
         return $this->belongsTo(User::class);
@@ -22,12 +27,8 @@ class ServerUser extends Pivot
         return $this->belongsTo(Server::class);
     }
 
-    public function disconnect()
+    public function clients()
     {
-        if(is_null($this->server)) {
-            $this->load('server');
-        }
-        Http::withBasicAuth(config('services.srs.username'),config('services.srs.password'))->delete("https://".$this->server->hostname.'/api/v1/clients/'.$this->client_id);
-        return true;
+        return $this->hasMany(Client::class,'server_user_id','id');
     }
 }

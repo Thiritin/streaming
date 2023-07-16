@@ -78,6 +78,34 @@ services:
             - '${PUSHER_METRICS_PORT:-9601}:9601'
         networks:
             - sail
+    stream:
+        image: ossrs/srs:4
+        ports:
+            - '1935:1935'
+        networks:
+            - default
+        volumes:
+            - $PWD/custom.conf:/usr/local/srs/conf/custom.conf
+        command: ./objs/srs -c /usr/local/srs/conf/custom.conf
+    origin:
+        image: ossrs/srs:4
+        networks:
+            - default
+        volumes:
+            - $PWD/origin.conf:/usr/local/srs/conf/custom.conf
+        command: ./objs/srs -c /usr/local/srs/conf/custom.conf
+    caddy:
+        image: caddy:2.7
+        restart: unless-stopped
+        networks:
+            - default
+        ports:
+            - "80:80"
+            - "443:443"
+            - "443:443/udp"
+        volumes:
+            - $PWD/Caddyfile:/etc/caddy/Caddyfile
+            - caddy_config:/config
 networks:
     sail:
         driver: bridge

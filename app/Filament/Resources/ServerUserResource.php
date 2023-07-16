@@ -3,8 +3,11 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ServerUserResource\Pages;
+use App\Filament\Resources\ServerUserResource\RelationManagers\ClientsRelationManager;
+use App\Models\Client;
 use App\Models\ServerUser;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Form;
@@ -30,19 +33,24 @@ class ServerUserResource extends Resource
     {
         return $form
             ->schema([
-                Select::make('server_id')->relationship('server', 'hostname'),
+                Select::make('server_id')
+                    ->relationship('server', 'hostname')
+                    ->disabled(),
 
                 Select::make('user_id')
                     ->relationship('user', 'name')
                     ->searchable()
-                    ->required(),
+                    ->disabled(),
 
-                // client is dropdown of either web or vlc
-                Select::make('client')->options([
-                    'web' => 'Web',
-                    'vlc' => 'VLC',
-                ]),
-            ]);
+                TextInput::make('streamkey')->disabled(),
+
+                Placeholder::make('start')
+                    ->label('Start')
+                    ->content(fn(?ServerUser $record): string => $record?->start?->diffForHumans() ?? '-'),
+
+                Placeholder::make('stop')
+                    ->label('Stop')
+                    ->content(fn(?ServerUser $record): string => $record?->stop?->diffForHumans() ?? '-'),]);
     }
 
     public static function table(Table $table): Table
@@ -59,13 +67,6 @@ class ServerUserResource extends Resource
 
 
                 // Badge of either web or vlc with matching colors
-                BadgeColumn::make('client')
-                    ->colors([
-                        'primary' => 'web',
-                        'secondary' => 'vlc',
-                    ]),
-
-                TextColumn::make('client_id'),
 
                 TextColumn::make('start')
                     ->dateTime(),
@@ -78,12 +79,6 @@ class ServerUserResource extends Resource
                 Filter::make('connected')->query(fn($query) => $query->whereNull('stop')->whereNotNull('start'))->default(true),
                 // Filter by Server
                 SelectFilter::make('server')->options(fn() => \App\Models\Server::pluck('hostname', 'id'))->attribute('server.hostname'),
-            ])->bulkActions([
-                BulkAction::make('disconnect')
-                    ->action(fn($records) => $records->each->disconnect())
-                    ->requiresConfirmation()
-                    ->color('danger')
-                    ->icon('heroicon-o-trash'),
             ])
             ->poll();
     }
@@ -105,6 +100,13 @@ class ServerUserResource extends Resource
     public static function getGloballySearchableAttributes(): array
     {
         return ['user.name'];
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            ClientsRelationManager::class
+        ];
     }
 
     public static function getGlobalSearchResultDetails(Model $record): array
