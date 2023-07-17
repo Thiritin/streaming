@@ -13,6 +13,7 @@ use App\Listeners\ScalingStreamListener;
 use App\Listeners\SetCacheStatusListener;
 use App\Listeners\SetUserWaitingForProvisioningListener;
 use App\Listeners\StopClientStreamsListener;
+use App\Listeners\StreamScalingListener;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
@@ -31,6 +32,7 @@ class EventServiceProvider extends ServiceProvider
         ],
         StreamStatusEvent::class => [
             SetCacheStatusListener::class,
+            StreamScalingListener::class,
         ],
         StreamListenerChangeEvent::class => [
             SaveListenerCountListener::class,
