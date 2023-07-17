@@ -21,9 +21,11 @@ class Client extends Model
     public function disconnect()
     {
         if(is_null($this->server)) {
-            $this->load('server');
+            $this->load('serverUser.server');
         }
-        Http::withBasicAuth(config('services.srs.username'),config('services.srs.password'))->delete("https://".$this->server->hostname.'/api/v1/clients/'.$this->client_id);
+        $proto = app()->isLocal() ? "http" : "https";
+        $hostname = app()->isLocal() ? "stream:1985" : $this->server->hostname;
+        Http::withBasicAuth(config('services.srs.username'),config('services.srs.password'))->delete($proto."://".$hostname.'/api/v1/clients/'.$this->client_id);
         return true;
     }
 }

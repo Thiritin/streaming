@@ -44,5 +44,10 @@ return [
     'srs' => [
         'username' => env('SRS_USERNAME'),
         'password' => env('SRS_PASSWORD'),
+        'origin' => env('SRS_ORIGIN'),
+    ],
+
+    'hetzner' => [
+        'token' => env('HETZNER_TOKEN')
     ]
 ];

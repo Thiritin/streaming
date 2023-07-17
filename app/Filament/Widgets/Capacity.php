@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
 use App\Models\Server;
 use App\Models\ServerUser;
 use App\Models\User;
@@ -17,8 +18,8 @@ class Capacity extends BaseWidget
 
     protected function getCards(): array
     {
-        $maxClients = Server::where('status', ServerStatusEnum::ACTIVE)->sum('max_clients');
-        $maxClientsProvisioning = Server::where('status', ServerStatusEnum::PROVISIONING)->sum('max_clients');
+        $maxClients = Server::where('status', ServerStatusEnum::ACTIVE)->where('type',ServerTypeEnum::EDGE)->sum('max_clients');
+        $maxClientsProvisioning = Server::where('status', ServerStatusEnum::PROVISIONING)->where('type',ServerTypeEnum::EDGE)->sum('max_clients');
         $waitingUsers = User::where('is_provisioning', true)->count();
 
         return [

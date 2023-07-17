@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Jobs;
+namespace App\Jobs\Server\Deprovision;
 
+use App\Enum\ServerStatusEnum;
 use App\Models\Server;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -9,20 +10,20 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 
-class ProvisionServerJob implements ShouldQueue
+class InitializeDeprovisioningJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(private readonly Server $server)
+    public int $tries = 1;
+
+    public function __construct(public readonly Server $server)
     {
     }
 
     public function handle(): void
     {
-        // Create Server with Hetzner
-        // Create DNS Record
-        // Sleep until server is available
-        // Put server into available
-        // Broadcast new server availability
+        $this->server->update([
+            'status' => ServerStatusEnum::DEPROVISIONING,
+        ]);
     }
 }

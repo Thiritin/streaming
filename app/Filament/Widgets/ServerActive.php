@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
 use App\Models\Server;
 use App\Models\ServerUser;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
@@ -16,10 +17,10 @@ class ServerActive extends BaseWidget
 
     protected function getCards(): array
     {
-        $server = Server::groupBy('status')->select(['status',\DB::raw('COUNT(servers.id) AS count')])->get();
+        $server = Server::groupBy('status')->where('type',ServerTypeEnum::EDGE)->select(['status',\DB::raw('COUNT(servers.id) AS count')])->get();
         $widget = [];
         foreach ($server as $s) {
-            $widget[] = Card::make("Server ".$s->status->value, $s->count);
+            $widget[] = Card::make("Edge Server ".$s->status->value, $s->count);
         }
         return $widget;
     }

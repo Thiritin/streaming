@@ -11,9 +11,9 @@ return new class extends Migration {
             $table->id();
 
             $table->unsignedBigInteger('server_user_id');
-            $table->string('client');
-            $table->string('client_id');
-            $table->dateTime('start');
+            $table->string('client')->nullable();
+            $table->string('client_id')->nullable();
+            $table->dateTime('start')->nullable();
             $table->dateTime('stop')->nullable();
 
             $table->timestamps();

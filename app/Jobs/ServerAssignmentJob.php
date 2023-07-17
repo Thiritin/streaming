@@ -2,7 +2,7 @@
 
 namespace App\Jobs;
 
-use App\Events\ServerAssignedEvent;
+use App\Events\ServerAssignmentChanged;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -25,8 +25,8 @@ class ServerAssignmentJob implements ShouldQueue
         $users->each(function($user) {
             $server = $user->assignServerToUser();
             // If server could be assigned, send broadcast to user
-            if (!is_null($server)) {
-                event(new ServerAssignedEvent($user));
+            if ($server === true) {
+                event(new ServerAssignmentChanged($user));
             }
         });
     }

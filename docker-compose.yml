@@ -2,7 +2,7 @@ version: '3'
 services:
     laravel.test:
         build:
-            context: ./vendor/laravel/sail/runtimes/8.2
+            context: ./docker/8.2
             dockerfile: Dockerfile
             args:
                 WWWGROUP: '${WWWGROUP}'
@@ -39,7 +39,7 @@ services:
             MYSQL_ALLOW_EMPTY_PASSWORD: 1
         volumes:
             - 'sail-mysql:/var/lib/mysql'
-            - './vendor/laravel/sail/database/mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
+            - './docker/mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
         networks:
             - sail
         healthcheck:
@@ -82,30 +82,19 @@ services:
         image: ossrs/srs:4
         ports:
             - '1935:1935'
+            - '8080:8080'
         networks:
-            - default
+            - sail
         volumes:
             - $PWD/custom.conf:/usr/local/srs/conf/custom.conf
         command: ./objs/srs -c /usr/local/srs/conf/custom.conf
     origin:
         image: ossrs/srs:4
         networks:
-            - default
+            - sail
         volumes:
             - $PWD/origin.conf:/usr/local/srs/conf/custom.conf
         command: ./objs/srs -c /usr/local/srs/conf/custom.conf
-    caddy:
-        image: caddy:2.7
-        restart: unless-stopped
-        networks:
-            - default
-        ports:
-            - "80:80"
-            - "443:443"
-            - "443:443/udp"
-        volumes:
-            - $PWD/Caddyfile:/etc/caddy/Caddyfile
-            - caddy_config:/config
 networks:
     sail:
         driver: bridge

@@ -12,6 +12,6 @@ class SaveListenerCountListener
 
     public function handle(StreamListenerChangeEvent $event): void
     {
-        \Cache::set('stream.listeners', $event->listeners, 360);
+        \Cache::set('stream.listeners', $event->listeners);
     }
 }

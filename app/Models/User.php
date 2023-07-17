@@ -4,6 +4,8 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
+use App\Events\UserWaitingForProvisioningEvent;
 use Filament\Models\Contracts\FilamentUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Query\JoinClause;
@@ -17,6 +19,8 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable implements FilamentUser
 {
     use HasApiTokens, HasFactory, Notifiable;
+
+    public mixed $provisioning;
 
     /**
      * The attributes that are mass assignable.
@@ -43,6 +47,7 @@ class User extends Authenticatable implements FilamentUser
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'is_provisioning' => 'boolean',
     ];
 
     public function server()
@@ -50,51 +55,65 @@ class User extends Authenticatable implements FilamentUser
         return $this->belongsToMany(Server::class)->using(ServerUser::class);
     }
 
-
-    public function isStreamRunning():bool
+    public function getOrAssignServer()
     {
-        return ServerUser::where('user_id', $this->id)->whereNull('stop')->whereNotNull('start')->exists();
-    }
+        $serverUser = ServerUser::where('user_id', $this->id)->whereNull('stop')->first();
 
-    public function getUserStreamUrls(): ?array
-    {
-        $server = ServerUser::where('user_id', $this->id)->whereNull('stop')->first();
+        if (is_null($serverUser) || is_null($serverUser->streamkey)) {
 
-        if (is_null($server) || is_null($server->streamkey)) {
-            if($this->assignServerToUser()) {
-                $server = ServerUser::where('user_id', $this->id)->whereNull('stop')->first();
-            } else {
-                return null;
+            if ($this->assignServerToUser()) {
+                return ServerUser::where('user_id', $this->id)->whereNull('stop')->first();
             }
+
+            return null;
         }
 
-        $hostname = $server->server->hostname;
+        return $serverUser;
+    }
 
-        return [
-            "original" => "https://$hostname/live/livestream.flv?streamkey=" . $server->streamkey,
-            "fhd" => "https://$hostname/live/livestream_fhd.flv?streamkey=" . $server->streamkey,
-            "hd" => "https://$hostname/live/livestream_hd.flv?streamkey=" . $server->streamkey,
-            "sd" => "https://$hostname/live/livestream_sd.flv?streamkey=" . $server->streamkey,
-            "ld" => "https://$hostname/live/livestream_ld.flv?streamkey=" . $server->streamkey,
-            "audio_hd" => "https://$hostname/live/livestream_audio_hd.flv?streamkey=" . $server->streamkey,
-            "audio_sd" => "https://$hostname/live/livestream_audio_sd.flv?streamkey=" . $server->streamkey,
-        ];
+    public function getUserStreamUrls(): array
+    {
+        $serverUser = $this->getOrAssignServer();
+        if (is_null($serverUser)) {
+            return [
+                'urls' => null,
+                'client_id' => null,
+            ];
+        }
+
+        $hostname = $serverUser->server->hostname;
+
+        $client = $serverUser->clients()->create();
+
+        $data['urls'] = [];
+        $data['client_id'] = $client->id;
+        // $protocol = app()->isLocal() ? 'http' : 'https';
+        $protocol = "https";
+        foreach (['original', 'fhd', 'hd', 'sd', 'ld', 'audio_hd', 'audio_sd'] as $quality) {
+            $qualityUrl = ($quality !== 'original') ? "_" . $quality : "";
+            $data['urls'][$quality] = $protocol . "://$hostname/live/livestream$qualityUrl.flv?streamkey=" . $serverUser->streamkey . "&client_id=" . $client->id;
+        }
+        return $data;
     }
 
     public function assignServerToUser(): bool
     {
-        $server = Server::where('status', ServerStatusEnum::ACTIVE->value)
+        $server = Server::where('status', ServerStatusEnum::ACTIVE)
+            ->where('type', ServerTypeEnum::EDGE)
             ->leftJoin('server_user', function (JoinClause $join) {
                 $join->on('server_user.server_id', '=', 'servers.id');
                 $join->on('server_user.stop', \DB::raw('NULL'));
             })
             ->groupBy('servers.id')
-            ->orderBy('client_count', 'asc')
+            ->orderBy('client_count', 'desc') // Desc fill servers with most clients first, Asc fill servers with least clients first
             ->selectRaw("servers.id, count(server_user.id) as client_count,max_clients as max_clients")
             ->havingRaw('client_count < max_clients')
             ->first();
 
         if (is_null($server) || is_null($server->id)) {
+            if ($this->is_provisioning === false) {
+                UserWaitingForProvisioningEvent::dispatch($this);
+            }
             return false;
         }
 
@@ -104,7 +123,6 @@ class User extends Authenticatable implements FilamentUser
 
         if ($this->is_provisioning) {
             $this->update(['is_provisioning' => false]);
-            return false;
         }
 
         return true;

@@ -2,12 +2,17 @@
 
 namespace App\Providers;
 
+use App\Events\ClientPlayEvent;
+use App\Events\ClientPlayOtherDeviceEvent;
 use App\Events\StreamListenerChangeEvent;
 use App\Events\StreamStatusEvent;
 use App\Events\UserWaitingForProvisioningEvent;
+use App\Listeners\DispatchPaysOtherDeviceNotifcationListener;
 use App\Listeners\SaveListenerCountListener;
+use App\Listeners\ScalingStreamListener;
 use App\Listeners\SetCacheStatusListener;
 use App\Listeners\SetUserWaitingForProvisioningListener;
+use App\Listeners\StopClientStreamsListener;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
@@ -32,6 +37,12 @@ class EventServiceProvider extends ServiceProvider
         ],
         UserWaitingForProvisioningEvent::class => [
             SetUserWaitingForProvisioningListener::class,
+        ],
+        ClientPlayEvent::class => [
+            DispatchPaysOtherDeviceNotifcationListener::class,
+        ],
+        ClientPlayOtherDeviceEvent::class => [
+            StopClientStreamsListener::class,
         ],
     ];
 

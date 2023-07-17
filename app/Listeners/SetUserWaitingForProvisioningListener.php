@@ -2,6 +2,7 @@
 
 namespace App\Listeners;
 
+use App\Events\ServerAssignmentChanged;
 use App\Events\UserWaitingForProvisioningEvent;
 
 class SetUserWaitingForProvisioningListener

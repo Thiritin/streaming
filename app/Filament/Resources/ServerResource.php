@@ -2,10 +2,14 @@
 
 namespace App\Filament\Resources;
 
+use App\Enum\ServerStatusEnum;
 use App\Filament\Resources\ServerResource\Pages;
 use App\Filament\Resources\ServerResource\RelationManagers\UserRelationManager;
 use App\Models\Server;
+use Faker\Provider\Text;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Form;
 use Filament\Resources\Resource;
@@ -25,19 +29,32 @@ class ServerResource extends Resource
         return $form
             ->schema([
                 TextInput::make('hetzner_id')
-                    ->required(),
-
-                TextInput::make('cloudflare_id')
+                    ->disabled()
                     ->required(),
 
                 TextInput::make('hostname')
+                    ->disabled()
                     ->required(),
 
-                TextInput::make('ip')
+                Select::make('type')->options([
+                    'origin' => 'Origin',
+                    'edge' => 'Edge',
+                ])->disabled(),
+
+                TextInput::make('max_clients')
+                    ->minValue(0)
+                    ->numeric()
+                    ->maxValue('99999')
                     ->required(),
 
-                TextInput::make('status')
-                    ->required(),
+                Select::make('status')->options([
+                    'provisioning' => 'Provisioning',
+                    'active' => 'Active',
+                    ServerStatusEnum::DEPROVISIONING->value => "Deprovisioning",
+                    'deleted' => 'Deleted',
+                ]),
+
+                Checkbox::make('immutable')->helperText('Set this if you want to use this server as a stream server. This will prevent the server from being deleted by autoscaling measures.'),
 
                 Placeholder::make('created_at')
                     ->label('Created Date')
@@ -46,6 +63,10 @@ class ServerResource extends Resource
                 Placeholder::make('updated_at')
                     ->label('Last Modified Date')
                     ->content(fn(?Server $record): string => $record?->updated_at?->diffForHumans() ?? '-'),
+
+                Placeholder::make('stream_url')->disabled()->content(fn(?Server $record): string => "rtmp://" . $record->hostname .":1935/live?streamkey=".config('app.stream_key') ?? '-'),
+                Placeholder::make('streamkey')->disabled()->content(fn(?Server $record): string => "livestream" ?? '-'),
+
             ]);
     }
 
@@ -55,7 +76,7 @@ class ServerResource extends Resource
             ->columns([
                 TextColumn::make('hetzner_id'),
 
-                TextColumn::make('cloudflare_id'),
+                TextColumn::make('type'),
 
                 TextColumn::make('hostname'),
 

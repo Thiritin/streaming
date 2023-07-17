@@ -9,7 +9,7 @@ COPY .github/docker/install-php-extensions /usr/local/bin/
 
 RUN apt-get update \
     && chmod +x /usr/local/bin/install-php-extensions \
-    && apt-get install -y curl git unzip openssl tar ca-certificates \
+    && apt-get install -y curl git unzip openssl tar ca-certificates dnsutils \
     && install-php-extensions gd bcmath pdo_mysql zip intl opcache pcntl redis swoole @composer \
     && apt-get clean -y
 ######################################################

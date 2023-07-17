@@ -10,7 +10,7 @@ class ServerUser extends Pivot
 {
     protected $table = 'server_user';
 
-    public $timestamps = [];
+    public $timestamps = false;
 
     protected $casts = [
         'start' => 'datetime',

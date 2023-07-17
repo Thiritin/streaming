@@ -30,6 +30,11 @@ class StreamListenerChangeEvent implements ShouldBroadcast
         return 'stream.listeners.changed';
     }
 
+    public function broadcastWhen(): bool
+    {
+        return $this->listeners !== (int) \Cache::get('stream.listeners');
+    }
+
     public function broadcastWith()
     {
         return ['listeners' => $this->listeners];

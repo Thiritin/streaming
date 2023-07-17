@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enum\ServerStatusEnum;
 use App\Enum\StreamStatusEnum;
 use App\Events\UserWaitingForProvisioningEvent;
+use App\Models\Client;
 use App\Models\Server;
 use App\Models\ServerUser;
 use App\Models\User;
@@ -16,20 +17,14 @@ class StreamController extends Controller
 {
     public function online()
     {
-        $urls = Auth::user()->getUserStreamUrls();
-
-        if (is_null($urls)) {
-            if (!Auth::user()->is_provisioning)
-                event(new UserWaitingForProvisioningEvent(Auth::user()));
-
-            return Inertia::render('Dashboard', [
-                'initialStatus' => StreamStatusEnum::PROVISIONING->value,
-                'initialListeners' => \Cache::get('stream.listeners', static fn() => 0),
-            ]);
-        }
+        $user = Auth::user();
+        $data = $user->getUserStreamUrls();
+        $urls = $data['urls'];
+        $client_id = $data['client_id'];
 
         return Inertia::render('Dashboard', [
-            'initialOtherDevice' => Auth::user()->isStreamRunning(),
+            'initialProvisioning' => is_null($data['urls']),
+            'initialClientId' => $client_id,
             'initialStreamUrls' => $urls,
             'initialStatus' => \Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value),
             'initialListeners' => \Cache::get('stream.listeners', static fn() => 0),
@@ -38,7 +33,7 @@ class StreamController extends Controller
 
     public function external()
     {
-        $urls = Auth::user()->getUserStreamUrls();
+        $urls = Auth::user()->getUserStreamUrls()['urls'];
         return Inertia::render('ExternalStream', [
             'status' => \Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value),
             'streamUrls' => $urls,

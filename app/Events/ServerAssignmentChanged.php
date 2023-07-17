@@ -9,11 +9,11 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class ServerAssignedEvent implements ShouldBroadcast
+class ServerAssignmentChanged implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public readonly User $user)
+    public function __construct(public readonly User $user, public bool $provisioning = false)
     {
     }
 
@@ -26,11 +26,15 @@ class ServerAssignedEvent implements ShouldBroadcast
 
     public function broadcastWith()
     {
-        return ['streamUrls' => $this->user->getUserStreamUrls()];
+        return [
+            'streamUrls' => $this->user->getUserStreamUrls()['urls'],
+            'clientId' => $this->user->getUserStreamUrls()['client_id'],
+            'provisioning' => $this->provisioning,
+        ];
     }
 
     public function broadcastAs(): string
     {
-        return 'stream.url.changed';
+        return 'server.assignment.changed';
     }
 }

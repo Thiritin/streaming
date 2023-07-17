@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enum\ServerStatusEnum;
 use App\Models\Server;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -9,7 +10,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 
-class DeprovisionServerJob implements ShouldQueue
+class FinishDeprovisioningServerJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -19,10 +20,8 @@ class DeprovisionServerJob implements ShouldQueue
 
     public function handle(): void
     {
-        // Put Server into deprovisioning
-        // Broadcast Server deprovisioning
-        // Sleep until client count is 0
-        // Delete Server
-        // Delete DNS Record
+        $this->server->update([
+            'status' => ServerStatusEnum::DELETED,
+        ]);
     }
 }
