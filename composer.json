@@ -17,6 +17,7 @@
         "league/oauth2-client": "^2.7",
         "lkdevelopment/hetzner-cloud-php-sdk": "^2.6",
         "pusher/pusher-php-server": "^7.2",
+        "sentry/sentry-laravel": "^3.6",
         "tightenco/ziggy": "^1.0"
     },
     "require-dev": {
