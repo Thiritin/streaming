@@ -14,7 +14,7 @@ class StreamController extends Controller
 {
     public function play(HookRequest $request)
     {
-        $cacheStatus = StreamStatusEnum::tryFrom(Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value));
+        $cacheStatus = $this->getStreamStatusEnum();
 
         parse_str(Str::substr($request->get('param'), 1), $result);
         if (!isset($result['streamkey'])) {
@@ -26,12 +26,12 @@ class StreamController extends Controller
             }
             return new Response(0);
         }
-        return new Response(null, 403);
+        return new Response("Invalid Stream Key", 403);
     }
 
     public function stop(HookRequest $request)
     {
-        $cacheStatus = StreamStatusEnum::tryFrom(Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value));
+        $cacheStatus = $this->getStreamStatusEnum();
 
         parse_str(Str::substr($request->get('param'), 1), $result);
         if (!isset($result['streamkey'])) {
@@ -44,5 +44,13 @@ class StreamController extends Controller
             return new Response(0);
         }
         return new Response(null, 403);
+    }
+
+    /**
+     * @return StreamStatusEnum|null
+     */
+    public function getStreamStatusEnum(): ?StreamStatusEnum
+    {
+        return StreamStatusEnum::tryFrom(Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value));
     }
 }

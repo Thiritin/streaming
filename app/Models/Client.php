@@ -20,6 +20,7 @@ class Client extends Model
 
     public function disconnect()
     {
+        $this->load('server');
         if(is_null($this->server)) {
             $this->load('serverUser.server');
         }

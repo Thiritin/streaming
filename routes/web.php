@@ -23,15 +23,19 @@ Route::middleware('guest')->group(function () {
         'callback',
     ])->name('auth.callback');
     Route::get('/login', \App\Http\Controllers\Auth\LoginController::class)->name('login');
-    Route::get('/error/no-valid-ticket', \App\Http\Controllers\Auth\NoValidTicketController::class)->name('error.no-valid-ticket');
 });
+
+Route::get('/error/no-valid-ticket', \App\Http\Controllers\Auth\NoValidTicketController::class)
+    ->middleware('auth:web')
+    ->name('error.no-valid-ticket');
 
 
 Route::get('/auth/frontchannel-logout', \App\Http\Controllers\Auth\FrontChannelLogoutController::class)->name('auth.frontchannel-logout');
 
-Route::middleware('auth:web')->group(function () {
+Route::middleware(['auth:web',\App\Http\Middleware\EnsureAttendeeHasTicketMiddleware::class])->group(function () {
     Route::get('/', [\App\Http\Controllers\StreamController::class,'online'])->name('dashboard');
     Route::get('/external-stream', [\App\Http\Controllers\StreamController::class,'external'])->name('external-stream');
+    Route::post('/message/send', [\App\Http\Controllers\MessageController::class,'send'])->name('message.send');
 
 });
 

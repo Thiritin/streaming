@@ -1,7 +1,7 @@
 <template>
   <div class="mt-12">
-    <h1 class="text-primary-500 font-semibold text-5xl dark:text-primary-300">{{ title }}</h1>
-    <h2 class="text-primary-600 dark:text-primary-400 text-3xl">{{ subTitle }}</h2>
+    <h1 class="font-semibold text-5xl text-primary-300">{{ title }}</h1>
+    <h2 class="text-primary-400 text-3xl">{{ subTitle }}</h2>
   </div>
 </template>
 <script>

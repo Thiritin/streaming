@@ -19,7 +19,7 @@ class ClientController extends Controller
     public function play(HookRequest $request)
     {
         $cacheStatus = StreamStatusEnum::tryFrom(Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value));
-
+        return 0;
         if ($cacheStatus === StreamStatusEnum::OFFLINE) {
             return new Response("Stream is offline.", 403);
         }

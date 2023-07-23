@@ -13,17 +13,17 @@ const showingNavigationDropdown = ref(false);
 
 <template>
     <div>
-        <div class="min-h-screen bg-primary-100 dark:bg-primary-900">
-            <nav class="bg-white dark:bg-primary-800 border-b border-primary-100 dark:border-primary-700">
+        <div class="min-h-screen bg-primary-900">
+            <nav class="bg-primary-800 absolute top-0 w-full">
                 <!-- Primary Navigation Menu -->
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="flex justify-between h-16">
+                <div class="mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex justify-between h-12">
                         <div class="flex">
                             <!-- Logo -->
                             <div class="shrink-0 flex items-center">
                                 <Link :href="route('dashboard')">
                                     <Logo
-                                        class="block h-9 w-auto fill-current text-primary-800 dark:text-primary-200"
+                                        class="block h-9 w-auto fill-current text-primary-200"
                                     />
                                 </Link>
                             </div>
@@ -50,7 +50,7 @@ const showingNavigationDropdown = ref(false);
                                         <span class="inline-flex rounded-md">
                                             <button
                                                 type="button"
-                                                class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-primary-500 dark:text-primary-400 bg-white dark:bg-primary-800 hover:text-primary-700 dark:hover:text-primary-300 focus:outline-none transition ease-in-out duration-150"
+                                                class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-primary-400 bg-primary-800 hover:text-primary-300 focus:outline-none transition ease-in-out duration-150"
                                             >
                                                 {{ $page.props.auth.user.name }}
 
@@ -83,7 +83,7 @@ const showingNavigationDropdown = ref(false);
                         <div class="-mr-2 flex items-center sm:hidden">
                             <button
                                 @click="showingNavigationDropdown = !showingNavigationDropdown"
-                                class="inline-flex items-center justify-center p-2 rounded-md text-primary-400 dark:text-primary-500 hover:text-primary-500 dark:hover:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900 focus:outline-none focus:bg-primary-100 dark:focus:bg-primary-900 focus:text-primary-500 dark:focus:text-primary-400 transition duration-150 ease-in-out"
+                                class="inline-flex items-center justify-center p-2 rounded-md text-primary-500 hover:text-primary-400 hover:bg-primary-900 focus:outline-none focus:bg-primary-900 focus:text-primary-400 transition duration-150 ease-in-out"
                             >
                                 <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
                                     <path
@@ -130,9 +130,9 @@ const showingNavigationDropdown = ref(false);
                     </div>
 
                     <!-- Responsive Settings Options -->
-                    <div class="pt-4 pb-1 border-t border-primary-200 dark:border-primary-600">
+                    <div class="pt-4 pb-1 border-t border-primary-600">
                         <div class="px-4">
-                            <div class="font-medium text-base text-primary-800 dark:text-primary-200">
+                            <div class="font-medium text-base text-primary-200">
                                 {{ $page.props.auth.user.name }}
                             </div>
                             <div class="font-medium text-sm text-primary-500">{{ $page.props.auth.user.email }}</div>
@@ -146,13 +146,6 @@ const showingNavigationDropdown = ref(false);
                     </div>
                 </div>
             </nav>
-
-            <!-- Page Heading -->
-            <header class="bg-white dark:bg-primary-800 shadow" v-if="$slots.header">
-                <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-                    <slot name="header" />
-                </div>
-            </header>
 
             <!-- Page Content -->
             <main>

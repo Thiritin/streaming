@@ -6,7 +6,6 @@ export default {
     components: {ApplicationLogo, Link},
     data() {
         return {
-            darkMode: true,
             navigation: {
                 main: [
 
@@ -44,7 +43,7 @@ export default {
         </div>
         <!-- Page Content -->
         <div
-            class="flex-1 flex flex-col dark:bg-primary-900 items-center p-4 sm:px-6 lg:flex-none lg:px-20 xl:px-12">
+            class="flex-1 flex flex-col bg-primary-900 items-center p-4 sm:px-6 lg:flex-none lg:px-20 xl:px-12">
             <!-- Spacer -->
             <div class="h-[25%]"></div>
             <!-- Slot Content -->
@@ -61,12 +60,12 @@ export default {
                     <div v-for="item in navigation.main" :key="item.name" class="px-5 py-2">
                         <Link v-if="item.href == null" :href="item.link"
                               :target="[item.newTab ? '_blank' : '_top']"
-                              class="text-base text-primary-500 hover:text-primary-900 dark:hover:text-primary-400"> {{
+                              class="text-base text-primary-500 hover:text-primary-400"> {{
                                 item.name
                             }}
                         </Link>
                         <a v-else :href="item.href" :target="[item.newTab ? '_blank' : '_top']"
-                           class="text-base text-primary-500 hover:text-primary-900 dark:hover:text-primary-400"> {{
+                           class="text-base text-primary-500 hover:text-primary-400"> {{
                                 item.name
                             }} </a>
                     </div>

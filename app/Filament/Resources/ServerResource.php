@@ -83,7 +83,7 @@ class ServerResource extends Resource
                 TextColumn::make('ip'),
 
                 TextColumn::make('status'),
-            ]);
+            ])->poll();
     }
 
     public static function getRelations(): array
@@ -97,7 +97,6 @@ class ServerResource extends Resource
     {
         return [
             'index' => Pages\ListServers::route('/'),
-            'create' => Pages\CreateServer::route('/create'),
             'edit' => Pages\EditServer::route('/{record}/edit'),
         ];
     }

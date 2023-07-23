@@ -41,6 +41,10 @@ return [
         'origin_ip' => env('ORIGIN_IP')
     ],
 
+    'attsrv' => [
+        'url' => env('ATTSRV_URL'),
+    ],
+
     'srs' => [
         'username' => env('SRS_USERNAME'),
         'password' => env('SRS_PASSWORD'),

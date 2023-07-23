@@ -1,11 +1,15 @@
 <script setup>
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import Logo from "@/Components/Logo.vue";
+import { Head } from '@inertiajs/vue3'
 import LoginScreenWelcome from "@/Components/LoginScreenWelcome.vue";
 </script>
 
 <template>
     <GuestLayout>
+        <Head>
+            <title>Login</title>
+        </Head>
         <Logo></Logo>
         <LoginScreenWelcome title="Livestream" sub-title="Only for attendees" class="mb-4"></LoginScreenWelcome>
         <p class="text-primary-300 text-sm mb-3">Please note that a valid registration is required to access the Eurofurence livestream.</p>

@@ -3,6 +3,8 @@
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
 import FaWifiSlashIcon from "@/Components/Icons/FaWifiSlashIcon.vue";
 import VueFlvPlayer from "@/Components/VueFlvPlayer.vue";
+import GuestLayout from "@/Layouts/GuestLayout.vue";
+import {Head} from "@inertiajs/vue3";
 
 const props = defineProps({
     status: {
@@ -18,16 +20,19 @@ const props = defineProps({
 
 <template>
     <authenticated-layout>
+        <Head>
+            <title>External Stream</title>
+        </Head>
         <div class="py-12">
             <div class="lg:max-w-7xl mx-auto">
                 <div
-                    class="mb-4 bg-white text-primary-900 dark:text-primary-100 dark:bg-primary-800 overflow-hidden shadow-sm lg:rounded p-6">
+                    class="mb-4  text-primary-100 bg-primary-800 overflow-hidden shadow-sm lg:rounded p-6">
                     <h1 class="h1 text-2xl font-semibold">Enjoy the stream on any device!</h1>
                     <p>To make it easy for everyone to display the stream on any device you can use our provided link to
                         connect it to various software.</p>
                 </div>
                 <div
-                    class="mb-4 bg-white dark:bg-primary-800 text-primary-900 dark:text-primary-100 overflow-hidden shadow-sm lg:rounded p-6">
+                    class="mb-4 bg-primary-800 text-primary-100 overflow-hidden shadow-sm lg:rounded p-6">
                     <div v-if="status !== 'offline'">
                         <h2 class="h2 text-xl font-semibold">Choose your stream quality:</h2>
                         <div class="my-4">
@@ -78,7 +83,7 @@ const props = defineProps({
                     </div>
                 </div>
                 <div
-                    class="mb-4 bg-white dark:bg-primary-800 text-primary-900 dark:text-primary-100 overflow-hidden shadow-sm lg:rounded p-6">
+                    class="mb-4 bg-primary-800 text-primary-100 overflow-hidden shadow-sm lg:rounded p-6">
                     <h2 class="text-xl mb-2 font-semibold">1. Open Your Streaming Client</h2>
                     <p class="mb-3">Start by opening your streaming client on your device.</p>
                     <img class="mb-8 rounded-xl" src="../../assets/open-streaming-client.png"

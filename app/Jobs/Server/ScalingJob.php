@@ -14,6 +14,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
+use LKDev\HetznerCloud\Models\Servers\Types\ServerType;
 
 class ScalingJob implements ShouldQueue
 {
@@ -33,7 +34,9 @@ class ScalingJob implements ShouldQueue
             // Total active users in stream
             $serverUserCount = ServerUser::whereNotNull('stop')->whereHas('clients', fn($q) => $q->whereNotNull('start')->whereNull('stop'))->count();
             // Capactiy of servers that are in provisioning and active max_clients
-            $serverCapacity = Server::whereIn('status', [ServerStatusEnum::PROVISIONING->value, ServerStatusEnum::ACTIVE->value])->sum('max_clients');
+            $serverCapacity = Server::whereIn('status', [ServerStatusEnum::PROVISIONING->value, ServerStatusEnum::ACTIVE->value])
+                ->where('type',ServerTypeEnum::EDGE->value)
+                ->sum('max_clients');
             // Is capacity over 80%
             $isOverCapacity = $serverUserCount > ($serverCapacity * 0.8);
             // Is under capacity 20%

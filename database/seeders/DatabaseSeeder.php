@@ -23,11 +23,11 @@ class DatabaseSeeder extends Seeder
         // ]);
         if (App::isLocal()) {
             Server::create([
-                "hostname" => "test.stream.eurofurence.org",
+                "hostname" => "localhost:8080",
                 "ip" => 1,
                 "status" => ServerStatusEnum::ACTIVE->value,
-                "hetzner_id" => 1,
-                "cloudflare_id" => 1,
+                "hetzner_id" => null,
+                "immutable" => true,
                 'shared_secret' => '9fmtTpLSkNF9j8hSoa0sqBSwru53Mahyvrrro9uo7fr'
             ]);
         }

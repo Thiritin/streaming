@@ -22,6 +22,8 @@ class User extends Authenticatable implements FilamentUser
 
     public mixed $provisioning;
 
+    protected $appends = ['level'];
+
     /**
      * The attributes that are mass assignable.
      *
@@ -48,6 +50,7 @@ class User extends Authenticatable implements FilamentUser
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'is_provisioning' => 'boolean',
+        'timeout_expires_at' => 'datetime',
     ];
 
     public function server()
@@ -87,8 +90,8 @@ class User extends Authenticatable implements FilamentUser
 
         $data['urls'] = [];
         $data['client_id'] = $client->id;
-        // $protocol = app()->isLocal() ? 'http' : 'https';
-        $protocol = "https";
+        $protocol = app()->isLocal() ? 'http' : 'https';
+        // $protocol = "https";
         foreach (['original', 'fhd', 'hd', 'sd', 'ld', 'audio_hd', 'audio_sd'] as $quality) {
             $qualityUrl = ($quality !== 'original') ? "_" . $quality : "";
             $data['urls'][$quality] = $protocol . "://$hostname/live/livestream$qualityUrl.flv?streamkey=" . $serverUser->streamkey . "&client_id=" . $client->id;
@@ -128,8 +131,31 @@ class User extends Authenticatable implements FilamentUser
         return true;
     }
 
+    public function getLevelAttribute():int
+    {
+        /**
+         * 0 = User
+         * 1 = Moderator
+         * 2 = Admin
+         */
+        if ($this->is_admin) {
+            return 2;
+        }
+        return 0;
+    }
+
+    public function messages(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Message::class);
+    }
+
     public function canAccessFilament(): bool
     {
         return $this->is_admin;
+    }
+
+    public function isStaff(): bool
+    {
+        return $this->level !== 0;
     }
 }
