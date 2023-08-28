@@ -7,6 +7,7 @@ use App\Http\Requests\MessageRequest;
 use App\Jobs\ChatCommands\BroadcastJob;
 use App\Jobs\ChatCommands\DeleteMessageJob;
 use App\Jobs\ChatCommands\NotFoundJob;
+use App\Jobs\ChatCommands\NukeEverythingJob;
 use App\Jobs\ChatCommands\SlowModeJob;
 use App\Jobs\ChatCommands\TimeoutJob;
 use Illuminate\Support\Facades\Cache;
@@ -31,7 +32,7 @@ class MessageController extends Controller
             ]);
         }
 
-        if (!$user->isStaff()) {
+        if ($user->cant('chat.ignore.ratelimit')) {
             if (RateLimiter::tooManyAttempts('send-message:' . $user->id, $maxTries)) {
                 $seconds = RateLimiter::availableIn('send-message:' . $user->id);
                 return response([
@@ -91,8 +92,8 @@ class MessageController extends Controller
             "timeout" => TimeoutJob::class,
             "delete" => DeleteMessageJob::class,
             "broadcast" => BroadcastJob::class,
-            "slowmode" => SlowModeJob::class,
-            "slow" => SlowModeJob::class,
+            "slowmode", "slow" => SlowModeJob::class,
+            "nukeeverything_i_know_what_i_am_doing" => NukeEverythingJob::class,
             default => NotFoundJob::class,
         };
 

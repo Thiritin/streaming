@@ -22,6 +22,9 @@ class DeleteMessageJob implements ShouldQueue
 
     public function handle(): void
     {
+        if($this->user->cannot('chat.commands.delete')) {
+            return;
+        }
         preg_match('/^!(delete)\s+"?([^"]+)"? "?([^"]+)"?$/', $this->command, $matches);
 
         if(!isset($matches[2], $matches[3])) return;

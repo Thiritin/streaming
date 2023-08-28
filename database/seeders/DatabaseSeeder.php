@@ -21,6 +21,9 @@ class DatabaseSeeder extends Seeder
         //     'name' => 'Test User',
         //     'email' => 'test@example.com',
         // ]);
+        $this->call([
+            EurofurenceRolesSeeder::class
+        ]);
         if (App::isLocal()) {
             Server::create([
                 "hostname" => "localhost:8080",

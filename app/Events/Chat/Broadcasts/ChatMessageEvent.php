@@ -32,7 +32,7 @@ class ChatMessageEvent implements ShouldBroadcast
             "name" => $this->user->name,
             "time" => $this->message->created_at->format('H:i'),
             "message" => $this->message->message,
-            "level" => $this->user->level,
+            "role" => $this->user->role,
         ];
     }
 

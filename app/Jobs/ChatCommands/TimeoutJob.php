@@ -23,6 +23,10 @@ class TimeoutJob implements ShouldQueue
 
     public function handle(): void
     {
+        if($this->user->cannot('chat.commands.timeout')) {
+            return;
+        }
+
         preg_match('/^!(timeout)\s+"?([^"]+)"? "?([^"]+)"?$/', $this->command, $matches);
 
         if(!isset($matches[2], $matches[3])) return;

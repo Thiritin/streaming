@@ -17,7 +17,8 @@ class EnsureAttendeeHasTicketMiddleware
             throw new \Exception("User is not logged in.");
         }
 
-        if ($user->is_attendee) {
+        // If user already has permission, then he is atleast an attendee
+        if ($user->hasPermissionTo('stream.view')) {
             return $next($request);
         }
 
@@ -28,14 +29,27 @@ class EnsureAttendeeHasTicketMiddleware
 
         // paid or checked in
         if (in_array($statusResponse->json()['status'], ['paid', 'checked in'])) {
-            $user->is_attendee = true;
+            // Check user level
+            $role = "Attendee";
+            $isSponsorRequest = Http::attsrv()->get('/attendees/'.$regId.'/packages/sponsor');
+            // User is now attendee, update his database entry and let him pass
+            if ($isSponsorRequest->json()['present'] === true) {
+                $role = "Sponsor";
+            } else {
+                $isSuperSponsorRequest = Http::attsrv()->get('/attendees/'.$regId.'/packages/sponsor2');
+                if ($isSuperSponsorRequest->json()['present'] === true) {
+                    $role = "Super Sponsor";
+                }
+            }
+
+            $user->assignRole($role);
             $user->reg_id = $regId;
             $user->save();
+            // Check their Sponsorstate
             return $next($request);
         }
 
         // if user is not still not attendee by reg sys redirect to denial page
-
         // if user is now attendee, update his database entry and let him pass
 
         $user->reg_id = $regId;

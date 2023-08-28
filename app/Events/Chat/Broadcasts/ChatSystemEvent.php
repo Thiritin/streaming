@@ -36,7 +36,7 @@ class ChatSystemEvent implements ShouldBroadcast
             "name" => "System",
             "time" => $this->message->created_at->format('H:i'),
             "message" => $this->message->message,
-            "level" => 99,
+            "role" => null,
         ];
     }
 

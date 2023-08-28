@@ -20,12 +20,9 @@ const emit = defineEmits(['streamUrlChanged']);
                 </p>
 
                 <p class="mb-4">
-                    Join us from the comfort of your own space and never miss a moment of the furry fun.
-                    We
-                    have an exciting lineup of
-                    major events planned just for you. Get ready to witness the epic Opening Ceremony,
-                    filled with awe-inspiring
-                    performances and surprises. Then, prepare to be dazzled by the spectacular Dance
+                    Join us from the comfort of your own space and never miss a moment of the fun.
+                    We have an exciting lineup of
+                    major events planned just for you. Prepare to be dazzled by the spectacular Dance
                     Battles, where talented
                     fursuiters showcase their moves and compete for glory.
                 </p>
@@ -40,13 +37,12 @@ const emit = defineEmits(['streamUrlChanged']);
 
                 <p class="mb-4">
                     🚫 Please remember that this livestream is exclusively for our registered attendees.
-                    We
-                    kindly request that you
+                    We kindly request that you
                     do not share the stream with non-attendees, as it may violate GEMA restrictions.
                 </p>
 
                 <p class="mb-4">
-                    So sit back, relax, and immerse yourself in the magic of Eurofurence 2023. Let's
+                    So sit back, relax, and immerse yourself in the magic of Eurofurence 27. Let's
                     make
                     unforgettable memories
                     together! 🐾✨

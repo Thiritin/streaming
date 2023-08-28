@@ -36,7 +36,7 @@ const showingNavigationDropdown = ref(false);
                                 <NavLink :href="route('external-stream')" :active="route().current('external-stream')">
                                     External Stream (VLC)
                                 </NavLink>
-                                <NavLink component="a" v-if="$page.props.auth.user.is_admin" :href="route('filament.pages.dashboard')">
+                                <NavLink component="a" v-if="$page.props.auth.can_access_filament" :href="route('filament.pages.dashboard')">
                                     Admin
                                 </NavLink>
                             </div>

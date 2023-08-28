@@ -5,6 +5,15 @@ import {usePage} from '@inertiajs/vue3'
 import {inject} from 'vue'
 
 const axios = inject('axios')
+const preserveClasses = [
+    'text-orange-500',
+    'text-red-500',
+    'text-blue-500',
+    'text-yellow-500',
+    'text-green-500',
+    'text-purple-500',
+    'text-pink-500',
+];
 
 const page = usePage()
 
@@ -92,7 +101,7 @@ function sendMessage() {
             "time": padWithZeros(currentTime.getHours()) + ':' + padWithZeros(currentTime.getMinutes()),
             "message": message.value,
             "is_command": isCommand(message.value),
-            "level": usePage().props.auth.user.level
+            "role": usePage().props.auth.user.role
         })
         message.value = '';
         scrollToBottom();
@@ -118,13 +127,12 @@ function sendMessage() {
         <!-- Chat Messages -->
         <div class="px-3 p-3 text-primary-200 flex-1 h-full overflow-auto" ref="messageContainer">
             <div class="mb-0.5" v-for="message in chatMessages">
-                <div class="flex" v-if="message.level !== 99">
+                <div class="flex" v-if="message.role !== null">
                     <div class="text-xs pr-2 text-primary-400 mt-1">{{ message.time }}</div>
                     <div :class="{'bg-black text-gray-400 py-1 px-1': message.is_command}">
-                            <span class="font-semibold"
-                                  :class="{'text-orange-500': message.level === 1,'text-red-500': message.level === 2}">
+                            <span class="font-semibold" :class="message.role.color">
                                 {{ message.name }}
-                            </span>: <span class="text-wrap">{{ message.message }}</span>
+                            </span>: <span class="text-wrap break-all">{{ message.message }}</span>
                     </div>
                 </div>
                 <div v-else class="rounded-lg text-center m-2 p-2 bg-primary-600">

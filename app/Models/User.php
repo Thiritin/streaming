@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
+use App\Enum\UserLevelEnum;
 use App\Events\UserWaitingForProvisioningEvent;
 use Filament\Models\Contracts\FilamentUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,14 +16,14 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements FilamentUser
 {
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable, HasRoles;
 
     public mixed $provisioning;
-
-    protected $appends = ['level'];
 
     /**
      * The attributes that are mass assignable.
@@ -30,6 +31,8 @@ class User extends Authenticatable implements FilamentUser
      * @var array<int, string>
      */
     protected $guarded = [];
+
+    protected $appends = ["role"];
 
     /**
      * The attributes that should be hidden for serialization.
@@ -131,19 +134,6 @@ class User extends Authenticatable implements FilamentUser
         return true;
     }
 
-    public function getLevelAttribute():int
-    {
-        /**
-         * 0 = User
-         * 1 = Moderator
-         * 2 = Admin
-         */
-        if ($this->is_admin) {
-            return 2;
-        }
-        return 0;
-    }
-
     public function messages(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(Message::class);
@@ -151,11 +141,16 @@ class User extends Authenticatable implements FilamentUser
 
     public function canAccessFilament(): bool
     {
-        return $this->is_admin;
+        return $this->can('filament.access');
     }
 
     public function isStaff(): bool
     {
-        return $this->level !== 0;
+        return $this->hasAnyRole(['Admin','Moderator']);
+    }
+
+    public function getRoleAttribute(): Role|null
+    {
+        return $this->roles()->orderBy('roles.priority','desc')->first(['name','color']);
     }
 }

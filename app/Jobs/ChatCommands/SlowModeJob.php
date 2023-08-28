@@ -22,6 +22,9 @@ class SlowModeJob implements ShouldQueue
 
     public function handle(): void
     {
+        if($this->user->cannot('chat.commands.slowmode')) {
+            return;
+        }
         preg_match('/^!(slow|slowmode)\s+"?([^"]+)"?$/', $this->command, $matches);
 
         if(!isset($matches[2])) return;

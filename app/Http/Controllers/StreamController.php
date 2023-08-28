@@ -43,7 +43,7 @@ class StreamController extends Controller
                     'message' => $message->message,
                     'is_command' => (bool) $message->is_command,
                     'name' => $message->user->name ?? "System",
-                    'level' => $message->user->level ?? 99,
+                    'role' => $message->user?->role,
                     'time' => $message->created_at->format('H:i'),
                 ])->toArray()),
             'rateLimit' => [
