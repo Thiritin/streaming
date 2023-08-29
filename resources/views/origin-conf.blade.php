@@ -43,11 +43,21 @@ vhost __defaultVhost__ {
         ffmpeg      ./objs/ffmpeg/bin/ffmpeg;
 
         @if(isset($twitchUrl))
-        engine twitch_live {
-            enabled         on;
-            vcodec          copy;
-            acodec          copy;
-            output          {!! $twitchUrl !!}
+engine twitch_live {
+            enabled on;
+            vcodec libx264;
+            vbitrate 1200;
+            vfps 25;
+            vwidth 854;
+            vheight 480;
+            vthreads 4;
+            vprofile main;
+            vpreset medium;
+            acodec libfdk_aac;
+            abitrate 70;
+            asample_rate 44100;
+            achannels 2;
+            output {!! $twitchUrl !!};
         }
         @endif
 

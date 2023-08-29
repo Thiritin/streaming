@@ -53,5 +53,10 @@ return [
 
     'hetzner' => [
         'token' => env('HETZNER_TOKEN')
+    ],
+
+    // This is the URL of the origin server, where a low res version is being pushed to via rtmp.
+    'forward' => [
+        'url' => env('RTMP_FORWARD')
     ]
 ];

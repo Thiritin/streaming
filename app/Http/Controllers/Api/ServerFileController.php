@@ -41,10 +41,11 @@ class ServerFileController extends Controller
             ]);
         }
 
-        if ($file === "origin.conf" && $server->type === ServerTypeEnum::ORIGIN) {
+        if ($file === "origin.conf" && $server->type === ServerTypeEnum::EDGE) {
             return view('origin-conf', [
                 'maxConnections' => $server->max_clients * 3,
                 'serverId' => $server->id,
+                'twitchUrl' => config('services.forward.url'),
                 'sharedSecret' => $server->shared_secret
             ]);
         }

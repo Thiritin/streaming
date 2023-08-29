@@ -130,8 +130,8 @@ function sendMessage() {
                 <div class="flex" v-if="message.role !== null">
                     <div class="text-xs pr-2 text-primary-400 mt-1">{{ message.time }}</div>
                     <div :class="{'bg-black text-gray-400 py-1 px-1': message.is_command}">
-                            <span class="font-semibold" :class="message.role.color">
-                                {{ message.name }}
+                            <span :title="message.role.name" class="font-semibold" :class="message.role.color">
+                                {{ message.name }} <span v-if="message.role.name === 'Admin' || message.role.name === 'Moderator'">({{ message.role.name }})</span>
                             </span>: <span class="text-wrap break-all">{{ message.message }}</span>
                     </div>
                 </div>

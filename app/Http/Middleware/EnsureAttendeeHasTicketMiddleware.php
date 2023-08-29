@@ -6,6 +6,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Session;
 
 class EnsureAttendeeHasTicketMiddleware
@@ -24,7 +25,12 @@ class EnsureAttendeeHasTicketMiddleware
 
         // User is not attendee, check authentication status
         $attendeeListResponse = Http::attsrv()->get('/attendees');
-        $regId = $attendeeListResponse->json()['ids'][0];
+        $regId = $attendeeListResponse->json()['ids'][0] ?? null;
+
+        if($regId === null) {
+            return $this->abort($request, $next);
+        }
+
         $statusResponse = Http::attsrv()->get('/attendees/'.$regId.'/status');
 
         // paid or checked in
@@ -49,11 +55,14 @@ class EnsureAttendeeHasTicketMiddleware
             return $next($request);
         }
 
-        // if user is not still not attendee by reg sys redirect to denial page
-        // if user is now attendee, update his database entry and let him pass
+        return $this->abort($request, $next);
+    }
 
-        $user->reg_id = $regId;
-
+    public function abort(Request $request, Closure $next)
+    {
+        if(!Route::is('error.no-valid-ticket')) {
+            return redirect()->route('error.no-valid-ticket');
+        }
         return $next($request);
     }
 }
