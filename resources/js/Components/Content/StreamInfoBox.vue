@@ -13,7 +13,6 @@ watch(selectedOption, (newValue, oldValue) => {
     }
 });
 function changeStreamUrl(url) {
-    console.log("changeStreamUrl: " + url);
     emit('stream-url-changed', url);
 }
 
