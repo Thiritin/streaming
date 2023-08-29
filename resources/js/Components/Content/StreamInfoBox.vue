@@ -47,12 +47,6 @@ function changeStreamUrl(url) {
                 </p>
 
                 <p class="mb-4">
-                    🚫 Please remember that this livestream is exclusively for our registered attendees.
-                    We kindly request that you
-                    do not share the stream with non-attendees, as it may violate GEMA restrictions.
-                </p>
-
-                <p class="mb-4">
                     So sit back, relax, and immerse yourself in the magic of Eurofurence 27. Let's
                     make
                     unforgettable memories
