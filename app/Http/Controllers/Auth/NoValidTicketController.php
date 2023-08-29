@@ -9,6 +9,9 @@ class NoValidTicketController extends Controller
 {
     public function __invoke()
     {
+        if (\Auth::user()->hasPermissionTo('stream.view')) {
+            return redirect()->route('dashboard');
+        }
         return Inertia::render('NoTicket');
     }
 }

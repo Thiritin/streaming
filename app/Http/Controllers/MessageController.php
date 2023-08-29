@@ -67,11 +67,13 @@ class MessageController extends Controller
             broadcast(new ChatMessageEvent($messageModel, $user))->toOthers();
         }
 
+
+
         return response([
             'success' => true,
             'rateLimit' => [
                 'maxTries' => $maxTries,
-                'secondsLeft' => (!$user->isStaff()) ? RateLimiter::availableIn('send-message:' . $user->id) : 0,
+                'secondsLeft' => $this->getSecondsLeft($user,$slowMode,$maxTries),
                 'rateDecay' => $rateDecay,
                 'slowMode' => $slowMode,
             ],
@@ -98,5 +100,22 @@ class MessageController extends Controller
         };
 
         $runController::dispatch($user, $messageModel, $trimmedCommand);
+    }
+
+    private function getSecondsLeft($user,$slowMode,$maxTries)
+    {
+        if($user->can('chat.ignore.ratelimit')) {
+            return 0;
+        }
+        // If slow mode is active always return seconds left
+        if ($slowMode) {
+            return RateLimiter::availableIn('send-message:' . $user->id);
+        }
+
+        // In any other case only return if the rate limiter is now hit.
+        if (RateLimiter::tooManyAttempts('send-message:' . $user->id, $maxTries)) {
+            return RateLimiter::availableIn('send-message:' . $user->id);
+        }
+        return 0;
     }
 }
