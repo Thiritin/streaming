@@ -64,6 +64,7 @@ onMounted(() => {
         .listen('.message', (e) => {
             const currentTime = new Date();
             chatMessages.value.push(e);
+            scrollToBottom();
         })
         .listen('.messagesDeleted', (e) => {
             chatMessages.value = chatMessages.value.filter((message) => {
