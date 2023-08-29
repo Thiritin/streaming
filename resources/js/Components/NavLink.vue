@@ -11,7 +11,6 @@ const props = defineProps({
         type: Boolean,
     },
     component: {
-        type: String,
         default: Link,
     },
 });

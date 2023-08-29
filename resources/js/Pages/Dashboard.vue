@@ -67,7 +67,7 @@ export default {
     },
     props: {
         initialStreamUrls: {
-            type: String,
+            type: Object,
             required: false,
         },
         initialStatus: {
@@ -105,7 +105,6 @@ export default {
             clientId: this.initialClientId,
             provisioning: this.initialProvisioning,
             notifyDeviceChange: null,
-            showChatBox: !this.isMobile(),
         }
     },
     methods: {
@@ -173,14 +172,17 @@ export default {
                     <StreamProvisioningStatusPage></StreamProvisioningStatusPage>
                 </div>
                 <div v-else-if="otherDevice === true && status !== 'offline'">
-                    <StreamOtherDeviceStatusPage @endStreamOnOtherDevice="otherDevice = false"></StreamOtherDeviceStatusPage>
+                    <StreamOtherDeviceStatusPage
+                        @endStreamOnOtherDevice="otherDevice = false"></StreamOtherDeviceStatusPage>
                 </div>
                 <div v-else-if="status === 'technical_issue'">
                     <StreamTechnicalIssuesStatusPage :listeners="listeners"></StreamTechnicalIssuesStatusPage>
                 </div>
                 <StreamOfflineStatusPage v-else></StreamOfflineStatusPage>
                 <div>
-                    <StreamInfoBox v-if="showChatBox" @streamUrlChanged="selectedStreamUrl = $event"
+                    <StreamInfoBox v-if="showChatBox"
+                                   :stream-url="selectedStreamUrl"
+                                   @stream-url-changed="selectedStreamUrl = $event"
                                    :listeners="listeners"></StreamInfoBox>
                 </div>
             </div>

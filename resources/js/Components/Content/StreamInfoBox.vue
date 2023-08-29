@@ -1,9 +1,21 @@
 <script setup>
 
 import FaIconUser from "@/Components/Icons/FaIconUser.vue";
+import {ref, watch} from "vue";
 
-const props = defineProps(['listeners']);
-const emit = defineEmits(['streamUrlChanged']);
+const props = defineProps(['listeners','status','streamUrl']);
+const emit = defineEmits(['stream-url-changed']);
+const selectedOption = ref(props.streamUrl);
+
+watch(selectedOption, (newValue, oldValue) => {
+    if (newValue !== oldValue) {
+        changeStreamUrl(newValue);
+    }
+});
+function changeStreamUrl(url) {
+    console.log("changeStreamUrl: " + url);
+    emit('stream-url-changed', url);
+}
 
 </script>
 
@@ -63,7 +75,7 @@ const emit = defineEmits(['streamUrlChanged']);
                         <!-- Select your Bitrate dropdown -->
                         <label class="text-xs text-primary-200">Select your resolution</label>
                         <select
-                            @select="emit.call('streamUrlChanged', $event.target.value)"
+                            v-model="selectedOption"
                             class="block w-full mt-1 rounded-md bg-primary-700 border-primary-300order-primary-600 text-primary-100 focus:border-primary-600 focus:ring focus:ring-primary-600 transition ease-in-out duration-150 sm:text-sm sm:leading-5">
                             <option value="auto">Auto</option>
                             <option value="fhd">1080p</option>
