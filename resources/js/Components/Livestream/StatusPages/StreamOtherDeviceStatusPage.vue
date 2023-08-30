@@ -11,7 +11,7 @@ import StatusDescription from "@/Components/Livestream/StatusPages/Components/St
     <StreamStatusWrapper>
         <StatusTitle>End stream on other device?</StatusTitle>
         <StatusDescription>To preserve bandwidth, we are only allowing one concurrent stream per user.</StatusDescription>
-        <primary-button @click="emit.call('endStreamOnOtherDevice')">Continue here</primary-button>
+        <primary-button class="mt-4" @click="$emit('endStreamOnOtherDevice')">Continue here</primary-button>
     </StreamStatusWrapper>
 </template>
 

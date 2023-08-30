@@ -23,7 +23,7 @@ class Server extends Model
 
     public function user()
     {
-        return $this->belongsToMany(User::class)->using(ServerUser::class);
+        return $this->belongsToMany(User::class)->withPivot(['start','stop','streamkey'])->using(ServerUser::class);
     }
 
     public function deprovision()

@@ -10,6 +10,13 @@ class EurofurenceRolesSeeder extends Seeder
 {
     public function run(): void
     {
+        // Digital Pass
+        $digital = Role::updateOrCreate(['name' => 'Digital Pass'],[
+            'color' => null,
+            "priority" => 5,
+        ]);
+
+        $digital->givePermissionTo('stream.view');
         // Permissions
         $this->permissions();
         $attendee = Role::updateOrCreate(['name' => 'Attendee'],[

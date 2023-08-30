@@ -19,7 +19,7 @@ class ClientController extends Controller
     public function play(HookRequest $request)
     {
         $cacheStatus = StreamStatusEnum::tryFrom(Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value));
-        return 0;
+
         if ($cacheStatus === StreamStatusEnum::OFFLINE) {
             return new Response("Stream is offline.", 403);
         }
@@ -44,9 +44,9 @@ class ClientController extends Controller
             $client = ($result['client'] === "vlc") ? 'vlc' : 'web';
         }
 
-        $serverUser->update([
-            'start' => now()
-        ]);
+        if ($serverUser->start === null) {
+            $serverUser->update(['start' => now()]);
+        }
 
         $updatedId = $serverUser->clients()->where('id',$result['client_id'])->update([
             "client" => $client ?? 'web',

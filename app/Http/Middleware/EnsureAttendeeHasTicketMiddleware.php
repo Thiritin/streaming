@@ -4,8 +4,10 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Session;
 
@@ -51,18 +53,15 @@ class EnsureAttendeeHasTicketMiddleware
             $user->assignRole($role);
             $user->reg_id = $regId;
             $user->save();
-            // Check their Sponsorstate
-            return $next($request);
         }
 
-        return $this->abort($request, $next);
+        $this->abort($request, $next);
+        // Redirect is needed to make sure roles are properly reloaded
+        return Redirect::route('dashboard');
     }
 
     public function abort(Request $request, Closure $next)
     {
-        if(!Route::is('error.no-valid-ticket')) {
-            return redirect()->route('error.no-valid-ticket');
-        }
-        return $next($request);
+        Auth::user()->assignRole("Digital Pass");
     }
 }

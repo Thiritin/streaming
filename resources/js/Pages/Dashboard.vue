@@ -163,7 +163,7 @@ export default {
             <div class="w-full flex-1 overflow-auto">
                 <div v-if="showPlayer">
                     <StreamPlayer :stream-url="streamUrl"
-                                  class="w-full bg-black max-h-[calc(100vh_-_10vh)]"></StreamPlayer>
+                                  class="z-10 relative w-full bg-black max-h-[calc(100vh_-_10vh)]"></StreamPlayer>
                 </div>
                 <div v-else-if="status === 'starting_soon'">
                     <StreamStartingSoonStatusPage></StreamStartingSoonStatusPage>

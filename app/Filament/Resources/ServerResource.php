@@ -3,17 +3,21 @@
 namespace App\Filament\Resources;
 
 use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
 use App\Filament\Resources\ServerResource\Pages;
 use App\Filament\Resources\ServerResource\RelationManagers\UserRelationManager;
 use App\Models\Server;
 use Faker\Provider\Text;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Pages\Actions\DeleteAction;
 use Filament\Resources\Form;
 use Filament\Resources\Resource;
 use Filament\Resources\Table;
+use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 
 class ServerResource extends Resource
@@ -29,8 +33,7 @@ class ServerResource extends Resource
         return $form
             ->schema([
                 TextInput::make('hetzner_id')
-                    ->disabled()
-                    ->required(),
+                    ->disabled(),
 
                 TextInput::make('hostname')
                     ->disabled()
@@ -54,7 +57,7 @@ class ServerResource extends Resource
                     'deleted' => 'Deleted',
                 ]),
 
-                Checkbox::make('immutable')->helperText('Set this if you want to use this server as a stream server. This will prevent the server from being deleted by autoscaling measures.'),
+                Checkbox::make('immutable')->reactive()->helperText('Set this if you want to use this server as a stream server. This will prevent the server from being deleted by autoscaling measures.'),
 
                 Placeholder::make('created_at')
                     ->label('Created Date')
@@ -64,8 +67,15 @@ class ServerResource extends Resource
                     ->label('Last Modified Date')
                     ->content(fn(?Server $record): string => $record?->updated_at?->diffForHumans() ?? '-'),
 
-                Placeholder::make('stream_url')->disabled()->content(fn(?Server $record): string => "rtmp://" . $record->hostname .":1935/live?streamkey=".config('app.stream_key') ?? '-'),
-                Placeholder::make('streamkey')->disabled()->content(fn(?Server $record): string => "livestream" ?? '-'),
+                Section::make('Stream Information')
+                    ->hidden(fn(?Server $record): bool => $record->type !== ServerTypeEnum::EDGE || $record->immutable === false || $record->status !== ServerStatusEnum::ACTIVE)
+                    ->columns()
+                    ->schema([
+                    Placeholder::make('stream_url')
+                        ->disabled()->content(fn(?Server $record): string => "rtmp://" . $record->hostname .":1935/live?streamkey=".config('app.stream_key') ?? '-'),
+                    Placeholder::make('streamkey')
+                        ->disabled()->content(fn(?Server $record): string => "livestream" ?? '-'),
+                ]),
 
             ]);
     }
@@ -83,6 +93,8 @@ class ServerResource extends Resource
                 TextColumn::make('ip'),
 
                 TextColumn::make('status'),
+            ])->actions([
+                EditAction::make()
             ])->poll();
     }
 

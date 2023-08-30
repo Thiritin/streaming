@@ -58,7 +58,7 @@ class User extends Authenticatable implements FilamentUser
 
     public function server()
     {
-        return $this->belongsToMany(Server::class)->using(ServerUser::class);
+        return $this->belongsToMany(Server::class)->withPivot(['start','stop','streamkey'])->using(ServerUser::class);
     }
 
     public function getOrAssignServer()
