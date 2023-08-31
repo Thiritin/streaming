@@ -130,6 +130,7 @@ class User extends Authenticatable implements FilamentUser
             if ($this->is_provisioning === false) {
                 UserWaitingForProvisioningEvent::dispatch($this);
             }
+            $this->update(['server_id' => null,'streamkey' => null]);
             return false;
         }
 

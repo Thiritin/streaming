@@ -26,7 +26,6 @@ class ServerMoveClientsToOtherServerJob implements ShouldQueue
 
     public function handle(): void
     {
-
         $connectedClients = Client::where('server_id', $this->server->id)
             ->connected();
 

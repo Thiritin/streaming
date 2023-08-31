@@ -29,7 +29,7 @@ class DeleteServerJob implements ShouldQueue
     {
         Bus::chain([
             new InitializeDeprovisioningJob($this->server),
-            (new ServerMoveClientsToOtherServerJob($this->server))->delay(now()->addMinutes(5)),
+            (new ServerMoveClientsToOtherServerJob($this->server))->delay(now()->addMinute()),
             (new RemovalConditionCheckerJob($this->server))->delay(now()->addMinutes(10)),
         ])->dispatch();
     }
