@@ -57,7 +57,7 @@ class ScalingJob implements ShouldQueue
                 // Delete Server with lowest user count and not immutable
                 $server = Server::where('status', ServerStatusEnum::ACTIVE)
                     ->where('type', ServerTypeEnum::EDGE)
-                    ->where('created_at', '<=', now()->subHour())
+                    ->where('servers.created_at', '<=', now()->subHour())
                     ->where('immutable', false)
                     ->leftJoin('clients', function (JoinClause $join) {
                         $join->on('clients.server_id', '=', 'servers.id');
