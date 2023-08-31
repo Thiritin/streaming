@@ -50,7 +50,7 @@ export default {
             });
 
         let userid = this.$page.props.auth.user.id;
-        Echo.private(`User.${userid}.StreamUrl`)
+        this.notifyDeviceChange = Echo.private(`User.${userid}.StreamUrl`)
             .listen('.server.assignment.changed', (e) => {
                 this.streamUrls = e.streamUrls;
                 this.clientId = e.clientId;

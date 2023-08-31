@@ -114,15 +114,15 @@ class User extends Authenticatable implements FilamentUser
     {
         $server = Server::where('status', ServerStatusEnum::ACTIVE)
             ->where('type', ServerTypeEnum::EDGE)
-            ->leftJoin('clients', function (JoinClause $join) {
-                $join->on('clients.server_id', '=', 'servers.id');
-                $join->on('clients.stop', \DB::raw('NULL'));
-                $join->on('clients.start', 'IS NOT', \DB::raw('NULL'));
-            })
+            ->addSelect([
+                'client_count' => Client::selectRaw('count(*)')
+                    ->whereColumn('clients.server_id', 'servers.id')
+                    ->connected()
+            ])
             ->groupBy('servers.id')
             ->orderBy('client_count',
                 'desc') // Desc fill servers with most clients first, Asc fill servers with least clients first
-            ->selectRaw("servers.id, count(clients.id) as client_count,max_clients as max_clients")
+            ->selectRaw("servers.id, max_clients as max_clients")
             ->havingRaw('client_count < max_clients')
             ->first();
 
@@ -130,7 +130,7 @@ class User extends Authenticatable implements FilamentUser
             if ($this->is_provisioning === false) {
                 UserWaitingForProvisioningEvent::dispatch($this);
             }
-            $this->update(['server_id' => null,'streamkey' => null]);
+            $this->update(['server_id' => null, 'streamkey' => null]);
             return false;
         }
 

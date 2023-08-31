@@ -9,6 +9,7 @@ use App\Models\User;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Form;
 use Filament\Resources\Resource;
@@ -40,6 +41,10 @@ class UserResource extends Resource
                 TextInput::make('reg_id')
                     ->disabled()
                     ->integer(),
+
+                Select::make('server_id')
+                    ->relationship('server', 'hostname')
+                    ->nullable(),
 
                 DatePicker::make('timeout_expires_at')
                     ->label('Timeout Expires Date'),
