@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Resources\Table;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Actions\BulkAction;
+use Filament\Tables\Actions\DeleteBulkAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -104,6 +105,7 @@ class ClientResource extends Resource
                     ->icon('heroicon-o-x-circle')
                     ->label('Disconnect Clients')
                     ->deselectRecordsAfterCompletion(),
+                DeleteBulkAction::class,
             ])->poll(10);
     }
 
