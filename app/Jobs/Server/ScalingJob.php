@@ -37,7 +37,7 @@ class ScalingJob implements ShouldQueue
             return;
         }
 
-        if ($cacheStatus !== StreamStatusEnum::OFFLINE) {
+        if ($cacheStatus === StreamStatusEnum::OFFLINE) {
             return;
         }
 
