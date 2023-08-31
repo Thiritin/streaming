@@ -33,6 +33,6 @@ class AppServiceProvider extends ServiceProvider
                 ->baseUrl(config('services.attsrv.url'));
         });
 
-        //User::observe(\App\Observers\UserObserver::class);
+        User::observe(\App\Observers\UserObserver::class);
     }
 }
