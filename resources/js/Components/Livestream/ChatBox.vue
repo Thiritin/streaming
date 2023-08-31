@@ -98,6 +98,10 @@ function isCommand(str) {
     return trimmedStr.startsWith('/') || trimmedStr.startsWith('!');
 }
 
+function encodeHtml(html) {
+    return html.replace(/[\u00A0-\u9999<>\&]/g, i => '&#'+i.charCodeAt(0)+';')
+}
+
 function sendMessage() {
     if (message.value.length === 0) return;
     // Append to chatMessages
@@ -143,7 +147,7 @@ function sendMessage() {
                     <div :class="{'bg-black text-gray-400 py-1 px-1': message.is_command}">
                             <span :title="message.role.name" class="font-semibold" :class="message.role.color">
                                 {{ message.name }}<span v-if="message.role.name === 'Admin' || message.role.name === 'Moderator'"> ({{ message.role.name }})</span>
-                            </span>: <span class="" style="overflow-wrap:anywhere;" v-html="highlightUsername(message.message)"></span>
+                            </span>: <span class="" style="overflow-wrap:anywhere;" v-html="highlightUsername(encodeHtml(message.message))"></span>
                     </div>
                 </div>
                 <div v-else class="rounded-lg text-center m-2 p-2 break-words bg-primary-600">
