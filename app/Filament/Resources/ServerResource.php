@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Filament\Resources\ServerResource\Pages;
+use App\Filament\Resources\ServerResource\RelationManagers\ClientsRelationManager;
 use App\Filament\Resources\ServerResource\RelationManagers\UserRelationManager;
 use App\Models\Server;
 use Faker\Provider\Text;
@@ -17,6 +18,7 @@ use Filament\Pages\Actions\DeleteAction;
 use Filament\Resources\Form;
 use Filament\Resources\Resource;
 use Filament\Resources\Table;
+use Filament\Tables\Actions\Action;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 
@@ -94,14 +96,19 @@ class ServerResource extends Resource
 
                 TextColumn::make('status'),
             ])->actions([
-                EditAction::make()
+                EditAction::make(),
+                Action::make('Deprovision')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->action(fn(Server $server) => $server->deprovision()),
             ])->poll();
     }
 
     public static function getRelations(): array
     {
         return [
-            UserRelationManager::class,
+            ClientsRelationManager::class
         ];
     }
 

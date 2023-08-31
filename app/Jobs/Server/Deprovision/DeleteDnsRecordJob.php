@@ -23,6 +23,10 @@ class DeleteDnsRecordJob implements ShouldQueue
 
     public function handle(): void
     {
+        if (\App::isLocal()) {
+            return;
+        }
+
         if($this->server->type === ServerTypeEnum::ORIGIN) {
             return;
         }

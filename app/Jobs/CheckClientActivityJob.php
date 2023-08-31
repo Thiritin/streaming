@@ -21,18 +21,18 @@ class CheckClientActivityJob implements ShouldQueue
 
     public function handle(): void
     {
-        $clients = Client::whereNull('stop')->whereNotNull('start')->with('serverUser.server')->get();
+        $clients = Client::connected()->with('server')->get();
         $clients
             ->reject(fn(Client $client) => empty($client->client_id))
             ->each(function (Client $client) {
-                if ($client->serverUser->server->status === ServerStatusEnum::DELETED) {
+                if ($client->server->status === ServerStatusEnum::DELETED) {
                     $client->update(['stop' => now()]);
                     return true;
                 }
 
                 // Ask Server if client is still active
                 $proto = app()->isLocal() ? "http" : "https";
-                $hostname = app()->isLocal() ? "stream:1985" : $client->serverUser->server;
+                $hostname = app()->isLocal() ? "stream:1985" : $client->server;
                 $request = Http::withBasicAuth(config('services.srs.username'),
                     config('services.srs.password'))->get($proto."://".$hostname.'/api/v1/clients/'.$client->client_id);
                 if ($request->json()['code'] !== 0) {

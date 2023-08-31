@@ -11,6 +11,7 @@ let mediaDataSource = {
 
 <template>
     <VueFlvPlayer :autoplay="true"
+                  :isLive="true"
                   :controls="true" :muted="false"
                   ref="livePlayer"
                   :media-data-source="mediaDataSource"

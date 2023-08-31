@@ -8,7 +8,6 @@ use App\Events\UserWaitingForProvisioningEvent;
 use App\Models\Client;
 use App\Models\Message;
 use App\Models\Server;
-use App\Models\ServerUser;
 use App\Models\User;
 use App\Services\StreamInfoService;
 use Illuminate\Http\Request;
@@ -32,14 +31,14 @@ class StreamController extends Controller
             'initialStreamUrls' => $urls,
             'initialStatus' => \Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value),
             'initialListeners' => StreamInfoService::getUserCount(),
-            'initialOtherDevice' => Client::whereHas('serverUser',fn($q) => $q->where('user_id', $user->id))
-                ->whereNotNull('start')
-                ->whereNull('stop')
-                ->where('client','=','vlc')
+            'initialOtherDevice' => Client::where('user_id', $user->id)
+                ->connected()
+                ->where('client', '=', 'vlc')
                 ->exists(),
             'chatMessages' => array_values(Message::with('user')
                 ->where('is_command', false)
-                ->orWhere(fn($q) => $q->where('is_command', true)->where('user_id', $user->id)) // show users own commands
+                ->orWhere(fn($q) => $q->where('is_command', true)->where('user_id',
+                    $user->id)) // show users own commands
                 ->orderBy('created_at', 'desc')
                 ->limit(50)
                 ->get()
@@ -56,7 +55,7 @@ class StreamController extends Controller
                 'maxTries' => \Cache::get('chat.maxTries', static fn() => config('chat.default.maxTries')),
                 'rateDecay' => \Cache::get('chat.rateDecay', static fn() => config('chat.default.rateDecay')),
                 'slowMode' => \Cache::get('chat.slowMode', static fn() => config('chat.default.slowMode')),
-                'secondsLeft' => (!$user->isStaff()) ? RateLimiter::availableIn('send-message:' . $user->id) : 0,
+                'secondsLeft' => (!$user->isStaff()) ? RateLimiter::availableIn('send-message:'.$user->id) : 0,
             ],
         ]);
     }

@@ -58,46 +58,54 @@ class User extends Authenticatable implements FilamentUser
 
     public function server()
     {
-        return $this->belongsToMany(Server::class)->withPivot(['start','stop','streamkey'])->using(ServerUser::class);
+        return $this->belongsTo(Server::class);
+    }
+
+    public function clients(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Client::class);
     }
 
     public function getOrAssignServer()
     {
-        $serverUser = ServerUser::where('user_id', $this->id)->whereNull('stop')->first();
+        $server = $this->server;
 
-        if (is_null($serverUser) || is_null($serverUser->streamkey)) {
-
+        if (is_null($server) || is_null($this->streamkey)) {
             if ($this->assignServerToUser()) {
-                return ServerUser::where('user_id', $this->id)->whereNull('stop')->first();
+                return $this->fresh()->server;
             }
-
             return null;
         }
 
-        return $serverUser;
+        return $server;
     }
 
     public function getUserStreamUrls(): array
     {
-        $serverUser = $this->getOrAssignServer();
-        if (is_null($serverUser)) {
+        $server = $this->getOrAssignServer();
+        if (is_null($server)) {
             return [
                 'urls' => null,
                 'client_id' => null,
             ];
         }
 
-        $hostname = $serverUser->server->hostname;
+        $hostname = $server->hostname;
 
-        $client = $serverUser->clients()->create();
+        $client = $this->clients()
+            ->whereNull('start')
+            ->whereNull('stop')
+            ->firstOrCreate([
+                'server_id' => $server->id,
+            ]);
 
         $data['urls'] = [];
         $data['client_id'] = $client->id;
         $protocol = app()->isLocal() ? 'http' : 'https';
         // $protocol = "https";
         foreach (['original', 'fhd', 'hd', 'sd', 'ld', 'audio_hd', 'audio_sd'] as $quality) {
-            $qualityUrl = ($quality !== 'original') ? "_" . $quality : "";
-            $data['urls'][$quality] = $protocol . "://$hostname/live/livestream$qualityUrl.flv?streamkey=" . $serverUser->streamkey . "&client_id=" . $client->id;
+            $qualityUrl = ($quality !== 'original') ? "_".$quality : "";
+            $data['urls'][$quality] = $protocol."://$hostname/live/livestream$qualityUrl.flv?streamkey=".$this->streamkey."&client_id=".$client->id;
         }
         return $data;
     }
@@ -106,13 +114,15 @@ class User extends Authenticatable implements FilamentUser
     {
         $server = Server::where('status', ServerStatusEnum::ACTIVE)
             ->where('type', ServerTypeEnum::EDGE)
-            ->leftJoin('server_user', function (JoinClause $join) {
-                $join->on('server_user.server_id', '=', 'servers.id');
-                $join->on('server_user.stop', \DB::raw('NULL'));
+            ->leftJoin('clients', function (JoinClause $join) {
+                $join->on('clients.server_id', '=', 'servers.id');
+                $join->on('clients.stop', \DB::raw('NULL'));
+                $join->on('clients.start', 'IS NOT', \DB::raw('NULL'));
             })
             ->groupBy('servers.id')
-            ->orderBy('client_count', 'desc') // Desc fill servers with most clients first, Asc fill servers with least clients first
-            ->selectRaw("servers.id, count(server_user.id) as client_count,max_clients as max_clients")
+            ->orderBy('client_count',
+                'desc') // Desc fill servers with most clients first, Asc fill servers with least clients first
+            ->selectRaw("servers.id, count(clients.id) as client_count,max_clients as max_clients")
             ->havingRaw('client_count < max_clients')
             ->first();
 
@@ -123,7 +133,9 @@ class User extends Authenticatable implements FilamentUser
             return false;
         }
 
-        $this->server()->attach($server->id, [
+        // Assign Server to User
+        $this->update([
+            'server_id' => $server->id,
             'streamkey' => Str::random(32),
         ]);
 
@@ -146,11 +158,11 @@ class User extends Authenticatable implements FilamentUser
 
     public function isStaff(): bool
     {
-        return $this->hasAnyRole(['Admin','Moderator']);
+        return $this->hasAnyRole(['Admin', 'Moderator']);
     }
 
     public function getRoleAttribute(): Role|null
     {
-        return $this->roles()->orderBy('roles.priority','desc')->first(['name','color']);
+        return $this->roles()->orderBy('roles.priority', 'desc')->first(['name', 'color']);
     }
 }

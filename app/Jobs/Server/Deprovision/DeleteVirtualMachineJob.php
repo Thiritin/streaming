@@ -23,6 +23,10 @@ class DeleteVirtualMachineJob implements ShouldQueue
 
     public function handle(): void
     {
+        if (empty($this->server->hetzner_id)) {
+            return;
+        }
+
         $client = Hetzner::client();
         $client->servers()->getById($this->server->hetzner_id)->delete();
         $server = $this->server;

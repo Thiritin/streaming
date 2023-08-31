@@ -3,8 +3,8 @@
 namespace App\Jobs\Server\Deprovision;
 
 use App\Events\ServerAssignmentChanged;
+use App\Models\Client;
 use App\Models\Server;
-use App\Models\ServerUser;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -27,24 +27,14 @@ class ServerMoveClientsToOtherServerJob implements ShouldQueue
     public function handle(): void
     {
 
-        $serverUser = $this->server->user()->whereNull('stop')->get();
+        $connectedClients = Client::where('server_id', $this->server->id)
+            ->connected();
 
-        if ($serverUser->count() === 0) {
-            Bus::chain([
-                new InitializeDeprovisioningJob($this->server),
-                (new ServerMoveClientsToOtherServerJob($this->server))->delay(now()->addMinutes(5)),
-                new DeleteDnsRecordJob($this->server),
-                new DeleteVirtualMachineJob($this->server)
-            ])->dispatch();
-        }
+        $connectedClients->update(['stop' => now()]);
 
-        ServerUser::whereIn('user_id', $serverUser->pluck('id'))
-            ->where('server_id', $this->server->id)
-            ->update(['stop' => now()]);
-
-        $serverUser->each(function (User $user) {
-            $foundNewServer = $user->assignServerToUser();
-            ServerAssignmentChanged::dispatch($user, !$foundNewServer);
+        $connectedClients->each(function (Client $client) {
+            $foundNewServer = $client->user->assignServerToUser();
+            ServerAssignmentChanged::dispatch($client->user, !$foundNewServer);
         });
     }
 }

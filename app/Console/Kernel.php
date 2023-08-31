@@ -17,7 +17,6 @@ class Kernel extends ConsoleKernel
         $schedule->job(new \App\Jobs\SaveViewCountJob())->everyMinute();
         $schedule->job(new \App\Jobs\Server\ScalingJob())->everyMinute();
         $schedule->job(new \App\Jobs\ServerAssignmentJob())->everyFifteenSeconds();
-        $schedule->job(new \App\Jobs\CleanUpUnusedClientJob())->hourly();
         $schedule->job(new \App\Jobs\CheckClientActivityJob())->everyFifteenMinutes();
         $schedule->job(new \App\Jobs\CleanUpUnusedClientsJob())->everyMinute();
     }

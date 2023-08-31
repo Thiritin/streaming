@@ -7,7 +7,6 @@ use App\Events\ClientPlayEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\HookRequest;
 use App\Models\Client;
-use App\Models\ServerUser;
 use App\Models\User;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
@@ -18,7 +17,8 @@ class ClientController extends Controller
 {
     public function play(HookRequest $request)
     {
-        $cacheStatus = StreamStatusEnum::tryFrom(Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value));
+        $cacheStatus = StreamStatusEnum::tryFrom(Cache::get('stream.status',
+            static fn() => StreamStatusEnum::OFFLINE->value));
 
         if ($cacheStatus === StreamStatusEnum::OFFLINE) {
             return new Response("Stream is offline.", 403);
@@ -34,9 +34,9 @@ class ClientController extends Controller
             return new Response("Missing streamkey or client id", 422);
         }
 
-        $serverUser = ServerUser::where('streamkey', $result['streamkey'])->first();
+        $user = User::where('streamkey', $result['streamkey'])->first();
 
-        if (is_null($serverUser)) {
+        if (is_null($user)) {
             return new Response("No assigned server found by streamkey", 403);
         }
 
@@ -44,11 +44,7 @@ class ClientController extends Controller
             $client = ($result['client'] === "vlc") ? 'vlc' : 'web';
         }
 
-        if ($serverUser->start === null) {
-            $serverUser->update(['start' => now()]);
-        }
-
-        $updatedId = $serverUser->clients()->where('id',$result['client_id'])->update([
+        $updatedId = $user->clients()->where('id', $result['client_id'])->update([
             "client" => $client ?? 'web',
             "client_id" => $request->get('client_id'),
             "start" => now(),
@@ -70,13 +66,14 @@ class ClientController extends Controller
         if (!isset($result['streamkey'])) {
             return new Response(422, 422);
         }
-        $serverUser = ServerUser::where('streamkey', $result['streamkey'])->first();
-        if (is_null($serverUser)) {
+        $user = User::where('streamkey', $result['streamkey'])->first();
+        if (is_null($user)) {
             return new Response(403, 403);
         }
 
-        Client::where('client_id', $request->get('client_id'))
-            ->where('server_user_id', $serverUser->id)
+        $user
+            ->clients()
+            ->where('client_id', $request->get('client_id'))
             ->update(['stop' => now()]);
 
         return new Response(0, 200);

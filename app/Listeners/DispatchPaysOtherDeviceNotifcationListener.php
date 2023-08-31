@@ -15,11 +15,10 @@ class DispatchPaysOtherDeviceNotifcationListener implements ShouldQueue
 
     public function handle(ClientPlayEvent $event): void
     {
-        $client = Client::with('serverUser')->where('id', $event->client_id)->firstOrFail();
-        $ids = Client::where('server_user_id', $client->server_user_id)
-            ->where('id', '!=', $client->id)
-            ->whereNotNull('start')
-            ->whereNull('stop')
+        $client = Client::where('id', $event->client_id)->firstOrFail();
+        $ids = Client::where('id', '!=', $client->id)
+            ->where('user_id', $client->user_id)
+            ->connected()
             ->pluck('id')
             ->toArray();
         ClientPlayOtherDeviceEvent::dispatch($ids);

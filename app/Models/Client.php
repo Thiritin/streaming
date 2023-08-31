@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Database\Eloquent\Builder;
 
 class Client extends Model
 {
@@ -13,9 +14,14 @@ class Client extends Model
         'stop' => 'datetime',
     ];
 
-    public function serverUser()
+    public function user()
     {
-        return $this->belongsTo(ServerUser::class,'server_user_id','id','server_user_id');
+        return $this->belongsTo(User::class);
+    }
+
+    public function server()
+    {
+        return $this->belongsTo(Server::class);
     }
 
     public function disconnect()
@@ -24,11 +30,16 @@ class Client extends Model
             return false;
         }
 
-        $this->loadMissing('serverUser.server');
+        $this->loadMissing('server');
 
         $proto = app()->isLocal() ? "http" : "https";
-        $hostname = app()->isLocal() ? "stream:1985" : $this->serverUser->server->hostname;
+        $hostname = app()->isLocal() ? "stream:1985" : $this->server->hostname;
         Http::withBasicAuth(config('services.srs.username'),config('services.srs.password'))->delete($proto."://".$hostname.'/api/v1/clients/'.$this->client_id);
         return true;
+    }
+
+    public function scopeConnected(Builder $query): void
+    {
+        $query->whereNull('stop')->whereNotNull('start');
     }
 }

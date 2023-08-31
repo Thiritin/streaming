@@ -14,8 +14,8 @@ class StreamInfoService
                 return DB::table('clients')
                     ->whereNotNull('start')
                     ->whereNull('stop')
-                    ->distinct('server_user_id')
-                    ->count('server_user_id') ?? 0;
+                    ->distinct('user_id')
+                    ->count('user_id') ?? 0;
             });
     }
 

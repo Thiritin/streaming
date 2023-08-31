@@ -2,11 +2,13 @@
 
 namespace App\Jobs\Server;
 
+use App\Enum\AutoscalerAction;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Enum\StreamStatusEnum;
 use App\Models\Server;
-use App\Models\ServerUser;
+use App\Services\AutoscalerService;
+use App\Services\StreamInfoService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Query\JoinClause;
@@ -28,48 +30,51 @@ class ScalingJob implements ShouldQueue
 
     public function handle(): void
     {
-        $cacheStatus = StreamStatusEnum::tryFrom(Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value));
+        $cacheStatus = StreamStatusEnum::tryFrom(Cache::get('stream.status',
+            static fn() => StreamStatusEnum::OFFLINE->value));
+
+        if (!AutoscalerService::isAutoscalerEnabled()) {
+            return;
+        }
 
         if ($cacheStatus !== StreamStatusEnum::OFFLINE) {
-            // Total active users in stream
-            $serverUserCount = ServerUser::whereNotNull('stop')->whereHas('clients', fn($q) => $q->whereNotNull('start')->whereNull('stop'))->count();
-            // Capactiy of servers that are in provisioning and active max_clients
-            $serverCapacity = Server::whereIn('status', [ServerStatusEnum::PROVISIONING->value, ServerStatusEnum::ACTIVE->value])
-                ->where('type',ServerTypeEnum::EDGE->value)
-                ->sum('max_clients');
-            // Is capacity over 80%
-            $isOverCapacity = $serverUserCount > ($serverCapacity * 0.8);
-            // Is under capacity 20%
-            $isUnderCapacity = $serverUserCount < ($serverCapacity * 0.2);
+            return;
+        }
 
-            if ($isOverCapacity) {
-                CreateServerJob::dispatch();
-            }
+        // Determine Needed Servers
+        $action = AutoscalerService::determineAction();
 
-            if ($isUnderCapacity) {
-                $serverCount = Server::whereIn('status', [ServerStatusEnum::ACTIVE->value])->where('type', ServerTypeEnum::EDGE)->count();
+        if ($action === AutoscalerAction::SCALE_UP) {
+            CreateServerJob::dispatch();
+        }
 
-                if ($serverCount > 1) {
-                    // Delete Server with lowest user count and not immutable
-                    $server = Server::where('status', ServerStatusEnum::ACTIVE)
-                        ->where('type', ServerTypeEnum::EDGE)
-                        ->where('immutable', false)
-                        ->leftJoin('server_user', function (JoinClause $join) {
-                            $join->on('server_user.server_id', '=', 'servers.id');
-                            $join->on('server_user.stop', \DB::raw('NULL'));
-                        })
-                        ->groupBy('servers.id')
-                        ->orderBy('client_counts', 'desc')
-                        ->selectRaw("servers.id, count(server_user.id) as client_counts")
-                        ->first();
+        if ($action === AutoscalerAction::SCALE_DOWN) {
+            $serverCount = Server::where('status', ServerStatusEnum::ACTIVE->value)
+                ->where('type', ServerTypeEnum::EDGE)
+                ->count();
 
-                    if (!is_null($server)) {
-                        $server = Server::find($server->id);
-                        if($server->immutable) {
-                            return;
-                        }
-                        DeleteServerJob::dispatch($server);
+            if ($serverCount > 1) {
+                // Delete Server with lowest user count and not immutable
+                $server = Server::where('status', ServerStatusEnum::ACTIVE)
+                    ->where('type', ServerTypeEnum::EDGE)
+                    ->where('created_at', '<=', now()->subHour())
+                    ->where('immutable', false)
+                    ->leftJoin('clients', function (JoinClause $join) {
+                        $join->on('clients.server_id', '=', 'servers.id');
+                        $join->on('clients.stop', \DB::raw('NULL'));
+                        $join->on('clients.start', 'IS NOT', \DB::raw('NULL'));
+                    })
+                    ->groupBy('servers.id')
+                    ->orderBy('client_counts', 'desc')
+                    ->selectRaw("servers.id, count(clients.id) as client_counts")
+                    ->first();
+
+                if (!is_null($server)) {
+                    $server = Server::find($server->id);
+                    if ($server->immutable) {
+                        return;
                     }
+                    DeleteServerJob::dispatch($server);
                 }
             }
         }

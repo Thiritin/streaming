@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
+use App\Jobs\Server\DeleteServerJob;
 use App\Jobs\Server\Deprovision\ServerMoveClientsToOtherServerJob;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ServerException;
@@ -21,16 +22,18 @@ class Server extends Model
         'type' => ServerTypeEnum::class
     ];
 
-    public function user()
+    public function users()
     {
-        return $this->belongsToMany(User::class)->withPivot(['start','stop','streamkey'])->using(ServerUser::class);
+        return $this->hasMany(User::class);
+    }
+    public function clients()
+    {
+        return $this->hasMany(Client::class);
     }
 
     public function deprovision()
     {
-        $this->status = ServerStatusEnum::DEPROVISIONING;
-        $this->save();
-        ServerMoveClientsToOtherServerJob::dispatch($this);
+        DeleteServerJob::dispatch($this);
     }
 
     public function isReady(): bool
@@ -54,6 +57,6 @@ class Server extends Model
 
     public function isInUse(): bool
     {
-        return $this->user()->whereNull('stop')->count() > 0;
+        return $this->clients()->connected()->count() > 0;
     }
 }

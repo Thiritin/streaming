@@ -18,8 +18,8 @@ Broadcast::channel('User.{id}.StreamUrl', function ($user, $id) {
 });
 
 Broadcast::channel('Client.{id}', function ($user, $id) {
-    $client = \App\Models\Client::with('serverUser')->where('id', $id)->firstOrFail();
-    return (int) $user->id === (int) $client->serverUser->user_id;
+    $client = \App\Models\Client::findOrFail($id);
+    return (int) $user->id === (int) $client->user_id;
 });
 
 Broadcast::channel('StreamInfo', function () {
