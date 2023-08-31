@@ -49,6 +49,7 @@ class ServerResource extends Resource
                 TextInput::make('max_clients')
                     ->minValue(0)
                     ->numeric()
+                    ->hidden(fn(Server $record): bool => $record->type !== ServerTypeEnum::EDGE)
                     ->maxValue('99999')
                     ->required(),
 
@@ -59,7 +60,10 @@ class ServerResource extends Resource
                     'deleted' => 'Deleted',
                 ]),
 
-                Checkbox::make('immutable')->reactive()->helperText('Set this if you want to use this server as a stream server. This will prevent the server from being deleted by autoscaling measures.'),
+                Checkbox::make('immutable')
+                    ->hidden(fn(Server $record): bool => $record->type !== ServerTypeEnum::EDGE)
+                    ->reactive()
+                    ->helperText('Set this if you want to use this server as a stream server. This will prevent the server from being deleted by autoscaling measures.'),
 
                 Placeholder::make('created_at')
                     ->label('Created Date')

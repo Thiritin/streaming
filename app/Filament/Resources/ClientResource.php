@@ -105,7 +105,7 @@ class ClientResource extends Resource
                     ->icon('heroicon-o-x-circle')
                     ->label('Disconnect Clients')
                     ->deselectRecordsAfterCompletion(),
-                DeleteBulkAction::class,
+                DeleteBulkAction::make()
             ])->poll(10);
     }
 
