@@ -34,10 +34,19 @@ class ClientController extends Controller
             return new Response("Missing streamkey or client id", 422);
         }
 
+        // This is the streamkey for external apps
+        if($result['streamkey'] === config('services.signage.streamkey')) {
+            return new Response(0, 200);
+        }
+
         $user = User::where('streamkey', $result['streamkey'])->first();
 
         if (is_null($user)) {
             return new Response("No assigned server found by streamkey", 403);
+        }
+
+        if((int) $request->get('server_id') !== $user->server_id && !\App::isLocal()) {
+            return new Response("Server id does not match", 403);
         }
 
         if (isset($result['client'])) {
@@ -66,6 +75,12 @@ class ClientController extends Controller
         if (!isset($result['streamkey'])) {
             return new Response(422, 422);
         }
+
+        // This is the streamkey for external apps
+        if($result['streamkey'] === config('services.signage.streamkey')) {
+            return new Response(0, 200);
+        }
+
         $user = User::where('streamkey', $result['streamkey'])->first();
         if (is_null($user)) {
             return new Response(403, 403);

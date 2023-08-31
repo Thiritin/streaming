@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\ServiceProvider;
@@ -31,5 +32,7 @@ class AppServiceProvider extends ServiceProvider
                 ->withToken(Session::get('access_token'))
                 ->baseUrl(config('services.attsrv.url'));
         });
+
+        //User::observe(\App\Observers\UserObserver::class);
     }
 }

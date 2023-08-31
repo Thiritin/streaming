@@ -55,6 +55,10 @@ return [
         'token' => env('HETZNER_TOKEN')
     ],
 
+    'signage' => [
+        'streamkey' => env('SIGNAGE_STREAMKEY'),
+    ],
+
     // This is the URL of the origin server, where a low res version is being pushed to via rtmp.
     'forward' => [
         'url' => env('RTMP_FORWARD')

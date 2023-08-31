@@ -50,14 +50,14 @@ export default {
             });
 
         let userid = this.$page.props.auth.user.id;
-        this.notifyDeviceChange = Echo.private(`User.${userid}.StreamUrl`)
+        Echo.private(`User.${userid}.StreamUrl`)
             .listen('.server.assignment.changed', (e) => {
                 this.streamUrls = e.streamUrls;
                 this.clientId = e.clientId;
                 this.provisioning = e.provisioning;
 
                 if (this.notifyDeviceChange !== null) {
-                    this.notifyDeviceChange().unsubscribe()
+                    this.notifyDeviceChange.unsubscribe()
                 }
 
                 this.startNotifyDeviceChange();

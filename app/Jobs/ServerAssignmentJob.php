@@ -22,12 +22,6 @@ class ServerAssignmentJob implements ShouldQueue
     {
         // Get all users waiting for provisioning
         $users = User::where('is_provisioning',true)->get();
-        $users->each(function($user) {
-            $server = $user->assignServerToUser();
-            // If server could be assigned, send broadcast to user
-            if ($server === true) {
-                event(new ServerAssignmentChanged($user));
-            }
-        });
+        $users->each(fn($user) => $user->assignServerToUser());
     }
 }

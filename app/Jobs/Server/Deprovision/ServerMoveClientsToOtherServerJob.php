@@ -2,7 +2,6 @@
 
 namespace App\Jobs\Server\Deprovision;
 
-use App\Events\ServerAssignmentChanged;
 use App\Models\Client;
 use App\Models\Server;
 use App\Models\User;
@@ -30,7 +29,6 @@ class ServerMoveClientsToOtherServerJob implements ShouldQueue
 
         $connectedClients->each(function (Client $client) {
             $foundNewServer = $client->user->assignServerToUser();
-            ServerAssignmentChanged::dispatch($client->user, !$foundNewServer);
         });
     }
 }
