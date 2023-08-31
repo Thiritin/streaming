@@ -101,7 +101,7 @@ class ServerResource extends Resource
                     ->icon('heroicon-o-trash')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->action(fn(Server $server) => $server->deprovision()),
+                    ->action(fn(Server $record) => $record->deprovision()),
             ])->poll();
     }
 
