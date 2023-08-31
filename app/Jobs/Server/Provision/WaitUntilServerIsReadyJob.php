@@ -14,9 +14,9 @@ class WaitUntilServerIsReadyJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 20;
+    public int $tries = 30;
 
-    public int $backoff = 10;
+    public int $backoff = 30;
 
 
 
