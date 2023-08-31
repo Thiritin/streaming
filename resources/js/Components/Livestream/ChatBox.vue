@@ -139,10 +139,10 @@ function sendMessage() {
                     <div :class="{'bg-black text-gray-400 py-1 px-1': message.is_command}">
                             <span :title="message.role.name" class="font-semibold" :class="message.role.color">
                                 {{ message.name }}<span v-if="message.role.name === 'Admin' || message.role.name === 'Moderator'"> ({{ message.role.name }})</span>
-                            </span>: <span class="text-wrap break-all" v-html="highlightUsername(message.message)"></span>
+                            </span>: <span class="text-wrap break-words" v-html="highlightUsername(message.message)"></span>
                     </div>
                 </div>
-                <div v-else class="rounded-lg text-center m-2 p-2 bg-primary-600">
+                <div v-else class="rounded-lg text-center m-2 p-2 break-words bg-primary-600">
                     {{ message.message }}
                 </div>
             </div>
