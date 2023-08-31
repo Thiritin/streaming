@@ -29,8 +29,6 @@ class ServerMoveClientsToOtherServerJob implements ShouldQueue
         $connectedClients = Client::where('server_id', $this->server->id)
             ->connected();
 
-        $connectedClients->update(['stop' => now()]);
-
         $connectedClients->each(function (Client $client) {
             $foundNewServer = $client->user->assignServerToUser();
             ServerAssignmentChanged::dispatch($client->user, !$foundNewServer);
