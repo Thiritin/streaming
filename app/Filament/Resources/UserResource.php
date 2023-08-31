@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
 use App\Filament\Resources\UserResource\Pages;
 use App\Filament\Resources\UserResource\RelationManagers\MessagesRelationManager;
 use App\Filament\Resources\UserResource\RelationManagers\RolesRelationManager;
@@ -15,6 +17,7 @@ use Filament\Resources\Form;
 use Filament\Resources\Resource;
 use Filament\Resources\Table;
 use Filament\Tables\Columns\TextColumn;
+use Illuminate\Database\Eloquent\Builder;
 
 class UserResource extends Resource
 {
@@ -43,7 +46,10 @@ class UserResource extends Resource
                     ->integer(),
 
                 Select::make('server_id')
-                    ->relationship('server', 'hostname')
+                    ->relationship('server', 'hostname',
+                        fn(Builder $query) => $query
+                            ->where('type', ServerTypeEnum::EDGE)
+                            ->where('status',ServerStatusEnum::ACTIVE))
                     ->nullable(),
 
                 DatePicker::make('timeout_expires_at')
