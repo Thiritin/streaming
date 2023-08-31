@@ -84,7 +84,7 @@ const currentTime = new Date();
 let chatMessages = ref(props.chatMessages);
 
 function highlightUsername(message) {
-  const currentUser = this.usePage().props.auth.user.name;
+  const currentUser = usePage().props.auth.user.name;
   const regex = new RegExp(`@${currentUser}\\b`, 'g');
   return message.replace(regex, `<span class="text-center mx-1 px-1 bg-black">@${currentUser}</span>`);
 }

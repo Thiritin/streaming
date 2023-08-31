@@ -75,7 +75,7 @@ export default {
             required: true,
         },
         initialListeners: {
-            type: String,
+            type: Number,
             required: true,
         },
         initialClientId: {

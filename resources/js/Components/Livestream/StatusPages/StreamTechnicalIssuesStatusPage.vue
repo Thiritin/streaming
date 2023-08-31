@@ -3,7 +3,7 @@ import StreamStatusWrapper from "@/Components/Livestream/StatusPages/Components/
 
 const props = defineProps({
     listeners: {
-        type: String,
+        type: Number,
         required: true,
     },
 });
