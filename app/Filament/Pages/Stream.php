@@ -7,6 +7,7 @@ use App\Events\StreamStatusEvent;
 use App\Filament\Widgets\Capacity;
 use App\Filament\Widgets\ServerActive;
 use App\Filament\Widgets\ServerUserActive;
+use App\Filament\Widgets\ViewCountChart;
 use Filament\Pages\Actions\Action;
 use Filament\Pages\Actions\ActionGroup;
 use Filament\Pages\Page;
@@ -38,7 +39,8 @@ class Stream extends Page
         return [
             ServerUserActive::class,
             ServerActive::class,
-            Capacity::class
+            Capacity::class,
+            ViewCountChart::class
         ];
     }
 

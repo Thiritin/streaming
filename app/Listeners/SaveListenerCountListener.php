@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use App\Events\StreamListenerChangeEvent;
+use App\Services\StreamInfoService;
 
 class SaveListenerCountListener
 {
@@ -12,6 +13,6 @@ class SaveListenerCountListener
 
     public function handle(StreamListenerChangeEvent $event): void
     {
-        \Cache::set('stream.listeners', $event->listeners);
+        StreamInfoService::setPreviousUserCount($event->listeners);
     }
 }

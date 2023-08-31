@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Services\StreamInfoService;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
@@ -32,7 +33,7 @@ class StreamListenerChangeEvent implements ShouldBroadcast
 
     public function broadcastWhen(): bool
     {
-        return $this->listeners !== (int) \Cache::get('stream.listeners');
+        return $this->listeners !== StreamInfoService::getPreviousUserCount();
     }
 
     public function broadcastWith()

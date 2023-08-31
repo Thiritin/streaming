@@ -140,7 +140,6 @@ return [
         'path' => app_path('Filament/Widgets'),
         'register' => [
             Widgets\AccountWidget::class,
-            \App\Filament\Widgets\ServerUserActive::class,
         ],
     ],
 
@@ -169,7 +168,7 @@ return [
     |
     */
 
-    'dark_mode' => false,
+    'dark_mode' => true,
 
     /*
     |--------------------------------------------------------------------------

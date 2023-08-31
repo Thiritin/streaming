@@ -24,7 +24,7 @@ class Capacity extends BaseWidget
 
         return [
             Card::make('Max clients', $maxClients),
-            Card::make('Provisioning clients', $maxClientsProvisioning),
+            Card::make('Booting Capacity', $maxClientsProvisioning),
             Card::make('Waiting Users', $waitingUsers),
         ];
     }

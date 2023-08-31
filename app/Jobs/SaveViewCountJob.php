@@ -2,20 +2,17 @@
 
 namespace App\Jobs;
 
-use App\Models\Server;
+use App\Models\ViewCount;
 use App\Services\StreamInfoService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\DB;
 
-class UpdateListenerCountJob implements ShouldQueue
+class SaveViewCountJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    public int $tries = 1;
 
     public function __construct()
     {
@@ -23,6 +20,8 @@ class UpdateListenerCountJob implements ShouldQueue
 
     public function handle(): void
     {
-        event(new \App\Events\StreamListenerChangeEvent(StreamInfoService::getUserCount()));
+        ViewCount::create([
+            'count' => StreamInfoService::getUserCount(),
+        ]);
     }
 }

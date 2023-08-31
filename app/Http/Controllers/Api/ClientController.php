@@ -52,6 +52,7 @@ class ClientController extends Controller
             "client" => $client ?? 'web',
             "client_id" => $request->get('client_id'),
             "start" => now(),
+            "stop" => null,
         ]);
 
         if ($updatedId === 0) {

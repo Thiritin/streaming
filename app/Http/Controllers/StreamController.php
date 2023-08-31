@@ -10,6 +10,7 @@ use App\Models\Message;
 use App\Models\Server;
 use App\Models\ServerUser;
 use App\Models\User;
+use App\Services\StreamInfoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
@@ -30,7 +31,12 @@ class StreamController extends Controller
             'initialClientId' => $client_id,
             'initialStreamUrls' => $urls,
             'initialStatus' => \Cache::get('stream.status', static fn() => StreamStatusEnum::OFFLINE->value),
-            'initialListeners' => \Cache::get('stream.listeners', static fn() => 0),
+            'initialListeners' => StreamInfoService::getUserCount(),
+            'initialOtherDevice' => Client::whereHas('serverUser',fn($q) => $q->where('user_id', $user->id))
+                ->whereNotNull('start')
+                ->whereNull('stop')
+                ->where('client','=','vlc')
+                ->exists(),
             'chatMessages' => array_values(Message::with('user')
                 ->where('is_command', false)
                 ->orWhere(fn($q) => $q->where('is_command', true)->where('user_id', $user->id)) // show users own commands

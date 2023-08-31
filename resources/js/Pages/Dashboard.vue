@@ -86,6 +86,10 @@ export default {
             type: Boolean,
             required: false
         },
+        initialOtherDevice: {
+            type: Boolean,
+            required: false
+        },
         chatMessages: {
             type: Array,
             required: false
@@ -97,7 +101,7 @@ export default {
     },
     data() {
         return {
-            otherDevice: false,
+            otherDevice: this.initialOtherDevice,
             streamUrls: this.initialStreamUrls,
             status: this.initialStatus,
             listeners: this.initialListeners,
