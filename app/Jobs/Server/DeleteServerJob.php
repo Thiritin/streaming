@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Server;
 
+use App\Jobs\CheckClientActivityJob;
 use App\Jobs\Server\Deprovision\DeleteDnsRecordJob;
 use App\Jobs\Server\Deprovision\DeleteVirtualMachineJob;
 use App\Jobs\Server\Deprovision\InitializeDeprovisioningJob;
@@ -29,6 +30,7 @@ class DeleteServerJob implements ShouldQueue
     {
         Bus::chain([
             new InitializeDeprovisioningJob($this->server),
+            new CheckClientActivityJob($this->server),
             (new ServerMoveClientsToOtherServerJob($this->server)),
             (new RemovalConditionCheckerJob($this->server))->delay(now()->addMinutes(5)),
         ])->dispatch();
