@@ -46,7 +46,7 @@ class MessageController extends Controller
                     'error' => 'rate_limit_hit',
                 ], SymphonyResponse::HTTP_TOO_MANY_REQUESTS);
             }
-            RateLimiter::hit('send-message:' . $user->id, $rateDecay);
+            RateLimiter::hit('send-message:' . $user->id, (int) $rateDecay);
         }
         /**
          * Determine if message is command
