@@ -10,9 +10,9 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Pages\Actions\EditAction;
-use Filament\Resources\Form;
+use Filament\Forms\Form;
 use Filament\Resources\Resource;
-use Filament\Resources\Table;
+use Filament\Tables\Table;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Actions\BulkAction;
 use Filament\Tables\Actions\DeleteBulkAction;
@@ -118,7 +118,7 @@ class ClientResource extends Resource
         ];
     }
 
-    protected static function getGlobalSearchEloquentQuery(): Builder
+    public static function getGlobalSearchEloquentQuery(): Builder
     {
         return parent::getGlobalSearchEloquentQuery()->with(['user']);
     }

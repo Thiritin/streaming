@@ -24,7 +24,7 @@ class Stream extends Page
 
     protected static string $view = 'filament.pages.stream';
 
-    protected function getActions(): array
+    protected function getHeaderActions(): array
     {
         return [
             Action::make('set_pending')

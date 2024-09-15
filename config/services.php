@@ -61,6 +61,7 @@ return [
 
     // This is the URL of the origin server, where a low res version is being pushed to via rtmp.
     'forward' => [
-        'url' => env('RTMP_FORWARD')
+        'url' => env('RTMP_FORWARD'),
+        'vrchaturl' => env('RTMP_VRCHAT_URL')
     ]
 ];

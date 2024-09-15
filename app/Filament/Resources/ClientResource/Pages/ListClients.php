@@ -10,7 +10,7 @@ class ListClients extends ListRecords
 {
     protected static string $resource = ClientResource::class;
 
-    protected function getActions(): array
+    protected function getHeaderActions(): array
     {
         return [
             CreateAction::make(),

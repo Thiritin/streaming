@@ -89,6 +89,9 @@ services:
             - $PWD/custom.conf:/usr/local/srs/conf/custom.conf
         command: ./objs/srs -c /usr/local/srs/conf/custom.conf
     origin:
+        ports:
+            - '1936:1935'
+            - '8081:8080'
         image: ossrs/srs:4
         networks:
             - sail

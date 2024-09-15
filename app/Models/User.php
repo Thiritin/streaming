@@ -151,7 +151,7 @@ class User extends Authenticatable implements FilamentUser
         return $this->hasMany(Message::class);
     }
 
-    public function canAccessFilament(): bool
+    public function canAccessPanel(\Filament\Panel $panel): bool
     {
         return $this->can('filament.access');
     }

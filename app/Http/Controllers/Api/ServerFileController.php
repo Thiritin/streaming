@@ -46,6 +46,7 @@ class ServerFileController extends Controller
                 'maxConnections' => $server->max_clients * 3,
                 'serverId' => $server->id,
                 'twitchUrl' => config('services.forward.url'),
+                'vrchatUrl' => config('services.forward.vrchaturl'),
                 'sharedSecret' => $server->shared_secret
             ]);
         }

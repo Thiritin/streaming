@@ -37,7 +37,7 @@ const showingNavigationDropdown = ref(false);
                   External Stream (VLC)
                 </NavLink>
                 <NavLink component="a" v-if="$page.props.auth.can_access_filament"
-                         :href="route('filament.pages.dashboard')">
+                         :href="route('filament.admin.pages.dashboard')">
                   Admin
                 </NavLink>
               </div>
@@ -131,7 +131,7 @@ const showingNavigationDropdown = ref(false);
               Stream via VLC
             </ResponsiveNavLink>
             <ResponsiveNavLink component="a" v-if="$page.props.auth.user.is_admin"
-                               :href="route('filament.pages.dashboard')">
+                               :href="route('filament.admin.pages.dashboard')">
               Admin
             </ResponsiveNavLink>
           </div>

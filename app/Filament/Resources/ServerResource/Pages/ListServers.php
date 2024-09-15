@@ -14,7 +14,7 @@ class ListServers extends ListRecords
 {
     protected static string $resource = ServerResource::class;
 
-    protected function getActions(): array
+    protected function getHeaderActions(): array
     {
         return [
             Action::make('Enable Autoscaler')->action(fn() => AutoscalerService::enableAutoscaler())->hidden(AutoscalerService::isAutoscalerEnabled())->color('success'),

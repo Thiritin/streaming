@@ -14,7 +14,7 @@ class ViewCountChart extends LineChartWidget
     protected static ?string $heading = 'Chart';
     protected int|string|array $columnSpan = 'full';
 
-    protected function getHeading(): ?string
+    public function getHeading(): ?string
     {
         return "View Count";
     }
