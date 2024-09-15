@@ -15,10 +15,10 @@ class EurofurenceRolesSeeder extends Seeder
             'color' => null,
             "priority" => 5,
         ]);
-
-        $digital->givePermissionTo('stream.view');
         // Permissions
         $this->permissions();
+        $digital->givePermissionTo('stream.view');
+        
         $attendee = Role::updateOrCreate(['name' => 'Attendee'],[
             'color' => null,
             "priority" => 10,

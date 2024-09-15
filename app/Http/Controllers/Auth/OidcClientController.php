@@ -61,7 +61,7 @@ class OidcClientController extends Controller
         if($userinfoRequest->successful() === false) {
             return Redirect::route('auth.login');
         }
-        $userinfo = $userinfoRequest->json()['data'];
+        $userinfo = $userinfoRequest->json();
 
         if (!isset($userinfo['sub'])) {
             throw new UnexpectedValueException("Could not request user id from freshly fetched token.");
