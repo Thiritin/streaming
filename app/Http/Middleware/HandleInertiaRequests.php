@@ -35,11 +35,6 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user()?->only('id', 'name', 'is_provisioning', 'timeout_expires_at', 'role'),
                 'can_access_filament' => $request->user()?->can('filament.access'),
             ],
-            'ziggy' => function () use ($request) {
-                return array_merge((new Ziggy)->toArray(), [
-                    'location' => $request->url(),
-                ]);
-            },
         ]);
     }
 }
