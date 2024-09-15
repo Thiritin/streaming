@@ -24,7 +24,7 @@ function changeStreamUrl(url) {
   <div class="bg-primary-800">
     <div class="px-4 lg:px-12 py-8 text-primary-200 flex flex-col-reverse lg:flex-row justify-between">
       <div class="max-w-screen-lg">
-        <div class="h1 text-2xl mb-4">Eurofurence 2023 Live</div>
+        <div class="h1 text-2xl mb-4">Eurofurence 2024 Live</div>
 
         <p class="mb-4">
           🎉 This is the official Eurofurence stream, bringing the convention experience
