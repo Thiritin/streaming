@@ -64,8 +64,8 @@ engine twitch_live {
         @if(isset($vrchatUrl))
 engine vrchat_live {
             enabled on;
-            vcodec copy;
-            vbitrate 6000;
+            vcodec libx264;
+            vbitrate 3500;
             vfps 30;
             vwidth 1920;
             vheight 1080;
@@ -73,9 +73,8 @@ engine vrchat_live {
             vprofile high;
             vpreset slow;
             vparams {
-                t 100;
-                g 1;  #Keyframe 
                 bf 2;  # B-Frames
+                g 30;  #Keyframe 
                 }
             acodec libfdk_aac;
             abitrate 160;
