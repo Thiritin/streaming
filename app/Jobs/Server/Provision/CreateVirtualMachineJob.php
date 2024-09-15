@@ -24,7 +24,7 @@ class CreateVirtualMachineJob implements ShouldQueue
 
     public function handle(): void
     {
-        $hetznerServerType = ($this->server->type === ServerTypeEnum::ORIGIN) ? "ccx32" : "cx21";
+        $hetznerServerType = ($this->server->type === ServerTypeEnum::ORIGIN) ? "ccx33" : "cx22";
         $hetznerClient = Hetzner::client();
         $name = $this->server->type->value . '-' . $this->server->id . '-' . Str::random(12);
         $server = $hetznerClient->servers()->createInLocation(
