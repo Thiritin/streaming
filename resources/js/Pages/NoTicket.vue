@@ -8,15 +8,10 @@ import LoginScreenWelcome from "@/Components/LoginScreenWelcome.vue";
 <template>
     <GuestLayout>
         <Head>
-            <title>Purchase Required</title>
+            <title>Unauthorized</title>
         </Head>
         <Logo></Logo>
-        <LoginScreenWelcome title="Only Attendees" sub-title="We didn't find a valid ticket" class="mb-4"></LoginScreenWelcome>
-        <p class="text-primary-300 text-sm mb-3">If you only want to watch the Eurofurence Stream, you require atleast a day ticket to get access to the stream for the duration of the convention.</p>
-        <a
-            class='py-3 mt-4 bg-primary-500 rounded-lg px-12 ml-auto text-white text-2xl mb-4 font-semibold focus:outline-none'
-            href="https://reg.eurofurence.org/"
-            type='submit'>Buy ticket
-        </a>
+        <LoginScreenWelcome title="Only Attendees" sub-title="Unauthorized Access" class="mb-4"></LoginScreenWelcome>
+        <p class="text-primary-300 text-sm mb-3">The current steam is limited to staff & members of the Eurofurence e.V.</p>
     </GuestLayout>
 </template>
