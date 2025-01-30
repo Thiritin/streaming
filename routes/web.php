@@ -26,7 +26,6 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::get('/error/no-valid-ticket', \App\Http\Controllers\Auth\NoValidTicketController::class)
-    ->middleware('auth:web')
     ->name('error.no-valid-ticket');
 
 
