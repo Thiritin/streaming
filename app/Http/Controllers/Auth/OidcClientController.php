@@ -68,7 +68,7 @@ class OidcClientController extends Controller
         }
 
         // Userinfo groups this is for the JHV, only allow STAFF OR VEREINSMITGLIED
-        if (!in_array($userinfo['group'], ['54ZYODX15G2K1M76', 'OE7QZN2R7Q29KWML'])) {
+        if (!in_array($userinfo['groups'], ['54ZYODX15G2K1M76', 'OE7QZN2R7Q29KWML'])) {
             return Redirect::route('error.no-valid-ticket');
         }
 
