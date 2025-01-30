@@ -67,8 +67,18 @@ class OidcClientController extends Controller
             throw new UnexpectedValueException("Could not request user id from freshly fetched token.");
         }
 
-        // Userinfo groups this is for the JHV, only allow STAFF OR VEREINSMITGLIED
-        if (!in_array($userinfo['groups'], ['54ZYODX15G2K1M76', 'OE7QZN2R7Q29KWML'])) {
+
+        $validGroups = ['54ZYODX15G2K1M76', 'OE7QZN2R7Q29KWML'];
+        $hasValidGroup = false;
+
+        foreach ($userinfo['groups'] as $group) {
+            if (in_array($group, $validGroups)) {
+                $hasValidGroup = true;
+                break; // Stop checking once we find a match
+            }
+        }
+
+        if (!$hasValidGroup) {
             return Redirect::route('error.no-valid-ticket');
         }
 
