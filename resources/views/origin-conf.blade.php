@@ -42,7 +42,7 @@ vhost __defaultVhost__ {
         enabled on;
         ffmpeg      ./objs/ffmpeg/bin/ffmpeg;
 
-        @if(isset($twitchUrl))
+        @if(!empty($twitchUrl))
 engine twitch_live {
             enabled on;
             vcodec libx264;
@@ -61,7 +61,7 @@ engine twitch_live {
         }
         @endif
 
-        @if(isset($vrchatUrl))
+        @if(!empty($vrchatUrl))
 engine vrchat_live {
             enabled on;
             vcodec libx264;
@@ -74,7 +74,7 @@ engine vrchat_live {
             vpreset slow;
             vparams {
                 bf 2;  # B-Frames
-                g 30;  #Keyframe 
+                g 30;  #Keyframe
                 }
             acodec libfdk_aac;
             abitrate 160;
