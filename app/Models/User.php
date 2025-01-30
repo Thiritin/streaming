@@ -2,18 +2,15 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Enum\UserLevelEnum;
 use App\Events\UserWaitingForProvisioningEvent;
 use Filament\Models\Contracts\FilamentUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Query\JoinClause;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Models\Role;
@@ -25,29 +22,13 @@ class User extends Authenticatable implements FilamentUser
 
     public mixed $provisioning;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $guarded = [];
-
     protected $appends = ["role"];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var array<int, string>
-     */
     protected $hidden = [
         'remember_token',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
@@ -89,7 +70,16 @@ class User extends Authenticatable implements FilamentUser
             ];
         }
 
+        $viewerIp = request()->ip();
         $hostname = $server->hostname;
+
+        if ($this->isEfWifiIp($viewerIp)) {
+            $localDomain = env('LOCAL_STREAMING_DOMAIN', 'local.stream.eurofurence.org');
+            $server = Server::where('hostname', $localDomain)->first();
+            $client = $this->clients()->create([
+                'server_id' => $server->id,
+            ]);
+        }
 
         $client = $this->clients()
             ->whereNull('start')
@@ -101,12 +91,62 @@ class User extends Authenticatable implements FilamentUser
         $data['urls'] = [];
         $data['client_id'] = $client->id;
         $protocol = app()->isLocal() ? 'http' : 'https';
-        // $protocol = "https";
+
         foreach (['original', 'fhd', 'hd', 'sd', 'ld', 'audio_hd', 'audio_sd'] as $quality) {
             $qualityUrl = ($quality !== 'original') ? "_".$quality : "";
             $data['urls'][$quality] = $protocol."://$hostname/live/livestream$qualityUrl.flv?streamkey=".$this->streamkey."&client_id=".$client->id;
         }
+
         return $data;
+    }
+
+    /**
+     * Check if the IP belongs to EF WiFi using CIDR ranges (IPv4 + IPv6 supported)
+     */
+    protected function isEfWifiIp(string $ip): bool
+    {
+        $cidrRanges = [
+            env('LOCAL_STREAMING_IPV6'),
+            env('LOCAL_STREAMING_IPV4'),
+        ];
+
+        foreach ($cidrRanges as $cidr) {
+            if (!empty($cidr) && $this->ipInCidr($ip, $cidr)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function ipInCidr(string $ip, string $cidr): bool
+    {
+        [$subnet, $mask] = explode('/', $cidr);
+        $ipBin     = inet_pton($ip);
+        $subnetBin = inet_pton($subnet);
+
+        if ($ipBin === false || $subnetBin === false) {
+            return false; // invalid IP or subnet
+        }
+
+        $mask = (int) $mask;
+        $bytes = (int) floor($mask / 8);
+        $bits = $mask % 8;
+
+        // Compare whole bytes
+        if ($bytes && substr($ipBin, 0, $bytes) !== substr($subnetBin, 0, $bytes)) {
+            return false;
+        }
+
+        // Compare remaining bits if needed
+        if ($bits) {
+            $maskBits = ~((1 << (8 - $bits)) - 1) & 0xFF;
+            if ((ord($ipBin[$bytes]) & $maskBits) !== (ord($subnetBin[$bytes]) & $maskBits)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function assignServerToUser(): bool
@@ -119,8 +159,7 @@ class User extends Authenticatable implements FilamentUser
                     ->connected()
             ])
             ->groupBy('servers.id')
-            ->orderBy('client_count',
-                'desc') // Desc fill servers with most clients first, Asc fill servers with least clients first
+            ->orderBy('client_count', 'desc')
             ->selectRaw("servers.id, max_clients as max_clients")
             ->havingRaw('client_count < max_clients')
             ->first();
@@ -133,7 +172,6 @@ class User extends Authenticatable implements FilamentUser
             return false;
         }
 
-        // Assign Server to User
         $this->update([
             'server_id' => $server->id,
             'streamkey' => Str::random(32),
