@@ -32,8 +32,9 @@ vhost __defaultVhost__ {
     }
 
     play {
-        gop_cache       on;
-        mw_latency      1800;
+        gop_cache       off;
+        queue_length    10;
+        mw_latency      350;
     }
 
     http_hooks {
