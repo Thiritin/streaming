@@ -57,7 +57,7 @@ class EnsureAttendeeHasTicketMiddleware
 
         $this->abort($request, $next);
         // Redirect is needed to make sure roles are properly reloaded
-        return Redirect::route('dashboard');
+        return Redirect::route('shows.grid');
     }
 
     public function abort(Request $request, Closure $next)

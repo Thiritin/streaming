@@ -1,0 +1,33 @@
+2025-08-29T08:09:23.292+0200	[34mINFO[0m	Warning: .env file not found, using environment variables only
+2025-08-29T08:09:23.292+0200	[34mINFO[0m	Loading configuration from: /home/martin/projects/db-mcp-server/config.json
+2025-08-29T08:09:23.292+0200	[34mINFO[0m	Using database configuration from: /home/martin/projects/db-mcp-server/config.json
+2025-08-29T08:09:23.293+0200	[34mINFO[0m	Detected 1 database connections: [mysql1]
+2025-08-29T08:09:23.293+0200	[34mINFO[0m	Will dynamically generate database tools for each connection
+2025-08-29T08:09:23.293+0200	[34mINFO[0m	Found 1 database connections for tool registration: [mysql1]
+2025-08-29T08:09:23.293+0200	[34mINFO[0m	Registering tools for database mysql1
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Database mysql1 info: map[database:mysql1 dbType:mysql tables:[map[TABLE_NAME:knex_migrations] map[TABLE_NAME:knex_migrations_lock] map[TABLE_NAME:networks] map[TABLE_NAME:settlements] map[TABLE_NAME:tokens] map[TABLE_NAME:transactions] map[TABLE_NAME:wallet_sync_state]]]
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Registering tool 'query_mysql1' of type 'query' (database: mysql1)
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Successfully registered tool query_mysql1
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Registering tool 'execute_mysql1' of type 'execute' (database: mysql1)
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Successfully registered tool execute_mysql1
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Registering tool 'transaction_mysql1' of type 'transaction' (database: mysql1)
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Successfully registered tool transaction_mysql1
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Registering tool 'performance_mysql1' of type 'performance' (database: mysql1)
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Successfully registered tool performance_mysql1
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Registering tool 'schema_mysql1' of type 'schema' (database: mysql1)
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Successfully registered tool schema_mysql1
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Completed registering tools for database mysql1
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Successfully registered tools for database mysql1
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Registering tool 'list_databases' of type 'list_databases' (database: )
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Successfully registered tool list_databases
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Finished registering tools
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Available database tools:
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	  Database mysql1:
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	    - query_mysql1: Execute SQL queries
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	    - execute_mysql1: Execute SQL statements
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	    - transaction_mysql1: Manage transactions
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	    - performance_mysql1: Analyze query performance
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	    - schema_mysql1: Get database schema
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	  Common tools:
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	    - list_databases: List all available databases
+2025-08-29T08:09:23.295+0200	[34mINFO[0m	Created default session: default-session

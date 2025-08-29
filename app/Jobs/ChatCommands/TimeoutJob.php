@@ -2,46 +2,55 @@
 
 namespace App\Jobs\ChatCommands;
 
-use App\Events\Chat\DeleteMessagesEvent;
-use App\Models\Message;
 use App\Models\User;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
 
-class TimeoutJob implements ShouldQueue
+class TimeoutJob extends AbstractChatCommand
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    public function __construct(public readonly User $user, public readonly Message $message, public readonly string $command)
+    public static function getMeta(): array
     {
+        return [
+            'name' => 'timeout',
+            'description' => 'Timeout a user from chatting',
+            'syntax' => '/timeout "username" "duration"',
+            'parameters' => [
+                ['name' => 'username', 'description' => 'The user to timeout', 'required' => true],
+                ['name' => 'duration', 'description' => 'Duration (e.g., 5s, 5m, 5h)', 'required' => true],
+            ],
+            'permission' => 'chat.commands.timeout',
+            'aliases' => [],
+        ];
     }
-
-    public function handle(): void
+    
+    public function canExecute(): bool
     {
-        if($this->user->cannot('chat.commands.timeout')) {
+        return $this->user->can('chat.commands.timeout');
+    }
+    
+    protected function execute(): void
+    {
+        $args = $this->parseArguments();
+        
+        if (count($args) < 2) {
             return;
         }
-
-        preg_match('/^!(timeout)\s+"?([^"]+)"? "?([^"]+)"?$/', $this->command, $matches);
-
-        if(!isset($matches[2], $matches[3])) return;
-
-        // Match 3 contains e.x. 5 or 5s or 5m or 5h convert to carbon
+        
+        $username = $args[0];
+        $duration = $args[1];
+        
+        // Convert duration to Carbon
         try {
-            $until = Carbon::now()->add($matches[3]);
+            $until = Carbon::now()->add($duration);
         } catch (\Exception $e) {
             return;
         }
-
-        $user = User::where('name', $matches[2])->first();
-        if($user === null) return;
-
-        $user->update([
+        
+        $targetUser = User::where('name', $username)->first();
+        if ($targetUser === null) {
+            return;
+        }
+        
+        $targetUser->update([
             'timeout_expires_at' => $until
         ]);
     }

@@ -1,113 +1,231 @@
 <script setup>
-
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
-import FaWifiSlashIcon from "@/Components/Icons/FaWifiSlashIcon.vue";
-import VueFlvPlayer from "@/Components/VueFlvPlayer.vue";
-import GuestLayout from "@/Layouts/GuestLayout.vue";
-import {Head} from "@inertiajs/vue3";
+import {Head, Link} from "@inertiajs/vue3";
 
 const props = defineProps({
-    status: {
-        type: String,
-        required: true,
-    },
-    streamUrls: {
+    show: {
         type: Object,
         required: true,
     },
 });
+
+const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+        // Could add a toast notification here
+    });
+};
 </script>
 
 <template>
     <authenticated-layout>
         <Head>
-            <title>External Stream</title>
+            <title>{{ show.title }} - External Player</title>
         </Head>
-        <div class="py-12">
-            <div class="lg:max-w-7xl mx-auto">
-                <div
-                    class="mb-4  text-primary-100 bg-primary-800 overflow-hidden shadow-sm lg:rounded p-6">
-                    <h1 class="h1 text-2xl font-semibold">Enjoy the stream on any device!</h1>
-                    <p>To make it easy for everyone to display the stream on any device you can use our provided link to
-                        connect it to various software.</p>
+        
+        <!-- Header with Back Button -->
+        <div class="bg-gray-900 border-b border-gray-800 px-4 py-2">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <Link :href="route('show.view', show.id)" class="inline-flex items-center text-gray-400 hover:text-white transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                        </svg>
+                        Back to Player
+                    </Link>
+                    <span class="mx-3 text-gray-600">|</span>
+                    <Link :href="route('shows.grid')" class="text-gray-400 hover:text-white transition-colors">
+                        All Shows
+                    </Link>
                 </div>
-                <div
-                    class="mb-4 bg-primary-800 text-primary-100 overflow-hidden shadow-sm lg:rounded p-6">
-                    <div v-if="status !== 'offline'">
-                        <h2 class="h2 text-xl font-semibold">Choose your stream quality:</h2>
-                        <div class="my-4">
-                            <label for="stream-quality-fhd"
-                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">Full HD
-                                (1080p):</label>
-                            <input id="stream-quality-fhd" class="text-primary-900 form-input block w-full mt-1"
-                                   type="text" readonly :value="streamUrls.fhd + '&client=vlc'">
+            </div>
+            <div class="mt-2">
+                <h1 class="text-white font-semibold text-lg">External Player URLs: {{ show.title }}</h1>
+                <span v-if="show.source" class="text-gray-400">{{ show.source.name }} • {{ show.source.location }}</span>
+                <span :class="{
+                    'text-green-400': show.status === 'live',
+                    'text-yellow-400': show.status === 'scheduled',
+                    'text-red-400': show.status === 'ended'
+                }" class="ml-3 text-sm">● {{ show.status.toUpperCase() }}</span>
+            </div>
+        </div>
+        
+        <div class="py-8">
+            <div class="lg:max-w-7xl mx-auto px-4">
+                <!-- Introduction -->
+                <div class="mb-6 text-primary-100 bg-primary-800 overflow-hidden shadow-sm lg:rounded p-6">
+                    <h2 class="text-2xl font-semibold mb-2">Watch on Any Device</h2>
+                    <p>Use these HLS stream URLs to watch "{{ show.title }}" in your preferred media player like VLC, MPV, or any HLS-compatible application.</p>
+                </div>
+                
+                <!-- Stream URLs -->
+                <div class="mb-6 bg-primary-800 text-primary-100 overflow-hidden shadow-sm lg:rounded p-6">
+                    <div v-if="show.can_watch && show.hls_urls">
+                        <h3 class="text-xl font-semibold mb-4">Available Stream Qualities</h3>
+                        
+                        <!-- Master Playlist -->
+                        <div class="mb-4 p-4 bg-primary-900 rounded">
+                            <label class="text-primary-200 block text-sm font-bold mb-2">
+                                🎯 Master Playlist (Recommended - Adaptive Bitrate)
+                            </label>
+                            <div class="flex gap-2">
+                                <input 
+                                    type="text" 
+                                    readonly 
+                                    :value="show.hls_urls.master"
+                                    class="text-primary-100 bg-primary-950 form-input block w-full text-sm font-mono"
+                                    @click="$event.target.select()"
+                                >
+                                <button 
+                                    @click="copyToClipboard(show.hls_urls.master)"
+                                    class="px-3 py-1 bg-primary-700 hover:bg-primary-600 rounded text-sm transition-colors"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <p class="text-xs text-primary-400 mt-1">Automatically adjusts quality based on your connection</p>
                         </div>
-                        <div class="my-4">
-                            <label for="stream-quality-hd"
-                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">HD
-                                (720p):</label>
-                            <input id="stream-quality-hd" class="text-primary-900 form-input block w-full mt-1"
-                                   type="text" readonly :value="streamUrls.hd + '&client=vlc'">
+                        
+                        <!-- Individual Qualities -->
+                        <details class="mt-4">
+                            <summary class="cursor-pointer text-primary-300 hover:text-primary-200 mb-3">
+                                Show individual quality streams →
+                            </summary>
+                            
+                            <div class="space-y-3 mt-3">
+                                <!-- Full HD -->
+                                <div v-if="show.hls_urls.fhd" class="flex gap-2 items-center">
+                                    <label class="text-primary-300 text-sm font-semibold w-24">1080p FHD:</label>
+                                    <input 
+                                        type="text" 
+                                        readonly 
+                                        :value="show.hls_urls.fhd"
+                                        class="text-primary-100 bg-primary-950 form-input block flex-1 text-xs font-mono"
+                                        @click="$event.target.select()"
+                                    >
+                                    <button 
+                                        @click="copyToClipboard(show.hls_urls.fhd)"
+                                        class="px-2 py-1 bg-primary-700 hover:bg-primary-600 rounded text-xs transition-colors"
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                                
+                                <!-- HD -->
+                                <div v-if="show.hls_urls.hd" class="flex gap-2 items-center">
+                                    <label class="text-primary-300 text-sm font-semibold w-24">720p HD:</label>
+                                    <input 
+                                        type="text" 
+                                        readonly 
+                                        :value="show.hls_urls.hd"
+                                        class="text-primary-100 bg-primary-950 form-input block flex-1 text-xs font-mono"
+                                        @click="$event.target.select()"
+                                    >
+                                    <button 
+                                        @click="copyToClipboard(show.hls_urls.hd)"
+                                        class="px-2 py-1 bg-primary-700 hover:bg-primary-600 rounded text-xs transition-colors"
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                                
+                                <!-- SD -->
+                                <div v-if="show.hls_urls.sd" class="flex gap-2 items-center">
+                                    <label class="text-primary-300 text-sm font-semibold w-24">480p SD:</label>
+                                    <input 
+                                        type="text" 
+                                        readonly 
+                                        :value="show.hls_urls.sd"
+                                        class="text-primary-100 bg-primary-950 form-input block flex-1 text-xs font-mono"
+                                        @click="$event.target.select()"
+                                    >
+                                    <button 
+                                        @click="copyToClipboard(show.hls_urls.sd)"
+                                        class="px-2 py-1 bg-primary-700 hover:bg-primary-600 rounded text-xs transition-colors"
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                                
+                                <!-- LD -->
+                                <div v-if="show.hls_urls.ld" class="flex gap-2 items-center">
+                                    <label class="text-primary-300 text-sm font-semibold w-24">320p LD:</label>
+                                    <input 
+                                        type="text" 
+                                        readonly 
+                                        :value="show.hls_urls.ld"
+                                        class="text-primary-100 bg-primary-950 form-input block flex-1 text-xs font-mono"
+                                        @click="$event.target.select()"
+                                    >
+                                    <button 
+                                        @click="copyToClipboard(show.hls_urls.ld)"
+                                        class="px-2 py-1 bg-primary-700 hover:bg-primary-600 rounded text-xs transition-colors"
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                    <div v-else class="text-center py-8">
+                        <svg class="w-16 h-16 text-primary-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <h3 class="text-xl font-semibold text-primary-300 mb-2">Stream Not Available</h3>
+                        <p class="text-primary-400">This show is not currently available for external viewing.</p>
+                        <Link :href="route('shows.grid')" class="inline-block mt-4 px-4 py-2 bg-primary-700 hover:bg-primary-600 rounded transition-colors">
+                            Browse Other Shows
+                        </Link>
+                    </div>
+                </div>
+                
+                <!-- Instructions -->
+                <div class="bg-primary-800 text-primary-100 overflow-hidden shadow-sm lg:rounded p-6">
+                    <h2 class="text-xl font-semibold mb-4">How to Use These URLs</h2>
+                    
+                    <div class="space-y-6">
+                        <div class="flex items-start">
+                            <span class="flex-shrink-0 w-8 h-8 bg-primary-700 rounded-full flex items-center justify-center text-sm font-bold mr-3">1</span>
+                            <div>
+                                <h3 class="font-semibold mb-1">Open Your Media Player</h3>
+                                <p class="text-primary-300 text-sm">Launch VLC, MPV, or any HLS-compatible media player on your device.</p>
+                            </div>
                         </div>
-                        <div class="my-4">
-                            <label for="stream-quality-sd"
-                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">SD
-                                (480p):</label>
-                            <input id="stream-quality-sd" class="text-primary-900 form-input block w-full mt-1"
-                                   type="text" readonly :value="streamUrls.sd + '&client=vlc'">
+                        
+                        <div class="flex items-start">
+                            <span class="flex-shrink-0 w-8 h-8 bg-primary-700 rounded-full flex items-center justify-center text-sm font-bold mr-3">2</span>
+                            <div>
+                                <h3 class="font-semibold mb-1">Open Network Stream</h3>
+                                <p class="text-primary-300 text-sm">In VLC: Go to Media → Open Network Stream (Ctrl+N)<br>
+                                In MPV: Just paste the URL as a command line argument</p>
+                            </div>
                         </div>
-                        <div class="my-4">
-                            <label for="stream-quality-low"
-                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">LD
-                                (320p):</label>
-                            <input id="stream-quality-" class="text-primary-900 form-input block w-full mt-1"
-                                   type="text" readonly :value="streamUrls.ld + '&client=vlc'">
+                        
+                        <div class="flex items-start">
+                            <span class="flex-shrink-0 w-8 h-8 bg-primary-700 rounded-full flex items-center justify-center text-sm font-bold mr-3">3</span>
+                            <div>
+                                <h3 class="font-semibold mb-1">Paste the Stream URL</h3>
+                                <p class="text-primary-300 text-sm">Copy and paste the Master Playlist URL from above. This will give you adaptive quality streaming.</p>
+                            </div>
                         </div>
-                        <div class="my-4">
-                            <label for="stream-quality-low"
-                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">Audio HD
-                                (420p):</label>
-                            <input id="stream-quality-" class="text-primary-900 form-input block w-full mt-1"
-                                   type="text" readonly :value="streamUrls.audio_hd + '&client=vlc'">
-                        </div>
-                        <div class="my-4">
-                            <label for="stream-quality-low"
-                                   class="text-primary-100 block text-gray-700 text-sm font-bold mb-2">Audio SD
-                                (420p):</label>
-                            <input id="stream-quality-" class="text-primary-900 form-input block w-full mt-1"
-                                   type="text" readonly :value="streamUrls.audio_sd + '&client=vlc'">
+                        
+                        <div class="flex items-start">
+                            <span class="flex-shrink-0 w-8 h-8 bg-primary-700 rounded-full flex items-center justify-center text-sm font-bold mr-3">4</span>
+                            <div>
+                                <h3 class="font-semibold mb-1">Enjoy the Stream!</h3>
+                                <p class="text-primary-300 text-sm">Click Play and enjoy watching "{{ show.title }}" on your preferred device.</p>
+                            </div>
                         </div>
                     </div>
-                    <div v-else>
-                        <h2 class="h2 text-xl font-semibold">There are currently no streams available. Check back later.</h2>
+                    
+                    <div class="mt-6 p-4 bg-primary-900 rounded">
+                        <h4 class="font-semibold text-sm mb-2">💡 Pro Tips:</h4>
+                        <ul class="text-sm text-primary-300 space-y-1">
+                            <li>• Use the Master Playlist for the best experience - it automatically adjusts quality</li>
+                            <li>• If you have a slow connection, choose a lower quality stream (SD or LD)</li>
+                            <li>• You can save the URL as a playlist file in VLC for quick access</li>
+                            <li>• These URLs work on Smart TVs with compatible media player apps</li>
+                        </ul>
                     </div>
-                </div>
-                <div
-                    class="mb-4 bg-primary-800 text-primary-100 overflow-hidden shadow-sm lg:rounded p-6">
-                    <h2 class="text-xl mb-2 font-semibold">1. Open Your Streaming Client</h2>
-                    <p class="mb-3">Start by opening your streaming client on your device.</p>
-                    <img class="mb-8 rounded-xl" src="../../assets/open-streaming-client.png"
-                         alt="Open Streaming Client">
-
-                    <h2 class="text-xl mb-2 font-semibold">2. Find the Stream Input Option</h2>
-                    <p class="mb-3">In your streaming client, find the option to input a stream link. This is often
-                        found
-                        under a "File" or "Stream" menu.</p>
-                    <img class="mb-8 rounded-xl" src="../../assets/find-stream-input.png" alt="Find Stream Input">
-
-                    <h2 class="text-xl mb-2 font-semibold">3. Enter Your Stream Link</h2>
-                    <p class="mb-3">In the provided input field, paste the .flv stream link that you got from our
-                        platform.</p>
-                    <img class="mb-8 rounded-xl" src="../../assets/enter-stream-link.png" alt="Enter Stream Link">
-
-                    <h2 class="text-xl mb-2 font-semibold">4. Confirm the Stream</h2>
-                    <p class="mb-3">Confirm and save the input to start streaming. Your stream should start playing in
-                        the
-                        streaming client.</p>
-                    <img class="mb-8 rounded-xl" src="../../assets/confirm-stream.png" alt="Confirm Stream">
-
-                    <h2 class="text-xl mb-2 font-semibold">5. Enjoy Your Stream!</h2>
-                    <p class="mb-3">Now your stream should be playing on your streaming client. Enjoy!</p>
                 </div>
             </div>
         </div>
@@ -115,5 +233,18 @@ const props = defineProps({
 </template>
 
 <style scoped>
+details summary::-webkit-details-marker {
+    display: none;
+}
 
+details[open] summary::after {
+    transform: rotate(90deg);
+}
+
+details summary::after {
+    content: '▶';
+    display: inline-block;
+    margin-left: 0.5rem;
+    transition: transform 0.2s;
+}
 </style>

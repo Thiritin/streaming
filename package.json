@@ -6,7 +6,7 @@
         "build": "vite build"
     },
     "devDependencies": {
-        "@inertiajs/vue3": "^1.0.0",
+        "@inertiajs/vue3": "^2.0.0",
         "@tailwindcss/forms": "^0.5.3",
         "@vitejs/plugin-vue": "^4.0.0",
         "autoprefixer": "^10.4.12",
@@ -18,10 +18,11 @@
         "vue": "^3.2.41"
     },
     "dependencies": {
-        "flv.js": "^1.6.2",
         "laravel-echo": "^1.15.2",
         "pusher-js": "^8.2.0",
-        "video.js": "^8.3.0",
+        "video.js": "^8.23.4",
+        "videojs-contrib-quality-levels": "^4.1.0",
+        "videojs-hls-quality-selector": "^2.0.0",
         "vue-axios": "^3.5.2",
         "vue-cookies": "^1.8.3",
         "vue3-emoji-picker": "^1.1.7"

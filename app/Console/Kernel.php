@@ -20,6 +20,9 @@ class Kernel extends ConsoleKernel
         $schedule->job(new \App\Jobs\CheckClientActivityJob())->everyFifteenMinutes();
         $schedule->job(new \App\Jobs\CleanUpUnusedClientsJob())->everyMinute();
         $schedule->job(new \App\Jobs\CleanUpInactiveServerAssignmentsJob())->everyFiveMinutes();
+        
+        // Capture thumbnails for live streams every minute
+        $schedule->command('thumbnails:capture')->everyMinute();
     }
 
     /**

@@ -3,29 +3,29 @@
 namespace App\Jobs\ChatCommands;
 
 use App\Events\Chat\Broadcasts\ChatSystemEvent;
-use App\Events\Chat\Commands\SlowModeDisabled;
-use App\Events\Chat\Commands\SlowModeEnabled;
 use App\Models\Message;
-use App\Models\User;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 
-class NukeEverythingJob implements ShouldQueue
+class NukeEverythingJob extends AbstractChatCommand
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    public function __construct(public readonly User $user, public readonly Message $message, public readonly string $command)
+    public static function getMeta(): array
     {
+        return [
+            'name' => 'nukeeverything_i_know_what_i_am_doing',
+            'description' => 'Delete all chat messages (use with extreme caution)',
+            'syntax' => '/nukeeverything_i_know_what_i_am_doing',
+            'parameters' => [],
+            'permission' => 'chat.commands.nukeall',
+            'aliases' => [],
+        ];
     }
-
-    public function handle(): void
+    
+    public function canExecute(): bool
     {
-        if($this->user->cannot('chat.commands.nukeall')) {
-            return;
-        }
+        return $this->user->can('chat.commands.nukeall');
+    }
+    
+    protected function execute(): void
+    {
         Message::all()->each(fn($message) => $message->delete());
         broadcast(new ChatSystemEvent('Welcome to the Eurofurence Stream Chat!'));
     }

@@ -3,32 +3,39 @@
 namespace App\Jobs\ChatCommands;
 
 use App\Events\Chat\Broadcasts\ChatSystemEvent;
-use App\Models\Message;
-use App\Models\User;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 
-class BroadcastJob implements ShouldQueue
+class BroadcastJob extends AbstractChatCommand
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    public function __construct(public readonly User $user, public readonly Message $message,public readonly string $command)
+    public static function getMeta(): array
     {
+        return [
+            'name' => 'broadcast',
+            'description' => 'Send a system message to all users',
+            'syntax' => '/broadcast "message"',
+            'parameters' => [
+                ['name' => 'message', 'description' => 'The message to broadcast', 'required' => true],
+            ],
+            'permission' => 'chat.commands.broadcast',
+            'aliases' => [],
+        ];
     }
-
-    public function handle(): void
+    
+    public function canExecute(): bool
     {
-        if($this->user->cannot('chat.commands.broadcast')) {
+        return $this->user->can('chat.commands.broadcast');
+    }
+    
+    protected function execute(): void
+    {
+        $args = $this->parseArguments();
+        
+        if (count($args) < 1) {
             return;
         }
-
-        preg_match('/^!broadcast\s+"?([^"]+)"?$/', $this->command, $matches);
-
-        if(!isset($matches[1])) return;
-
-        broadcast(new ChatSystemEvent($matches[1]));
+        
+        // Join all arguments as the message (in case it contains spaces)
+        $message = implode(' ', $args);
+        
+        broadcast(new ChatSystemEvent($message));
     }
 }

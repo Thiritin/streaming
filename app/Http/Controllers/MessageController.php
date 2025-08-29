@@ -4,15 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Events\Chat\Broadcasts\ChatMessageEvent;
 use App\Http\Requests\MessageRequest;
-use App\Jobs\ChatCommands\BroadcastJob;
-use App\Jobs\ChatCommands\DeleteMessageJob;
 use App\Jobs\ChatCommands\NotFoundJob;
-use App\Jobs\ChatCommands\NukeEverythingJob;
-use App\Jobs\ChatCommands\SlowModeJob;
-use App\Jobs\ChatCommands\TimeoutJob;
+use App\Services\ChatCommandService;
+use App\Services\ChatMessageSanitizer;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response as SymphonyResponse;
 
@@ -48,12 +44,15 @@ class MessageController extends Controller
             }
             RateLimiter::hit('send-message:' . $user->id, (int) $rateDecay);
         }
-        /**
-         * Determine if message is command
-         */
-        $isCommand = false;
-        if (Str::startsWith(trim($message), ['/', '!'])) {
-            $isCommand = true;
+        
+        // Check if message is command
+        $commandService = new ChatCommandService();
+        $isCommand = $commandService->isCommand($message);
+        
+        // Sanitize message if it's not a command
+        if (!$isCommand) {
+            $sanitizer = new ChatMessageSanitizer();
+            $message = $sanitizer->sanitize($message);
         }
 
         $messageModel = $user->messages()->create([
@@ -82,24 +81,19 @@ class MessageController extends Controller
 
     private function processCommand(mixed $user, $messageModel)
     {
-        /**
-         * Determine which kind of Command it is
-         */
-        $command = $messageModel->message;
-        $trimmedCommand = trim($command);
-        $command = Str::substr($command, 1);
-        $args = explode(' ', $command);
-        $command = $args[0];
-        $runController = match ($command) {
-            "timeout" => TimeoutJob::class,
-            "delete" => DeleteMessageJob::class,
-            "broadcast" => BroadcastJob::class,
-            "slowmode", "slow" => SlowModeJob::class,
-            "nukeeverything_i_know_what_i_am_doing" => NukeEverythingJob::class,
-            default => NotFoundJob::class,
-        };
-
-        $runController::dispatch($user, $messageModel, $trimmedCommand);
+        if (!$messageModel->is_command) {
+            return;
+        }
+        
+        $commandService = new ChatCommandService();
+        $commandName = $commandService->extractCommandName($messageModel->message);
+        $commandClass = $commandService->getCommandClass($commandName);
+        
+        if ($commandClass === null) {
+            $commandClass = NotFoundJob::class;
+        }
+        
+        $commandClass::dispatch($user, $messageModel, trim($messageModel->message));
     }
 
     private function getSecondsLeft($user,$slowMode,$maxTries)

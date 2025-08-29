@@ -1,8 +1,7 @@
-version: '3'
 services:
     laravel.test:
         build:
-            context: ./docker/8.2
+            context: ./docker/8.4
             dockerfile: Dockerfile
             args:
                 WWWGROUP: '${WWWGROUP}'
@@ -25,7 +24,7 @@ services:
         depends_on:
             - mysql
             - redis
-            - soketi
+            - reverb
     mysql:
         image: 'mysql/mysql-server:8.0'
         ports:
@@ -65,19 +64,38 @@ services:
                 - ping
             retries: 3
             timeout: 5s
-    soketi:
-        image: 'quay.io/soketi/soketi:latest-16-alpine'
+    reverb:
+        build:
+            context: ./docker/8.4
+            dockerfile: Dockerfile
+            args:
+                WWWGROUP: '${WWWGROUP}'
+        image: sail-8.2/app
+        working_dir: /var/www/html
         environment:
-            SOKETI_DEBUG: '${SOKETI_DEBUG:-1}'
-            SOKETI_METRICS_SERVER_PORT: '9601'
-            SOKETI_DEFAULT_APP_ID: '${PUSHER_APP_ID}'
-            SOKETI_DEFAULT_APP_KEY: '${PUSHER_APP_KEY}'
-            SOKETI_DEFAULT_APP_SECRET: '${PUSHER_APP_SECRET}'
+            REVERB_SERVER_HOST: '0.0.0.0'
+            REVERB_SERVER_PORT: '${REVERB_SERVER_PORT:-8080}'
+            REVERB_HOST: '${REVERB_HOST:-localhost}'
+            REVERB_PORT: '${REVERB_PORT:-8080}'
+            REVERB_SCHEME: '${REVERB_SCHEME:-http}'
+            REVERB_APP_ID: '${REVERB_APP_ID:-${PUSHER_APP_ID}}'
+            REVERB_APP_KEY: '${REVERB_APP_KEY:-${PUSHER_APP_KEY}}'
+            REVERB_APP_SECRET: '${REVERB_APP_SECRET:-${PUSHER_APP_SECRET}}'
+            REVERB_MAX_REQUEST_SIZE: '${REVERB_MAX_REQUEST_SIZE:-250000}'
+            REVERB_APP_MAX_MESSAGE_SIZE: '${REVERB_APP_MAX_MESSAGE_SIZE:-100000}'
+            REVERB_SCALING_ENABLED: '${REVERB_SCALING_ENABLED:-false}'
+            REVERB_PULSE_INGEST_INTERVAL: '${REVERB_PULSE_INGEST_INTERVAL:-15}'
+            REDIS_HOST: redis
+            REDIS_PORT: 6379
+        volumes:
+            - '.:/var/www/html'
         ports:
-            - '${PUSHER_PORT:-6001}:6001'
-            - '${PUSHER_METRICS_PORT:-9601}:9601'
+            - '${REVERB_PORT:-8080}:${REVERB_SERVER_PORT:-8080}'
         networks:
             - sail
+        depends_on:
+            - redis
+        command: php artisan reverb:start --host=0.0.0.0 --port=${REVERB_SERVER_PORT:-8080} --hostname=${REVERB_HOST:-localhost}
     stream:
         image: ossrs/srs:4
         ports:

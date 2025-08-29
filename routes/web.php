@@ -32,10 +32,11 @@ Route::get('/error/no-valid-ticket', \App\Http\Controllers\Auth\NoValidTicketCon
 Route::get('/auth/frontchannel-logout', \App\Http\Controllers\Auth\FrontChannelLogoutController::class)->name('auth.frontchannel-logout');
 
 Route::middleware(['auth:web'])->group(function () {
-    Route::get('/', [\App\Http\Controllers\StreamController::class,'online'])->name('dashboard');
-    Route::get('/external-stream', [\App\Http\Controllers\StreamController::class,'external'])->name('external-stream');
+    Route::get('/', [\App\Http\Controllers\StreamController::class,'index'])->name('shows.grid');
+    Route::get('/shows', [\App\Http\Controllers\StreamController::class,'index'])->name('shows.index');
+    Route::get('/show/{show}', [\App\Http\Controllers\StreamController::class,'show'])->name('show.view');
+    Route::get('/show/{show}/external', [\App\Http\Controllers\StreamController::class,'external'])->name('show.external');
     Route::post('/message/send', [\App\Http\Controllers\MessageController::class,'send'])->name('message.send');
-
 });
 
 Broadcast::routes();

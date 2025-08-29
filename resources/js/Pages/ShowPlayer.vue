@@ -1,7 +1,6 @@
 <script>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import {Head} from '@inertiajs/vue3';
-import VueFlvPlayer from "@/Components/VueFlvPlayer.vue";
+import {Head, router, Link} from '@inertiajs/vue3';
 import FaWifiSlashIcon from "@/Components/Icons/FaWifiSlashIcon.vue";
 import FaVideoIcon from "@/Components/Icons/FaVideoIcon.vue";
 import FaIconUser from "@/Components/Icons/FaIconUser.vue";
@@ -29,7 +28,7 @@ export default {
         StreamPlayer,
         GuestLayout,
         PrimaryButton,
-        FaCircleNotchIcon, FaIconUser, FaVideoIcon, FaWifiSlashIcon, VueFlvPlayer, Head, AuthenticatedLayout
+        FaCircleNotchIcon, FaIconUser, FaVideoIcon, FaWifiSlashIcon, Head, Link, AuthenticatedLayout
     },
     setup() {
         return {
@@ -49,24 +48,41 @@ export default {
                 this.listeners = e.listeners;
             });
 
-        let userid = this.$page.props.auth.user.id;
-        Echo.private(`User.${userid}.StreamUrl`)
-            .listen('.server.assignment.changed', (e) => {
-                this.streamUrls = e.streamUrls;
-                this.clientId = e.clientId;
-                this.provisioning = e.provisioning;
-
-                if (this.notifyDeviceChange !== null) {
-                    this.notifyDeviceChange.unsubscribe()
+        // Listen for show updates
+        Echo.channel('shows')
+            .listen('.show.status.changed', (e) => {
+                // Update show status in the list
+                const showIndex = this.shows.findIndex(s => s.id === e.show.id);
+                if (showIndex !== -1) {
+                    this.shows[showIndex] = {...this.shows[showIndex], ...e.show};
                 }
-
-                this.startNotifyDeviceChange();
+                
+                // If it's the active show, update HLS URLs
+                if (this.activeShow && this.activeShow.id === e.show.id) {
+                    this.activeShow = e.show;
+                    if (e.hlsUrls) {
+                        this.hlsUrls = e.hlsUrls;
+                    }
+                }
+            })
+            .listen('.show.source.changed', (e) => {
+                // Handle source switching for a show
+                if (this.activeShow && this.activeShow.id === e.show.id) {
+                    this.hlsUrls = e.hlsUrls;
+                }
             });
-
-        this.startNotifyDeviceChange();
     },
     props: {
-        initialStreamUrls: {
+        currentShow: {
+            type: Object,
+            required: false,
+        },
+        availableShows: {
+            type: Array,
+            required: false,
+            default: () => []
+        },
+        initialHlsUrls: {
             type: Object,
             required: false,
         },
@@ -77,10 +93,6 @@ export default {
         initialListeners: {
             type: Number,
             required: true,
-        },
-        initialClientId: {
-            type: Number,
-            required: false
         },
         initialProvisioning: {
             type: Boolean,
@@ -102,11 +114,11 @@ export default {
     data() {
         return {
             otherDevice: this.initialOtherDevice,
-            streamUrls: this.initialStreamUrls,
+            activeShow: this.currentShow,
+            shows: this.availableShows,
+            hlsUrls: this.initialHlsUrls,
             status: this.initialStatus,
             listeners: this.initialListeners,
-            selectedStreamUrl: 'auto',
-            clientId: this.initialClientId,
             provisioning: this.initialProvisioning,
             notifyDeviceChange: null,
         }
@@ -133,40 +145,18 @@ export default {
 
             // Fallback to mobile check if Network Information API is not supported or did not indicate a slow connection
             return this.isMobile();
-        },
-        startNotifyDeviceChange() {
-            if (this.clientId)
-                this.notifyDeviceChange = Echo.private('Client.' + this.clientId)
-                    .listen('.otherDevice', (e) => {
-                        this.otherDevice = true;
-                    })
-                    .listen('.disconnect', (e) => {
-                        window.location.reload();
-                    });
         }
-        ,
     },
     computed: {
-        streamUrl() {
-            if (this.streamUrls === null) {
-                return null;
-            }
-            if (this.selectedStreamUrl === 'auto') {
-                if (this.shouldUseLowerResolution()) {
-                    return this.streamUrls.sd;
-                } else {
-                    return this.streamUrls.fhd;
-                }
-            }
-            return this.streamUrls[this.selectedStreamUrl];
-        }
-        ,
         showChatBox() {
             return this.status !== 'offline';
         }
         ,
         showPlayer() {
-            return this.status === 'online' && this.provisioning === false && this.otherDevice === false;
+            return this.activeShow && this.hlsUrls && this.status === 'online' && this.provisioning === false && this.otherDevice === false;
+        },
+        showTitle() {
+            return this.activeShow ? this.activeShow.title : 'No Show Active';
         }
     }
     ,
@@ -175,16 +165,59 @@ export default {
 
 <template>
     <Head>
-        <title>Stream</title>
+        <title>{{ showTitle }} - Stream</title>
     </Head>
 
     <AuthenticatedLayout>
-        <div class="flex flex-col md:flex-row pt-12 md:max-h-screen grow md:overflow-hidden">
+        <!-- Back to Shows Button -->
+        <div class="bg-gray-900 border-b border-gray-800 px-4 py-2">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <Link :href="route('shows.grid')" class="inline-flex items-center text-gray-400 hover:text-white transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                        </svg>
+                        Back to Shows
+                    </Link>
+                    <span class="mx-3 text-gray-600">|</span>
+                    <span class="text-white font-semibold">{{ showTitle }}</span>
+                    <span v-if="activeShow?.source" class="text-gray-400 ml-2">• {{ activeShow.source.name }}</span>
+                </div>
+                <Link 
+                    v-if="activeShow"
+                    :href="route('show.external', activeShow.id)" 
+                    class="inline-flex items-center px-3 py-1 text-sm bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded transition-colors"
+                >
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                    External Player
+                </Link>
+            </div>
+        </div>
+        
+        <div class="flex flex-col md:flex-row md:max-h-[calc(100vh-3rem)] grow md:overflow-hidden">
             <!-- Livestream -->
             <div class="w-full flex-1 overflow-auto">
                 <div v-if="showPlayer">
-                    <StreamPlayer :stream-url="streamUrl"
+                    <StreamPlayer :hls-urls="hlsUrls"
+                                  :show-info="activeShow"
                                   class="z-10 relative w-full bg-black max-h-[calc(100vh_-_10vh)]"></StreamPlayer>
+                    
+                    <!-- Other Available Shows -->
+                    <div v-if="shows.length > 1" class="show-selector p-3 bg-gray-800 border-t border-gray-700">
+                        <div class="text-sm text-gray-400 mb-2">Other Shows:</div>
+                        <div class="flex flex-wrap gap-2">
+                            <Link v-for="show in shows.filter(s => s.id !== activeShow.id)" 
+                                  :key="show.id"
+                                  :href="route('show.view', show.id)"
+                                  class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm text-white transition-colors"
+                                  :class="{'opacity-50 cursor-not-allowed': !show.can_watch}">
+                                {{ show.title }}
+                                <span v-if="show.status === 'live'" class="ml-1 text-red-400">● LIVE</span>
+                            </Link>
+                        </div>
+                    </div>
                 </div>
                 <div v-else-if="status === 'starting_soon'">
                     <StreamStartingSoonStatusPage></StreamStartingSoonStatusPage>

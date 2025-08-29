@@ -26,9 +26,11 @@ class ServerAssignmentChanged implements ShouldBroadcast
 
     public function broadcastWith()
     {
+        $data = $this->user->getUserStreamUrls();
         return [
-            'streamUrls' => $this->user->getUserStreamUrls()['urls'],
-            'clientId' => $this->user->getUserStreamUrls()['client_id'],
+            'streamUrls' => $data['urls'],
+            'hlsUrls' => $data['hls_urls'] ?? null,
+            'clientId' => $data['client_id'],
             'provisioning' => $this->provisioning,
         ];
     }

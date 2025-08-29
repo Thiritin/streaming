@@ -89,6 +89,11 @@ class OidcClientController extends Controller
             "name" => $userinfo['name'],
         ]);
         $user = $user->fresh();
+        
+        // Sync roles from registration system
+        $roleSlugs = $this->mapGroupsToRoles($userinfo['groups'] ?? []);
+        $user->syncRolesFromLogin($roleSlugs);
+        
         Auth::loginUsingId($user->id);
         Session::put('access_token', $accessToken);
         Session::put("avatar" , $userinfo['avatar']);
@@ -110,6 +115,35 @@ class OidcClientController extends Controller
 
     private function redirectDestination(Request $request)
     {
-        return Redirect::route('dashboard');
+        return Redirect::route('shows.grid');
+    }
+    
+    /**
+     * Map registration system groups to role slugs
+     */
+    private function mapGroupsToRoles(array $groups): array
+    {
+        $roleMapping = [
+            // Map group IDs to role slugs
+            // Example mappings - adjust based on your registration system
+            'SUPER_SPONSOR_GROUP' => 'super-sponsor',
+            'SPONSOR_GROUP' => 'sponsor',
+            'ATTENDEE_GROUP' => 'attendee',
+            // Add more mappings as needed
+        ];
+        
+        $roles = [];
+        foreach ($groups as $group) {
+            if (isset($roleMapping[$group])) {
+                $roles[] = $roleMapping[$group];
+            }
+        }
+        
+        // Default role if no specific roles found
+        if (empty($roles)) {
+            $roles[] = 'attendee';
+        }
+        
+        return $roles;
     }
 }

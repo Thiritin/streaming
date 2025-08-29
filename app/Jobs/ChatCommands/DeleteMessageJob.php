@@ -3,42 +3,54 @@
 namespace App\Jobs\ChatCommands;
 
 use App\Events\Chat\DeleteMessagesEvent;
-use App\Models\Message;
 use App\Models\User;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
 
-class DeleteMessageJob implements ShouldQueue
+class DeleteMessageJob extends AbstractChatCommand
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    public function __construct(public readonly User $user, public readonly Message $message, public readonly string $command)
+    public static function getMeta(): array
     {
+        return [
+            'name' => 'delete',
+            'description' => 'Delete messages from a user',
+            'syntax' => '/delete "username" "timespan"',
+            'parameters' => [
+                ['name' => 'username', 'description' => 'The user whose messages to delete', 'required' => true],
+                ['name' => 'timespan', 'description' => 'How far back to delete (e.g., 5s, 5m, 5h)', 'required' => true],
+            ],
+            'permission' => 'chat.commands.delete',
+            'aliases' => [],
+        ];
     }
-
-    public function handle(): void
+    
+    public function canExecute(): bool
     {
-        if($this->user->cannot('chat.commands.delete')) {
+        return $this->user->can('chat.commands.delete');
+    }
+    
+    protected function execute(): void
+    {
+        $args = $this->parseArguments();
+        
+        if (count($args) < 2) {
             return;
         }
-        preg_match('/^!(delete)\s+"?([^"]+)"? "?([^"]+)"?$/', $this->command, $matches);
-
-        if(!isset($matches[2], $matches[3])) return;
-
-        // Match 3 contains e.x. 5 or 5s or 5m or 5h convert to carbon
+        
+        $username = $args[0];
+        $timespan = $args[1];
+        
+        // Convert timespan to Carbon
         try {
-            $since = Carbon::now()->sub($matches[3]);
+            $since = Carbon::now()->sub($timespan);
         } catch (\Exception $e) {
             return;
         }
-
-        $user = User::where('name', $matches[2])->first();
-        if($user === null) return;
-
-        broadcast(new DeleteMessagesEvent($user, $since));
+        
+        $targetUser = User::where('name', $username)->first();
+        if ($targetUser === null) {
+            return;
+        }
+        
+        broadcast(new DeleteMessagesEvent($targetUser, $since));
     }
 }
