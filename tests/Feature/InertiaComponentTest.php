@@ -2,12 +2,12 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use App\Models\Show;
 use App\Models\Source;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
 use Inertia\Testing\AssertableInertia;
+use Tests\TestCase;
 
 class InertiaComponentTest extends TestCase
 {
@@ -18,7 +18,7 @@ class InertiaComponentTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         $this->user = User::factory()->create();
     }
 

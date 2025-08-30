@@ -20,27 +20,28 @@ class SlowModeJob extends AbstractChatCommand
             'aliases' => ['slow'],
         ];
     }
-    
+
     public function canExecute(): bool
     {
         return $this->user->can('chat.commands.slowmode');
     }
-    
+
     protected function execute(): void
     {
         $args = $this->parseArguments();
-        
+
         if (count($args) < 1) {
             return;
         }
-        
+
         $value = $args[0];
-        
+
         if ($value === 'off' || $value === '0' || $value === 0) {
-            event(new SlowModeDisabled());
+            event(new SlowModeDisabled);
+
             return;
         }
-        
+
         if (is_numeric($value) && $value < 500) {
             event(new SlowModeEnabled($value));
         }

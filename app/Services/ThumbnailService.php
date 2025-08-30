@@ -6,14 +6,17 @@ use App\Models\Show;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 class ThumbnailService
 {
     protected string $storagePath = 'public/thumbnails';
+
     protected int $thumbnailWidth = 640;
+
     protected int $thumbnailHeight = 360;
+
     protected int $quality = 85;
+
     protected int $captureTimeout = 10; // seconds
 
     /**
@@ -21,72 +24,73 @@ class ThumbnailService
      */
     public function captureFromHls(Show $show): ?string
     {
-        if (!$show->isLive() || !$show->source) {
+        if (! $show->isLive() || ! $show->source) {
             return null;
         }
 
         $hlsUrls = $show->source->getHlsUrls();
-        if (!$hlsUrls) {
+        if (! $hlsUrls) {
             Log::warning("No HLS URLs available for show {$show->id}");
+
             return null;
         }
 
         // Use the SD quality for thumbnail capture (balance between quality and speed)
         $streamUrl = $hlsUrls['sd'] ?? $hlsUrls['master'];
-        
+
         // Generate unique filename
         $filename = $this->generateFilename($show);
-        $tempPath = storage_path('app/temp/' . $filename);
-        $finalPath = $this->storagePath . '/' . $filename;
+        $tempPath = storage_path('app/temp/'.$filename);
+        $finalPath = $this->storagePath.'/'.$filename;
 
         // Ensure temp directory exists
-        if (!file_exists(dirname($tempPath))) {
+        if (! file_exists(dirname($tempPath))) {
             mkdir(dirname($tempPath), 0755, true);
         }
 
         try {
             // Capture thumbnail using ffmpeg
             $result = $this->captureFrame($streamUrl, $tempPath);
-            
-            if (!$result || !file_exists($tempPath)) {
-                throw new \Exception("Failed to capture thumbnail");
+
+            if (! $result || ! file_exists($tempPath)) {
+                throw new \Exception('Failed to capture thumbnail');
             }
 
             // Move to storage
             Storage::put($finalPath, file_get_contents($tempPath));
-            
+
             // Clean up temp file
             @unlink($tempPath);
-            
+
             // Clean up old thumbnails for this show
             $this->cleanupOldThumbnails($show);
-            
+
             // Generate public URL
             $publicUrl = Storage::url($finalPath);
-            
+
             // Update show model
             $show->update([
                 'thumbnail_url' => $publicUrl,
                 'thumbnail_updated_at' => now(),
                 'thumbnail_capture_error' => null,
             ]);
-            
+
             Log::info("Thumbnail captured for show {$show->id}: {$publicUrl}");
-            
+
             return $publicUrl;
-            
+
         } catch (\Exception $e) {
-            Log::error("Failed to capture thumbnail for show {$show->id}: " . $e->getMessage());
-            
+            Log::error("Failed to capture thumbnail for show {$show->id}: ".$e->getMessage());
+
             // Update error status
             $show->update([
                 'thumbnail_capture_error' => $e->getMessage(),
                 'thumbnail_updated_at' => now(),
             ]);
-            
+
             // Clean up temp file if exists
             @unlink($tempPath);
-            
+
             return null;
         }
     }
@@ -110,16 +114,17 @@ class ThumbnailService
             '-vframes', '1', // Capture 1 frame
             '-vf', "scale={$this->thumbnailWidth}:{$this->thumbnailHeight}:force_original_aspect_ratio=decrease,pad={$this->thumbnailWidth}:{$this->thumbnailHeight}:(ow-iw)/2:(oh-ih)/2",
             '-q:v', '2', // High quality
-            $outputPath
+            $outputPath,
         ];
 
         $result = Process::timeout($this->captureTimeout)->run($command);
-        
-        if (!$result->successful()) {
-            Log::error("FFmpeg error: " . $result->errorOutput());
+
+        if (! $result->successful()) {
+            Log::error('FFmpeg error: '.$result->errorOutput());
+
             return false;
         }
-        
+
         return true;
     }
 
@@ -142,16 +147,16 @@ class ThumbnailService
     {
         $pattern = "show_{$show->id}_*.jpg";
         $files = Storage::files($this->storagePath);
-        
-        $showThumbnails = array_filter($files, function($file) use ($pattern, $show) {
-            return fnmatch($this->storagePath . '/' . "show_{$show->id}_*.jpg", $file);
+
+        $showThumbnails = array_filter($files, function ($file) use ($show) {
+            return fnmatch($this->storagePath.'/'."show_{$show->id}_*.jpg", $file);
         });
-        
+
         // Sort by timestamp (newest first)
-        usort($showThumbnails, function($a, $b) {
+        usort($showThumbnails, function ($a, $b) {
             return Storage::lastModified($b) - Storage::lastModified($a);
         });
-        
+
         // Keep only the 5 most recent
         $toDelete = array_slice($showThumbnails, 5);
         foreach ($toDelete as $file) {
@@ -166,15 +171,15 @@ class ThumbnailService
     {
         $pattern = "show_{$show->id}_*.jpg";
         $files = Storage::files($this->storagePath);
-        
-        $showThumbnails = array_filter($files, function($file) use ($pattern, $show) {
-            return fnmatch($this->storagePath . '/' . "show_{$show->id}_*.jpg", $file);
+
+        $showThumbnails = array_filter($files, function ($file) use ($show) {
+            return fnmatch($this->storagePath.'/'."show_{$show->id}_*.jpg", $file);
         });
-        
+
         foreach ($showThumbnails as $file) {
             Storage::delete($file);
         }
-        
+
         Log::info("Deleted thumbnails for show {$show->id}");
     }
 
@@ -192,6 +197,7 @@ class ThumbnailService
     public function isFFmpegAvailable(): bool
     {
         $result = Process::run(['which', 'ffmpeg']);
+
         return $result->successful();
     }
 }

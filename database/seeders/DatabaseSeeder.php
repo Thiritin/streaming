@@ -23,16 +23,16 @@ class DatabaseSeeder extends Seeder
         // ]);
         $this->call([
             RoleSeeder::class,
-            EurofurenceRolesSeeder::class
+            EurofurenceRolesSeeder::class,
         ]);
         if (App::isLocal()) {
             Server::create([
-                "hostname" => "localhost:8080",
-                "ip" => 1,
-                "status" => ServerStatusEnum::ACTIVE->value,
-                "hetzner_id" => null,
-                "immutable" => true,
-                'shared_secret' => '9fmtTpLSkNF9j8hSoa0sqBSwru53Mahyvrrro9uo7fr'
+                'hostname' => 'localhost:8080',
+                'ip' => 1,
+                'status' => ServerStatusEnum::ACTIVE->value,
+                'hetzner_id' => null,
+                'immutable' => true,
+                'shared_secret' => '9fmtTpLSkNF9j8hSoa0sqBSwru53Mahyvrrro9uo7fr',
             ]);
         }
     }

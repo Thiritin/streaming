@@ -14,9 +14,7 @@ class FinishDeprovisioningServerJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(private readonly Server $server)
-    {
-    }
+    public function __construct(private readonly Server $server) {}
 
     public function handle(): void
     {

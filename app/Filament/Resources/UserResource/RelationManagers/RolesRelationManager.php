@@ -5,10 +5,10 @@ namespace App\Filament\Resources\UserResource\RelationManagers;
 use App\Models\Role;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Filament\Notifications\Notification;
 
 class RolesRelationManager extends RelationManager
 {
@@ -45,7 +45,7 @@ class RolesRelationManager extends RelationManager
                     ->copyMessage('Color copied'),
                 Tables\Columns\TextColumn::make('priority')
                     ->badge()
-                    ->color(fn ($state) => match(true) {
+                    ->color(fn ($state) => match (true) {
                         $state >= 100 => 'danger',
                         $state >= 90 => 'warning',
                         $state >= 50 => 'info',
@@ -76,17 +76,15 @@ class RolesRelationManager extends RelationManager
             ])
             ->filters([
                 Tables\Filters\Filter::make('active')
-                    ->query(fn ($query) => 
-                        $query->where(function ($q) {
-                            $q->whereNull('role_user.expires_at')
-                              ->orWhere('role_user.expires_at', '>', now());
-                        })
+                    ->query(fn ($query) => $query->where(function ($q) {
+                        $q->whereNull('role_user.expires_at')
+                            ->orWhere('role_user.expires_at', '>', now());
+                    })
                     )
                     ->label('Active Only')
                     ->default(),
                 Tables\Filters\Filter::make('expired')
-                    ->query(fn ($query) => 
-                        $query->where('role_user.expires_at', '<=', now())
+                    ->query(fn ($query) => $query->where('role_user.expires_at', '<=', now())
                     )
                     ->label('Expired Only'),
                 Tables\Filters\SelectFilter::make('assigned_by')
@@ -123,6 +121,7 @@ class RolesRelationManager extends RelationManager
                     ])
                     ->mutateFormDataUsing(function (array $data): array {
                         $data['assigned_at'] = now();
+
                         return $data;
                     })
                     ->successNotification(
@@ -148,7 +147,7 @@ class RolesRelationManager extends RelationManager
                         $this->ownerRecord->roles()->updateExistingPivot($record->id, [
                             'expires_at' => $data['expires_at'],
                         ]);
-                        
+
                         Notification::make()
                             ->success()
                             ->title('Role extended')

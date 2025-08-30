@@ -29,27 +29,30 @@ class CaptureLiveThumbnails extends Command
     public function handle(ThumbnailService $thumbnailService): int
     {
         // Check if ffmpeg is available
-        if (!$thumbnailService->isFFmpegAvailable()) {
+        if (! $thumbnailService->isFFmpegAvailable()) {
             $this->error('FFmpeg is not installed or not in PATH');
+
             return Command::FAILURE;
         }
 
         // If specific show ID provided
         if ($showId = $this->option('show')) {
             $show = Show::find($showId);
-            if (!$show) {
+            if (! $show) {
                 $this->error("Show with ID {$showId} not found");
+
                 return Command::FAILURE;
             }
-            
-            if (!$show->isLive()) {
+
+            if (! $show->isLive()) {
                 $this->warn("Show {$showId} is not live");
+
                 return Command::SUCCESS;
             }
-            
+
             $this->info("Capturing thumbnail for show: {$show->title}");
             CaptureThumbnailJob::dispatch($show);
-            
+
             return Command::SUCCESS;
         }
 
@@ -60,6 +63,7 @@ class CaptureLiveThumbnails extends Command
 
         if ($liveShows->isEmpty()) {
             $this->info('No live shows found');
+
             return Command::SUCCESS;
         }
 
@@ -69,6 +73,7 @@ class CaptureLiveThumbnails extends Command
             // Skip if thumbnail was captured recently (within last 45 seconds)
             if ($show->thumbnail_updated_at && $show->thumbnail_updated_at->gt(now()->subSeconds(45))) {
                 $this->line("Skipping {$show->title} - thumbnail recently captured");
+
                 continue;
             }
 

@@ -18,15 +18,15 @@ class NukeEverythingJob extends AbstractChatCommand
             'aliases' => [],
         ];
     }
-    
+
     public function canExecute(): bool
     {
         return $this->user->can('chat.commands.nukeall');
     }
-    
+
     protected function execute(): void
     {
-        Message::all()->each(fn($message) => $message->delete());
+        Message::all()->each(fn ($message) => $message->delete());
         broadcast(new ChatSystemEvent('Welcome to the Eurofurence Stream Chat!'));
     }
 }

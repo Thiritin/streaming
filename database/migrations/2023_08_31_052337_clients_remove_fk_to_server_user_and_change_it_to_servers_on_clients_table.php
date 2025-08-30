@@ -2,14 +2,15 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         \App\Models\Client::truncate();
-        
+
         // Check if the column exists before trying to drop it
         if (Schema::hasColumn('clients', 'server_user_id')) {
             if (config('database.default') === 'sqlite') {
@@ -24,11 +25,11 @@ return new class extends Migration {
                     $table->dateTime('stop')->nullable();
                     $table->timestamps();
                 });
-                
+
                 // Copy data (if any exists)
                 DB::statement('INSERT INTO clients_temp (id, client, client_id, start, stop, created_at, updated_at) 
                                SELECT id, client, client_id, start, stop, created_at, updated_at FROM clients');
-                
+
                 // Drop old table and rename new one
                 Schema::dropIfExists('clients');
                 Schema::rename('clients_temp', 'clients');
@@ -52,7 +53,7 @@ return new class extends Migration {
     {
         Schema::table('clients', function (Blueprint $table) {
             $table->dropConstrainedForeignIdFor(\App\Models\Server::class);
-            $table->foreignId('server_user_id')->nullable()->after('id')->constrained('server_user','id','server_user_id_fk')->cascadeOnDelete();
+            $table->foreignId('server_user_id')->nullable()->after('id')->constrained('server_user', 'id', 'server_user_id_fk')->cascadeOnDelete();
         });
     }
 };

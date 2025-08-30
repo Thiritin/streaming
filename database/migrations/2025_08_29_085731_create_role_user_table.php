@@ -2,8 +2,8 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -20,7 +20,7 @@ return new class extends Migration
             $table->datetime('expires_at')->nullable(); // For temporary roles
             $table->string('assigned_by')->nullable(); // Track who assigned the role (manual/system/api)
             $table->timestamps();
-            
+
             $table->unique(['role_id', 'user_id']);
             $table->index(['user_id', 'role_id']);
             $table->index('expires_at');

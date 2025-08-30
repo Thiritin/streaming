@@ -13,14 +13,14 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         // $schedule->command('inspire')->hourly();
-        $schedule->job(new \App\Jobs\UpdateListenerCountJob())->everyMinute();
-        $schedule->job(new \App\Jobs\SaveViewCountJob())->everyMinute();
-        $schedule->job(new \App\Jobs\Server\ScalingJob())->everyMinute();
-        $schedule->job(new \App\Jobs\ServerAssignmentJob())->everyFifteenSeconds();
-        $schedule->job(new \App\Jobs\CheckClientActivityJob())->everyFifteenMinutes();
-        $schedule->job(new \App\Jobs\CleanUpUnusedClientsJob())->everyMinute();
-        $schedule->job(new \App\Jobs\CleanUpInactiveServerAssignmentsJob())->everyFiveMinutes();
-        
+        $schedule->job(new \App\Jobs\UpdateListenerCountJob)->everyMinute();
+        $schedule->job(new \App\Jobs\SaveViewCountJob)->everyMinute();
+        $schedule->job(new \App\Jobs\Server\ScalingJob)->everyMinute();
+        $schedule->job(new \App\Jobs\ServerAssignmentJob)->everyFifteenSeconds();
+        $schedule->job(new \App\Jobs\CheckClientActivityJob)->everyFifteenMinutes();
+        $schedule->job(new \App\Jobs\CleanUpUnusedClientsJob)->everyMinute();
+        $schedule->job(new \App\Jobs\CleanUpInactiveServerAssignmentsJob)->everyFiveMinutes();
+
         // Capture thumbnails for live streams every minute
         $schedule->command('thumbnails:capture')->everyMinute();
     }

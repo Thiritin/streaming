@@ -21,37 +21,37 @@ class TimeoutJob extends AbstractChatCommand
             'aliases' => [],
         ];
     }
-    
+
     public function canExecute(): bool
     {
         return $this->user->can('chat.commands.timeout');
     }
-    
+
     protected function execute(): void
     {
         $args = $this->parseArguments();
-        
+
         if (count($args) < 2) {
             return;
         }
-        
+
         $username = $args[0];
         $duration = $args[1];
-        
+
         // Convert duration to Carbon
         try {
             $until = Carbon::now()->add($duration);
         } catch (\Exception $e) {
             return;
         }
-        
+
         $targetUser = User::where('name', $username)->first();
         if ($targetUser === null) {
             return;
         }
-        
+
         $targetUser->update([
-            'timeout_expires_at' => $until
+            'timeout_expires_at' => $until,
         ]);
     }
 }

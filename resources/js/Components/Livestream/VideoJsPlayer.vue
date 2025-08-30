@@ -12,6 +12,7 @@
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
+import 'videojs-hotkeys';
 
 // Make videojs available globally for plugins that require it
 window.videojs = videojs;
@@ -59,7 +60,7 @@ const props = defineProps({
     }
 });
 
-const emit = defineEmits(['error', 'playing', 'pause', 'ended', 'loadedmetadata', 'qualityChanged', 'useractive', 'userinactive', 'volumechange']);
+const emit = defineEmits(['error', 'playing', 'pause', 'ended', 'loadedmetadata', 'qualityChanged', 'useractive', 'userinactive', 'volumechange', 'toggleStats']);
 
 const videoPlayer = ref(null);
 let player = null;
@@ -198,6 +199,106 @@ const initializePlayer = async () => {
 
     // Initialize plugins when player is ready
     player.ready(() => {
+        // Initialize hotkeys plugin after player is ready
+        if (typeof player.hotkeys === 'function') {
+            player.hotkeys({
+                volumeStep: 0.1,
+                seekStep: 5,
+                enableModifiersForNumbers: false,
+                enableMute: true,
+                enableVolumeScroll: false, // Disable for better mobile support
+                enableHoverScroll: false,
+                enableFullscreen: true,
+                enableNumbers: false, // Disable for live streams
+                alwaysCaptureHotkeys: true,
+                captureDocumentHotkeys: false,
+                documentHotkeysFocusElementFilter: (e) => {
+                    const tagName = e.tagName.toLowerCase();
+                    return tagName !== 'input' && tagName !== 'textarea';
+                },
+                customKeys: {
+                    // Play/Pause with space or K
+                    playPauseKey: {
+                        key: function(event) {
+                            return (event.which === 32 || event.which === 75);
+                        },
+                        handler: function(player, options, event) {
+                            event.preventDefault();
+                            if (player.paused()) {
+                                player.play();
+                            } else {
+                                player.pause();
+                            }
+                        }
+                    },
+                    // Volume up with up arrow
+                    volumeUpKey: {
+                        key: function(event) {
+                            return event.which === 38;
+                        },
+                        handler: function(player, options) {
+                            player.volume(Math.min(1, player.volume() + options.volumeStep));
+                        }
+                    },
+                    // Volume down with down arrow
+                    volumeDownKey: {
+                        key: function(event) {
+                            return event.which === 40;
+                        },
+                        handler: function(player, options) {
+                            player.volume(Math.max(0, player.volume() - options.volumeStep));
+                        }
+                    },
+                    // Mute with M
+                    muteKey: {
+                        key: function(event) {
+                            return event.which === 77;
+                        },
+                        handler: function(player) {
+                            player.muted(!player.muted());
+                        }
+                    },
+                    // Fullscreen with F
+                    fullscreenKey: {
+                        key: function(event) {
+                            return event.which === 70;
+                        },
+                        handler: function(player) {
+                            if (player.isFullscreen()) {
+                                player.exitFullscreen();
+                            } else {
+                                player.requestFullscreen();
+                            }
+                        }
+                    },
+                    // Stats overlay with I
+                    statsKey: {
+                        key: function(event) {
+                            return event.which === 73;
+                        },
+                        handler: function() {
+                            emit('toggleStats');
+                        }
+                    }
+                }
+            });
+            console.log('Hotkeys plugin initialized');
+        } else {
+            console.warn('Hotkeys plugin not available');
+        }
+
+        // For live streams, hide playback rate control as it doesn't work
+        if (props.isLive) {
+            if (player.controlBar.playbackRateMenuButton) {
+                player.controlBar.playbackRateMenuButton.hide();
+            }
+        } else {
+            // Only show playback rate for VOD
+            if (player.controlBar.playbackRateMenuButton) {
+                player.controlBar.playbackRateMenuButton.show();
+                player.controlBar.playbackRateMenuButton.playbackRates([0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]);
+            }
+        }
         // Log initial volume state
         console.log('Player ready - Initial volume:', player.volume(), 'Muted:', player.muted());
 
@@ -248,7 +349,7 @@ const initializePlayer = async () => {
             document.addEventListener('touchstart', handleFirstInteraction, { once: true });
         }
         // Add manual quality selector for our separate HLS streams
-        if (props.hlsUrls && (props.hlsUrls.hd || props.hlsUrls.sd || props.hlsUrls.ld)) {
+        if (props.hlsUrls && (props.hlsUrls.fhd || props.hlsUrls.hd || props.hlsUrls.sd)) {
             // Create custom quality menu button
             const MenuButton = videojs.getComponent('MenuButton');
             const MenuItem = videojs.getComponent('MenuItem');
@@ -303,17 +404,24 @@ const initializePlayer = async () => {
                 constructor(player, options) {
                     super(player, options);
                     this.controlText('Quality');
+                    
+                    // Add the icon class for the quality button
+                    this.addClass('vjs-quality-menu-button');
+                }
+                
+                buildCSSClass() {
+                    return `vjs-quality-menu-button ${super.buildCSSClass()}`;
                 }
                 
                 createItems() {
                     const items = [];
                     
-                    // Add quality options based on available URLs
+                    // Add quality options including auto/adaptive stream
                     const qualities = [
-                        { url: props.hlsUrls.stream, label: 'Auto', key: 'stream' },
+                        { url: props.streamUrl, label: 'Auto', key: 'auto' },
+                        { url: props.hlsUrls.fhd, label: 'Full HD (1080p)', key: 'fhd' },
                         { url: props.hlsUrls.hd, label: 'HD (720p)', key: 'hd' },
-                        { url: props.hlsUrls.sd, label: 'SD (480p)', key: 'sd' },
-                        { url: props.hlsUrls.ld, label: 'Low (360p)', key: 'ld' }
+                        { url: props.hlsUrls.sd, label: 'SD (480p)', key: 'sd' }
                     ];
                     
                     qualities.forEach(quality => {
@@ -456,8 +564,8 @@ watch(() => props.streamUrl, (newUrl) => {
 });
 
 watch(() => props.hlsUrls, (newUrls) => {
-    if (player && newUrls && newUrls.master) {
-        player.src({ src: newUrls.master, type: 'application/x-mpegURL' });
+    if (player && newUrls && newUrls.stream) {
+        player.src({ src: newUrls.stream, type: 'application/x-mpegURL' });
         player.load();
         if (props.autoplay) {
             player.play().catch(e => console.error('Play failed:', e));
@@ -490,80 +598,56 @@ defineExpose({
 });
 </script>
 
-<style>
+<style scoped>
 .video-js-container {
     width: 100%;
     height: 100%;
     position: relative;
 }
+</style>
 
-/* Custom Video.js theme overrides */
-:deep(.video-js) {
-    background-color: #000;
-}
+<style>
+/* Global Video.js custom theme - colors only */
 
-:deep(.vjs-big-play-button) {
-    border-radius: 50%;
-    width: 80px;
-    height: 80px;
-    line-height: 80px;
-    margin-top: -40px;
-    margin-left: -40px;
-}
-
-:deep(.vjs-control-bar) {
-    background-color: rgba(0, 0, 0, 0.7);
-}
-
-:deep(.vjs-live-control) {
-    color: #ff0000;
-}
-
-:deep(.vjs-live-control.vjs-at-live-edge) {
-    color: #00ff00;
-}
-
-/* Quality selector styling */
-:deep(.vjs-quality-selector) {
-    font-size: 1em;
-}
-
-:deep(.vjs-menu-button-popup .vjs-menu) {
-    left: auto;
-    right: -1em;
-}
-
-/* HLS Quality Selector button styling */
-:deep(.vjs-quality-selector-button) {
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-}
-
-:deep(.vjs-quality-selector .vjs-menu-button) {
-    cursor: pointer;
-}
-
-:deep(.vjs-quality-selector .vjs-icon-placeholder:before) {
+/* Quality button icon - HD text */
+.vjs-quality-menu-button.vjs-menu-button .vjs-icon-placeholder:before {
     content: 'HD';
-    font-size: 0.8em;
-    font-weight: bold;
 }
 
-/* Chromecast button styling */
-:deep(.vjs-chromecast-button) {
-    cursor: pointer;
+/* Progress bar colors */
+.video-js .vjs-play-progress {
+    background: linear-gradient(90deg, oklch(53.86% 0.096 181.61), oklch(62.48% 0.111 181.51)); /* primary-500 to primary-400 */
 }
 
-:deep(.vjs-chromecast-button .vjs-icon-placeholder) {
-    font-family: 'VideoJS';
+/* Volume level color */
+.video-js .vjs-volume-level {
+    background: linear-gradient(90deg, oklch(53.86% 0.096 181.61), oklch(62.48% 0.111 181.51)); /* primary-500 to primary-400 */
 }
 
-:deep(.vjs-chromecast-button.vjs-casting) {
-    color: #00ff00;
+/* Control hover color */
+.video-js .vjs-control:hover {
+    color: oklch(71.68% 0.127 181.62); /* primary-300 */
 }
 
-:deep(.vjs-chromecast-button:hover) {
-    color: #fff;
+/* Live indicator */
+.video-js .vjs-live-control.vjs-at-live-edge {
+    color: rgb(239, 68, 68);
+}
+
+.video-js .vjs-live-control.vjs-at-live-edge:before {
+    content: '● ';
+    color: rgb(239, 68, 68);
+}
+
+/* Selected menu item */
+.video-js .vjs-menu-item.vjs-selected {
+    background: oklch(53.86% 0.096 181.61 / 0.2); /* primary-500 with low opacity */
+    color: oklch(80.03% 0.142 181.59); /* primary-200 */
+}
+
+/* Loading spinner color */
+.video-js .vjs-loading-spinner:before,
+.video-js .vjs-loading-spinner:after {
+    border-color: oklch(53.86% 0.096 181.61) transparent transparent; /* primary-500 */
 }
 </style>

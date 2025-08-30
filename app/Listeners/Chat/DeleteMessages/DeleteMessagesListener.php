@@ -7,9 +7,7 @@ use App\Events\Chat\DeleteMessagesEvent;
 
 class DeleteMessagesListener
 {
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     public function handle(DeleteMessagesEvent $event): void
     {

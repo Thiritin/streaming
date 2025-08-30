@@ -7,12 +7,10 @@ use App\Events\Chat\Commands\SlowModeDisabled;
 
 class AnnounceSlowModeDeactivationListener
 {
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     public function handle(SlowModeDisabled $event): void
     {
-        broadcast(new ChatSystemEvent("Slow mode has been disabled."));
+        broadcast(new ChatSystemEvent('Slow mode has been disabled.'));
     }
 }

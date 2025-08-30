@@ -9,9 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 
 class DispatchPaysOtherDeviceNotifcationListener implements ShouldQueue
 {
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     public function handle(ClientPlayEvent $event): void
     {

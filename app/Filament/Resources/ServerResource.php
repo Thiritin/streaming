@@ -6,21 +6,17 @@ use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Filament\Resources\ServerResource\Pages;
 use App\Filament\Resources\ServerResource\RelationManagers\ClientsRelationManager;
-use App\Filament\Resources\ServerResource\RelationManagers\UserRelationManager;
 use App\Models\Server;
-use Faker\Provider\Text;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Placeholder;
-use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Pages\Actions\DeleteAction;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
-use Filament\Tables\Table;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
 
 class ServerResource extends Resource
 {
@@ -44,12 +40,12 @@ class ServerResource extends Resource
                     ->disabled(fn ($operation): bool => $operation === 'edit')
                     ->required()
                     ->helperText('For local Docker: use container name (e.g., "ef-streaming-stream-1")'),
-                    
+
                 TextInput::make('ip')
                     ->disabled(fn ($operation): bool => $operation === 'edit')
                     ->required()
                     ->helperText('For local Docker: use container IP or "localhost"'),
-                    
+
                 TextInput::make('port')
                     ->numeric()
                     ->minValue(1)
@@ -68,13 +64,13 @@ class ServerResource extends Resource
                     'origin' => 'Origin',
                     'edge' => 'Edge',
                 ])->disabled(fn ($operation): bool => $operation === 'edit')
-                ->default('edge')
-                ->required(),
+                    ->default('edge')
+                    ->required(),
 
                 TextInput::make('max_clients')
                     ->minValue(0)
                     ->numeric()
-                    ->hidden(fn(?Server $record): bool => $record?->type !== ServerTypeEnum::EDGE)
+                    ->hidden(fn (?Server $record): bool => $record?->type !== ServerTypeEnum::EDGE)
                     ->maxValue('99999')
                     ->default(100)
                     ->required(),
@@ -82,25 +78,25 @@ class ServerResource extends Resource
                 Select::make('status')->options([
                     'provisioning' => 'Provisioning',
                     'active' => 'Active',
-                    ServerStatusEnum::DEPROVISIONING->value => "Deprovisioning",
+                    ServerStatusEnum::DEPROVISIONING->value => 'Deprovisioning',
                     'deleted' => 'Deleted',
                 ])
-                ->default('active')
-                ->required(),
+                    ->default('active')
+                    ->required(),
 
                 Checkbox::make('immutable')
-                    ->hidden(fn(?Server $record): bool => $record?->type !== ServerTypeEnum::EDGE)
+                    ->hidden(fn (?Server $record): bool => $record?->type !== ServerTypeEnum::EDGE)
                     ->reactive()
                     ->default(true)
                     ->helperText('Set this if you want to use this server as a stream server. This will prevent the server from being deleted by autoscaling measures.'),
 
                 Placeholder::make('created_at')
                     ->label('Created Date')
-                    ->content(fn(?Server $record): string => $record?->created_at?->diffForHumans() ?? '-'),
+                    ->content(fn (?Server $record): string => $record?->created_at?->diffForHumans() ?? '-'),
 
                 Placeholder::make('updated_at')
                     ->label('Last Modified Date')
-                    ->content(fn(?Server $record): string => $record?->updated_at?->diffForHumans() ?? '-'),
+                    ->content(fn (?Server $record): string => $record?->updated_at?->diffForHumans() ?? '-'),
 
             ]);
     }
@@ -127,7 +123,7 @@ class ServerResource extends Resource
 
                 TextColumn::make('ip')
                     ->copyable(),
-                    
+
                 TextColumn::make('port')
                     ->sortable(),
 
@@ -140,7 +136,7 @@ class ServerResource extends Resource
                         'deleted' => 'gray',
                         default => 'secondary',
                     }),
-                
+
                 TextColumn::make('max_clients')
                     ->label('Max Clients')
                     ->sortable()
@@ -152,7 +148,7 @@ class ServerResource extends Resource
                     ->color('danger')
                     ->requiresConfirmation()
                     ->visible(fn (?Server $record): bool => $record && $record->hetzner_id !== 'manual')
-                    ->action(fn(Server $record) => $record->deprovision()),
+                    ->action(fn (Server $record) => $record->deprovision()),
                 Action::make('Delete')
                     ->icon('heroicon-o-x-mark')
                     ->color('danger')
@@ -160,14 +156,14 @@ class ServerResource extends Resource
                     ->visible(fn (?Server $record): bool => $record && $record->hetzner_id === 'manual')
                     ->modalHeading('Delete Manual Server')
                     ->modalDescription('Are you sure you want to delete this manually managed server?')
-                    ->action(fn(Server $record) => $record->delete()),
+                    ->action(fn (Server $record) => $record->delete()),
             ])->poll();
     }
 
     public static function getRelations(): array
     {
         return [
-            ClientsRelationManager::class
+            ClientsRelationManager::class,
         ];
     }
 

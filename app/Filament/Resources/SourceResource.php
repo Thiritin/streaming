@@ -2,27 +2,24 @@
 
 namespace App\Filament\Resources;
 
+use App\Enum\SourceStatusEnum;
 use App\Filament\Resources\SourceResource\Pages;
 use App\Filament\Resources\SourceResource\RelationManagers;
 use App\Models\Source;
 use Filament\Forms;
+use Filament\Forms\Components\KeyValue;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
-use Filament\Forms\Get;
-use Filament\Forms\Set;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Filament\Forms\Components\Section;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\Toggle;
-use Filament\Forms\Components\KeyValue;
+use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
-use Filament\Tables\Columns\BadgeColumn;
-use Filament\Notifications\Notification;
+use Filament\Tables\Table;
 use Illuminate\Support\Str;
 
 class SourceResource extends Resource
@@ -30,9 +27,9 @@ class SourceResource extends Resource
     protected static ?string $model = Source::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-signal';
-    
+
     protected static ?string $navigationGroup = 'Streaming';
-    
+
     protected static ?int $navigationSort = 1;
 
     public static function form(Form $form): Form
@@ -58,46 +55,42 @@ class SourceResource extends Resource
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
-                
+
                 Section::make('Stream Configuration')
                     ->description('OBS Studio Configuration')
                     ->schema([
-                        TextInput::make('obs_server_url')
+                        Forms\Components\Placeholder::make('obs_server_url')
                             ->label('OBS Server URL')
-                            ->default(function (?Source $record) {
-                                if (!$record) {
+                            ->content(function (?Source $record) {
+                                if (! $record) {
                                     return 'Will be generated on save';
                                 }
-                                return $record->getRtmpServerUrl();
+
+                                return new \Illuminate\Support\HtmlString(
+                                    '<code class="text-sm font-mono select-all cursor-pointer" 
+                                          onclick="navigator.clipboard.writeText(this.textContent); this.classList.add(\'opacity-50\'); setTimeout(() => this.classList.remove(\'opacity-50\'), 200);">'
+                                    .htmlspecialchars($record->getRtmpServerUrl()).
+                                    '</code>'
+                                );
                             })
-                            ->disabled()
-                            ->dehydrated(false)
-                            ->extraAttributes([
-                                'x-data' => '{}',
-                                'x-on:click' => "\$el.select(); navigator.clipboard.writeText(\$el.value); \$tooltip('Copied!', { timeout: 1500 })",
-                                'style' => 'cursor: pointer;'
-                            ])
-                            ->helperText('Click to copy • OBS Settings → Stream → Server')
-                            ->columnSpanFull(),
-                        TextInput::make('obs_stream_key_display')
+                            ->helperText('Click to copy → OBS Settings → Stream → Server'),
+                        Forms\Components\Placeholder::make('obs_stream_key_display')
                             ->label('OBS Stream Key')
-                            ->default(function (?Source $record) {
-                                if (!$record || !$record->stream_key) {
+                            ->content(function (?Source $record) {
+                                if (! $record || ! $record->stream_key) {
                                     return 'Will be generated on save';
                                 }
-                                return $record->getObsStreamKey();
+
+                                return new \Illuminate\Support\HtmlString(
+                                    '<code class="text-sm font-mono select-all cursor-pointer" 
+                                          onclick="navigator.clipboard.writeText(this.textContent); this.classList.add(\'opacity-50\'); setTimeout(() => this.classList.remove(\'opacity-50\'), 200);">'
+                                    .htmlspecialchars($record->getObsStreamKey()).
+                                    '</code>'
+                                );
                             })
-                            ->disabled()
-                            ->dehydrated(false)
-                            ->extraAttributes([
-                                'x-data' => '{}',
-                                'x-on:click' => "\$el.select(); navigator.clipboard.writeText(\$el.value); \$tooltip('Copied!', { timeout: 1500 })",
-                                'style' => 'cursor: pointer;'
-                            ])
-                            ->helperText('Click to copy • OBS Settings → Stream → Stream Key')
-                            ->columnSpanFull(),
+                            ->helperText('Click to copy → OBS Settings → Stream → Stream Key'),
                     ]),
-                
+
                 Section::make('Settings')
                     ->schema([
                         Toggle::make('is_active')
@@ -122,6 +115,17 @@ class SourceResource extends Resource
     {
         return $table
             ->columns([
+                BadgeColumn::make('status')
+                    ->label('Status')
+                    ->getStateUsing(fn ($record) => $record->status->value)
+                    ->colors([
+                        'success' => SourceStatusEnum::ONLINE->value,
+                        'gray' => SourceStatusEnum::OFFLINE->value,
+                    ])
+                    ->icons([
+                        'heroicon-o-signal' => SourceStatusEnum::ONLINE->value,
+                        'heroicon-o-signal-slash' => SourceStatusEnum::OFFLINE->value,
+                    ]),
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable()
@@ -188,7 +192,7 @@ class SourceResource extends Resource
                                 ->body('This source has active live shows.')
                                 ->danger()
                                 ->send();
-                            
+
                             return false;
                         }
                     }),
@@ -204,7 +208,7 @@ class SourceResource extends Resource
                                         ->body('One or more sources have active live shows.')
                                         ->danger()
                                         ->send();
-                                    
+
                                     return false;
                                 }
                             }
@@ -228,12 +232,12 @@ class SourceResource extends Resource
             'edit' => Pages\EditSource::route('/{record}/edit'),
         ];
     }
-    
+
     public static function getNavigationBadge(): ?string
     {
         return static::getModel()::active()->count();
     }
-    
+
     public static function getNavigationBadgeColor(): ?string
     {
         return static::getModel()::active()->count() > 0 ? 'success' : 'gray';

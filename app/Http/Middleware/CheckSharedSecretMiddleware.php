@@ -19,6 +19,7 @@ class CheckSharedSecretMiddleware
         if (is_null($server)) {
             throw new AuthenticationException('Invalid shared secret');
         }
+
         return $next($request);
     }
 }

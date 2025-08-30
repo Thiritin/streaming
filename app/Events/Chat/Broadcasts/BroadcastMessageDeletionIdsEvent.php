@@ -12,22 +12,19 @@ class BroadcastMessageDeletionIdsEvent implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public array $ids)
-    {
-    }
+    public function __construct(public array $ids) {}
 
     public function broadcastOn(): array
     {
         return [
-            new Channel('chat')
+            new Channel('chat'),
         ];
     }
-
 
     public function broadcastWith(): array
     {
         return [
-            "ids" => $this->ids,
+            'ids' => $this->ids,
         ];
     }
 

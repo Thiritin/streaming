@@ -66,108 +66,87 @@ const copyToClipboard = (text) => {
                     <div v-if="show.can_watch && show.hls_urls">
                         <h3 class="text-xl font-semibold mb-4">Available Stream Qualities</h3>
 
-                        <!-- Master Playlist -->
-                        <div class="mb-4 p-4 bg-primary-900 rounded">
-                            <label class="text-primary-200 block text-sm font-bold mb-2">
-                                🎯 Master Playlist (Recommended - Adaptive Bitrate)
-                            </label>
-                            <div class="flex gap-2">
-                                <Input
-                                    :modelValue="show.hls_urls.master"
-                                    readonly
-                                    class="flex-1 font-mono text-sm"
-                                    @click="$event.target.select()"
-                                />
-                                <Button
-                                    @click="copyToClipboard(show.hls_urls.master)"
-                                    size="sm"
-                                >
-                                    Copy
-                                </Button>
-                            </div>
-                            <p class="text-xs text-primary-400 mt-1">Automatically adjusts quality based on your connection</p>
-                        </div>
-
-                        <!-- Individual Qualities -->
-                        <details class="mt-4">
-                            <summary class="cursor-pointer text-primary-300 hover:text-primary-200 mb-3">
-                                Show individual quality streams →
-                            </summary>
-
-                            <div class="space-y-3 mt-3">
-                                <!-- Full HD -->
-                                <div v-if="show.hls_urls.fhd" class="flex gap-2 items-center">
-                                    <label class="text-primary-300 text-sm font-semibold w-24">1080p FHD:</label>
+                        <div class="space-y-3">
+                            <!-- Full HD -->
+                            <div v-if="show.hls_urls.fhd" class="p-3 bg-primary-900 rounded">
+                                <div class="flex gap-2 items-center">
+                                    <label class="text-primary-200 text-sm font-bold w-32">🎬 1080p FHD:</label>
                                     <Input
                                         :modelValue="show.hls_urls.fhd"
                                         readonly
-                                        class="flex-1 font-mono text-xs h-8"
+                                        class="flex-1 font-mono text-xs"
                                         @click="$event.target.select()"
                                     />
                                     <Button
                                         @click="copyToClipboard(show.hls_urls.fhd)"
                                         size="sm"
-                                        class="h-8"
                                     >
                                         Copy
                                     </Button>
                                 </div>
+                                <p class="text-xs text-primary-400 mt-1 ml-36">Full HD quality - 6 Mbps</p>
+                            </div>
 
-                                <!-- HD -->
-                                <div v-if="show.hls_urls.hd" class="flex gap-2 items-center">
-                                    <label class="text-primary-300 text-sm font-semibold w-24">720p HD:</label>
+                            <!-- HD -->
+                            <div v-if="show.hls_urls.hd" class="p-3 bg-primary-900 rounded">
+                                <div class="flex gap-2 items-center">
+                                    <label class="text-primary-200 text-sm font-bold w-32">📺 720p HD:</label>
                                     <Input
                                         :modelValue="show.hls_urls.hd"
                                         readonly
-                                        class="flex-1 font-mono text-xs h-8"
+                                        class="flex-1 font-mono text-xs"
                                         @click="$event.target.select()"
                                     />
                                     <Button
                                         @click="copyToClipboard(show.hls_urls.hd)"
                                         size="sm"
-                                        class="h-8"
                                     >
                                         Copy
                                     </Button>
                                 </div>
+                                <p class="text-xs text-primary-400 mt-1 ml-36">HD quality - 3 Mbps</p>
+                            </div>
 
-                                <!-- SD -->
-                                <div v-if="show.hls_urls.sd" class="flex gap-2 items-center">
-                                    <label class="text-primary-300 text-sm font-semibold w-24">480p SD:</label>
+                            <!-- SD -->
+                            <div v-if="show.hls_urls.sd" class="p-3 bg-primary-900 rounded">
+                                <div class="flex gap-2 items-center">
+                                    <label class="text-primary-200 text-sm font-bold w-32">📱 480p SD:</label>
                                     <Input
                                         :modelValue="show.hls_urls.sd"
                                         readonly
-                                        class="flex-1 font-mono text-xs h-8"
+                                        class="flex-1 font-mono text-xs"
                                         @click="$event.target.select()"
                                     />
                                     <Button
                                         @click="copyToClipboard(show.hls_urls.sd)"
                                         size="sm"
-                                        class="h-8"
                                     >
                                         Copy
                                     </Button>
                                 </div>
+                                <p class="text-xs text-primary-400 mt-1 ml-36">Standard quality - 1.5 Mbps</p>
+                            </div>
 
-                                <!-- LD -->
-                                <div v-if="show.hls_urls.ld" class="flex gap-2 items-center">
-                                    <label class="text-primary-300 text-sm font-semibold w-24">320p LD:</label>
+                            <!-- Original Stream (if available) -->
+                            <div v-if="show.hls_urls.stream" class="p-3 bg-primary-900 rounded">
+                                <div class="flex gap-2 items-center">
+                                    <label class="text-primary-200 text-sm font-bold w-32">🎯 Original:</label>
                                     <Input
-                                        :modelValue="show.hls_urls.ld"
+                                        :modelValue="show.hls_urls.stream"
                                         readonly
-                                        class="flex-1 font-mono text-xs h-8"
+                                        class="flex-1 font-mono text-xs"
                                         @click="$event.target.select()"
                                     />
                                     <Button
-                                        @click="copyToClipboard(show.hls_urls.ld)"
+                                        @click="copyToClipboard(show.hls_urls.stream)"
                                         size="sm"
-                                        class="h-8"
                                     >
                                         Copy
                                     </Button>
                                 </div>
+                                <p class="text-xs text-primary-400 mt-1 ml-36">Original stream quality</p>
                             </div>
-                        </details>
+                        </div>
                     </div>
                     <div v-else class="text-center py-8">
                         <svg class="w-16 h-16 text-primary-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -207,7 +186,7 @@ const copyToClipboard = (text) => {
                             <span class="flex-shrink-0 w-8 h-8 bg-primary-700 rounded-full flex items-center justify-center text-sm font-bold mr-3">3</span>
                             <div>
                                 <h3 class="font-semibold mb-1">Paste the Stream URL</h3>
-                                <p class="text-primary-300 text-sm">Copy and paste the Master Playlist URL from above. This will give you adaptive quality streaming.</p>
+                                <p class="text-primary-300 text-sm">Copy and paste your preferred quality URL from above. Choose based on your internet connection speed.</p>
                             </div>
                         </div>
 
@@ -223,8 +202,9 @@ const copyToClipboard = (text) => {
                     <div class="mt-6 p-4 bg-primary-900 rounded">
                         <h4 class="font-semibold text-sm mb-2">💡 Pro Tips:</h4>
                         <ul class="text-sm text-primary-300 space-y-1">
-                            <li>• Use the Master Playlist for the best experience - it automatically adjusts quality</li>
-                            <li>• If you have a slow connection, choose a lower quality stream (SD or LD)</li>
+                            <li>• Choose FHD (1080p) for the best quality if you have fast internet (6+ Mbps)</li>
+                            <li>• Use HD (720p) for a good balance of quality and bandwidth (3+ Mbps)</li>
+                            <li>• If you have a slow connection, choose SD (480p) for smooth playback (1.5+ Mbps)</li>
                             <li>• You can save the URL as a playlist file in VLC for quick access</li>
                             <li>• These URLs work on Smart TVs with compatible media player apps</li>
                         </ul>

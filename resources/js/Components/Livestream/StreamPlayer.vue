@@ -1,5 +1,6 @@
 <script setup>
 import VideoJsPlayer from "@/Components/Livestream/VideoJsPlayer.vue";
+import StreamStatsOverlay from "@/Components/Livestream/StreamStatsOverlay.vue";
 import { ref, computed } from 'vue';
 
 const props = defineProps({
@@ -10,6 +11,7 @@ const props = defineProps({
 // State for controls visibility
 const controlsVisible = ref(true);
 const showUnmutePrompt = ref(false);
+const showStats = ref(false);
 
 // Handle player events
 const handleError = (error) => {
@@ -66,6 +68,10 @@ const handleUserInactive = () => {
     controlsVisible.value = false;
 };
 
+const handleToggleStats = () => {
+    showStats.value = !showStats.value;
+};
+
 const playerRef = ref(null);
 
 // Expose methods for parent component
@@ -73,13 +79,14 @@ defineExpose({
     play: () => playerRef.value?.play(),
     pause: () => playerRef.value?.pause(),
     seekToLive: () => playerRef.value?.seekToLive(),
+    handleToggleStats
 });
 </script>
 
 <template>
-    <div class="stream-player-container" v-if="hlsUrls && (hlsUrls.stream || hlsUrls.master)">
+    <div class="stream-player-container" v-if="hlsUrls && hlsUrls.stream">
         <VideoJsPlayer 
-            :stream-url="hlsUrls.stream || hlsUrls.master"
+            :stream-url="hlsUrls.stream"
             :hls-urls="hlsUrls"
             :autoplay="true"
             :muted="false"
@@ -91,6 +98,7 @@ defineExpose({
             @useractive="handleUserActive"
             @userinactive="handleUserInactive"
             @volumechange="handleVolumeChange"
+            @toggleStats="handleToggleStats"
             ref="playerRef"
         />
         
@@ -101,6 +109,13 @@ defineExpose({
                 <div v-if="showInfo.source" class="show-source">{{ showInfo.source }}</div>
             </div>
         </transition>
+        
+        <!-- Stream Statistics Overlay -->
+        <StreamStatsOverlay 
+            :visible="showStats"
+            :player="playerRef?.getPlayer && playerRef.getPlayer()"
+            @close="showStats = false"
+        />
         
         <!-- Unmute prompt -->
         <transition name="fade">

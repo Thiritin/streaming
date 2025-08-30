@@ -18,9 +18,7 @@ class DeleteDnsRecordJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public readonly Server $server)
-    {
-    }
+    public function __construct(public readonly Server $server) {}
 
     public function handle(): void
     {
@@ -28,7 +26,7 @@ class DeleteDnsRecordJob implements ShouldQueue
             return;
         }
 
-        if($this->server->type === ServerTypeEnum::ORIGIN) {
+        if ($this->server->type === ServerTypeEnum::ORIGIN) {
             return;
         }
 
@@ -36,26 +34,26 @@ class DeleteDnsRecordJob implements ShouldQueue
         $ttl = config('dns.ttl', 60);
 
         try {
-            $dnsService = new DnsKeyService();
-            
+            $dnsService = new DnsKeyService;
+
             $commands = sprintf(
-                "update delete %s %d A",
+                'update delete %s %d A',
                 $hostname,
                 $ttl
             );
 
             $result = $dnsService->executeNsupdate($commands);
-            
+
             Log::info('DNS record deleted', [
                 'hostname' => $hostname,
-                'result' => $result
+                'result' => $result,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to delete DNS record', [
                 'hostname' => $hostname,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             throw $e;
         }
     }

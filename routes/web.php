@@ -1,9 +1,7 @@
 <?php
 
-use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 /*
 |--------------------------------------------------------------------------
@@ -30,13 +28,22 @@ Route::get('/auth/frontchannel-logout', \App\Http\Controllers\Auth\FrontChannelL
 Route::middleware(['auth:web', 'ensure.server'])->group(function () {
     // Provisioning wait page - middleware allows this route even without server
     Route::get('/provisioning/wait', [\App\Http\Controllers\ProvisioningController::class, 'wait'])->name('provisioning.wait');
-    
+
     // All other authenticated routes require server assignment
-    Route::get('/', [\App\Http\Controllers\StreamController::class,'index'])->name('shows.grid');
-    Route::get('/shows', [\App\Http\Controllers\StreamController::class,'index'])->name('shows.index');
-    Route::get('/show/{show:slug}', [\App\Http\Controllers\StreamController::class,'show'])->name('show.view');
-    Route::get('/show/{show:slug}/external', [\App\Http\Controllers\StreamController::class,'external'])->name('show.external');
-    Route::post('/message/send', [\App\Http\Controllers\MessageController::class,'send'])->name('message.send');
+    Route::get('/', [\App\Http\Controllers\StreamController::class, 'index'])->name('shows.grid');
+    Route::get('/shows', [\App\Http\Controllers\StreamController::class, 'index'])->name('shows.index');
+    Route::get('/show/{show:slug}', [\App\Http\Controllers\StreamController::class, 'show'])->name('show.view');
+    Route::get('/show/{show:slug}/external', [\App\Http\Controllers\StreamController::class, 'external'])->name('show.external');
+    Route::post('/message/send', [\App\Http\Controllers\MessageController::class, 'send'])->name('message.send');
+
+    // Source heartbeat endpoint
+    Route::post('/sources/{source}/heartbeat', [\App\Http\Controllers\SourceHeartbeatController::class, 'heartbeat'])->name('source.heartbeat');
+
+    // Emote routes
+    Route::get('/emotes', [\App\Http\Controllers\EmoteController::class, 'index'])->name('emotes.index');
+    Route::post('/emotes', [\App\Http\Controllers\EmoteController::class, 'store'])->name('emotes.store');
+    Route::post('/emotes/{emote}/favorite', [\App\Http\Controllers\EmoteController::class, 'toggleFavorite'])->name('emotes.favorite');
+    Route::delete('/emotes/{emote}', [\App\Http\Controllers\EmoteController::class, 'destroy'])->name('emotes.destroy');
 });
 
 Broadcast::routes();

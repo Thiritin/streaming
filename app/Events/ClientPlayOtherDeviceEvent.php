@@ -12,9 +12,7 @@ class ClientPlayOtherDeviceEvent implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public readonly array $notifyClientIds)
-    {
-    }
+    public function __construct(public readonly array $notifyClientIds) {}
 
     public function broadcastOn(): array
     {
@@ -22,6 +20,7 @@ class ClientPlayOtherDeviceEvent implements ShouldBroadcast
         foreach ($this->notifyClientIds as $client_id) {
             $channels[] = new PrivateChannel('Client.'.$client_id);
         }
+
         return $channels;
     }
 

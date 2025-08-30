@@ -19,23 +19,23 @@ class BroadcastJob extends AbstractChatCommand
             'aliases' => [],
         ];
     }
-    
+
     public function canExecute(): bool
     {
         return $this->user->can('chat.commands.broadcast');
     }
-    
+
     protected function execute(): void
     {
         $args = $this->parseArguments();
-        
+
         if (count($args) < 1) {
             return;
         }
-        
+
         // Join all arguments as the message (in case it contains spaces)
         $message = implode(' ', $args);
-        
+
         broadcast(new ChatSystemEvent($message));
     }
 }

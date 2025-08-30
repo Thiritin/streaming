@@ -24,7 +24,7 @@ return new class extends Migration
             $table->json('permissions')->nullable(); // Store any additional permissions as JSON
             $table->json('metadata')->nullable(); // Additional configuration
             $table->timestamps();
-            
+
             $table->index('slug');
             $table->index('priority');
             $table->index('assigned_at_login');

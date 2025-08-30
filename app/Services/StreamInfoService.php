@@ -21,7 +21,7 @@ class StreamInfoService
 
     public static function getPreviousUserCount(): int
     {
-        return Cache::get('stream.listeners.old', fn() => 0);
+        return Cache::get('stream.listeners.old', fn () => 0);
     }
 
     public static function setPreviousUserCount(int $count): bool

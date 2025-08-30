@@ -8,9 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 
 class StopClientStreamsListener implements ShouldQueue
 {
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     public function handle(ClientPlayOtherDeviceEvent $event): void
     {

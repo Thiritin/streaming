@@ -19,7 +19,7 @@ return new class extends Migration
             $table->datetime('left_at')->nullable();
             $table->integer('watch_duration')->default(0); // in seconds
             $table->timestamps();
-            
+
             $table->unique(['show_id', 'user_id', 'joined_at']);
             $table->index(['show_id', 'user_id']);
         });

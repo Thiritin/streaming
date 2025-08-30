@@ -13,14 +13,12 @@ class ServerAssignmentChanged implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public readonly User $user, public bool $provisioning = false)
-    {
-    }
+    public function __construct(public readonly User $user, public bool $provisioning = false) {}
 
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('User.'.$this->user->id.'.StreamUrl')
+            new PrivateChannel('User.'.$this->user->id.'.StreamUrl'),
         ];
     }
 
@@ -29,6 +27,7 @@ class ServerAssignmentChanged implements ShouldBroadcast
         // Only get stream URLs if user has server assignment
         if ($this->user->server_id && $this->user->streamkey) {
             $data = $this->user->getUserStreamUrls();
+
             return [
                 'hlsUrls' => $data['hls_urls'] ?? null,
                 'clientId' => $data['client_id'],
@@ -36,7 +35,7 @@ class ServerAssignmentChanged implements ShouldBroadcast
                 'hasAssignment' => true,
             ];
         }
-        
+
         // User is waiting for provisioning
         return [
             'hlsUrls' => null,

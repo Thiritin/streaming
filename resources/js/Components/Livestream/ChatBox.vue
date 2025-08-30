@@ -1,6 +1,7 @@
 <script setup>
 import {onMounted, reactive, ref} from "vue";
 import ChatMessageBox from "@/Components/Livestream/ChatMessageBox.vue";
+import UserBadge from "@/Components/Livestream/UserBadge.vue";
 import {usePage} from '@inertiajs/vue3'
 import {inject} from 'vue'
 
@@ -94,7 +95,22 @@ function highlightUsername(message) {
 }
 
 function processMessageForDisplay(message) {
-  // First apply username highlighting
+  // Check if message contains emote tags (already processed by server)
+  if (message.includes('<emote')) {
+    // Parse emote tags and replace with images
+    let processed = message.replace(/<emote data-name="([^"]+)" data-url="([^"]+)"(?: data-size="([^"]+)")?><\/emote>/g, 
+      (match, name, url, size) => {
+        // Use smaller size (16x16) if size is 'small', otherwise 32x32
+        const sizeClass = size === 'small' ? 'w-4 h-4' : 'w-8 h-8';
+        return `<img src="${url}" alt=":${name}:" title=":${name}:" class="inline-block ${sizeClass} mx-1 align-middle" />`;
+      });
+    
+    // Apply username highlighting
+    processed = highlightUsername(processed);
+    return processed;
+  }
+  
+  // For messages without emotes, process normally
   let processed = highlightUsername(encodeHtml(message));
 
   // Apply client-side URL filtering for display (server already sanitized)
@@ -137,7 +153,8 @@ function sendMessage() {
             "time": padWithZeros(currentTime.getHours()) + ':' + padWithZeros(currentTime.getMinutes()),
             "message": message.value,
             "is_command": isCommand(message.value),
-            "role": usePage().props.auth.user.role
+            "role": usePage().props.auth.user.role,
+            "badge": usePage().props.auth.user.badge
         })
         message.value = '';
         scrollToBottom();
@@ -157,21 +174,22 @@ function sendMessage() {
 <template>
     <div class="flex flex-col bg-primary-950">
         <!-- Title -->
-        <div class="bg-primary-950 py-4 text-primary-100 text-center border-b border-primary-800">
+        <div class="bg-primary-950 py-4 text-white text-center border-b border-primary-800">
             <h1 class="uppercase tracking-wider font-semibold">Stream Chat</h1>
         </div>
         <!-- Chat Messages -->
-        <div class="px-3 p-3 text-primary-100 flex-1 h-full overflow-auto bg-primary-900" ref="messageContainer">
+        <div class="px-3 p-3 text-white flex-1 h-full overflow-auto bg-primary-900/95" ref="messageContainer">
             <div class="mb-0.5" v-for="message in chatMessages">
                 <div class="flex" v-if="message.name">
-                    <div class="text-xs pr-2 text-primary-600 mt-1">{{ message.time }}</div>
-                    <div :class="{'bg-primary-950 text-primary-400 py-1 px-1 rounded': message.is_command}">
-                            <span :title="message.role?.name || 'User'" class="font-semibold" :style="{color: message.role?.chat_color || '#86efac'}">
-                                {{ message.name }}<span v-if="message.role?.is_staff"> ({{ message.role.name }})</span>
-                            </span>: <span class="message-content text-primary-200" v-html="processMessageForDisplay(message.message)"></span>
+                    <div class="text-xs pr-2 text-primary-400 mt-1">{{ message.time }}</div>
+                    <div :class="{'bg-primary-800/70 text-primary-200 py-1 px-1 rounded': message.is_command}">
+                        <UserBadge v-if="message.badge" :badge="message.badge" size="sm" class="mr-1" />
+                        <span :title="message.role?.name || 'User'" class="font-semibold" :style="{color: message.role?.chat_color || '#86efac'}">
+                            {{ message.name }}<span v-if="message.role?.is_staff"> ({{ message.role.name }})</span>
+                        </span>: <span class="message-content text-primary-100" v-html="processMessageForDisplay(message.message)"></span>
                     </div>
                 </div>
-                <div v-else class="rounded-lg text-center m-2 p-2 break-words bg-primary-900 text-primary-200">
+                <div v-else class="rounded-lg text-center m-2 p-2 break-words bg-primary-800/70 text-primary-100">
                     {{ message.message }}
                 </div>
             </div>

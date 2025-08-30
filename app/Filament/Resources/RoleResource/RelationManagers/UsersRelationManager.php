@@ -4,12 +4,11 @@ namespace App\Filament\Resources\RoleResource\RelationManagers;
 
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Filament\Notifications\Notification;
 
 class UsersRelationManager extends RelationManager
 {
@@ -55,16 +54,14 @@ class UsersRelationManager extends RelationManager
             ])
             ->filters([
                 Tables\Filters\Filter::make('active')
-                    ->query(fn (Builder $query): Builder => 
-                        $query->where(function ($q) {
-                            $q->whereNull('role_user.expires_at')
-                              ->orWhere('role_user.expires_at', '>', now());
-                        })
+                    ->query(fn (Builder $query): Builder => $query->where(function ($q) {
+                        $q->whereNull('role_user.expires_at')
+                            ->orWhere('role_user.expires_at', '>', now());
+                    })
                     )
                     ->label('Active Only'),
                 Tables\Filters\Filter::make('expired')
-                    ->query(fn (Builder $query): Builder => 
-                        $query->where('role_user.expires_at', '<=', now())
+                    ->query(fn (Builder $query): Builder => $query->where('role_user.expires_at', '<=', now())
                     )
                     ->label('Expired Only'),
             ])
@@ -89,6 +86,7 @@ class UsersRelationManager extends RelationManager
                     ])
                     ->mutateFormDataUsing(function (array $data): array {
                         $data['assigned_at'] = now();
+
                         return $data;
                     })
                     ->successNotification(

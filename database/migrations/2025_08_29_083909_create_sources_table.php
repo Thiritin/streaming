@@ -25,7 +25,7 @@ return new class extends Migration
             $table->integer('priority')->default(0); // For ordering sources
             $table->json('metadata')->nullable(); // Additional configuration
             $table->timestamps();
-            
+
             $table->index('slug');
             $table->index('is_active');
             $table->index('priority');

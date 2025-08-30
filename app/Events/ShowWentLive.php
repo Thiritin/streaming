@@ -5,8 +5,6 @@ namespace App\Events;
 use App\Models\Show;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -34,7 +32,7 @@ class ShowWentLive implements ShouldBroadcast
     {
         return [
             new Channel('shows'),
-            new Channel('show.' . $this->show->id),
+            new Channel('show.'.$this->show->id),
         ];
     }
 

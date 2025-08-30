@@ -15,15 +15,14 @@ use Illuminate\Support\Facades\Log;
 class CreateDnsRecordJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
     public int $tries = 1;
 
-    public function __construct(public readonly Server $server)
-    {
-    }
+    public function __construct(public readonly Server $server) {}
 
     public function handle(): void
     {
-        if($this->server->type === ServerTypeEnum::ORIGIN) {
+        if ($this->server->type === ServerTypeEnum::ORIGIN) {
             return;
         }
 
@@ -32,29 +31,29 @@ class CreateDnsRecordJob implements ShouldQueue
         $ttl = config('dns.ttl', 60);
 
         try {
-            $dnsService = new DnsKeyService();
-            
+            $dnsService = new DnsKeyService;
+
             $commands = sprintf(
-                "update add %s %d A %s",
+                'update add %s %d A %s',
                 $hostname,
                 $ttl,
                 $ip
             );
 
             $result = $dnsService->executeNsupdate($commands);
-            
+
             Log::info('DNS record created', [
                 'hostname' => $hostname,
                 'ip' => $ip,
-                'result' => $result
+                'result' => $result,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to create DNS record', [
                 'hostname' => $hostname,
                 'ip' => $ip,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             throw $e;
         }
     }

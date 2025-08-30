@@ -1,0 +1,250 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Emote;
+use App\Models\User;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Intervention\Image\Laravel\Facades\Image;
+
+class EmoteService
+{
+    /**
+     * Maximum emotes allowed per message before size reduction.
+     */
+    const MAX_EMOTES_PER_MESSAGE = 10;
+
+    /**
+     * Unlimited emotes but with size reduction.
+     */
+    const REDUCED_SIZE_THRESHOLD = 10;
+
+    /**
+     * Required emote dimensions.
+     */
+    const EMOTE_SIZE = 64;
+
+    /**
+     * Display size in chat.
+     */
+    const DISPLAY_SIZE = 32;
+
+    /**
+     * Upload and create a new emote.
+     */
+    public function uploadEmote(UploadedFile $file, string $name, bool $isGlobal, User $user): Emote
+    {
+        // Validate image dimensions
+        $image = Image::read($file);
+
+        // Resize to 64x64 if not already
+        if ($image->width() !== self::EMOTE_SIZE || $image->height() !== self::EMOTE_SIZE) {
+            $image->resize(self::EMOTE_SIZE, self::EMOTE_SIZE);
+        }
+
+        // Generate S3 key
+        $extension = $file->getClientOriginalExtension();
+        $s3Key = 'emotes/'.Str::uuid().'.'.$extension;
+
+        // Save to S3
+        $path = Storage::disk('s3')->put($s3Key, (string) $image->encode(), 'public');
+        $url = Storage::disk('s3')->url($s3Key);
+
+        // Create emote record
+        $emote = Emote::create([
+            'name' => $name,
+            's3_key' => $s3Key,
+            'url' => $url,
+            'uploaded_by_user_id' => $user->id,
+            'is_global' => $isGlobal,
+            'is_approved' => false, // Requires admin approval
+        ]);
+
+        // Clear emotes cache
+        $this->clearCache();
+
+        return $emote;
+    }
+
+    /**
+     * Parse emotes in a message.
+     */
+    public function parseMessage(string $message, User $user): array
+    {
+        // Get available emotes for user
+        $emotes = $this->getAvailableEmotes($user);
+
+        // Find all :emote: patterns
+        preg_match_all('/:([a-z0-9_]+):/', $message, $matches);
+
+        $usedEmotes = [];
+        $emoteCount = 0;
+        $processedMessage = $message;
+
+        foreach ($matches[1] as $index => $emoteName) {
+            // Check if emote exists and is available
+            if (isset($emotes[$emoteName])) {
+                $emote = $emotes[$emoteName];
+
+                // Determine size class based on total emote count
+                $sizeClass = $emoteCount >= self::REDUCED_SIZE_THRESHOLD ? 'small' : 'normal';
+
+                $emoteTag = '<emote data-name="'.$emoteName.'" data-url="'.$emote['url'].'" data-size="'.$sizeClass.'"></emote>';
+                $processedMessage = str_replace($matches[0][$index], $emoteTag, $processedMessage);
+
+                $usedEmotes[] = $emote;
+                $emoteCount++;
+
+                // Increment usage count (deferred to avoid blocking)
+                dispatch(function () use ($emote) {
+                    Emote::find($emote['id'])->incrementUsage();
+                })->afterResponse();
+            }
+        }
+
+        // If we have more than threshold, update all emote tags to small size
+        if ($emoteCount > self::REDUCED_SIZE_THRESHOLD) {
+            $processedMessage = str_replace('data-size="normal"', 'data-size="small"', $processedMessage);
+        }
+
+        return [
+            'message' => $processedMessage,
+            'emotes' => $usedEmotes,
+            'emote_count' => $emoteCount,
+        ];
+    }
+
+    /**
+     * Get all available emotes for a user.
+     */
+    public function getAvailableEmotes(User $user): array
+    {
+        return Cache::remember('user_emotes_'.$user->id, 300, function () use ($user) {
+            $emotes = Emote::availableFor($user)
+                ->select('id', 'name', 'url')
+                ->get();
+
+            $indexed = [];
+            foreach ($emotes as $emote) {
+                $indexed[$emote->name] = [
+                    'id' => $emote->id,
+                    'name' => $emote->name,
+                    'url' => $emote->url,
+                ];
+            }
+
+            return $indexed;
+        });
+    }
+
+    /**
+     * Get all approved global emotes.
+     */
+    public function getGlobalEmotes(): array
+    {
+        return Cache::remember('global_emotes', 3600, function () {
+            return Emote::approved()
+                ->global()
+                ->select('id', 'name', 'url')
+                ->orderBy('usage_count', 'desc')
+                ->get()
+                ->toArray();
+        });
+    }
+
+    /**
+     * Get user's personal emotes.
+     */
+    public function getUserEmotes(User $user): array
+    {
+        return Emote::where('uploaded_by_user_id', $user->id)
+            ->select('id', 'name', 'url', 'is_approved', 'is_global')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->toArray();
+    }
+
+    /**
+     * Get user's favorite emotes.
+     */
+    public function getUserFavorites(User $user): array
+    {
+        return Cache::remember('user_favorites_'.$user->id, 300, function () use ($user) {
+            return $user->favoriteEmotes()
+                ->approved()
+                ->select('emotes.id', 'emotes.name', 'emotes.url')
+                ->get()
+                ->toArray();
+        });
+    }
+
+    /**
+     * Toggle favorite status for an emote.
+     */
+    public function toggleFavorite(Emote $emote, User $user): bool
+    {
+        if ($user->favoriteEmotes()->where('emote_id', $emote->id)->exists()) {
+            $user->favoriteEmotes()->detach($emote->id);
+            $isFavorited = false;
+        } else {
+            $user->favoriteEmotes()->attach($emote->id);
+            $isFavorited = true;
+        }
+
+        // Clear user's favorites cache
+        Cache::forget('user_favorites_'.$user->id);
+
+        return $isFavorited;
+    }
+
+    /**
+     * Validate emote name.
+     */
+    public function validateEmoteName(string $name): bool
+    {
+        // Must be alphanumeric with underscores, 2-20 characters
+        return preg_match('/^[a-z0-9_]{2,20}$/', strtolower($name));
+    }
+
+    /**
+     * Check if emote name is available.
+     */
+    public function isNameAvailable(string $name): bool
+    {
+        return ! Emote::where('name', strtolower($name))->exists();
+    }
+
+    /**
+     * Clear all emote caches.
+     */
+    public function clearCache(): void
+    {
+        Cache::forget('global_emotes');
+        Cache::flush(); // This will clear all user-specific caches
+    }
+
+    /**
+     * Get emote statistics.
+     */
+    public function getStatistics(): array
+    {
+        return Cache::remember('emote_stats', 3600, function () {
+            return [
+                'total_emotes' => Emote::count(),
+                'approved_emotes' => Emote::approved()->count(),
+                'pending_emotes' => Emote::pending()->count(),
+                'global_emotes' => Emote::approved()->global()->count(),
+                'total_usage' => Emote::sum('usage_count'),
+                'top_emotes' => Emote::approved()
+                    ->orderBy('usage_count', 'desc')
+                    ->take(10)
+                    ->select('name', 'url', 'usage_count')
+                    ->get()
+                    ->toArray(),
+            ];
+        });
+    }
+}

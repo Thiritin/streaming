@@ -16,9 +16,7 @@ class InitializeDeprovisioningJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public readonly Server $server)
-    {
-    }
+    public function __construct(public readonly Server $server) {}
 
     public function handle(): void
     {

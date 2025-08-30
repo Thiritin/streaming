@@ -14,11 +14,7 @@ class NotFoundJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(public readonly User $user, public readonly Message $message)
-    {
-    }
+    public function __construct(public readonly User $user, public readonly Message $message) {}
 
-    public function handle(): void
-    {
-    }
+    public function handle(): void {}
 }

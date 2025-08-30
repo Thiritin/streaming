@@ -22,9 +22,7 @@ class CreateServerJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     public function handle(): void
     {
@@ -38,6 +36,7 @@ class CreateServerJob implements ShouldQueue
         if ($type === ServerTypeEnum::EDGE) {
             if (Server::where('type', ServerTypeEnum::ORIGIN)->whereIn('status', [ServerStatusEnum::PROVISIONING->value])->exists()) {
                 self::dispatch($type)->delay(now()->addMinutes(1));
+
                 return;
             }
         }
@@ -54,6 +53,4 @@ class CreateServerJob implements ShouldQueue
             new WaitUntilServerIsReadyJob($server),
         ])->dispatch();
     }
-
-
 }

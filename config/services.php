@@ -38,7 +38,7 @@ return [
     ],
 
     'stream' => [
-        'origin_ip' => env('ORIGIN_IP')
+        'origin_ip' => env('ORIGIN_IP'),
     ],
 
     'attsrv' => [
@@ -52,7 +52,7 @@ return [
     ],
 
     'hetzner' => [
-        'token' => env('HETZNER_TOKEN')
+        'token' => env('HETZNER_TOKEN'),
     ],
 
     'signage' => [
@@ -62,6 +62,6 @@ return [
     // This is the URL of the origin server, where a low res version is being pushed to via rtmp.
     'forward' => [
         'url' => env('RTMP_FORWARD'),
-        'vrchaturl' => env('RTMP_VRCHAT_URL')
-    ]
+        'vrchaturl' => env('RTMP_VRCHAT_URL'),
+    ],
 ];

@@ -6,9 +6,7 @@ use App\Events\Chat\Commands\SlowModeEnabled;
 
 class AnnounceSlowModeListener
 {
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     public function handle(SlowModeEnabled $event): void
     {

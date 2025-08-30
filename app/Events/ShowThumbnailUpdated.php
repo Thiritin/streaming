@@ -14,6 +14,7 @@ class ShowThumbnailUpdated implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public Show $show;
+
     public string $thumbnailUrl;
 
     /**
@@ -32,7 +33,7 @@ class ShowThumbnailUpdated implements ShouldBroadcast
     {
         return [
             new Channel('shows'),
-            new Channel('show.' . $this->show->id),
+            new Channel('show.'.$this->show->id),
         ];
     }
 

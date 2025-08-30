@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('shows', function (Blueprint $table) {
-            if (!Schema::hasColumn('shows', 'priority')) {
+            if (! Schema::hasColumn('shows', 'priority')) {
                 $table->integer('priority')->default(0)->after('is_featured');
                 $table->index('priority');
             }

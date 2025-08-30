@@ -3,7 +3,6 @@
 namespace App\Jobs\Server\Provision;
 
 use App\Models\Server;
-use DateTime;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -18,11 +17,7 @@ class WaitUntilServerIsReadyJob implements ShouldQueue
 
     public int $backoff = 30;
 
-
-
-    public function __construct(public readonly Server $server)
-    {
-    }
+    public function __construct(public readonly Server $server) {}
 
     public function handle(): void
     {
@@ -30,6 +25,7 @@ class WaitUntilServerIsReadyJob implements ShouldQueue
 
         if ($server->isReady() === true) {
             SetServerAvailableJob::dispatch($this->server);
+
             return;
         }
 

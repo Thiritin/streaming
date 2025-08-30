@@ -3,8 +3,6 @@
 namespace App\Jobs\Server;
 
 use App\Jobs\CheckClientActivityJob;
-use App\Jobs\Server\Deprovision\DeleteDnsRecordJob;
-use App\Jobs\Server\Deprovision\DeleteVirtualMachineJob;
 use App\Jobs\Server\Deprovision\InitializeDeprovisioningJob;
 use App\Jobs\Server\Deprovision\RemovalConditionCheckerJob;
 use App\Jobs\Server\Deprovision\ServerMoveClientsToOtherServerJob;
@@ -22,9 +20,7 @@ class DeleteServerJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(private readonly Server $server)
-    {
-    }
+    public function __construct(private readonly Server $server) {}
 
     public function handle(): void
     {

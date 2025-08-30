@@ -40,7 +40,7 @@ class Role extends Model
         });
 
         static::updating(function ($role) {
-            if ($role->isDirty('name') && !$role->isDirty('slug')) {
+            if ($role->isDirty('name') && ! $role->isDirty('slug')) {
                 $role->slug = Str::slug($role->name);
             }
         });
@@ -69,7 +69,7 @@ class Role extends Model
      */
     public function hasPermission(string $permission): bool
     {
-        if (!$this->permissions) {
+        if (! $this->permissions) {
             return false;
         }
 
@@ -82,8 +82,8 @@ class Role extends Model
     public function grantPermission(string $permission): void
     {
         $permissions = $this->permissions ?? [];
-        
-        if (!in_array($permission, $permissions)) {
+
+        if (! in_array($permission, $permissions)) {
             $permissions[] = $permission;
             $this->update(['permissions' => $permissions]);
         }
@@ -107,7 +107,7 @@ class Role extends Model
         $this->users()->syncWithoutDetaching([
             $user->id => [
                 'assigned_by_user_id' => $assignedBy?->id,
-            ]
+            ],
         ]);
     }
 

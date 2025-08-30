@@ -11,40 +11,40 @@ class EurofurenceRolesSeeder extends Seeder
     public function run(): void
     {
         // Digital Pass
-        $digital = Role::updateOrCreate(['name' => 'Digital Pass'],[
+        $digital = Role::updateOrCreate(['name' => 'Digital Pass'], [
             'color' => null,
-            "priority" => 5,
+            'priority' => 5,
         ]);
         // Permissions
         $this->permissions();
         $digital->givePermissionTo('stream.view');
-        
-        $attendee = Role::updateOrCreate(['name' => 'Attendee'],[
+
+        $attendee = Role::updateOrCreate(['name' => 'Attendee'], [
             'color' => null,
-            "priority" => 10,
+            'priority' => 10,
         ]);
         $attendee->givePermissionTo('stream.view');
 
-        $sponsor = Role::updateOrCreate(['name' => 'Sponsor'],[
+        $sponsor = Role::updateOrCreate(['name' => 'Sponsor'], [
             'color' => 'text-yellow-500',
-            "priority" => 20,
+            'priority' => 20,
         ]);
         $sponsor->givePermissionTo('stream.view');
 
-        $superSponsor = Role::updateOrCreate(['name' => 'Super Sponsor'],[
+        $superSponsor = Role::updateOrCreate(['name' => 'Super Sponsor'], [
             'color' => 'text-purple-500',
-            "priority" => 30,
+            'priority' => 30,
         ]);
         $superSponsor->givePermissionTo('stream.view');
 
         // Moderator Roles
-        $moderator = Role::updateOrCreate(['name' => 'Moderator'],[
+        $moderator = Role::updateOrCreate(['name' => 'Moderator'], [
             'color' => 'text-orange-500',
-            "priority" => 800,
+            'priority' => 800,
         ]);
         $moderator->givePermissionTo([
             'stream.view',
-            "chat.ignore.ratelimit",
+            'chat.ignore.ratelimit',
             'chat.commands.broadcast',
             'chat.commands.delete',
             'chat.commands.slowmode',
@@ -52,14 +52,14 @@ class EurofurenceRolesSeeder extends Seeder
         ]);
 
         // Admin Roles
-        $admin = Role::updateOrCreate(['name' => 'Admin'],[
+        $admin = Role::updateOrCreate(['name' => 'Admin'], [
             'color' => 'text-red-500',
-            "priority" => 1000,
+            'priority' => 1000,
         ]);
         $admin->givePermissionTo([
             'stream.view',
             'filament.access',
-            "chat.ignore.ratelimit",
+            'chat.ignore.ratelimit',
             'chat.commands.broadcast',
             'chat.commands.nukeall',
             'chat.commands.delete',
@@ -71,16 +71,16 @@ class EurofurenceRolesSeeder extends Seeder
     private function permissions()
     {
         collect([
-            "stream.view",
-            "filament.access",
-            "chat.ignore.ratelimit",
-            "chat.commands.broadcast",
+            'stream.view',
+            'filament.access',
+            'chat.ignore.ratelimit',
+            'chat.commands.broadcast',
             'chat.commands.nukeall',
-            "chat.commands.delete",
-            "chat.commands.slowmode",
-            "chat.commands.timeout",
-        ])->map(fn($perm) => [
+            'chat.commands.delete',
+            'chat.commands.slowmode',
+            'chat.commands.timeout',
+        ])->map(fn ($perm) => [
             'name' => $perm,
-        ])->each(fn($perm) => Permission::firstOrCreate($perm));
+        ])->each(fn ($perm) => Permission::firstOrCreate($perm));
     }
 }

@@ -4,13 +4,11 @@ namespace App\Jobs\Server\Deprovision;
 
 use App\Models\Client;
 use App\Models\Server;
-use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Bus;
 
 class ServerMoveClientsToOtherServerJob implements ShouldQueue
 {
@@ -18,10 +16,7 @@ class ServerMoveClientsToOtherServerJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(private readonly Server $server)
-    {
-
-    }
+    public function __construct(private readonly Server $server) {}
 
     public function handle(): void
     {

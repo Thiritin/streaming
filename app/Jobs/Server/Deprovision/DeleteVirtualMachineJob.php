@@ -17,9 +17,7 @@ class DeleteVirtualMachineJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(readonly private Server $server)
-    {
-    }
+    public function __construct(private readonly Server $server) {}
 
     public function handle(): void
     {

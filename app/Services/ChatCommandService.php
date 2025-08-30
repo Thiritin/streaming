@@ -17,35 +17,35 @@ class ChatCommandService
     public function getAvailableCommands(User $user): array
     {
         $commands = [];
-        
+
         // Timeout command
         if ($user->can('chat.commands.timeout')) {
             $commands[] = TimeoutJob::getMeta();
         }
-        
+
         // Slowmode command
         if ($user->can('chat.commands.slowmode')) {
             $commands[] = SlowModeJob::getMeta();
         }
-        
+
         // Delete command
         if ($user->can('chat.commands.delete')) {
             $commands[] = DeleteMessageJob::getMeta();
         }
-        
+
         // Broadcast command
         if ($user->can('chat.commands.broadcast')) {
             $commands[] = BroadcastJob::getMeta();
         }
-        
+
         // Nuke everything command
         if ($user->can('chat.commands.nukeall')) {
             $commands[] = NukeEverythingJob::getMeta();
         }
-        
+
         return $commands;
     }
-    
+
     /**
      * Get command class by command name
      */
@@ -60,16 +60,17 @@ class ChatCommandService
             default => null,
         };
     }
-    
+
     /**
      * Check if a string is a command
      */
     public function isCommand(string $message): bool
     {
         $trimmed = trim($message);
+
         return str_starts_with($trimmed, '/') || str_starts_with($trimmed, '!');
     }
-    
+
     /**
      * Extract command name from message
      */
@@ -77,6 +78,7 @@ class ChatCommandService
     {
         $trimmed = ltrim(trim($message), '!/');
         $parts = explode(' ', $trimmed);
+
         return $parts[0] ?? '';
     }
 }

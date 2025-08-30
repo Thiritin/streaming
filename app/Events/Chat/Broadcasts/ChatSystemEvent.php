@@ -26,17 +26,17 @@ class ChatSystemEvent implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new Channel('chat')
+            new Channel('chat'),
         ];
     }
 
     public function broadcastWith(): array
     {
         return [
-            "name" => "System",
-            "time" => $this->message->created_at->format('H:i'),
-            "message" => $this->message->message,
-            "role" => null,
+            'name' => 'System',
+            'time' => $this->message->created_at->format('H:i'),
+            'message' => $this->message->message,
+            'role' => null,
         ];
     }
 

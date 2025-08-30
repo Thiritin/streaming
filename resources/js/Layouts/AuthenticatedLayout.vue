@@ -7,7 +7,6 @@ import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import {Link} from '@inertiajs/vue3';
 import Logo from "@/Components/Logo.vue";
-import Container from "@/Components/Container.vue";
 
 const showingNavigationDropdown = ref(false);
 </script>
@@ -17,7 +16,7 @@ const showingNavigationDropdown = ref(false);
     <div class="min-h-screen bg-primary-900">
       <nav class="bg-primary-800 sticky top-0 w-full z-50 shadow-lg">
         <!-- Primary Navigation Menu -->
-        <Container>
+        <div class="px-6">
           <div class="flex justify-between h-12">
             <div class="flex">
               <!-- Logo -->
@@ -114,7 +113,7 @@ const showingNavigationDropdown = ref(false);
               </button>
             </div>
           </div>
-        </Container>
+        </div>
 
         <!-- Responsive Navigation Menu -->
         <div

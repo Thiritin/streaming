@@ -6,10 +6,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Redirect;
-use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Session;
 
 class EnsureAttendeeHasTicketMiddleware
 {
@@ -17,7 +14,7 @@ class EnsureAttendeeHasTicketMiddleware
     {
         $user = $request->user();
         if ($user === null) {
-            throw new \Exception("User is not logged in.");
+            throw new \Exception('User is not logged in.');
         }
 
         // If user already has permission, then he is atleast an attendee
@@ -29,7 +26,7 @@ class EnsureAttendeeHasTicketMiddleware
         $attendeeListResponse = Http::attsrv()->get('/attendees');
         $regId = $attendeeListResponse->json()['ids'][0] ?? null;
 
-        if($regId === null) {
+        if ($regId === null) {
             return $this->abort($request, $next);
         }
 
@@ -38,15 +35,15 @@ class EnsureAttendeeHasTicketMiddleware
         // paid or checked in
         if (in_array($statusResponse->json()['status'], ['paid', 'checked in'])) {
             // Check user level
-            $role = "Attendee";
+            $role = 'Attendee';
             $isSponsorRequest = Http::attsrv()->get('/attendees/'.$regId.'/packages/sponsor');
             // User is now attendee, update his database entry and let him pass
             if ($isSponsorRequest->json()['present'] === true) {
-                $role = "Sponsor";
+                $role = 'Sponsor';
             } else {
                 $isSuperSponsorRequest = Http::attsrv()->get('/attendees/'.$regId.'/packages/sponsor2');
                 if ($isSuperSponsorRequest->json()['present'] === true) {
-                    $role = "Super Sponsor";
+                    $role = 'Super Sponsor';
                 }
             }
 
@@ -56,12 +53,13 @@ class EnsureAttendeeHasTicketMiddleware
         }
 
         $this->abort($request, $next);
+
         // Redirect is needed to make sure roles are properly reloaded
         return Redirect::route('shows.grid');
     }
 
     public function abort(Request $request, Closure $next)
     {
-        Auth::user()->assignRole("Digital Pass");
+        Auth::user()->assignRole('Digital Pass');
     }
 }

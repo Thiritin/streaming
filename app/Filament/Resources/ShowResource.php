@@ -4,43 +4,41 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ShowResource\Pages;
 use App\Filament\Resources\ShowResource\RelationManagers;
+use App\Models\Server;
 use App\Models\Show;
 use App\Models\Source;
-use App\Models\Server;
 use Filament\Forms;
+use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\KeyValue;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TagsInput;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Actions\Action;
+use Filament\Tables\Columns\BadgeColumn;
+use Filament\Tables\Columns\ImageColumn;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Filament\Forms\Components\Section;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\DateTimePicker;
-use Filament\Forms\Components\Toggle;
-use Filament\Forms\Components\TagsInput;
-use Filament\Forms\Components\KeyValue;
-use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\Placeholder;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Columns\BadgeColumn;
-use Filament\Tables\Columns\ToggleColumn;
-use Filament\Tables\Columns\ImageColumn;
-use Filament\Notifications\Notification;
-use Filament\Tables\Actions\Action;
 use Illuminate\Support\Str;
-use Carbon\Carbon;
 
 class ShowResource extends Resource
 {
     protected static ?string $model = Show::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-tv';
-    
+
     protected static ?string $navigationGroup = 'Streaming';
-    
+
     protected static ?int $navigationSort = 2;
 
     public static function form(Form $form): Form
@@ -54,8 +52,8 @@ class ShowResource extends Resource
                             ->maxLength(255)
                             ->live(onBlur: true)
                             ->afterStateUpdated(function (string $state, Forms\Set $set, ?Show $record) {
-                                if (!$record) {
-                                    $set('slug', Str::slug($state . '-' . now()->format('Y-m-d')));
+                                if (! $record) {
+                                    $set('slug', Str::slug($state.'-'.now()->format('Y-m-d')));
                                 }
                             }),
                         TextInput::make('slug')
@@ -80,7 +78,7 @@ class ShowResource extends Resource
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
-                
+
                 Section::make('Schedule')
                     ->schema([
                         DateTimePicker::make('scheduled_start')
@@ -112,7 +110,7 @@ class ShowResource extends Resource
                             ->dehydrated(),
                     ])
                     ->columns(2),
-                
+
                 Section::make('Status & Settings')
                     ->schema([
                         Select::make('status')
@@ -148,7 +146,7 @@ class ShowResource extends Resource
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
-                
+
                 Section::make('Statistics')
                     ->schema([
                         Placeholder::make('viewer_count')
@@ -163,7 +161,7 @@ class ShowResource extends Resource
                     ])
                     ->columns(3)
                     ->visible(fn (?Show $record) => $record !== null),
-                
+
                 Section::make('Additional Configuration')
                     ->schema([
                         KeyValue::make('metadata')
@@ -312,7 +310,7 @@ class ShowResource extends Resource
                                 ->body('Please end the stream before deleting.')
                                 ->danger()
                                 ->send();
-                            
+
                             return false;
                         }
                     }),
@@ -344,7 +342,7 @@ class ShowResource extends Resource
                                         ->body('One or more shows are currently live.')
                                         ->danger()
                                         ->send();
-                                    
+
                                     return false;
                                 }
                             }
@@ -375,31 +373,31 @@ class ShowResource extends Resource
             'edit' => Pages\EditShow::route('/{record}/edit'),
         ];
     }
-    
+
     public static function getNavigationBadge(): ?string
     {
         $liveCount = static::getModel()::live()->count();
         $upcomingCount = static::getModel()::upcoming()->count();
-        
+
         if ($liveCount > 0) {
-            return $liveCount . ' live';
+            return $liveCount.' live';
         }
-        
+
         if ($upcomingCount > 0) {
-            return $upcomingCount . ' upcoming';
+            return $upcomingCount.' upcoming';
         }
-        
+
         return null;
     }
-    
+
     public static function getNavigationBadgeColor(): ?string
     {
         $liveCount = static::getModel()::live()->count();
-        
+
         if ($liveCount > 0) {
             return 'success';
         }
-        
+
         return 'warning';
     }
 }

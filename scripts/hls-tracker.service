@@ -1,0 +1,23 @@
+[Unit]
+Description=HLS Session Tracker for EF Streaming
+After=network.target nginx.service
+Wants=nginx.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/usr/local/bin
+Environment="HLS_ACTIVITY_LOG=/var/log/nginx/hls_activity.log"
+Environment="SESSION_TIMEOUT=60"
+Environment="CHECK_INTERVAL=10"
+Environment="API_ENDPOINT=http://localhost:8000/api/hls"
+Environment="API_KEY=CHANGE_ME_TO_SECURE_KEY"
+ExecStart=/usr/bin/python3 /usr/local/bin/hls_session_tracker.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

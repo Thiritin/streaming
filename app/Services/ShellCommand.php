@@ -20,7 +20,7 @@ class ShellCommand
             ->run($captureOutput);
 
         if ($process->getExitCode()) {
-            $exception = new \Exception($cmd . " - " . $processOutput);
+            $exception = new \Exception($cmd.' - '.$processOutput);
             report($exception);
 
             throw $exception;

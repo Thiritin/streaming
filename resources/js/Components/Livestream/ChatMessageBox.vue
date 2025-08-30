@@ -1,7 +1,7 @@
 <script setup>
 import 'vue3-emoji-picker/css'
 import EmojiPicker from 'vue3-emoji-picker'
-import {onMounted, reactive, ref, watch, computed} from "vue";
+import {onMounted, onUnmounted, reactive, ref, watch, computed} from "vue";
 import { usePage } from '@inertiajs/vue3';
 import PrimaryButton from "@/Components/PrimaryButton.vue";
 import FaIconBold from "@/Components/Icons/FaIconBold.vue";
@@ -17,10 +17,11 @@ const page = usePage();
 let cursorPosition = ref(0)
 let emojiPicker = ref(null)
 let commandSuggestion = ref(null)
-let messageInput = ref(null)
 let blockSendingDueToRateLimit = ref(props.rateLimit.secondsLeft > 0)
 let showEmojiPicker = ref(false);
 let showCommandSuggestions = ref(false);
+let showEmoteSuggestions = ref(false);
+let emoteSearchTerm = ref('');
 
 // Get max message length from config
 const maxMessageLength = computed(() => {
@@ -40,6 +41,22 @@ function onSelectEmoji(emoji) {
     // Insert the emoji.i at cursor position
     let newMessage = props.modelValue.slice(0, cursorPosition.value) + emoji.i + props.modelValue.slice(cursorPosition.value)
     emit('update:modelValue', newMessage)
+    showEmojiPicker.value = false; // Close picker after selection
+    // Focus on the actual textarea element
+    setTimeout(() => {
+        const textarea = document.querySelector('textarea');
+        if (textarea) textarea.focus();
+    }, 50);
+}
+
+function toggleEmojiPicker() {
+    showEmojiPicker.value = !showEmojiPicker.value;
+    if (!showEmojiPicker.value) {
+        setTimeout(() => {
+            const textarea = document.querySelector('textarea');
+            if (textarea) textarea.focus();
+        }, 50);
+    }
 }
 
 function captureCursorPosition(event) {
@@ -50,11 +67,45 @@ function captureCursorPosition(event) {
 
 // Watch for command trigger
 watch(() => props.modelValue, (newValue) => {
-    if (newValue && newValue.startsWith('/')) {
+    // Check for command trigger (at start of message)
+    if (newValue && newValue.trim().startsWith('/')) {
         showCommandSuggestions.value = true;
+        showEmoteSuggestions.value = false;
+        console.log('Command trigger detected:', newValue);
     } else {
         showCommandSuggestions.value = false;
     }
+    
+    // Check for emote trigger (anywhere in message)
+    const emoteMatch = newValue && newValue.match(/:([a-z0-9_]*)$/i);
+    if (emoteMatch && !newValue.trim().startsWith('/')) {
+        emoteSearchTerm.value = emoteMatch[1];
+        showEmoteSuggestions.value = true;
+    } else if (!newValue || !newValue.match(/:[a-z0-9_]*$/i)) {
+        showEmoteSuggestions.value = false;
+    }
+});
+
+// Get filtered emotes based on search
+const filteredEmotes = computed(() => {
+    if (!showEmoteSuggestions.value) return [];
+    
+    const emotes = page.props.chat?.emotes?.available || {};
+    const globalEmotes = page.props.chat?.emotes?.global || [];
+    
+    // Combine all emotes
+    const allEmotes = [
+        ...Object.values(emotes),
+        ...globalEmotes.filter(e => !emotes[e.name])
+    ];
+    
+    if (!emoteSearchTerm.value) {
+        return allEmotes.slice(0, 10); // Show first 10 emotes
+    }
+    
+    return allEmotes
+        .filter(emote => emote.name.toLowerCase().includes(emoteSearchTerm.value.toLowerCase()))
+        .slice(0, 10);
 });
 
 function handleInput(value) {
@@ -87,8 +138,43 @@ function handleKeyDown(event) {
 
 function onCommandSelect(command) {
     // Focus back on input after selecting command
-    messageInput.value?.focus();
+    setTimeout(() => {
+        const textarea = document.querySelector('textarea');
+        if (textarea) textarea.focus();
+    }, 50);
 }
+
+function selectEmote(emote) {
+    // Replace the partial emote with the full emote
+    const currentValue = props.modelValue;
+    const lastColonIndex = currentValue.lastIndexOf(':');
+    const newValue = currentValue.substring(0, lastColonIndex) + ':' + emote.name + ': ';
+    emit('update:modelValue', newValue);
+    showEmoteSuggestions.value = false;
+    setTimeout(() => {
+        const textarea = document.querySelector('textarea');
+        if (textarea) textarea.focus();
+    }, 50);
+}
+
+// Click away handler for emoji picker
+function handleClickAway(event) {
+    const emojiPicker = document.querySelector('.v3-emoji-picker');
+    const emojiButton = event.target.closest('button');
+    
+    if (emojiPicker && !emojiPicker.contains(event.target) && 
+        (!emojiButton || !emojiButton.textContent.includes('😀'))) {
+        showEmojiPicker.value = false;
+    }
+}
+
+onMounted(() => {
+    document.addEventListener('click', handleClickAway);
+});
+
+onUnmounted(() => {
+    document.removeEventListener('click', handleClickAway);
+});
 </script>
 <template>
     <div class="p-3 relative bg-primary-950 border-t border-primary-800">
@@ -104,9 +190,32 @@ function onCommandSelect(command) {
             @update:modelValue="$emit('update:modelValue', $event)"
         />
 
+        <!-- Emote Suggestions -->
+        <div v-if="showEmoteSuggestions && filteredEmotes.length > 0"
+             class="absolute bottom-full mb-2 left-0 right-0 bg-primary-800 rounded-lg shadow-xl border border-primary-700 max-h-48 overflow-y-auto">
+            <div class="p-2">
+                <div class="text-xs text-primary-400 uppercase tracking-wider mb-2 px-2">
+                    Emotes
+                </div>
+                <div class="grid grid-cols-5 gap-2">
+                    <div v-for="emote in filteredEmotes"
+                         :key="emote.id"
+                         @click="selectEmote(emote)"
+                         class="cursor-pointer hover:bg-primary-700 rounded p-2 text-center transition-colors">
+                        <img :src="emote.url" 
+                             :alt="':' + emote.name + ':'"
+                             :title="':' + emote.name + ':'"
+                             class="w-8 h-8 mx-auto mb-1" />
+                        <div class="text-xs text-primary-300 truncate">
+                            :{{ emote.name }}:
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="relative">
             <Textarea
-                ref="messageInput"
                 :modelValue="modelValue"
                 @update:modelValue="handleInput"
                 @touchend="captureCursorPosition"
@@ -121,10 +230,9 @@ function onCommandSelect(command) {
                     isOverLimit ? 'border-red-500 focus:ring-red-500' : ''
                 ]"/>
         <transition>
-            <EmojiPicker ref="emojiPicker" :display-recent="true" class="absolute bottom-[160px]"
-                         v-show="showEmojiPicker" theme="dark" :native="true"
+            <EmojiPicker ref="emojiPicker" :display-recent="true" class="absolute bottom-[160px] z-50"
+                         v-if="showEmojiPicker" theme="dark" :native="true"
                          :disable-skin-tones="true"
-                         @mouseleave="showEmojiPicker = false"
                          @select="onSelectEmoji"/>
         </transition>
             <!-- Character counter -->
@@ -143,8 +251,7 @@ function onCommandSelect(command) {
                 <Button
                     variant="ghost"
                     size="sm"
-                    @keydown.esc="showEmojiPicker = false"
-                    @click="showEmojiPicker = !showEmojiPicker">
+                    @click="toggleEmojiPicker">
                     <FaIconBold class="fill-current"></FaIconBold>
                 </Button>
                 <Button

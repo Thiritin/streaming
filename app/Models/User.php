@@ -5,14 +5,10 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
-use App\Enum\UserLevelEnum;
 use Filament\Models\Contracts\FilamentUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Query\JoinClause;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -29,7 +25,7 @@ class User extends Authenticatable implements FilamentUser
      */
     protected $guarded = [];
 
-    protected $appends = ["role", "chat_color"];
+    protected $appends = ['role', 'chat_color', 'badge'];
 
     /**
      * The attributes that should be hidden for serialization.
@@ -50,6 +46,7 @@ class User extends Authenticatable implements FilamentUser
         'password' => 'hashed',
         'is_provisioning' => 'boolean',
         'timeout_expires_at' => 'datetime',
+        'badge_type' => 'string',
     ];
 
     public function server()
@@ -70,6 +67,7 @@ class User extends Authenticatable implements FilamentUser
             if ($this->assignServerToUser()) {
                 return $this->fresh()->server;
             }
+
             return null;
         }
 
@@ -87,7 +85,7 @@ class User extends Authenticatable implements FilamentUser
         }
 
         $hostname = $server->getHostWithPort();
-        
+
         // Determine protocol based on port
         $protocol = 'https';
         if ($server->port === 80 || app()->isLocal()) {
@@ -105,14 +103,14 @@ class User extends Authenticatable implements FilamentUser
 
         $data['hls_urls'] = [];
         $data['client_id'] = $client->id;
-        
+
         // HLS URLs only
-        $data['hls_urls']['master'] = $protocol."://$hostname/live/livestream.m3u8?streamkey=".$this->streamkey."&client_id=".$client->id;
+        $data['hls_urls']['master'] = $protocol."://$hostname/live/livestream.m3u8?streamkey=".$this->streamkey.'&client_id='.$client->id;
         foreach (['original', 'fhd', 'hd', 'sd', 'ld', 'audio_hd', 'audio_sd'] as $quality) {
-            $qualityUrl = ($quality !== 'original') ? "_".$quality : "";
-            $data['hls_urls'][$quality] = $protocol."://$hostname/live/livestream$qualityUrl.m3u8?streamkey=".$this->streamkey."&client_id=".$client->id;
+            $qualityUrl = ($quality !== 'original') ? '_'.$quality : '';
+            $data['hls_urls'][$quality] = $protocol."://$hostname/live/livestream$qualityUrl.m3u8?streamkey=".$this->streamkey.'&client_id='.$client->id;
         }
-        
+
         return $data;
     }
 
@@ -123,12 +121,12 @@ class User extends Authenticatable implements FilamentUser
             ->addSelect([
                 'client_count' => Client::selectRaw('count(*)')
                     ->whereColumn('clients.server_id', 'servers.id')
-                    ->connected()
+                    ->connected(),
             ])
             ->groupBy('servers.id')
             ->orderBy('client_count',
                 'desc') // Desc fill servers with most clients first, Asc fill servers with least clients first
-            ->selectRaw("servers.id, max_clients as max_clients")
+            ->selectRaw('servers.id, max_clients as max_clients')
             ->havingRaw('client_count < max_clients')
             ->first();
 
@@ -137,6 +135,7 @@ class User extends Authenticatable implements FilamentUser
             if ($this->server_id || $this->streamkey) {
                 $this->update(['server_id' => null, 'streamkey' => null]);
             }
+
             return false;
         }
 
@@ -296,19 +295,19 @@ class User extends Authenticatable implements FilamentUser
     public function syncRolesFromLogin(array $rolesSlugs): void
     {
         // Log current roles before sync
-        \Log::info('Before sync - User ' . $this->id . ' roles: ', $this->roles()->pluck('slug')->toArray());
+        \Log::info('Before sync - User '.$this->id.' roles: ', $this->roles()->pluck('slug')->toArray());
         \Log::info('Syncing roles from login: ', $rolesSlugs);
-        
+
         // Get IDs of roles that should be detached (only those with assigned_at_login = true)
         $roleIdsToDetach = $this->roles()
             ->where('assigned_at_login', true)
             ->pluck('roles.id')
             ->toArray();
-        
+
         \Log::info('Roles to detach (IDs): ', $roleIdsToDetach);
-        
+
         // Detach only those specific roles
-        if (!empty($roleIdsToDetach)) {
+        if (! empty($roleIdsToDetach)) {
             $this->roles()->detach($roleIdsToDetach);
             \Log::info('Detached roles with assigned_at_login=true');
         }
@@ -317,15 +316,15 @@ class User extends Authenticatable implements FilamentUser
         $roles = Role::whereIn('slug', $rolesSlugs)
             ->where('assigned_at_login', true)
             ->get();
-        
+
         \Log::info('Adding roles: ', $roles->pluck('slug')->toArray());
 
         foreach ($roles as $role) {
             $role->assignTo($this, null);
         }
-        
+
         // Log final roles after sync
-        \Log::info('After sync - User ' . $this->id . ' roles: ', $this->roles()->pluck('slug')->toArray());
+        \Log::info('After sync - User '.$this->id.' roles: ', $this->roles()->pluck('slug')->toArray());
     }
 
     /**
@@ -338,6 +337,7 @@ class User extends Authenticatable implements FilamentUser
                 return true;
             }
         }
+
         return false;
     }
 
@@ -374,6 +374,7 @@ class User extends Authenticatable implements FilamentUser
     public function getChatColorAttribute(): string
     {
         $role = $this->role;
+
         return $role ? $role->chat_color : '#808080';
     }
 
@@ -391,5 +392,82 @@ class User extends Authenticatable implements FilamentUser
     public function isModerator(): bool
     {
         return $this->hasRole('moderator') || $this->hasPermission('chat.moderate');
+    }
+
+    /**
+     * Get uploaded emotes.
+     */
+    public function uploadedEmotes()
+    {
+        return $this->hasMany(Emote::class, 'uploaded_by_user_id');
+    }
+
+    /**
+     * Get approved emotes.
+     */
+    public function approvedEmotes()
+    {
+        return $this->hasMany(Emote::class, 'approved_by_user_id');
+    }
+
+    /**
+     * Get favorite emotes.
+     */
+    public function favoriteEmotes()
+    {
+        return $this->belongsToMany(Emote::class, 'user_emote_favorites')
+            ->withTimestamps();
+    }
+
+    /**
+     * Get the user's badge for chat display.
+     */
+    public function getBadgeAttribute(): ?array
+    {
+        if (! $this->badge_type) {
+            // Check roles for badge assignment
+            if ($this->isAdmin()) {
+                $this->badge_type = 'admin';
+            } elseif ($this->isModerator()) {
+                $this->badge_type = 'moderator';
+            }
+        }
+
+        if (! $this->badge_type) {
+            return null;
+        }
+
+        return [
+            'type' => $this->badge_type,
+            'label' => $this->getBadgeLabel(),
+            'color' => $this->getBadgeColor(),
+        ];
+    }
+
+    /**
+     * Get badge label.
+     */
+    private function getBadgeLabel(): string
+    {
+        return match ($this->badge_type) {
+            'subscriber_yellow', 'subscriber_purple' => 'S',
+            'moderator' => 'MOD',
+            'admin' => 'ADMIN',
+            default => '',
+        };
+    }
+
+    /**
+     * Get badge color.
+     */
+    private function getBadgeColor(): string
+    {
+        return match ($this->badge_type) {
+            'subscriber_yellow' => '#FFD700', // Gold
+            'subscriber_purple' => '#9B59B6', // Purple
+            'moderator' => '#00FF00', // Green
+            'admin' => '#FF0000', // Red
+            default => '#808080',
+        };
     }
 }

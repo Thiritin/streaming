@@ -2,10 +2,10 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
-use Carbon\Carbon;
 
 class Show extends Model
 {
@@ -50,7 +50,7 @@ class Show extends Model
 
         static::creating(function ($show) {
             if (empty($show->slug)) {
-                $show->slug = Str::slug($show->title . '-' . Carbon::parse($show->scheduled_start)->format('Y-m-d'));
+                $show->slug = Str::slug($show->title.'-'.Carbon::parse($show->scheduled_start)->format('Y-m-d'));
             }
         });
 
@@ -79,13 +79,27 @@ class Show extends Model
     }
 
     /**
-     * Get the users watching this show.
+     * Get the users watching this show through its source.
      */
     public function viewers()
     {
-        return $this->belongsToMany(User::class, 'show_user')
-            ->withPivot('joined_at', 'left_at', 'watch_duration')
-            ->withTimestamps();
+        // Use hasManyThrough to get users through source_users
+        return $this->hasManyThrough(
+            User::class,
+            SourceUser::class,
+            'source_id',     // Foreign key on source_users table
+            'id',            // Foreign key on users table
+            'source_id',     // Local key on shows table
+            'user_id'        // Local key on source_users table
+        );
+    }
+
+    /**
+     * Get viewer sessions for this show.
+     */
+    public function viewerSessions()
+    {
+        return $this->hasMany(SourceUser::class, 'source_id', 'source_id');
     }
 
     /**
@@ -93,7 +107,12 @@ class Show extends Model
      */
     public function activeViewers()
     {
-        return $this->viewers()->whereNull('show_user.left_at');
+        // Get active viewers from the source
+        if ($this->source) {
+            return $this->source->activeViewers();
+        }
+
+        return collect([]);
     }
 
     /**
@@ -120,10 +139,12 @@ class Show extends Model
             'actual_end' => now(),
         ]);
 
-        // Mark all active viewers as left
-        $this->activeViewers()->update([
-            'left_at' => now(),
-        ]);
+        // Mark all active viewers as left in the source
+        if ($this->source) {
+            $this->source->activeViewers()->update([
+                'left_at' => now(),
+            ]);
+        }
 
         // Dispatch event for notifications
         event(new \App\Events\ShowEnded($this));
@@ -173,7 +194,6 @@ class Show extends Model
         return $this->status === 'cancelled';
     }
 
-
     /**
      * Get the RTMP push URL for this show.
      */
@@ -182,6 +202,7 @@ class Show extends Model
         if ($this->server) {
             return "rtmp://{$this->server->hostname}/live/{$this->source->stream_key}";
         }
+
         return $this->source->rtmp_url;
     }
 
@@ -235,6 +256,7 @@ class Show extends Model
         if ($this->actual_start && $this->actual_end) {
             return $this->actual_start->diffInMinutes($this->actual_end);
         }
+
         return $this->scheduled_start->diffInMinutes($this->scheduled_end);
     }
 
@@ -243,22 +265,83 @@ class Show extends Model
      */
     public function getHlsUrls()
     {
-        if (!$this->source) {
+        if (! $this->source) {
             return null;
         }
-        
+
         return $this->source->getHlsUrls();
     }
-    
+
+    /**
+     * Capture a screenshot from the live stream.
+     */
+    public function captureScreenshot()
+    {
+        if ($this->status !== 'live' || ! $this->source) {
+            throw new \Exception('Show must be live with an active source to capture screenshot');
+        }
+
+        // Get the HLS URL for the stream
+        $hlsUrls = $this->getHlsUrls();
+        if (! $hlsUrls || ! isset($hlsUrls['stream'])) {
+            throw new \Exception('No HLS stream URL available');
+        }
+
+        $streamUrl = $hlsUrls['stream'];
+
+        // Generate a unique filename
+        $filename = 'shows/thumbnails/'.$this->slug.'_'.now()->timestamp.'.jpg';
+        $storagePath = storage_path('app/public/'.$filename);
+
+        // Ensure directory exists
+        $directory = dirname($storagePath);
+        if (! file_exists($directory)) {
+            mkdir($directory, 0755, true);
+        }
+
+        try {
+            // Use ffmpeg to capture a frame from the HLS stream
+            $command = sprintf(
+                'ffmpeg -i "%s" -vframes 1 -q:v 2 -f image2 "%s" 2>&1',
+                $streamUrl,
+                $storagePath
+            );
+
+            exec($command, $output, $returnCode);
+
+            if ($returnCode !== 0) {
+                $this->update([
+                    'thumbnail_capture_error' => implode("\n", $output),
+                    'thumbnail_updated_at' => now(),
+                ]);
+                throw new \Exception('FFmpeg failed: '.implode("\n", $output));
+            }
+
+            // Update the show with the new thumbnail
+            $this->update([
+                'thumbnail_url' => $filename,
+                'thumbnail_updated_at' => now(),
+                'thumbnail_capture_error' => null,
+            ]);
+
+            return $filename;
+
+        } catch (\Exception $e) {
+            \Log::error('Screenshot capture failed for show '.$this->id.': '.$e->getMessage());
+            throw $e;
+        }
+    }
+
     /**
      * Get the stream URL for this show.
      */
     public function getStreamUrl()
     {
         $urls = $this->getHlsUrls();
+
         return $urls ? ($urls['stream'] ?? $urls['master'] ?? null) : null;
     }
-    
+
     /**
      * Check if show can be watched (is live or about to start).
      */
@@ -268,15 +351,15 @@ class Show extends Model
         if ($this->status === 'live') {
             return true;
         }
-        
+
         // Allow watching 5 minutes before scheduled start
         if ($this->status === 'scheduled' && $this->scheduled_start) {
             return now()->diffInMinutes($this->scheduled_start, false) <= 5;
         }
-        
+
         return false;
     }
-    
+
     /**
      * Get formatted duration.
      */
@@ -285,10 +368,11 @@ class Show extends Model
         $duration = $this->duration;
         $hours = floor($duration / 60);
         $minutes = $duration % 60;
-        
+
         if ($hours > 0) {
             return "{$hours}h {$minutes}m";
         }
+
         return "{$minutes}m";
     }
 
@@ -297,7 +381,7 @@ class Show extends Model
      */
     public function updateViewerCount()
     {
-        $count = $this->activeViewers()->count();
+        $count = $this->source ? $this->source->activeViewers()->count() : 0;
         $this->update(['viewer_count' => $count]);
     }
 }

@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\Hydra\Client;
-use App\Services\OpenIDConnectClient;
 use App\Services\OpenIDService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,7 +13,6 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Session;
 use UnexpectedValueException;
-use Vinkla\Hashids\Facades\Hashids;
 
 class OidcClientController extends Controller
 {
@@ -22,16 +20,16 @@ class OidcClientController extends Controller
 
     public function __construct()
     {
-        $this->openIDService = new OpenIDService();
+        $this->openIDService = new OpenIDService;
     }
 
     public function callback(Request $request)
     {
         $data = $request->validate([
-            "state"             => "required_with::code|string",
-            "error"             => "nullable|required_without:code|string",
-            "error_description" => "nullable|required_without:code|string",
-            "code"              => "nullable|string",
+            'state' => 'required_with::code|string',
+            'error' => 'nullable|required_without:code|string',
+            'error_description' => 'nullable|required_without:code|string',
+            'code' => 'nullable|string',
         ]);
         /**
          * Only Identity Client - Redirects to error page if scope is invalid
@@ -46,7 +44,8 @@ class OidcClientController extends Controller
          * otherwise null === null and it would pass the check falsely.
          */
         if ($request->get('state') !== Session::get('login.oauth2state', false)) {
-            Session::remove("login.oauth2state");
+            Session::remove('login.oauth2state');
+
             return Redirect::route('auth.login');
         }
         Session::flush();
@@ -57,32 +56,32 @@ class OidcClientController extends Controller
         $accessToken = $provider->getAccessToken('authorization_code', [
             'code' => $data['code'],
         ]);
-        $userinfoRequest = Http::identity()->withToken($accessToken->getToken())->get("/api/v1/userinfo");
-        if($userinfoRequest->successful() === false) {
+        $userinfoRequest = Http::identity()->withToken($accessToken->getToken())->get('/api/v1/userinfo');
+        if ($userinfoRequest->successful() === false) {
             return Redirect::route('auth.login');
         }
         $userinfo = $userinfoRequest->json();
 
-        if (!isset($userinfo['sub'])) {
-            throw new UnexpectedValueException("Could not request user id from freshly fetched token.");
+        if (! isset($userinfo['sub'])) {
+            throw new UnexpectedValueException('Could not request user id from freshly fetched token.');
         }
 
         $userid = $userinfo['sub'];
         $user = User::updateOrCreate([
-            "sub" => $userinfo['sub']
+            'sub' => $userinfo['sub'],
         ], [
-            "name" => $userinfo['name'],
+            'name' => $userinfo['name'],
         ]);
         $user = $user->fresh();
-        
+
         // Sync roles from registration system
         $roleSlugs = $this->mapGroupsToRoles($userinfo['groups'] ?? []);
         $user->syncRolesFromLogin($roleSlugs);
-        
+
         Auth::loginUsingId($user->id);
         Session::put('access_token', $accessToken);
-        Session::put("avatar" , $userinfo['avatar']);
-        
+        Session::put('avatar', $userinfo['avatar']);
+
         // Middleware will handle server assignment and redirect if needed
         return $this->redirectDestination($request);
     }
@@ -92,6 +91,7 @@ class OidcClientController extends Controller
         $provider = $this->openIDService->setupOIDC($request, $this->clientIsAdmin($request));
         $authorizationUrl = $provider->getAuthorizationUrl();
         Session::put('login.oauth2state', $provider->getState());
+
         return Redirect::to($authorizationUrl);
     }
 
@@ -104,7 +104,7 @@ class OidcClientController extends Controller
     {
         return Redirect::route('shows.grid');
     }
-    
+
     /**
      * Map registration system groups to role slugs
      */
@@ -119,19 +119,19 @@ class OidcClientController extends Controller
             'STAFF_GROUP' => 'staff',
             // Add more mappings as needed
         ];
-        
+
         $roles = [];
         foreach ($groups as $group) {
             if (isset($roleMapping[$group])) {
                 $roles[] = $roleMapping[$group];
             }
         }
-        
+
         // Default role if no specific roles found
         if (empty($roles)) {
             $roles[] = 'attendee';
         }
-        
+
         return $roles;
     }
 }

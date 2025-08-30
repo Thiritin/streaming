@@ -17,9 +17,8 @@ class SetServerAvailableJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 1;
-    public function __construct(public readonly Server $server)
-    {
-    }
+
+    public function __construct(public readonly Server $server) {}
 
     public function handle(): void
     {

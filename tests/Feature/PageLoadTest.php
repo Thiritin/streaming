@@ -2,31 +2,31 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use App\Models\Show;
 use App\Models\Source;
-use App\Models\Role;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
 use Inertia\Testing\AssertableInertia;
+use Tests\TestCase;
 
 class PageLoadTest extends TestCase
 {
     use RefreshDatabase;
 
     protected User $user;
+
     protected Show $show;
 
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Create a basic user for authenticated tests
         $this->user = User::factory()->create([
             'name' => 'Test User',
             'sub' => 'test-sub-123',
         ]);
-        
+
         // Create a source
         $source = Source::create([
             'name' => 'Test Source',
@@ -35,7 +35,7 @@ class PageLoadTest extends TestCase
             'priority' => 1,
             'hls_url' => 'https://example.com/stream.m3u8',
         ]);
-        
+
         // Create a show
         $this->show = Show::create([
             'title' => 'Test Show',
@@ -225,7 +225,7 @@ class PageLoadTest extends TestCase
     public function test_message_send_endpoint_requires_auth()
     {
         $response = $this->post(route('message.send'), [
-            'message' => 'Test message'
+            'message' => 'Test message',
         ]);
 
         $response->assertRedirect(route('login'));
@@ -238,7 +238,7 @@ class PageLoadTest extends TestCase
     {
         $response = $this->actingAs($this->user)
             ->post(route('message.send'), [
-                'message' => 'Test message'
+                'message' => 'Test message',
             ]);
 
         $response->assertStatus(200);
@@ -249,7 +249,7 @@ class PageLoadTest extends TestCase
                 'secondsLeft',
                 'rateDecay',
                 'slowMode',
-            ]
+            ],
         ]);
     }
 }

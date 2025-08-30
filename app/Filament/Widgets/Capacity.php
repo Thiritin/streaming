@@ -17,8 +17,8 @@ class Capacity extends BaseWidget
 
     protected function getCards(): array
     {
-        $maxClients = Server::where('status', ServerStatusEnum::ACTIVE)->where('type',ServerTypeEnum::EDGE)->sum('max_clients');
-        $maxClientsProvisioning = Server::where('status', ServerStatusEnum::PROVISIONING)->where('type',ServerTypeEnum::EDGE)->sum('max_clients');
+        $maxClients = Server::where('status', ServerStatusEnum::ACTIVE)->where('type', ServerTypeEnum::EDGE)->sum('max_clients');
+        $maxClientsProvisioning = Server::where('status', ServerStatusEnum::PROVISIONING)->where('type', ServerTypeEnum::EDGE)->sum('max_clients');
         $waitingUsers = User::where('is_provisioning', true)->count();
 
         return [

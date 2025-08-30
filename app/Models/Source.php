@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enum\SourceStatusEnum;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -12,6 +13,7 @@ class Source extends Model
     use HasFactory;
 
     protected $fillable = [
+        'status',
         'name',
         'slug',
         'description',
@@ -24,6 +26,7 @@ class Source extends Model
     ];
 
     protected $casts = [
+        'status' => SourceStatusEnum::class,
         'is_active' => 'boolean',
         'is_primary' => 'boolean',
         'metadata' => 'array',
@@ -60,10 +63,10 @@ class Source extends Model
                 $source->stream_key = Str::random(32);
             }
         });
-        
+
         static::updating(function ($source) {
             // Update slug if name changes
-            if ($source->isDirty('name') && !$source->isDirty('slug')) {
+            if ($source->isDirty('name') && ! $source->isDirty('slug')) {
                 $source->slug = Str::slug($source->name);
             }
             // Stream key should remain separate from slug for security
@@ -80,6 +83,30 @@ class Source extends Model
     public function shows()
     {
         return $this->hasMany(Show::class);
+    }
+
+    /**
+     * Get the viewer sessions for this source.
+     */
+    public function viewers()
+    {
+        return $this->hasMany(SourceUser::class);
+    }
+
+    /**
+     * Get currently active viewers for this source.
+     */
+    public function activeViewers()
+    {
+        return $this->viewers()->active();
+    }
+
+    /**
+     * Get current viewer count.
+     */
+    public function getActiveViewerCountAttribute()
+    {
+        return $this->activeViewers()->count();
     }
 
     /**
@@ -140,17 +167,24 @@ class Source extends Model
     {
         return $query->orderBy('name');
     }
-    
+
     /**
-     * Get HLS URLs for all quality variants.
+     * Get HLS URLs for all quality variants with authentication.
      */
     public function getHlsUrls()
     {
         $protocol = app()->isLocal() ? 'http' : 'https';
-        
+
+        // Get authentication token from current session
+        $token = '';
+        if (auth()->check()) {
+            // Use session token or generate one from user session
+            $token = session()->getId() ?: '';
+        }
+
         // For local development with Docker, use the SRS HLS server directly
         if (app()->isLocal()) {
-            $host = 'localhost:' . env('HLS_EDGE_PORT', '8085'); // HLS edge port
+            $host = 'localhost:'.env('HLS_EDGE_PORT', '8085'); // HLS edge port
             $protocol = 'http';
         } else {
             // Get the server handling the current show with this source
@@ -164,7 +198,7 @@ class Source extends Model
                     ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
                     ->first();
             }
-            
+
             // Use server's getHostWithPort method to handle port properly
             if ($server) {
                 $host = $server->getHostWithPort();
@@ -178,24 +212,28 @@ class Source extends Model
                 $host = config('stream.edge_host', request()->getHost());
             }
         }
-        
+
+        // Build token query parameter
+        $tokenParam = $token ? "?token={$token}" : '';
+
         // Use source slug for stream identification
         // When using multi-bitrate HLS with FFmpeg:
         // Original stream: /live/[slug]/index.m3u8
+        // FHD quality: /live/[slug]_fhd/index.m3u8
         // HD quality: /live/[slug]_hd/index.m3u8
         // SD quality: /live/[slug]_sd/index.m3u8
-        // LD quality: /live/[slug]_ld/index.m3u8
-        
+
         $urls = [
-            'stream' => "{$protocol}://{$host}/live/{$this->slug}/index.m3u8", // Original stream
-            'hd' => "{$protocol}://{$host}/live/{$this->slug}_hd/index.m3u8",  // HD 720p
-            'sd' => "{$protocol}://{$host}/live/{$this->slug}_sd/index.m3u8",  // SD 480p
-            'ld' => "{$protocol}://{$host}/live/{$this->slug}_ld/index.m3u8",  // LD 360p
+            'stream' => "{$protocol}://{$host}/live/{$this->slug}_fhd/index.m3u8{$tokenParam}", // Default to Full HD stream
+            'fhd' => "{$protocol}://{$host}/live/{$this->slug}_fhd/index.m3u8{$tokenParam}", // FHD 1080p - 6Mbps video, 192kbps audio
+            'hd' => "{$protocol}://{$host}/live/{$this->slug}_hd/index.m3u8{$tokenParam}",  // HD 720p - 3Mbps video, 160kbps audio
+            'sd' => "{$protocol}://{$host}/live/{$this->slug}_sd/index.m3u8{$tokenParam}",  // SD 480p - 1.5Mbps video, 128kbps audio
+            // LD quality removed as it's disabled in origin.conf
         ];
-        
+
         return $urls;
     }
-    
+
     /**
      * Get the base RTMP server URL for OBS configuration.
      * Returns URL in format: rtmp://server:port/live
@@ -206,54 +244,54 @@ class Source extends Model
         $originServer = \App\Models\Server::where('type', 'origin')
             ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
             ->first();
-            
+
         $baseUrl = '';
-        
-        if (!$originServer) {
+
+        if (! $originServer) {
             // Fallback to config if no origin server found
             // For local Docker, use port 1935 (correctly mapped now)
             $defaultPort = app()->isLocal() ? '1935' : '1935';
-            $host = config('stream.rtmp_host', 'localhost:' . $defaultPort);
-            $baseUrl = "rtmp://" . $host;
-        } else if ($originServer->hetzner_id === 'manual') {
+            $host = config('stream.rtmp_host', 'localhost:'.$defaultPort);
+            $baseUrl = 'rtmp://'.$host;
+        } elseif ($originServer->hetzner_id === 'manual') {
             // For manual/local servers
             // For local Docker development, use port 1935 (now correctly mapped)
             // Otherwise use the server's configured port or default to 1935
             if (app()->isLocal() && $originServer->hostname === 'localhost') {
-                $baseUrl = "rtmp://localhost:1935";
+                $baseUrl = 'rtmp://localhost:1935';
             } else {
                 // Use hostname for Docker containers (OSSRS standard)
                 $port = $originServer->port ?? 1935;
-                $baseUrl = "rtmp://" . $originServer->hostname . ":" . $port;
+                $baseUrl = 'rtmp://'.$originServer->hostname.':'.$port;
             }
         } else {
             // For cloud servers
             $port = $originServer->port ?? 1935;
-            $baseUrl = "rtmp://" . $originServer->hostname . ":" . $port;
+            $baseUrl = 'rtmp://'.$originServer->hostname.':'.$port;
         }
-        
+
         // Return base URL with app name for OBS Server field
-        return $baseUrl . "/live";
+        return $baseUrl.'/live';
     }
-    
+
     /**
      * Get the stream key for OBS configuration.
      * Returns: <slug>?secret=<stream_key>
      */
     public function getObsStreamKey()
     {
-        return $this->slug . "?secret=" . $this->stream_key;
+        return $this->slug.'?secret='.$this->stream_key;
     }
-    
+
     /**
      * Get the full RTMP push URL (for reference/testing).
      * Returns URL in format: rtmp://server:port/live/<slug>?secret=<stream_key>
      */
     public function getRtmpPushUrl()
     {
-        return $this->getRtmpServerUrl() . "/" . $this->slug . "?secret=" . $this->stream_key;
+        return $this->getRtmpServerUrl().'/'.$this->slug.'?secret='.$this->stream_key;
     }
-    
+
     /**
      * Get the full RTMP URL with stream key.
      * This returns the URL with stream key as parameter for OBS.
@@ -262,12 +300,12 @@ class Source extends Model
     {
         return $this->getRtmpPushUrl();
     }
-    
+
     /**
      * Generate HLS URL for the source.
      */
     protected function generateHlsUrl()
     {
-        return "http://" . config('stream.hls_host', 'localhost:8080') . "/live/" . $this->slug . ".m3u8";
+        return 'http://'.config('stream.hls_host', 'localhost:8080').'/live/'.$this->slug.'.m3u8';
     }
 }

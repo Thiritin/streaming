@@ -17,24 +17,21 @@ class BroadcastRateLimitChangeEvent implements ShouldBroadcast
         public int $maxTries,
         public int $rateDecay
 
-    )
-    {
-    }
+    ) {}
 
     public function broadcastOn(): array
     {
         return [
-            new Channel('chat')
+            new Channel('chat'),
         ];
     }
-
 
     public function broadcastWith(): array
     {
         return [
-            "maxTries" => $this->maxTries,
-            "rateDecay" => $this->rateDecay,
-            "slowMode" => $this->slowMode
+            'maxTries' => $this->maxTries,
+            'rateDecay' => $this->rateDecay,
+            'slowMode' => $this->slowMode,
         ];
     }
 

@@ -81,10 +81,9 @@ function changeStreamUrl(url) {
                 v-model="selectedOption"
                 class="block w-full mt-1 rounded-md bg-primary-700 border-primary-300order-primary-600 text-primary-100 focus:border-primary-600 focus:ring focus:ring-primary-600 transition ease-in-out duration-150 sm:text-sm sm:leading-5">
               <option value="auto">Auto</option>
-              <option value="fhd">1080p</option>
-              <option value="hd">720p</option>
-              <option value="sd">480p</option>
-              <option value="ld">360p</option>
+              <option value="fhd">1080p Full HD</option>
+              <option value="hd">720p HD</option>
+              <option value="sd">480p SD</option>
               <option value="audio_hd">Only Audio (HD)</option>
               <option value="audio_sd">Only Audio (SD)</option>
             </select>

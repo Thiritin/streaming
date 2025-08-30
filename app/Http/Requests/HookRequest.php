@@ -29,6 +29,7 @@ class HookRequest extends FormRequest
         if (app()->environment('local')) {
             return true;
         }
+
         return config('services.stream.origin_ip') ?? Server::where('ip', $this->ip())->exists();
     }
 }

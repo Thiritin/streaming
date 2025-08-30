@@ -18,22 +18,20 @@ class RemovalConditionCheckerJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(public readonly Server $server)
-    {
-    }
+    public function __construct(public readonly Server $server) {}
 
     public function handle(): void
     {
         // Should the server have been reactivated in the meantime, we can stop here.
-        if($this->server->status !== ServerStatusEnum::DEPROVISIONING) {
+        if ($this->server->status !== ServerStatusEnum::DEPROVISIONING) {
             return;
         }
 
         // Easy check: Is the server still in use? If not we can remove it.
-        if (!$this->server->isInUse()) {
+        if (! $this->server->isInUse()) {
             Bus::chain([
                 new DeleteDnsRecordJob($this->server),
-                new DeleteVirtualMachineJob($this->server)
+                new DeleteVirtualMachineJob($this->server),
             ])->dispatch();
         } // Server is still in use, check back in 30 minutes.
         else {

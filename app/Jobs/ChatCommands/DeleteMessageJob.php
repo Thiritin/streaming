@@ -22,35 +22,35 @@ class DeleteMessageJob extends AbstractChatCommand
             'aliases' => [],
         ];
     }
-    
+
     public function canExecute(): bool
     {
         return $this->user->can('chat.commands.delete');
     }
-    
+
     protected function execute(): void
     {
         $args = $this->parseArguments();
-        
+
         if (count($args) < 2) {
             return;
         }
-        
+
         $username = $args[0];
         $timespan = $args[1];
-        
+
         // Convert timespan to Carbon
         try {
             $since = Carbon::now()->sub($timespan);
         } catch (\Exception $e) {
             return;
         }
-        
+
         $targetUser = User::where('name', $username)->first();
         if ($targetUser === null) {
             return;
         }
-        
+
         broadcast(new DeleteMessagesEvent($targetUser, $since));
     }
 }

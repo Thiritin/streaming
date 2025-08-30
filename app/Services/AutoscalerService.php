@@ -42,7 +42,6 @@ class AutoscalerService
         // Capacity of servers that are in provisioning and active max_clients
         $serverCapacity = self::availableClientSlots();
 
-
         // Is capacity over 80%
         if ($serverUserCount > ($serverCapacity * 0.8)) {
             return AutoscalerAction::SCALE_UP;

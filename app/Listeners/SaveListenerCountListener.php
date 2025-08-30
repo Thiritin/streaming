@@ -7,9 +7,7 @@ use App\Services\StreamInfoService;
 
 class SaveListenerCountListener
 {
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     public function handle(StreamListenerChangeEvent $event): void
     {

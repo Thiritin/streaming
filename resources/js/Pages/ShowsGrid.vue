@@ -1,7 +1,7 @@
 <template>
-  <Head title="Live Streams" />
+  <div>
+    <Head title="Live Streams" />
 
-  <AuthenticatedLayout>
     <Container class="py-8">
       <!-- Header -->
       <div class="mb-8">
@@ -63,7 +63,7 @@
       </div>
 
       <!-- Admin Link -->
-      <div v-if="$page.props.auth.user.is_staff" class="mt-12 border-t border-primary-700 pt-8">
+      <div v-if="page.props.auth.user.is_staff" class="mt-12 border-t border-primary-700 pt-8">
         <div class="flex justify-center">
           <a
             href="/admin"
@@ -75,11 +75,11 @@
         </div>
       </div>
     </Container>
-  </AuthenticatedLayout>
+  </div>
 </template>
 
-<script>
-import { Head, Link } from '@inertiajs/vue3';
+<script setup>
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import ShowTile from '@/Components/Shows/ShowTile.vue';
@@ -87,100 +87,96 @@ import FaVideoSlashIcon from '@/Components/Icons/FaVideoSlashIcon.vue';
 import FaCogIcon from '@/Components/Icons/FaCogIcon.vue';
 import Container from '@/Components/Container.vue';
 
-export default {
-  name: 'ShowsGrid',
-  components: {
-    Head,
-    Link,
-    AuthenticatedLayout,
-    ShowTile,
-    FaVideoSlashIcon,
-    FaCogIcon,
-    Container,
+// Define layout
+defineOptions({
+  layout: AuthenticatedLayout
+});
+
+// Props
+const props = defineProps({
+  liveShows: {
+    type: Array,
+    default: () => [],
   },
-  props: {
-    liveShows: {
-      type: Array,
-      default: () => [],
-    },
-    upcomingShows: {
-      type: Array,
-      default: () => [],
-    },
-    currentTime: {
-      type: String,
-      required: false,
-    },
+  upcomingShows: {
+    type: Array,
+    default: () => [],
   },
-  setup(props) {
-    const liveShowsData = ref(props.liveShows);
-    const upcomingShowsData = ref(props.upcomingShows);
+  currentTime: {
+    type: String,
+    required: false,
+  },
+});
 
-    onMounted(() => {
-      // Listen for show status updates
-      Echo.channel('shows')
-        .listen('.show.status.changed', (e) => {
-          // Handle show going live
-          if (e.status === 'live') {
-            // Remove from upcoming if exists
-            const upcomingIndex = upcomingShowsData.value.findIndex(s => s.id === e.show.id);
-            if (upcomingIndex !== -1) {
-              upcomingShowsData.value.splice(upcomingIndex, 1);
-            }
+// Page props for auth info
+const page = usePage();
 
-            // Add to live shows if not already there
-            const liveIndex = liveShowsData.value.findIndex(s => s.id === e.show.id);
-            if (liveIndex === -1) {
-              liveShowsData.value.unshift(e.show);
-            }
-          }
+// Reactive state
+const liveShows = ref(props.liveShows);
+const upcomingShows = ref(props.upcomingShows);
 
-          // Handle show ending
-          if (e.status === 'ended') {
-            // Remove from live shows
-            const liveIndex = liveShowsData.value.findIndex(s => s.id === e.show.id);
-            if (liveIndex !== -1) {
-              liveShowsData.value.splice(liveIndex, 1);
-            }
-          }
-        })
-        .listen('.show.viewer.count', (e) => {
-          // Update viewer count for live shows
-          const show = liveShowsData.value.find(s => s.id === e.show_id);
-          if (show) {
-            show.viewer_count = e.viewer_count;
-          }
-        })
-        .listen('.thumbnail.updated', (e) => {
-          // Update thumbnail for any show
-          const liveShow = liveShowsData.value.find(s => s.id === e.show_id);
-          if (liveShow) {
-            liveShow.thumbnail_url = e.thumbnail_url;
-          }
+let refreshInterval;
 
-          const upcomingShow = upcomingShowsData.value.find(s => s.id === e.show_id);
-          if (upcomingShow) {
-            upcomingShow.thumbnail_url = e.thumbnail_url;
-          }
-        });
+onMounted(() => {
+  // Listen for show status updates
+  Echo.channel('shows')
+    .listen('.show.status.changed', (e) => {
+      // Handle show going live
+      if (e.status === 'live') {
+        // Remove from upcoming if exists
+        const upcomingIndex = upcomingShows.value.findIndex(s => s.id === e.show.id);
+        if (upcomingIndex !== -1) {
+          upcomingShows.value.splice(upcomingIndex, 1);
+        }
 
-      // Auto-refresh page every 5 minutes to get fresh data
-      const refreshInterval = setInterval(() => {
-        window.location.reload();
-      }, 5 * 60 * 1000);
+        // Add to live shows if not already there
+        const liveIndex = liveShows.value.findIndex(s => s.id === e.show.id);
+        if (liveIndex === -1) {
+          liveShows.value.unshift(e.show);
+        }
+      }
 
-      onUnmounted(() => {
-        clearInterval(refreshInterval);
-        Echo.leave('shows');
-      });
+      // Handle show ending
+      if (e.status === 'ended') {
+        // Remove from live shows
+        const liveIndex = liveShows.value.findIndex(s => s.id === e.show.id);
+        if (liveIndex !== -1) {
+          liveShows.value.splice(liveIndex, 1);
+        }
+      }
+    })
+    .listen('.show.viewer.count', (e) => {
+      // Update viewer count for live shows
+      const show = liveShows.value.find(s => s.id === e.show_id);
+      if (show) {
+        show.viewer_count = e.viewer_count;
+      }
+    })
+    .listen('.thumbnail.updated', (e) => {
+      // Update thumbnail for any show
+      const liveShow = liveShows.value.find(s => s.id === e.show_id);
+      if (liveShow) {
+        liveShow.thumbnail_url = e.thumbnail_url;
+      }
+
+      const upcomingShow = upcomingShows.value.find(s => s.id === e.show_id);
+      if (upcomingShow) {
+        upcomingShow.thumbnail_url = e.thumbnail_url;
+      }
     });
 
-    return {
-      liveShows: liveShowsData,
-      upcomingShows: upcomingShowsData,
-    };
-  },
-};
+  // Auto-refresh page every 5 minutes to get fresh data
+  refreshInterval = setInterval(() => {
+    window.location.reload();
+  }, 5 * 60 * 1000);
+});
+
+onUnmounted(() => {
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+  }
+  Echo.leave('shows');
+});
 </script>
 
 <style>

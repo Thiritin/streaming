@@ -6,24 +6,21 @@ use App\Filament\Resources\RoleResource\Pages;
 use App\Filament\Resources\RoleResource\RelationManagers;
 use App\Models\Role;
 use Filament\Forms;
+use Filament\Forms\Components\ColorPicker;
+use Filament\Forms\Components\KeyValue;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\TagsInput;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Filament\Forms\Components\Section;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\ColorPicker;
-use Filament\Forms\Components\Toggle;
-use Filament\Forms\Components\TagsInput;
-use Filament\Forms\Components\KeyValue;
-use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ColorColumn;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
-use Filament\Tables\Columns\BadgeColumn;
-use Filament\Notifications\Notification;
+use Filament\Tables\Table;
 use Illuminate\Support\Str;
 
 class RoleResource extends Resource
@@ -31,9 +28,9 @@ class RoleResource extends Resource
     protected static ?string $model = Role::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
-    
+
     protected static ?string $navigationGroup = 'User Management';
-    
+
     protected static ?int $navigationSort = 1;
 
     public static function form(Form $form): Form
@@ -46,8 +43,7 @@ class RoleResource extends Resource
                             ->required()
                             ->maxLength(255)
                             ->live(onBlur: true)
-                            ->afterStateUpdated(fn (string $state, Forms\Set $set) => 
-                                $set('slug', Str::slug($state))
+                            ->afterStateUpdated(fn (string $state, Forms\Set $set) => $set('slug', Str::slug($state))
                             ),
                         TextInput::make('slug')
                             ->required()
@@ -59,7 +55,7 @@ class RoleResource extends Resource
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
-                
+
                 Section::make('Chat Appearance')
                     ->schema([
                         ColorPicker::make('chat_color')
@@ -76,7 +72,7 @@ class RoleResource extends Resource
                             ->helperText('Whether this role\'s color is visible in chat'),
                     ])
                     ->columns(3),
-                
+
                 Section::make('Settings')
                     ->schema([
                         Toggle::make('assigned_at_login')
@@ -104,7 +100,7 @@ class RoleResource extends Resource
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
-                
+
                 Section::make('Additional Configuration')
                     ->schema([
                         KeyValue::make('metadata')
@@ -138,7 +134,7 @@ class RoleResource extends Resource
                 TextColumn::make('priority')
                     ->sortable()
                     ->badge()
-                    ->color(fn ($state) => match(true) {
+                    ->color(fn ($state) => match (true) {
                         $state >= 100 => 'danger',
                         $state >= 90 => 'warning',
                         $state >= 50 => 'info',
@@ -149,7 +145,7 @@ class RoleResource extends Resource
                     ->badge()
                     ->formatStateUsing(fn ($state) => $state ? 'Auto-synced' : 'Manual')
                     ->color(fn ($state) => $state ? 'info' : 'warning')
-                    ->tooltip(fn ($state) => $state 
+                    ->tooltip(fn ($state) => $state
                         ? 'This role is automatically synced from the registration system at login'
                         : 'This role persists through logins and must be manually assigned'),
                 ToggleColumn::make('is_staff')
@@ -203,7 +199,7 @@ class RoleResource extends Resource
                                 ->body('This role has assigned users. Remove all users before deleting.')
                                 ->danger()
                                 ->send();
-                            
+
                             return false;
                         }
                     }),
@@ -219,7 +215,7 @@ class RoleResource extends Resource
                                         ->body('One or more roles have assigned users.')
                                         ->danger()
                                         ->send();
-                                    
+
                                     return false;
                                 }
                             }
@@ -260,12 +256,12 @@ class RoleResource extends Resource
             'edit' => Pages\EditRole::route('/{record}/edit'),
         ];
     }
-    
+
     public static function getNavigationBadge(): ?string
     {
         return static::getModel()::count();
     }
-    
+
     protected static function createDefaultRoles(): void
     {
         $roles = [

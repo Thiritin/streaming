@@ -8,7 +8,6 @@ use App\Enum\ServerTypeEnum;
 use App\Enum\StreamStatusEnum;
 use App\Models\Server;
 use App\Services\AutoscalerService;
-use App\Services\StreamInfoService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Query\JoinClause;
@@ -16,7 +15,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
-use LKDev\HetznerCloud\Models\Servers\Types\ServerType;
 
 class ScalingJob implements ShouldQueue
 {
@@ -24,16 +22,14 @@ class ScalingJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     public function handle(): void
     {
         $cacheStatus = StreamStatusEnum::tryFrom(Cache::get('stream.status',
-            static fn() => StreamStatusEnum::OFFLINE->value));
+            static fn () => StreamStatusEnum::OFFLINE->value));
 
-        if (!AutoscalerService::isAutoscalerEnabled()) {
+        if (! AutoscalerService::isAutoscalerEnabled()) {
             return;
         }
 
@@ -68,10 +64,10 @@ class ScalingJob implements ShouldQueue
                     })
                     ->groupBy('servers.id')
                     ->orderBy('client_counts', 'desc')
-                    ->selectRaw("servers.id, count(clients.id) as client_counts")
+                    ->selectRaw('servers.id, count(clients.id) as client_counts')
                     ->first();
 
-                if (!is_null($server)) {
+                if (! is_null($server)) {
                     $server = Server::find($server->id);
                     if ($server->immutable) {
                         return;

@@ -9,8 +9,8 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Tables\Table;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
 
 class MessagesRelationManager extends RelationManager
 {
@@ -33,11 +33,11 @@ class MessagesRelationManager extends RelationManager
 
                 Placeholder::make('created_at')
                     ->label('Created Date')
-                    ->content(fn(?Message $record): string => $record?->created_at?->diffForHumans() ?? '-'),
+                    ->content(fn (?Message $record): string => $record?->created_at?->diffForHumans() ?? '-'),
 
                 Placeholder::make('updated_at')
                     ->label('Last Modified Date')
-                    ->content(fn(?Message $record): string => $record?->updated_at?->diffForHumans() ?? '-'),
+                    ->content(fn (?Message $record): string => $record?->updated_at?->diffForHumans() ?? '-'),
             ]);
     }
 

@@ -15,8 +15,8 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
-use Filament\Tables\Table;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 class UserResource extends Resource
@@ -47,9 +47,9 @@ class UserResource extends Resource
 
                 Select::make('server_id')
                     ->relationship('server', 'hostname',
-                        fn(Builder $query) => $query
+                        fn (Builder $query) => $query
                             ->where('type', ServerTypeEnum::EDGE)
-                            ->where('status',ServerStatusEnum::ACTIVE))
+                            ->where('status', ServerStatusEnum::ACTIVE))
                     ->nullable(),
 
                 DatePicker::make('timeout_expires_at')
@@ -57,11 +57,11 @@ class UserResource extends Resource
 
                 Placeholder::make('updated_at')
                     ->label('Last Modified Date')
-                    ->content(fn(?User $record): string => $record?->updated_at?->diffForHumans() ?? '-'),
+                    ->content(fn (?User $record): string => $record?->updated_at?->diffForHumans() ?? '-'),
 
                 Placeholder::make('created_at')
                     ->label('Created Date')
-                    ->content(fn(?User $record): string => $record?->created_at?->diffForHumans() ?? '-'),
+                    ->content(fn (?User $record): string => $record?->created_at?->diffForHumans() ?? '-'),
             ]);
     }
 

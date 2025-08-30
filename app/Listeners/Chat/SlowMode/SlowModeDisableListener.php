@@ -8,9 +8,7 @@ use Illuminate\Support\Facades\Cache;
 
 class SlowModeDisableListener
 {
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     public function handle(SlowModeDisabled $event): void
     {

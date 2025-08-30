@@ -2,14 +2,11 @@
 
 namespace App\Listeners;
 
-use App\Events\ServerAssignmentChanged;
 use App\Events\UserWaitingForProvisioningEvent;
 
 class SetUserWaitingForProvisioningListener
 {
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     public function handle(UserWaitingForProvisioningEvent $event): void
     {

@@ -71,149 +71,131 @@
   </Link>
 </template>
 
-<script>
+<script setup>
 import { Link } from '@inertiajs/vue3';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import FaVideoIcon from '../Icons/FaVideoIcon.vue';
 import FaIconUser from '../Icons/FaIconUser.vue';
 import FaPlayIcon from '../Icons/FaPlayIcon.vue';
 
-export default {
-  name: 'ShowTile',
-  components: {
-    Link,
-    FaVideoIcon,
-    FaIconUser,
-    FaPlayIcon,
-  },
-  props: {
-    show: {
-      type: Object,
-      required: true,
-    }
-  },
-  setup(props) {
-    const currentThumbnail = ref(props.show.thumbnail_url);
-    const placeholderUrl = '/images/stream-placeholder.svg';
-    let updateInterval = null;
-    
-    const isLive = computed(() => props.show.status === 'live');
-    const isUpcoming = computed(() => props.show.status === 'scheduled');
-    
-    const handleImageError = () => {
-      currentThumbnail.value = null;
-    };
-    
-    const formatViewerCount = (count) => {
-      if (count >= 1000) {
-        return (count / 1000).toFixed(1) + 'K';
-      }
-      return count.toString();
-    };
-    
-    const formatDuration = (startTime) => {
-      const start = new Date(startTime);
-      const now = new Date();
-      const diff = Math.floor((now - start) / 1000);
-      
-      const hours = Math.floor(diff / 3600);
-      const minutes = Math.floor((diff % 3600) / 60);
-      
-      if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, '0')}:00`;
-      }
-      return `${minutes}:${(diff % 60).toString().padStart(2, '0')}`;
-    };
-    
-    const formatTimeUntil = (scheduledTime) => {
-      const scheduled = new Date(scheduledTime);
-      const now = new Date();
-      const diff = Math.floor((scheduled - now) / 1000);
-      
-      if (diff <= 0) {
-        return 'Starting soon';
-      }
-      
-      const hours = Math.floor(diff / 3600);
-      const minutes = Math.floor((diff % 3600) / 60);
-      
-      if (hours > 24) {
-        const days = Math.floor(hours / 24);
-        return `in ${days} day${days > 1 ? 's' : ''}`;
-      }
-      
-      if (hours > 0) {
-        return `in ${hours}h ${minutes}m`;
-      }
-      
-      return `in ${minutes} min`;
-    };
-    
-    const formatScheduledTime = (scheduledTime) => {
-      const date = new Date(scheduledTime);
-      const today = new Date();
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      
-      const timeStr = date.toLocaleTimeString('en-US', { 
-        hour: 'numeric', 
-        minute: '2-digit',
-        hour12: true 
-      });
-      
-      if (date.toDateString() === today.toDateString()) {
-        return `Today at ${timeStr}`;
-      } else if (date.toDateString() === tomorrow.toDateString()) {
-        return `Tomorrow at ${timeStr}`;
-      } else {
-        return date.toLocaleDateString('en-US', { 
-          weekday: 'short',
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true
-        });
-      }
-    };
-    
-    // Listen for thumbnail updates
-    onMounted(() => {
-      // Update duration/countdown every second for live/upcoming shows
-      if (isLive.value || isUpcoming.value) {
-        updateInterval = setInterval(() => {
-          // Force re-render to update time displays
-        }, 1000);
-      }
-      
-      // Listen for thumbnail updates via WebSocket
-      Echo.channel(`show.${props.show.id}`)
-        .listen('.thumbnail.updated', (e) => {
-          if (e.thumbnail_url) {
-            currentThumbnail.value = e.thumbnail_url;
-          }
-        });
+// Props
+const props = defineProps({
+  show: {
+    type: Object,
+    required: true,
+  }
+});
+
+// Reactive state
+const currentThumbnail = ref(props.show.thumbnail_url);
+let updateInterval = null;
+
+// Computed properties
+const isLive = computed(() => props.show.status === 'live');
+const isUpcoming = computed(() => props.show.status === 'scheduled');
+
+// Methods
+const handleImageError = () => {
+  currentThumbnail.value = null;
+};
+
+const formatViewerCount = (count) => {
+  if (count >= 1000) {
+    return (count / 1000).toFixed(1) + 'K';
+  }
+  return count.toString();
+};
+
+const formatDuration = (startTime) => {
+  const start = new Date(startTime);
+  const now = new Date();
+  const diff = Math.floor((now - start) / 1000);
+  
+  const hours = Math.floor(diff / 3600);
+  const minutes = Math.floor((diff % 3600) / 60);
+  
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:00`;
+  }
+  return `${minutes}:${(diff % 60).toString().padStart(2, '0')}`;
+};
+
+const formatTimeUntil = (scheduledTime) => {
+  const scheduled = new Date(scheduledTime);
+  const now = new Date();
+  const diff = Math.floor((scheduled - now) / 1000);
+  
+  if (diff <= 0) {
+    return 'Starting soon';
+  }
+  
+  const hours = Math.floor(diff / 3600);
+  const minutes = Math.floor((diff % 3600) / 60);
+  
+  if (hours > 24) {
+    const days = Math.floor(hours / 24);
+    return `in ${days} day${days > 1 ? 's' : ''}`;
+  }
+  
+  if (hours > 0) {
+    return `in ${hours}h ${minutes}m`;
+  }
+  
+  return `in ${minutes} min`;
+};
+
+const formatScheduledTime = (scheduledTime) => {
+  const date = new Date(scheduledTime);
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  
+  const timeStr = date.toLocaleTimeString('en-US', { 
+    hour: 'numeric', 
+    minute: '2-digit',
+    hour12: true 
+  });
+  
+  if (date.toDateString() === today.toDateString()) {
+    return `Today at ${timeStr}`;
+  } else if (date.toDateString() === tomorrow.toDateString()) {
+    return `Tomorrow at ${timeStr}`;
+  } else {
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
     });
-    
-    onUnmounted(() => {
-      if (updateInterval) {
-        clearInterval(updateInterval);
-      }
-      Echo.leave(`show.${props.show.id}`);
-    });
-    
-    return {
-      currentThumbnail,
-      isLive,
-      isUpcoming,
-      handleImageError,
-      formatViewerCount,
-      formatDuration,
-      formatTimeUntil,
-      formatScheduledTime,
-    };
   }
 };
+
+// Lifecycle
+onMounted(() => {
+  // Update duration/countdown every second for live/upcoming shows
+  if (isLive.value || isUpcoming.value) {
+    updateInterval = setInterval(() => {
+      // Force re-render to update time displays
+    }, 1000);
+  }
+  
+  // Listen for thumbnail updates via WebSocket
+  Echo.channel(`show.${props.show.id}`)
+    .listen('.thumbnail.updated', (e) => {
+      if (e.thumbnail_url) {
+        currentThumbnail.value = e.thumbnail_url;
+      }
+    });
+});
+
+onUnmounted(() => {
+  if (updateInterval) {
+    clearInterval(updateInterval);
+  }
+  Echo.leave(`show.${props.show.id}`);
+});
 </script>
 
 <style>

@@ -30,7 +30,7 @@ return new class extends Migration
             $table->json('metadata')->nullable(); // Additional show data
             $table->foreignId('server_id')->nullable()->constrained('servers')->nullOnDelete(); // Which server is handling this show
             $table->timestamps();
-            
+
             $table->index('slug');
             $table->index('status');
             $table->index('scheduled_start');

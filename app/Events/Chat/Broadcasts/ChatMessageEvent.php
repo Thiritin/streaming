@@ -14,25 +14,23 @@ class ChatMessageEvent implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public readonly Message $message, public readonly User $user)
-    {
-    }
+    public function __construct(public readonly Message $message, public readonly User $user) {}
 
     public function broadcastOn(): array
     {
         return [
-            new Channel('chat')
+            new Channel('chat'),
         ];
     }
 
     public function broadcastWith(): array
     {
         return [
-            "id" => $this->message->id,
-            "name" => $this->user->name,
-            "time" => $this->message->created_at->format('H:i'),
-            "message" => $this->message->message,
-            "role" => $this->user->role,
+            'id' => $this->message->id,
+            'name' => $this->user->name,
+            'time' => $this->message->created_at->format('H:i'),
+            'message' => $this->message->message,
+            'role' => $this->user->role,
         ];
     }
 
