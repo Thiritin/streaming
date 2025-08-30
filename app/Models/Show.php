@@ -256,7 +256,7 @@ class Show extends Model
     public function getStreamUrl()
     {
         $urls = $this->getHlsUrls();
-        return $urls ? $urls['master'] : null;
+        return $urls ? ($urls['stream'] ?? $urls['master'] ?? null) : null;
     }
     
     /**

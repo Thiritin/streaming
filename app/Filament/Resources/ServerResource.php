@@ -35,22 +35,48 @@ class ServerResource extends Resource
         return $form
             ->schema([
                 TextInput::make('hetzner_id')
-                    ->disabled(),
+                    ->disabled(fn ($operation): bool => $operation === 'edit')
+                    ->default('manual')
+                    ->helperText('Use "manual" for locally managed servers')
+                    ->required(),
 
                 TextInput::make('hostname')
-                    ->disabled()
-                    ->required(),
+                    ->disabled(fn ($operation): bool => $operation === 'edit')
+                    ->required()
+                    ->helperText('For local Docker: use container name (e.g., "ef-streaming-stream-1")'),
+                    
+                TextInput::make('ip')
+                    ->disabled(fn ($operation): bool => $operation === 'edit')
+                    ->required()
+                    ->helperText('For local Docker: use container IP or "localhost"'),
+                    
+                TextInput::make('port')
+                    ->numeric()
+                    ->minValue(1)
+                    ->maxValue(65535)
+                    ->default(8080)
+                    ->required()
+                    ->helperText('Server port (80 and 443 will be omitted from URLs)'),
+
+                TextInput::make('shared_secret')
+                    ->disabled(fn ($operation): bool => $operation === 'edit')
+                    ->default(fn () => \Illuminate\Support\Str::random(40))
+                    ->required()
+                    ->helperText('Secret key for inter-server authentication'),
 
                 Select::make('type')->options([
                     'origin' => 'Origin',
                     'edge' => 'Edge',
-                ])->disabled(),
+                ])->disabled(fn ($operation): bool => $operation === 'edit')
+                ->default('edge')
+                ->required(),
 
                 TextInput::make('max_clients')
                     ->minValue(0)
                     ->numeric()
-                    ->hidden(fn(Server $record): bool => $record->type !== ServerTypeEnum::EDGE)
+                    ->hidden(fn(?Server $record): bool => $record?->type !== ServerTypeEnum::EDGE)
                     ->maxValue('99999')
+                    ->default(100)
                     ->required(),
 
                 Select::make('status')->options([
@@ -58,11 +84,14 @@ class ServerResource extends Resource
                     'active' => 'Active',
                     ServerStatusEnum::DEPROVISIONING->value => "Deprovisioning",
                     'deleted' => 'Deleted',
-                ]),
+                ])
+                ->default('active')
+                ->required(),
 
                 Checkbox::make('immutable')
-                    ->hidden(fn(Server $record): bool => $record->type !== ServerTypeEnum::EDGE)
+                    ->hidden(fn(?Server $record): bool => $record?->type !== ServerTypeEnum::EDGE)
                     ->reactive()
+                    ->default(true)
                     ->helperText('Set this if you want to use this server as a stream server. This will prevent the server from being deleted by autoscaling measures.'),
 
                 Placeholder::make('created_at')
@@ -73,16 +102,6 @@ class ServerResource extends Resource
                     ->label('Last Modified Date')
                     ->content(fn(?Server $record): string => $record?->updated_at?->diffForHumans() ?? '-'),
 
-                Section::make('Stream Information')
-                    ->hidden(fn(?Server $record): bool => $record->type !== ServerTypeEnum::EDGE || $record->immutable === false || $record->status !== ServerStatusEnum::ACTIVE)
-                    ->columns()
-                    ->schema([
-                    Placeholder::make('stream_url')
-                        ->disabled()->content(fn(?Server $record): string => "rtmp://" . $record->hostname .":1935/live?streamkey=".config('app.stream_key') ?? '-'),
-                    Placeholder::make('streamkey')
-                        ->disabled()->content(fn(?Server $record): string => "livestream" ?? '-'),
-                ]),
-
             ]);
     }
 
@@ -90,22 +109,58 @@ class ServerResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('hetzner_id'),
+                TextColumn::make('hetzner_id')
+                    ->label('Server ID')
+                    ->searchable(),
 
-                TextColumn::make('type'),
+                TextColumn::make('type')
+                    ->badge()
+                    ->color(fn ($state): string => match ($state?->value ?? $state) {
+                        'origin' => 'warning',
+                        'edge' => 'success',
+                        default => 'gray',
+                    }),
 
-                TextColumn::make('hostname'),
+                TextColumn::make('hostname')
+                    ->searchable()
+                    ->copyable(),
 
-                TextColumn::make('ip'),
+                TextColumn::make('ip')
+                    ->copyable(),
+                    
+                TextColumn::make('port')
+                    ->sortable(),
 
-                TextColumn::make('status'),
+                TextColumn::make('status')
+                    ->badge()
+                    ->color(fn ($state): string => match ($state?->value ?? $state) {
+                        'active' => 'success',
+                        'provisioning' => 'warning',
+                        'deprovisioning' => 'danger',
+                        'deleted' => 'gray',
+                        default => 'secondary',
+                    }),
+                
+                TextColumn::make('max_clients')
+                    ->label('Max Clients')
+                    ->sortable()
+                    ->visible(fn (): bool => true),
             ])->actions([
                 EditAction::make(),
                 Action::make('Deprovision')
                     ->icon('heroicon-o-trash')
                     ->color('danger')
                     ->requiresConfirmation()
+                    ->visible(fn (?Server $record): bool => $record && $record->hetzner_id !== 'manual')
                     ->action(fn(Server $record) => $record->deprovision()),
+                Action::make('Delete')
+                    ->icon('heroicon-o-x-mark')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->visible(fn (?Server $record): bool => $record && $record->hetzner_id === 'manual')
+                    ->modalHeading('Delete Manual Server')
+                    ->modalDescription('Are you sure you want to delete this manually managed server?')
+                    ->action(fn(Server $record) => $record->delete()),
             ])->poll();
     }
 
@@ -120,6 +175,7 @@ class ServerResource extends Resource
     {
         return [
             'index' => Pages\ListServers::route('/'),
+            'create' => Pages\CreateServer::route('/create'),
             'edit' => Pages\EditServer::route('/{record}/edit'),
         ];
     }

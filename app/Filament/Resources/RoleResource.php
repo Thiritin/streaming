@@ -144,24 +144,23 @@ class RoleResource extends Resource
                         $state >= 50 => 'info',
                         default => 'gray'
                     }),
-                ToggleColumn::make('assigned_at_login')
+                TextColumn::make('assigned_at_login')
                     ->label('Login Sync')
-                    ->onColor('success')
-                    ->offColor('gray')
-                    ->afterStateUpdated(function ($record, $state) {
-                        Notification::make()
-                            ->title($state ? 'Role will be synced at login' : 'Role will persist through logins')
-                            ->success()
-                            ->send();
-                    }),
+                    ->badge()
+                    ->formatStateUsing(fn ($state) => $state ? 'Auto-synced' : 'Manual')
+                    ->color(fn ($state) => $state ? 'info' : 'warning')
+                    ->tooltip(fn ($state) => $state 
+                        ? 'This role is automatically synced from the registration system at login'
+                        : 'This role persists through logins and must be manually assigned'),
                 ToggleColumn::make('is_staff')
                     ->label('Staff')
                     ->onColor('warning')
                     ->offColor('gray'),
                 ToggleColumn::make('is_visible')
-                    ->label('Visible')
+                    ->label('Chat Badge')
                     ->onColor('success')
-                    ->offColor('danger'),
+                    ->offColor('gray')
+                    ->tooltip('Shows role color as a badge in chat messages'),
                 TextColumn::make('users_count')
                     ->label('Users')
                     ->counts('users')

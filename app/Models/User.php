@@ -6,7 +6,6 @@ namespace App\Models;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Enum\UserLevelEnum;
-use App\Events\UserWaitingForProvisioningEvent;
 use Filament\Models\Contracts\FilamentUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Query\JoinClause;
@@ -87,7 +86,15 @@ class User extends Authenticatable implements FilamentUser
             ];
         }
 
-        $hostname = $server->hostname;
+        $hostname = $server->getHostWithPort();
+        
+        // Determine protocol based on port
+        $protocol = 'https';
+        if ($server->port === 80 || app()->isLocal()) {
+            $protocol = 'http';
+        } elseif ($server->port === 443) {
+            $protocol = 'https';
+        }
 
         $client = $this->clients()
             ->whereNull('start')
@@ -98,7 +105,6 @@ class User extends Authenticatable implements FilamentUser
 
         $data['hls_urls'] = [];
         $data['client_id'] = $client->id;
-        $protocol = app()->isLocal() ? 'http' : 'https';
         
         // HLS URLs only
         $data['hls_urls']['master'] = $protocol."://$hostname/live/livestream.m3u8?streamkey=".$this->streamkey."&client_id=".$client->id;
@@ -127,10 +133,10 @@ class User extends Authenticatable implements FilamentUser
             ->first();
 
         if (is_null($server) || is_null($server->id)) {
-            if ($this->is_provisioning === false) {
-                UserWaitingForProvisioningEvent::dispatch($this);
+            // No available servers, clear any stale assignment
+            if ($this->server_id || $this->streamkey) {
+                $this->update(['server_id' => null, 'streamkey' => null]);
             }
-            $this->update(['server_id' => null, 'streamkey' => null]);
             return false;
         }
 
@@ -138,11 +144,8 @@ class User extends Authenticatable implements FilamentUser
         $this->update([
             'server_id' => $server->id,
             'streamkey' => Str::random(32),
+            'is_provisioning' => false, // Clear provisioning flag on successful assignment
         ]);
-
-        if ($this->is_provisioning) {
-            $this->update(['is_provisioning' => false]);
-        }
 
         return true;
     }
@@ -223,20 +226,16 @@ class User extends Authenticatable implements FilamentUser
     public function roles()
     {
         return $this->belongsToMany(Role::class, 'role_user')
-            ->withPivot('assigned_at', 'expires_at', 'assigned_by')
+            ->withPivot('assigned_by_user_id')
             ->withTimestamps();
     }
 
     /**
-     * Get active roles (non-expired).
+     * Get active roles.
      */
     public function activeRoles()
     {
-        return $this->roles()
-            ->where(function ($query) {
-                $query->whereNull('role_user.expires_at')
-                    ->orWhere('role_user.expires_at', '>', now());
-            });
+        return $this->roles();
     }
 
     /**
@@ -266,14 +265,14 @@ class User extends Authenticatable implements FilamentUser
     /**
      * Assign a role to the user.
      */
-    public function assignRole($role, ?string $assignedBy = 'system', ?\DateTime $expiresAt = null): void
+    public function assignRole($role, ?User $assignedBy = null): void
     {
         if (is_string($role)) {
             $role = Role::where('slug', $role)->first();
         }
 
         if ($role) {
-            $role->assignTo($this, $assignedBy, $expiresAt);
+            $role->assignTo($this, $assignedBy);
         }
     }
 
@@ -296,17 +295,37 @@ class User extends Authenticatable implements FilamentUser
      */
     public function syncRolesFromLogin(array $rolesSlugs): void
     {
-        // Remove all roles that are assigned at login
-        $this->roles()->where('assigned_at_login', true)->detach();
+        // Log current roles before sync
+        \Log::info('Before sync - User ' . $this->id . ' roles: ', $this->roles()->pluck('slug')->toArray());
+        \Log::info('Syncing roles from login: ', $rolesSlugs);
+        
+        // Get IDs of roles that should be detached (only those with assigned_at_login = true)
+        $roleIdsToDetach = $this->roles()
+            ->where('assigned_at_login', true)
+            ->pluck('roles.id')
+            ->toArray();
+        
+        \Log::info('Roles to detach (IDs): ', $roleIdsToDetach);
+        
+        // Detach only those specific roles
+        if (!empty($roleIdsToDetach)) {
+            $this->roles()->detach($roleIdsToDetach);
+            \Log::info('Detached roles with assigned_at_login=true');
+        }
 
         // Add new roles from login
         $roles = Role::whereIn('slug', $rolesSlugs)
             ->where('assigned_at_login', true)
             ->get();
+        
+        \Log::info('Adding roles: ', $roles->pluck('slug')->toArray());
 
         foreach ($roles as $role) {
-            $role->assignTo($this, 'login');
+            $role->assignTo($this, null);
         }
+        
+        // Log final roles after sync
+        \Log::info('After sync - User ' . $this->id . ' roles: ', $this->roles()->pluck('slug')->toArray());
     }
 
     /**
@@ -331,12 +350,11 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Check if user is staff (admin or moderator).
+     * Check if user is staff (admin only).
      */
     public function isStaff(): bool
     {
-        return $this->hasAnyRole(['admin', 'moderator']) || 
-               $this->activeRoles()->where('is_staff', true)->exists();
+        return $this->hasRole('admin');
     }
 
     /**

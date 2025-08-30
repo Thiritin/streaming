@@ -7,6 +7,8 @@ import PrimaryButton from "@/Components/PrimaryButton.vue";
 import FaIconBold from "@/Components/Icons/FaIconBold.vue";
 import RateLimitInfoBox from "@/Components/Livestream/RateLimitInfoBox.vue";
 import CommandSuggestion from "@/Components/Livestream/CommandSuggestion.vue";
+import Textarea from "@/Components/ui/Textarea.vue";
+import Button from "@/Components/ui/Button.vue";
 
 const props = defineProps(['modelValue', 'error', 'rateLimit'])
 const emit = defineEmits(['update:modelValue', 'sendMessage'])
@@ -41,7 +43,9 @@ function onSelectEmoji(emoji) {
 }
 
 function captureCursorPosition(event) {
-    cursorPosition.value = event.target.selectionStart
+    if (event && event.target) {
+        cursorPosition.value = event.target.selectionStart
+    }
 }
 
 // Watch for command trigger
@@ -53,8 +57,8 @@ watch(() => props.modelValue, (newValue) => {
     }
 });
 
-function handleInput(event) {
-    emit('update:modelValue', event.target.value);
+function handleInput(value) {
+    emit('update:modelValue', value);
 }
 
 function handleKeyDown(event) {
@@ -65,7 +69,7 @@ function handleKeyDown(event) {
             return;
         }
     }
-    
+
     // Handle regular enter for sending
     if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
@@ -73,7 +77,7 @@ function handleKeyDown(event) {
             emit('sendMessage');
         }
     }
-    
+
     // Escape closes emoji picker
     if (event.key === 'Escape') {
         showEmojiPicker.value = false;
@@ -87,34 +91,34 @@ function onCommandSelect(command) {
 }
 </script>
 <template>
-    <div class="p-3 relative">
+    <div class="p-3 relative bg-primary-950 border-t border-primary-800">
         <RateLimitInfoBox @rate-limit-guard="blockSendingDueToRateLimit = $event" :rate-limit="props.rateLimit"></RateLimitInfoBox>
-        
+
         <!-- Command Suggestions -->
         <CommandSuggestion
             ref="commandSuggestion"
-            v-model="modelValue"
+            :modelValue="modelValue"
             :visible="showCommandSuggestions"
             @close="showCommandSuggestions = false"
             @select="onCommandSelect"
             @update:modelValue="$emit('update:modelValue', $event)"
         />
-        
+
         <div class="relative">
-            <textarea
+            <Textarea
                 ref="messageInput"
-                :value="modelValue"
-                @input="handleInput"
+                :modelValue="modelValue"
+                @update:modelValue="handleInput"
                 @touchend="captureCursorPosition"
                 @keyup="captureCursorPosition"
                 @mouseup="captureCursorPosition"
                 @keydown="handleKeyDown"
                 :maxlength="maxMessageLength"
-                rows="3"
+                :rows="3"
                 placeholder="Send a chat message (type / for commands)"
                 :class="[
-                    'form-input resize-none max-h-24 overflow-auto w-full rounded-lg bg-primary-200 text-primary-100 border-1 focus:border-transparent focus:ring-1 bg-transparent',
-                    isOverLimit ? 'border-red-500 focus:ring-red-500' : 'border-primary-500 focus:ring-primary-600'
+                    'resize-none max-h-24 overflow-auto',
+                    isOverLimit ? 'border-red-500 focus:ring-red-500' : ''
                 ]"/>
         <transition>
             <EmojiPicker ref="emojiPicker" :display-recent="true" class="absolute bottom-[160px]"
@@ -124,11 +128,11 @@ function onCommandSelect(command) {
                          @select="onSelectEmoji"/>
         </transition>
             <!-- Character counter -->
-            <div class="absolute bottom-2 right-2 text-xs" :class="isOverLimit ? 'text-red-400' : 'text-gray-500'">
+            <div class="absolute bottom-2 right-2 text-xs" :class="isOverLimit ? 'text-red-400' : 'text-primary-500'">
                 {{ characterCount }}/{{ maxMessageLength }}
             </div>
         </div>
-        
+
         <div class="flex gap-3 justify-between mt-2">
             <div class="flex items-center gap-2">
                 <transition>
@@ -136,23 +140,24 @@ function onCommandSelect(command) {
                 </transition>
             </div>
             <div class="flex gap-3 justify-end self-baseline">
-                <button
+                <Button
+                    variant="ghost"
+                    size="sm"
                     @keydown.esc="showEmojiPicker = false"
-                    class="py-1 px-2 rounded-lg hover:text-primary-400 transition duration-200 text-primary-300"
                     @click="showEmojiPicker = !showEmojiPicker">
                     <FaIconBold class="fill-current"></FaIconBold>
-                </button>
-                <button
+                </Button>
+                <Button
                     @click="$emit('sendMessage')"
                     :disabled="characterCount === 0 || blockSendingDueToRateLimit || isOverLimit"
-                    class="py-1 px-4 rounded-lg text-primary-300 font-semibold bg-primary-500 enabled:hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                    size="sm">
                     Send
-                </button>
+                </Button>
             </div>
         </div>
     </div>
 </template>
-<style scoped>
+<style>
 .v-enter-active,
 .v-leave-active {
     transition: opacity 0.1s ease;

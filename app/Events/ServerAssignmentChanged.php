@@ -26,12 +26,23 @@ class ServerAssignmentChanged implements ShouldBroadcast
 
     public function broadcastWith()
     {
-        $data = $this->user->getUserStreamUrls();
+        // Only get stream URLs if user has server assignment
+        if ($this->user->server_id && $this->user->streamkey) {
+            $data = $this->user->getUserStreamUrls();
+            return [
+                'hlsUrls' => $data['hls_urls'] ?? null,
+                'clientId' => $data['client_id'],
+                'provisioning' => false,
+                'hasAssignment' => true,
+            ];
+        }
+        
+        // User is waiting for provisioning
         return [
-            'streamUrls' => $data['urls'],
-            'hlsUrls' => $data['hls_urls'] ?? null,
-            'clientId' => $data['client_id'],
+            'hlsUrls' => null,
+            'clientId' => null,
             'provisioning' => $this->provisioning,
+            'hasAssignment' => false,
         ];
     }
 

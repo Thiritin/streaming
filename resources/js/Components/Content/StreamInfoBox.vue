@@ -95,6 +95,6 @@ function changeStreamUrl(url) {
   </div>
 </template>
 
-<style scoped>
+<style>
 
 </style>

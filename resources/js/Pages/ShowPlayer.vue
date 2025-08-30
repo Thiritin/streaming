@@ -54,12 +54,21 @@ export default {
                 // Update show status in the list
                 const showIndex = this.shows.findIndex(s => s.id === e.show.id);
                 if (showIndex !== -1) {
-                    this.shows[showIndex] = {...this.shows[showIndex], ...e.show};
+                    // Preserve slug if not provided in the event
+                    this.shows[showIndex] = {
+                        ...this.shows[showIndex], 
+                        ...e.show,
+                        slug: e.show.slug || this.shows[showIndex].slug
+                    };
                 }
-                
+
                 // If it's the active show, update HLS URLs
                 if (this.activeShow && this.activeShow.id === e.show.id) {
-                    this.activeShow = e.show;
+                    this.activeShow = {
+                        ...this.activeShow,
+                        ...e.show,
+                        slug: e.show.slug || this.activeShow.slug
+                    };
                     if (e.hlsUrls) {
                         this.hlsUrls = e.hlsUrls;
                     }
@@ -170,23 +179,23 @@ export default {
 
     <AuthenticatedLayout>
         <!-- Back to Shows Button -->
-        <div class="bg-gray-900 border-b border-gray-800 px-4 py-2">
+        <div class="bg-primary-900 border-b border-primary-800 px-4 py-2">
             <div class="flex items-center justify-between">
                 <div class="flex items-center">
-                    <Link :href="route('shows.grid')" class="inline-flex items-center text-gray-400 hover:text-white transition-colors">
+                    <Link :href="route('shows.grid')" class="inline-flex items-center text-primary-400 hover:text-white transition-colors">
                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
                         </svg>
                         Back to Shows
                     </Link>
-                    <span class="mx-3 text-gray-600">|</span>
+                    <span class="mx-3 text-primary-600">|</span>
                     <span class="text-white font-semibold">{{ showTitle }}</span>
-                    <span v-if="activeShow?.source" class="text-gray-400 ml-2">• {{ activeShow.source.name }}</span>
+                    <span v-if="activeShow?.source" class="text-primary-400 ml-2">• {{ activeShow.source }}</span>
                 </div>
-                <Link 
-                    v-if="activeShow"
-                    :href="route('show.external', activeShow.id)" 
-                    class="inline-flex items-center px-3 py-1 text-sm bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded transition-colors"
+                <Link
+                    v-if="activeShow && activeShow.slug"
+                    :href="route('show.external', activeShow.slug)"
+                    class="inline-flex items-center px-3 py-1 text-sm bg-primary-800 hover:bg-primary-700 text-primary-300 hover:text-white rounded transition-colors"
                 >
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
@@ -195,7 +204,7 @@ export default {
                 </Link>
             </div>
         </div>
-        
+
         <div class="flex flex-col md:flex-row md:max-h-[calc(100vh-3rem)] grow md:overflow-hidden">
             <!-- Livestream -->
             <div class="w-full flex-1 overflow-auto">
@@ -203,15 +212,15 @@ export default {
                     <StreamPlayer :hls-urls="hlsUrls"
                                   :show-info="activeShow"
                                   class="z-10 relative w-full bg-black max-h-[calc(100vh_-_10vh)]"></StreamPlayer>
-                    
+
                     <!-- Other Available Shows -->
-                    <div v-if="shows.length > 1" class="show-selector p-3 bg-gray-800 border-t border-gray-700">
-                        <div class="text-sm text-gray-400 mb-2">Other Shows:</div>
+                    <div v-if="shows.length > 1" class="show-selector p-3 bg-primary-800 border-t border-primary-700">
+                        <div class="text-sm text-primary-400 mb-2">Other Shows:</div>
                         <div class="flex flex-wrap gap-2">
-                            <Link v-for="show in shows.filter(s => s.id !== activeShow.id)" 
+                            <Link v-for="show in shows.filter(s => s.id !== activeShow?.id && s.slug)"
                                   :key="show.id"
-                                  :href="route('show.view', show.id)"
-                                  class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm text-white transition-colors"
+                                  :href="route('show.view', show.slug)"
+                                  class="px-3 py-1 bg-primary-700 hover:bg-primary-600 rounded text-sm text-white transition-colors"
                                   :class="{'opacity-50 cursor-not-allowed': !show.can_watch}">
                                 {{ show.title }}
                                 <span v-if="show.status === 'live'" class="ml-1 text-red-400">● LIVE</span>
@@ -249,7 +258,7 @@ export default {
     </AuthenticatedLayout>
 </template>
 
-<style scoped>
+<style>
 .slide-fade-enter-active {
     transition: all 0.3s ease-out;
 }

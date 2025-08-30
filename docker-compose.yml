@@ -5,12 +5,13 @@ services:
             dockerfile: Dockerfile
             args:
                 WWWGROUP: '${WWWGROUP}'
-        image: sail-8.2/app
+        image: sail-8.4/app
         extra_hosts:
             - 'host.docker.internal:host-gateway'
         ports:
             - '${APP_PORT:-80}:80'
             - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
+            - '${REVERB_PORT:-8080}:${REVERB_SERVER_PORT:-8080}'
         environment:
             WWWUSER: '${WWWUSER}'
             LARAVEL_SAIL: 1
@@ -24,7 +25,6 @@ services:
         depends_on:
             - mysql
             - redis
-            - reverb
     mysql:
         image: 'mysql/mysql-server:8.0'
         ports:
@@ -64,58 +64,40 @@ services:
                 - ping
             retries: 3
             timeout: 5s
-    reverb:
-        build:
-            context: ./docker/8.4
-            dockerfile: Dockerfile
-            args:
-                WWWGROUP: '${WWWGROUP}'
-        image: sail-8.2/app
-        working_dir: /var/www/html
-        environment:
-            REVERB_SERVER_HOST: '0.0.0.0'
-            REVERB_SERVER_PORT: '${REVERB_SERVER_PORT:-8080}'
-            REVERB_HOST: '${REVERB_HOST:-localhost}'
-            REVERB_PORT: '${REVERB_PORT:-8080}'
-            REVERB_SCHEME: '${REVERB_SCHEME:-http}'
-            REVERB_APP_ID: '${REVERB_APP_ID:-${PUSHER_APP_ID}}'
-            REVERB_APP_KEY: '${REVERB_APP_KEY:-${PUSHER_APP_KEY}}'
-            REVERB_APP_SECRET: '${REVERB_APP_SECRET:-${PUSHER_APP_SECRET}}'
-            REVERB_MAX_REQUEST_SIZE: '${REVERB_MAX_REQUEST_SIZE:-250000}'
-            REVERB_APP_MAX_MESSAGE_SIZE: '${REVERB_APP_MAX_MESSAGE_SIZE:-100000}'
-            REVERB_SCALING_ENABLED: '${REVERB_SCALING_ENABLED:-false}'
-            REVERB_PULSE_INGEST_INTERVAL: '${REVERB_PULSE_INGEST_INTERVAL:-15}'
-            REDIS_HOST: redis
-            REDIS_PORT: 6379
-        volumes:
-            - '.:/var/www/html'
+    origin:
         ports:
-            - '${REVERB_PORT:-8080}:${REVERB_SERVER_PORT:-8080}'
+            - '1935:1935'
+            - '8085:8080'
+            - '1985:1985'
+        image: ossrs/srs:6
+        networks:
+            - sail
+        volumes:
+            - $PWD/origin.conf:/usr/local/srs/conf/custom.conf:ro
+            - srs-logs:/usr/local/srs/objs
+        command: ./objs/srs -c /usr/local/srs/conf/custom.conf
+    hls-edge:
+        image: nginx:alpine
+        container_name: hls-edge
+        ports:
+            - '${HLS_EDGE_PORT:-8083}:80'
+        volumes:
+            - './docker/nginx-hls/nginx.conf:/etc/nginx/nginx.conf:ro'
+            - './docker/nginx-hls/index.html:/usr/share/nginx/html/index.html:ro'
+            - 'nginx-cache:/var/cache/nginx'
         networks:
             - sail
         depends_on:
-            - redis
-        command: php artisan reverb:start --host=0.0.0.0 --port=${REVERB_SERVER_PORT:-8080} --hostname=${REVERB_HOST:-localhost}
-    stream:
-        image: ossrs/srs:4
-        ports:
-            - '1935:1935'
-            - '8080:8080'
-        networks:
-            - sail
-        volumes:
-            - $PWD/custom.conf:/usr/local/srs/conf/custom.conf
-        command: ./objs/srs -c /usr/local/srs/conf/custom.conf
-    origin:
-        ports:
-            - '1936:1935'
-            - '8081:8080'
-        image: ossrs/srs:4
-        networks:
-            - sail
-        volumes:
-            - $PWD/origin.conf:/usr/local/srs/conf/custom.conf
-        command: ./objs/srs -c /usr/local/srs/conf/custom.conf
+            - origin
+        environment:
+            - NGINX_HOST=${HLS_EDGE_HOST:-localhost}
+            - NGINX_PORT=80
+        healthcheck:
+            test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+        restart: unless-stopped
 networks:
     sail:
         driver: bridge
@@ -123,4 +105,8 @@ volumes:
     sail-mysql:
         driver: local
     sail-redis:
+        driver: local
+    nginx-cache:
+        driver: local
+    srs-logs:
         driver: local

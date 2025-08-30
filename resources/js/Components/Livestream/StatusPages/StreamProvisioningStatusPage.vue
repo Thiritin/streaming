@@ -21,6 +21,6 @@ import StatusTitle from "@/Components/Livestream/StatusPages/Components/StatusTi
     </StreamStatusWrapper>
 </template>
 
-<style scoped>
+<style>
 
 </style>

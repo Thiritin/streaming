@@ -52,6 +52,6 @@ const startCountdown = () => {
     </div>
 </template>
 
-<style scoped>
+<style>
 
 </style>

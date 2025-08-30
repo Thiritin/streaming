@@ -12,6 +12,6 @@ import StatusDescription from "@/Components/Livestream/StatusPages/Components/St
     </StreamStatusWrapper>
 </template>
 
-<style scoped>
+<style>
 
 </style>

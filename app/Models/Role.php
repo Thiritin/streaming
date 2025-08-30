@@ -17,7 +17,6 @@ class Role extends Model
         'chat_color',
         'priority',
         'assigned_at_login',
-        'is_staff',
         'is_visible',
         'permissions',
         'metadata',
@@ -25,7 +24,6 @@ class Role extends Model
 
     protected $casts = [
         'assigned_at_login' => 'boolean',
-        'is_staff' => 'boolean',
         'is_visible' => 'boolean',
         'permissions' => 'array',
         'metadata' => 'array',
@@ -54,20 +52,16 @@ class Role extends Model
     public function users()
     {
         return $this->belongsToMany(User::class, 'role_user')
-            ->withPivot('assigned_at', 'expires_at', 'assigned_by')
+            ->withPivot('assigned_by_user_id')
             ->withTimestamps();
     }
 
     /**
-     * Get active users (non-expired roles).
+     * Get active users.
      */
     public function activeUsers()
     {
-        return $this->users()
-            ->where(function ($query) {
-                $query->whereNull('role_user.expires_at')
-                    ->orWhere('role_user.expires_at', '>', now());
-            });
+        return $this->users();
     }
 
     /**
@@ -108,13 +102,11 @@ class Role extends Model
     /**
      * Assign this role to a user.
      */
-    public function assignTo(User $user, ?string $assignedBy = 'system', ?\DateTime $expiresAt = null): void
+    public function assignTo(User $user, ?User $assignedBy = null): void
     {
         $this->users()->syncWithoutDetaching([
             $user->id => [
-                'assigned_at' => now(),
-                'assigned_by' => $assignedBy,
-                'expires_at' => $expiresAt,
+                'assigned_by_user_id' => $assignedBy?->id,
             ]
         ]);
     }
@@ -132,7 +124,7 @@ class Role extends Model
      */
     public function scopeStaff($query)
     {
-        return $query->where('is_staff', true);
+        return $query->where('slug', 'admin');
     }
 
     /**

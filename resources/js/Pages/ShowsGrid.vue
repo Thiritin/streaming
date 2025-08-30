@@ -1,14 +1,14 @@
 <template>
   <Head title="Live Streams" />
-  
+
   <AuthenticatedLayout>
-    <div class="container mx-auto px-4 py-8">
+    <Container class="py-8">
       <!-- Header -->
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-white mb-2">Eurofurence Streams</h1>
-        <p class="text-gray-400">Watch live shows and catch up on recorded content</p>
+        <h1 class="text-3xl font-bold text-white mb-2">Live Streams</h1>
+        <p class="text-primary-400">Watch live shows and catch up on recorded content</p>
       </div>
-      
+
       <!-- Live Shows Section -->
       <div v-if="liveShows.length > 0" class="mb-12">
         <div class="flex items-center mb-4">
@@ -17,64 +17,64 @@
             {{ liveShows.length }} LIVE
           </span>
         </div>
-        
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          <ShowTile 
-            v-for="show in liveShows" 
+
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+          <ShowTile
+            v-for="show in liveShows"
             :key="show.id"
             :show="show"
           />
         </div>
       </div>
-      
+
       <!-- No Live Shows Message -->
       <div v-else class="mb-12">
-        <div class="bg-gray-800 rounded-lg p-8 text-center">
-          <FaVideoSlashIcon class="w-16 h-16 text-gray-600 mx-auto mb-4" />
-          <h2 class="text-xl font-semibold text-gray-400 mb-2">No Live Streams</h2>
-          <p class="text-gray-500">Check back later or browse upcoming shows below</p>
+        <div class="bg-primary-800 rounded-lg p-8 text-center">
+          <FaVideoSlashIcon class="w-16 h-16 text-primary-600 mx-auto mb-4" />
+          <h2 class="text-xl font-semibold text-primary-300 mb-2">No Live Streams</h2>
+          <p class="text-primary-400">Check back later or browse upcoming shows below</p>
         </div>
       </div>
-      
+
       <!-- Upcoming Shows Section -->
       <div v-if="upcomingShows.length > 0">
         <div class="flex items-center mb-4">
           <h2 class="text-2xl font-semibold text-white">Upcoming Shows</h2>
-          <span class="ml-3 bg-gray-700 text-gray-300 px-2 py-1 rounded text-xs">
+          <span class="ml-3 bg-primary-700 text-primary-200 px-2 py-1 rounded text-xs">
             Next 24 hours
           </span>
         </div>
-        
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          <ShowTile 
-            v-for="show in upcomingShows" 
+
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+          <ShowTile
+            v-for="show in upcomingShows"
             :key="show.id"
             :show="show"
           />
         </div>
       </div>
-      
+
       <!-- No Upcoming Shows -->
       <div v-else-if="liveShows.length === 0" class="mt-8">
-        <div class="bg-gray-800 rounded-lg p-8 text-center">
-          <h2 class="text-xl font-semibold text-gray-400 mb-2">No Upcoming Shows</h2>
-          <p class="text-gray-500">No shows scheduled for the next 24 hours</p>
+        <div class="bg-primary-800 rounded-lg p-8 text-center">
+          <h2 class="text-xl font-semibold text-primary-300 mb-2">No Upcoming Shows</h2>
+          <p class="text-primary-400">No shows scheduled for the next 24 hours</p>
         </div>
       </div>
-      
+
       <!-- Admin Link -->
-      <div v-if="$page.props.auth.user.is_staff" class="mt-12 border-t border-gray-700 pt-8">
+      <div v-if="$page.props.auth.user.is_staff" class="mt-12 border-t border-primary-700 pt-8">
         <div class="flex justify-center">
-          <a 
+          <a
             href="/admin"
-            class="inline-flex items-center px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+            class="inline-flex items-center px-4 py-2 bg-primary-700 hover:bg-primary-600 text-white rounded-lg transition-colors"
           >
             <FaCogIcon class="w-4 h-4 mr-2" />
             Admin Panel
           </a>
         </div>
       </div>
-    </div>
+    </Container>
   </AuthenticatedLayout>
 </template>
 
@@ -85,6 +85,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import ShowTile from '@/Components/Shows/ShowTile.vue';
 import FaVideoSlashIcon from '@/Components/Icons/FaVideoSlashIcon.vue';
 import FaCogIcon from '@/Components/Icons/FaCogIcon.vue';
+import Container from '@/Components/Container.vue';
 
 export default {
   name: 'ShowsGrid',
@@ -95,6 +96,7 @@ export default {
     ShowTile,
     FaVideoSlashIcon,
     FaCogIcon,
+    Container,
   },
   props: {
     liveShows: {
@@ -113,7 +115,7 @@ export default {
   setup(props) {
     const liveShowsData = ref(props.liveShows);
     const upcomingShowsData = ref(props.upcomingShows);
-    
+
     onMounted(() => {
       // Listen for show status updates
       Echo.channel('shows')
@@ -125,14 +127,14 @@ export default {
             if (upcomingIndex !== -1) {
               upcomingShowsData.value.splice(upcomingIndex, 1);
             }
-            
+
             // Add to live shows if not already there
             const liveIndex = liveShowsData.value.findIndex(s => s.id === e.show.id);
             if (liveIndex === -1) {
               liveShowsData.value.unshift(e.show);
             }
           }
-          
+
           // Handle show ending
           if (e.status === 'ended') {
             // Remove from live shows
@@ -155,24 +157,24 @@ export default {
           if (liveShow) {
             liveShow.thumbnail_url = e.thumbnail_url;
           }
-          
+
           const upcomingShow = upcomingShowsData.value.find(s => s.id === e.show_id);
           if (upcomingShow) {
             upcomingShow.thumbnail_url = e.thumbnail_url;
           }
         });
-      
+
       // Auto-refresh page every 5 minutes to get fresh data
       const refreshInterval = setInterval(() => {
         window.location.reload();
       }, 5 * 60 * 1000);
-      
+
       onUnmounted(() => {
         clearInterval(refreshInterval);
         Echo.leave('shows');
       });
     });
-    
+
     return {
       liveShows: liveShowsData,
       upcomingShows: upcomingShowsData,
@@ -181,18 +183,7 @@ export default {
 };
 </script>
 
-<style scoped>
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
+<style>
 .grid > * {
   animation: fadeIn 0.5s ease-out forwards;
 }

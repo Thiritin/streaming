@@ -355,7 +355,7 @@ class ShowResource extends Resource
                 Action::make('live_dashboard')
                     ->label('Live Dashboard')
                     ->icon('heroicon-o-presentation-chart-line')
-                    ->url(route('filament.admin.pages.stream-dashboard'))
+                    ->url(route('filament.admin.pages.stream'))
                     ->openUrlInNewTab(),
             ]);
     }

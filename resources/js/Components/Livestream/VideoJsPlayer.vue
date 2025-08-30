@@ -12,12 +12,21 @@
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
-import qualityLevels from 'videojs-contrib-quality-levels';
-import hlsQualitySelector from 'videojs-hls-quality-selector';
 
-// Register plugins
-videojs.registerPlugin('qualityLevels', qualityLevels);
-videojs.registerPlugin('hlsQualitySelector', hlsQualitySelector);
+// Make videojs available globally for plugins that require it
+window.videojs = videojs;
+
+// Import and register quality levels plugin
+import qualityLevels from 'videojs-contrib-quality-levels';
+if (!videojs.getPlugin('qualityLevels')) {
+    videojs.registerPlugin('qualityLevels', qualityLevels);
+}
+
+// Import HLS quality selector plugin - it auto-registers
+import 'videojs-hls-quality-selector';
+
+// Import Chromecast plugin CSS (JS will be loaded dynamically)
+import '@silvermine/videojs-chromecast/dist/silvermine-videojs-chromecast.css';
 
 const props = defineProps({
     streamUrl: {
@@ -50,26 +59,95 @@ const props = defineProps({
     }
 });
 
-const emit = defineEmits(['error', 'playing', 'pause', 'ended', 'loadedmetadata', 'qualityChanged']);
+const emit = defineEmits(['error', 'playing', 'pause', 'ended', 'loadedmetadata', 'qualityChanged', 'useractive', 'userinactive', 'volumechange']);
 
 const videoPlayer = ref(null);
 let player = null;
 
-const initializePlayer = () => {
+// Cookie utility functions
+const setCookie = (name, value, days = 365) => {
+    const expires = new Date();
+    expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
+};
+
+const getCookie = (name) => {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+        if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+    }
+    return null;
+};
+
+// Load Google Cast SDK
+const loadCastSDK = () => {
+    return new Promise((resolve) => {
+        if (window.chrome && window.chrome.cast) {
+            console.log('Cast SDK already loaded');
+            resolve();
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+        script.onload = () => {
+            console.log('Cast SDK loaded');
+            resolve();
+        };
+        script.onerror = () => {
+            console.error('Failed to load Cast SDK');
+            resolve(); // Continue anyway
+        };
+        document.head.appendChild(script);
+    });
+};
+
+const initializePlayer = async () => {
     if (!videoPlayer.value) return;
-    
+
+    // Load Cast SDK first
+    await loadCastSDK();
+
+    // Dynamically import Chromecast plugin after videojs is available
+    try {
+        await import('@silvermine/videojs-chromecast/dist/silvermine-videojs-chromecast');
+        console.log('Chromecast plugin loaded successfully');
+
+        // Check if the plugin registered correctly
+        if (videojs.getPlugin && videojs.getPlugin('chromecast')) {
+            console.log('Chromecast plugin is registered with Video.js');
+        } else {
+            console.warn('Chromecast plugin did not register properly');
+        }
+    } catch (error) {
+        console.error('Failed to load Chromecast plugin:', error);
+    }
+
+    // Check for saved volume preferences first
+    const savedVolume = getCookie('player_volume');
+    const savedMuted = getCookie('player_muted');
+
+    // For autoplay, we must start muted due to browser policies
+    // We'll only unmute on actual user interaction to avoid pausing
+    const initialMuted = props.autoplay ? true : (savedMuted !== null ? savedMuted === 'true' : props.muted);
+
     // Video.js options
     const options = {
-        autoplay: props.autoplay ? 'muted' : false, // Use 'muted' for autoplay to work in modern browsers
+        autoplay: props.autoplay ? 'muted' : false, // Always use muted autoplay for reliability
         controls: props.controls,
-        muted: props.muted,
+        muted: initialMuted,
+        volume: savedVolume !== null ? parseFloat(savedVolume) : 1.0,
         fluid: true,
         responsive: true,
         preload: 'auto',
         liveui: props.isLive,
         liveTracker: {
-            trackingThreshold: 0,
-            liveTolerance: 15
+            trackingThreshold: 30,  // Allow 30 seconds behind before considering "not live"
+            liveTolerance: 15,      // 15 seconds from edge is considered "at live"
+            pauseTracking: false    // Don't pause tracking when seeking
         },
         html5: {
             vhs: {
@@ -82,9 +160,7 @@ const initializePlayer = () => {
                 useDevicePixelRatio: true,
                 bandwidth: 16777216, // Start with 16 Mbps bandwidth assumption
                 enableLowInitialPlaylist: true,
-                smoothQualityChange: true,
                 allowSeeksWithinUnsafeLiveWindow: true,
-                handlePartialData: true,
                 customTagParsers: [],
                 customTagMappers: [],
                 experimentalBufferBasedABR: false,
@@ -93,49 +169,186 @@ const initializePlayer = () => {
             }
         },
         techOrder: ['html5'],
-        sources: []
+        sources: [],
+        // Chromecast plugin options
+        plugins: {
+            chromecast: {
+                receiverAppID: null, // Uses default receiver if null
+                addButtonToControlBar: true
+            }
+        }
     };
-    
-    // Use HLS URL if available, otherwise fall back to direct stream URL
-    if (props.hlsUrls && props.hlsUrls.master) {
-        options.sources = [{
-            src: props.hlsUrls.master,
-            type: 'application/x-mpegURL'
-        }];
-    } else if (props.streamUrl) {
+
+    // Use HLS URL if available
+    if (props.streamUrl) {
         // Determine type based on URL extension
-        const type = props.streamUrl.includes('.m3u8') ? 'application/x-mpegURL' : 
-                    props.streamUrl.includes('.flv') ? 'video/x-flv' : 
+        const type = props.streamUrl.includes('.m3u8') ? 'application/x-mpegURL' :
+                    props.streamUrl.includes('.flv') ? 'video/x-flv' :
                     'video/mp4';
         options.sources = [{
             src: props.streamUrl,
             type: type
         }];
     }
-    
+
     // Create player instance
     player = videojs(videoPlayer.value, options);
-    
-    // Initialize quality selector plugin if HLS
-    if (props.hlsUrls || props.streamUrl.includes('.m3u8')) {
-        player.ready(() => {
-            // Initialize quality levels
-            player.qualityLevels();
+
+    // No need for complex autoplay handling - Video.js handles it with 'muted' option
+
+    // Initialize plugins when player is ready
+    player.ready(() => {
+        // Log initial volume state
+        console.log('Player ready - Initial volume:', player.volume(), 'Muted:', player.muted());
+
+        // Check if Chromecast plugin initialized
+        if (typeof player.chromecast === 'function') {
+            console.log('Chromecast method is available on player');
+            try {
+                // Initialize chromecast explicitly
+                player.chromecast();
+                console.log('Chromecast plugin initialized on player');
+
+                // Check for Chromecast button
+                const chromecastButton = player.controlBar.getChild('chromecastButton');
+                if (chromecastButton) {
+                    console.log('Chromecast button found in control bar');
+                } else {
+                    console.warn('Chromecast button not found in control bar');
+                }
+            } catch (error) {
+                console.error('Error initializing Chromecast:', error);
+            }
+        } else {
+            console.warn('Chromecast method not available on player');
+        }
+
+        // Set up unmute on first user interaction if player is muted
+        // and user's preference was unmuted
+        if (player.muted()) {
+            let hasInteracted = false;
+
+            const handleFirstInteraction = () => {
+                if (hasInteracted) return;
+                hasInteracted = true;
+
+                // Check if user's saved preference was unmuted
+                if (savedMuted === 'false' || savedMuted === null) {
+                    player.muted(false);
+                    console.log('Unmuted on first user interaction');
+                }
+
+                // Clean up listeners
+                document.removeEventListener('click', handleFirstInteraction);
+                document.removeEventListener('touchstart', handleFirstInteraction);
+            };
+
+            // Listen for any interaction on the document
+            document.addEventListener('click', handleFirstInteraction, { once: true });
+            document.addEventListener('touchstart', handleFirstInteraction, { once: true });
+        }
+        // Add manual quality selector for our separate HLS streams
+        if (props.hlsUrls && (props.hlsUrls.hd || props.hlsUrls.sd || props.hlsUrls.ld)) {
+            // Create custom quality menu button
+            const MenuButton = videojs.getComponent('MenuButton');
+            const MenuItem = videojs.getComponent('MenuItem');
             
-            // Add HLS quality selector UI
-            player.hlsQualitySelector({
-                displayCurrentQuality: true,
-                placementIndex: 0,
-                vjsIconClass: 'vjs-icon-hd'
-            });
-        });
-    }
-    
+            class QualityMenuItem extends MenuItem {
+                constructor(player, options) {
+                    super(player, options);
+                    this.qualityUrl = options.qualityUrl;
+                    this.qualityLabel = options.qualityLabel;
+                }
+                
+                handleClick() {
+                    // Get current time before switching
+                    const currentTime = this.player().currentTime();
+                    const wasPlaying = !this.player().paused();
+                    
+                    // Switch quality by changing source
+                    this.player().src({
+                        src: this.qualityUrl,
+                        type: 'application/x-mpegURL'
+                    });
+                    
+                    // When new source loads, seek to previous time and resume if playing
+                    this.player().one('loadedmetadata', () => {
+                        if (this.player().liveTracker) {
+                            // For live streams, go to live edge
+                            this.player().liveTracker.seekToLiveEdge();
+                        } else {
+                            // For VOD, seek to previous position
+                            this.player().currentTime(currentTime);
+                        }
+                        
+                        if (wasPlaying) {
+                            this.player().play().catch(e => console.error('Play after quality change failed:', e));
+                        }
+                    });
+                    
+                    // Update menu items to show selected
+                    const qualityMenu = this.player().controlBar.getChild('qualityMenuButton');
+                    if (qualityMenu && qualityMenu.menu) {
+                        qualityMenu.menu.children().forEach(item => {
+                            item.selected(item === this);
+                        });
+                    }
+                    
+                    // Emit quality change event
+                    emit('qualityChanged', this.qualityLabel);
+                }
+            }
+            
+            class QualityMenuButton extends MenuButton {
+                constructor(player, options) {
+                    super(player, options);
+                    this.controlText('Quality');
+                }
+                
+                createItems() {
+                    const items = [];
+                    
+                    // Add quality options based on available URLs
+                    const qualities = [
+                        { url: props.hlsUrls.stream, label: 'Auto', key: 'stream' },
+                        { url: props.hlsUrls.hd, label: 'HD (720p)', key: 'hd' },
+                        { url: props.hlsUrls.sd, label: 'SD (480p)', key: 'sd' },
+                        { url: props.hlsUrls.ld, label: 'Low (360p)', key: 'ld' }
+                    ];
+                    
+                    qualities.forEach(quality => {
+                        if (quality.url) {
+                            const item = new QualityMenuItem(this.player(), {
+                                label: quality.label,
+                                qualityUrl: quality.url,
+                                qualityLabel: quality.label
+                            });
+                            
+                            // Mark current quality as selected
+                            if (quality.url === props.streamUrl) {
+                                item.selected(true);
+                            }
+                            
+                            items.push(item);
+                        }
+                    });
+                    
+                    return items;
+                }
+            }
+            
+            // Register and add the quality menu button
+            videojs.registerComponent('QualityMenuButton', QualityMenuButton);
+            player.controlBar.addChild('QualityMenuButton', {}, player.controlBar.children().length - 2);
+            console.log('Manual quality selector added');
+        }
+    });
+
     // Event listeners
     player.on('error', (error) => {
         console.error('Video.js error:', error);
         emit('error', error);
-        
+
         // Auto-retry logic for live streams
         if (props.isLive) {
             setTimeout(() => {
@@ -147,32 +360,58 @@ const initializePlayer = () => {
             }, 5000);
         }
     });
-    
+
     player.on('playing', () => {
         emit('playing');
     });
-    
+
     player.on('pause', () => {
         emit('pause');
     });
-    
+
     player.on('ended', () => {
         emit('ended');
     });
-    
+
     player.on('loadedmetadata', () => {
         emit('loadedmetadata');
-        
+
         // For live streams, seek to live edge
         if (props.isLive && player.liveTracker) {
             player.liveTracker.seekToLiveEdge();
         }
     });
-    
+
+    // User activity events for controls visibility
+    player.on('useractive', () => {
+        emit('useractive');
+    });
+
+    player.on('userinactive', () => {
+        emit('userinactive');
+    });
+
+    // Save volume changes to cookie and emit event
+    player.on('volumechange', () => {
+        const currentVolume = player.volume();
+        const isMuted = player.muted();
+
+        console.log('Volume changed - Volume:', currentVolume, 'Muted:', isMuted);
+
+        // Always save the volume, even when muted
+        setCookie('player_volume', currentVolume.toString());
+        setCookie('player_muted', isMuted.toString());
+
+        console.log('Saved to cookies - Volume:', currentVolume, 'Muted:', isMuted);
+
+        // Emit volumechange event to parent
+        emit('volumechange');
+    });
+
     // Track quality changes
     if (player.qualityLevels) {
         const qualityLevels = player.qualityLevels();
-        
+
         qualityLevels.on('change', () => {
             let currentQuality = null;
             for (let i = 0; i < qualityLevels.length; i++) {
@@ -189,28 +428,24 @@ const initializePlayer = () => {
             emit('qualityChanged', currentQuality);
         });
     }
-    
+
     // Handle live stream specific features
     if (props.isLive) {
         // Add live indicator
         player.on('liveui', () => {
             console.log('Live UI activated');
         });
-        
-        // Keep stream at live edge
-        player.on('play', () => {
-            if (player.liveTracker && !player.liveTracker.atLiveEdge()) {
-                player.liveTracker.seekToLiveEdge();
-            }
-        });
+
+        // Don't automatically seek to live edge on play - let user control their position
+        // The live tracker UI will show when behind live and user can click to go live
     }
 };
 
 // Watch for stream URL changes
 watch(() => props.streamUrl, (newUrl) => {
     if (player && newUrl) {
-        const type = newUrl.includes('.m3u8') ? 'application/x-mpegURL' : 
-                    newUrl.includes('.flv') ? 'video/x-flv' : 
+        const type = newUrl.includes('.m3u8') ? 'application/x-mpegURL' :
+                    newUrl.includes('.flv') ? 'video/x-flv' :
                     'video/mp4';
         player.src({ src: newUrl, type: type });
         player.load();
@@ -255,7 +490,7 @@ defineExpose({
 });
 </script>
 
-<style scoped>
+<style>
 .video-js-container {
     width: 100%;
     height: 100%;
@@ -296,5 +531,39 @@ defineExpose({
 :deep(.vjs-menu-button-popup .vjs-menu) {
     left: auto;
     right: -1em;
+}
+
+/* HLS Quality Selector button styling */
+:deep(.vjs-quality-selector-button) {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+:deep(.vjs-quality-selector .vjs-menu-button) {
+    cursor: pointer;
+}
+
+:deep(.vjs-quality-selector .vjs-icon-placeholder:before) {
+    content: 'HD';
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+/* Chromecast button styling */
+:deep(.vjs-chromecast-button) {
+    cursor: pointer;
+}
+
+:deep(.vjs-chromecast-button .vjs-icon-placeholder) {
+    font-family: 'VideoJS';
+}
+
+:deep(.vjs-chromecast-button.vjs-casting) {
+    color: #00ff00;
+}
+
+:deep(.vjs-chromecast-button:hover) {
+    color: #fff;
 }
 </style>

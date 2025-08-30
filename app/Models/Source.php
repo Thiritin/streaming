@@ -15,13 +15,11 @@ class Source extends Model
         'name',
         'slug',
         'description',
-        'location',
         'stream_key',
         'rtmp_url',
         'hls_url',
         'is_active',
         'is_primary',
-        'priority',
         'metadata',
     ];
 
@@ -56,16 +54,10 @@ class Source extends Model
             if (empty($source->slug)) {
                 $source->slug = Str::slug($source->name);
             }
+            // Generate a secure stream key for authentication
             if (empty($source->stream_key)) {
+                // Generate a secure random key for the secret parameter
                 $source->stream_key = Str::random(32);
-            }
-            // Generate RTMP and HLS URLs based on slug
-            if (empty($source->rtmp_url)) {
-                $source->rtmp_url = "rtmp://" . config('stream.rtmp_host', 'localhost:1935') . "/live/" . $source->stream_key;
-            }
-            if (empty($source->hls_url)) {
-                // Use slug for HLS URL
-                $source->hls_url = "http://" . config('stream.hls_host', 'localhost:8080') . "/live/" . $source->slug . ".m3u8";
             }
         });
         
@@ -73,8 +65,11 @@ class Source extends Model
             // Update slug if name changes
             if ($source->isDirty('name') && !$source->isDirty('slug')) {
                 $source->slug = Str::slug($source->name);
-                // Update HLS URL if slug changes
-                $source->hls_url = "http://" . config('stream.hls_host', 'localhost:8080') . "/live/" . $source->slug . ".m3u8";
+            }
+            // Stream key should remain separate from slug for security
+            // Only regenerate if explicitly cleared
+            if ($source->isDirty('stream_key') && empty($source->stream_key)) {
+                $source->stream_key = Str::random(32);
             }
         });
     }
@@ -139,11 +134,11 @@ class Source extends Model
     }
 
     /**
-     * Get sources ordered by priority.
+     * Get sources ordered by name.
      */
     public function scopeOrdered($query)
     {
-        return $query->orderBy('priority', 'desc')->orderBy('name');
+        return $query->orderBy('name');
     }
     
     /**
@@ -152,22 +147,120 @@ class Source extends Model
     public function getHlsUrls()
     {
         $protocol = app()->isLocal() ? 'http' : 'https';
-        $host = config('stream.edge_host', request()->getHost());
         
-        // Use slug for stream identification
-        $streamSlug = $this->slug;
-        
-        $urls = [
-            'master' => "{$protocol}://{$host}/live/{$streamSlug}.m3u8",
-        ];
-        
-        // Add quality-specific URLs
-        foreach (['original', 'fhd', 'hd', 'sd', 'ld', 'audio_hd', 'audio_sd'] as $quality) {
-            $qualityUrl = ($quality !== 'original') ? "_{$quality}" : "";
-            $urls[$quality] = "{$protocol}://{$host}/live/{$streamSlug}{$qualityUrl}.m3u8";
+        // For local development with Docker, use the SRS HLS server directly
+        if (app()->isLocal()) {
+            $host = 'localhost:' . env('HLS_EDGE_PORT', '8085'); // HLS edge port
+            $protocol = 'http';
+        } else {
+            // Get the server handling the current show with this source
+            $server = null;
+            $currentShow = $this->currentLiveShow();
+            if ($currentShow && $currentShow->server) {
+                $server = $currentShow->server;
+            } else {
+                // Fallback to any available edge server
+                $server = \App\Models\Server::where('type', 'edge')
+                    ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
+                    ->first();
+            }
+            
+            // Use server's getHostWithPort method to handle port properly
+            if ($server) {
+                $host = $server->getHostWithPort();
+                // Determine protocol based on port
+                if ($server->port === 443) {
+                    $protocol = 'https';
+                } elseif ($server->port === 80) {
+                    $protocol = 'http';
+                }
+            } else {
+                $host = config('stream.edge_host', request()->getHost());
+            }
         }
         
+        // Use source slug for stream identification
+        // When using multi-bitrate HLS with FFmpeg:
+        // Original stream: /live/[slug]/index.m3u8
+        // HD quality: /live/[slug]_hd/index.m3u8
+        // SD quality: /live/[slug]_sd/index.m3u8
+        // LD quality: /live/[slug]_ld/index.m3u8
+        
+        $urls = [
+            'stream' => "{$protocol}://{$host}/live/{$this->slug}/index.m3u8", // Original stream
+            'hd' => "{$protocol}://{$host}/live/{$this->slug}_hd/index.m3u8",  // HD 720p
+            'sd' => "{$protocol}://{$host}/live/{$this->slug}_sd/index.m3u8",  // SD 480p
+            'ld' => "{$protocol}://{$host}/live/{$this->slug}_ld/index.m3u8",  // LD 360p
+        ];
+        
         return $urls;
+    }
+    
+    /**
+     * Get the base RTMP server URL for OBS configuration.
+     * Returns URL in format: rtmp://server:port/live
+     */
+    public function getRtmpServerUrl()
+    {
+        // Get the active origin server
+        $originServer = \App\Models\Server::where('type', 'origin')
+            ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
+            ->first();
+            
+        $baseUrl = '';
+        
+        if (!$originServer) {
+            // Fallback to config if no origin server found
+            // For local Docker, use port 1935 (correctly mapped now)
+            $defaultPort = app()->isLocal() ? '1935' : '1935';
+            $host = config('stream.rtmp_host', 'localhost:' . $defaultPort);
+            $baseUrl = "rtmp://" . $host;
+        } else if ($originServer->hetzner_id === 'manual') {
+            // For manual/local servers
+            // For local Docker development, use port 1935 (now correctly mapped)
+            // Otherwise use the server's configured port or default to 1935
+            if (app()->isLocal() && $originServer->hostname === 'localhost') {
+                $baseUrl = "rtmp://localhost:1935";
+            } else {
+                // Use hostname for Docker containers (OSSRS standard)
+                $port = $originServer->port ?? 1935;
+                $baseUrl = "rtmp://" . $originServer->hostname . ":" . $port;
+            }
+        } else {
+            // For cloud servers
+            $port = $originServer->port ?? 1935;
+            $baseUrl = "rtmp://" . $originServer->hostname . ":" . $port;
+        }
+        
+        // Return base URL with app name for OBS Server field
+        return $baseUrl . "/live";
+    }
+    
+    /**
+     * Get the stream key for OBS configuration.
+     * Returns: <slug>?secret=<stream_key>
+     */
+    public function getObsStreamKey()
+    {
+        return $this->slug . "?secret=" . $this->stream_key;
+    }
+    
+    /**
+     * Get the full RTMP push URL (for reference/testing).
+     * Returns URL in format: rtmp://server:port/live/<slug>?secret=<stream_key>
+     */
+    public function getRtmpPushUrl()
+    {
+        return $this->getRtmpServerUrl() . "/" . $this->slug . "?secret=" . $this->stream_key;
+    }
+    
+    /**
+     * Get the full RTMP URL with stream key.
+     * This returns the URL with stream key as parameter for OBS.
+     */
+    public function getFullRtmpUrl()
+    {
+        return $this->getRtmpPushUrl();
     }
     
     /**

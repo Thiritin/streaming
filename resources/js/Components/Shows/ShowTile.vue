@@ -1,10 +1,10 @@
 <template>
   <Link 
-    :href="route('show.view', show.id)"
+    :href="route('show.view', show.slug)"
     class="show-tile group relative block overflow-hidden rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
   >
     <!-- Thumbnail Container -->
-    <div class="aspect-video relative bg-gray-900 overflow-hidden">
+    <div class="aspect-video relative bg-primary-900 overflow-hidden">
       <!-- Thumbnail Image -->
       <img 
         v-if="currentThumbnail"
@@ -16,24 +16,24 @@
       
       <!-- Placeholder when no thumbnail -->
       <div v-else class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-800 to-primary-900">
-        <FaVideoIcon class="w-16 h-16 text-primary-600" />
+        <FaVideoIcon class="w-20 h-20 text-primary-600" />
       </div>
       
       <!-- Live Badge -->
-      <div v-if="isLive" class="absolute top-2 left-2 flex items-center space-x-1">
-        <span class="live-badge bg-red-600 text-white px-2 py-1 rounded text-xs font-bold uppercase flex items-center">
+      <div v-if="isLive" class="absolute top-3 left-3 flex items-center space-x-2">
+        <span class="live-badge bg-red-600 text-white px-3 py-1.5 rounded text-sm font-bold uppercase flex items-center">
           <span class="live-dot"></span>
           LIVE
         </span>
-        <span v-if="show.viewer_count > 0" class="bg-black/70 text-white px-2 py-1 rounded text-xs">
+        <span v-if="show.viewer_count > 0" class="bg-black/70 text-white px-3 py-1.5 rounded text-sm">
           <FaIconUser class="inline w-3 h-3 mr-1" />
           {{ formatViewerCount(show.viewer_count) }}
         </span>
       </div>
       
       <!-- Upcoming Time -->
-      <div v-else-if="isUpcoming" class="absolute top-2 left-2">
-        <span class="bg-black/70 text-white px-2 py-1 rounded text-xs">
+      <div v-else-if="isUpcoming" class="absolute top-3 left-3">
+        <span class="bg-black/70 text-white px-3 py-1.5 rounded text-sm">
           {{ formatTimeUntil(show.scheduled_start) }}
         </span>
       </div>
@@ -47,25 +47,24 @@
       
       <!-- Hover Overlay -->
       <div class="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-300 flex items-center justify-center">
-        <FaPlayIcon class="text-white w-12 h-12 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        <FaPlayIcon class="text-white w-16 h-16 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
       </div>
     </div>
     
     <!-- Content -->
-    <div class="p-3 bg-gray-800">
+    <div class="p-4 bg-primary-800">
       <!-- Title -->
-      <h3 class="font-semibold text-white truncate group-hover:text-primary-400 transition-colors">
+      <h3 class="font-semibold text-lg text-white truncate group-hover:text-primary-300 transition-colors">
         {{ show.title }}
       </h3>
       
-      <!-- Source/Location -->
-      <p v-if="show.source" class="text-sm text-gray-400 truncate">
-        {{ show.source.name }}
-        <span v-if="show.source.location" class="text-xs"> • {{ show.source.location }}</span>
+      <!-- Source -->
+      <p v-if="show.source" class="text-base text-primary-400 truncate">
+        {{ show.source }}
       </p>
       
       <!-- Scheduled Time for Upcoming -->
-      <p v-if="isUpcoming" class="text-sm text-gray-400 mt-1">
+      <p v-if="isUpcoming" class="text-base text-primary-400 mt-1">
         {{ formatScheduledTime(show.scheduled_start) }}
       </p>
     </div>
@@ -217,39 +216,25 @@ export default {
 };
 </script>
 
-<style scoped>
+<style>
 .live-badge {
   animation: pulse 2s ease-in-out infinite;
 }
 
 .live-dot {
-  @apply w-2 h-2 bg-white rounded-full mr-1;
+  width: 0.5rem;
+  height: 0.5rem;
+  background-color: white;
+  border-radius: 9999px;
+  margin-right: 0.25rem;
   animation: blink 1.5s ease-in-out infinite;
 }
 
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.9;
-  }
-}
-
-@keyframes blink {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
-}
-
 .show-tile {
-  @apply bg-gray-800;
+  background-color: rgb(0 59 50); /* primary-700 */
 }
 
 .show-tile:hover {
-  @apply bg-gray-700;
+  background-color: rgb(0 80 75); /* primary-600 */
 }
 </style>

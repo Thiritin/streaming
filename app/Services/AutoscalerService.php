@@ -30,6 +30,7 @@ class AutoscalerService
         return Server::whereIn('status',
             [ServerStatusEnum::PROVISIONING->value, ServerStatusEnum::ACTIVE->value])
             ->where('type', ServerTypeEnum::EDGE->value)
+            ->where('hetzner_id', '!=', 'manual')  // Exclude manual servers from autoscaling
             ->sum('max_clients');
     }
 

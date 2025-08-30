@@ -51,14 +51,16 @@ class ScalingJob implements ShouldQueue
         if ($action === AutoscalerAction::SCALE_DOWN) {
             $serverCount = Server::where('status', ServerStatusEnum::ACTIVE->value)
                 ->where('type', ServerTypeEnum::EDGE)
+                ->where('hetzner_id', '!=', 'manual')  // Don't count manual servers
                 ->count();
 
             if ($serverCount > 1) {
-                // Delete Server with lowest user count and not immutable
+                // Delete Server with lowest user count and not immutable or manual
                 $server = Server::where('status', ServerStatusEnum::ACTIVE)
                     ->where('type', ServerTypeEnum::EDGE)
                     ->where('servers.created_at', '<=', now()->subHour())
                     ->where('immutable', false)
+                    ->where('hetzner_id', '!=', 'manual')  // Never deprovision manual servers
                     ->leftJoin('clients', function (JoinClause $join) {
                         $join->on('clients.server_id', '=', 'servers.id');
                         $join->on('clients.stop', \DB::raw('NULL'));

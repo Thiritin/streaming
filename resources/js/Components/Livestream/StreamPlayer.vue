@@ -7,6 +7,10 @@ const props = defineProps({
     showInfo: Object
 })
 
+// State for controls visibility
+const controlsVisible = ref(true);
+const showUnmutePrompt = ref(false);
+
 // Handle player events
 const handleError = (error) => {
     console.error('Player error:', error);
@@ -14,6 +18,37 @@ const handleError = (error) => {
 
 const handlePlaying = () => {
     console.log('Stream is playing');
+    // Check if we should show unmute prompt
+    if (playerRef.value?.getPlayer && playerRef.value.getPlayer().muted()) {
+        showUnmutePrompt.value = true;
+        // Hide prompt after 5 seconds or when player is unmuted
+        setTimeout(() => {
+            if (playerRef.value?.getPlayer && playerRef.value.getPlayer().muted()) {
+                showUnmutePrompt.value = false;
+            }
+        }, 5000);
+    }
+};
+
+// Watch for volume changes to hide prompt when unmuted
+const handleVolumeChange = () => {
+    if (playerRef.value?.getPlayer && !playerRef.value.getPlayer().muted()) {
+        showUnmutePrompt.value = false;
+    }
+};
+
+const handleUnmute = () => {
+    if (playerRef.value?.getPlayer) {
+        const player = playerRef.value.getPlayer();
+        try {
+            player.muted(false);
+            showUnmutePrompt.value = false;
+        } catch (error) {
+            console.log('Could not unmute:', error);
+            // If unmuting fails, at least hide the prompt since user tried
+            showUnmutePrompt.value = false;
+        }
+    }
 };
 
 const handleQualityChanged = (quality) => {
@@ -21,6 +56,14 @@ const handleQualityChanged = (quality) => {
     if (props.showInfo) {
         console.log('Playing show:', props.showInfo.title);
     }
+};
+
+const handleUserActive = () => {
+    controlsVisible.value = true;
+};
+
+const handleUserInactive = () => {
+    controlsVisible.value = false;
 };
 
 const playerRef = ref(null);
@@ -34,9 +77,9 @@ defineExpose({
 </script>
 
 <template>
-    <div class="stream-player-container" v-if="hlsUrls && hlsUrls.master">
+    <div class="stream-player-container" v-if="hlsUrls && (hlsUrls.stream || hlsUrls.master)">
         <VideoJsPlayer 
-            :stream-url="hlsUrls.master"
+            :stream-url="hlsUrls.stream || hlsUrls.master"
             :hls-urls="hlsUrls"
             :autoplay="true"
             :muted="false"
@@ -45,21 +88,36 @@ defineExpose({
             @error="handleError"
             @playing="handlePlaying"
             @qualityChanged="handleQualityChanged"
+            @useractive="handleUserActive"
+            @userinactive="handleUserInactive"
+            @volumechange="handleVolumeChange"
             ref="playerRef"
         />
         
-        <!-- Show info overlay (optional) -->
-        <div v-if="showInfo" class="show-info-overlay">
-            <div class="show-title">{{ showInfo.title }}</div>
-            <div v-if="showInfo.source" class="show-source">{{ showInfo.source }}</div>
-        </div>
+        <!-- Show info overlay (only visible when controls are visible) -->
+        <transition name="fade">
+            <div v-if="showInfo && controlsVisible" class="show-info-overlay">
+                <div class="show-title">{{ showInfo.title }}</div>
+                <div v-if="showInfo.source" class="show-source">{{ showInfo.source }}</div>
+            </div>
+        </transition>
+        
+        <!-- Unmute prompt -->
+        <transition name="fade">
+            <div v-if="showUnmutePrompt" class="unmute-prompt" @click="handleUnmute">
+                <svg class="unmute-icon" viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor" d="M3,9H7L12,4V20L7,15H3V9M16.59,12L14,9.41L15.41,8L18,10.59L20.59,8L22,9.41L19.41,12L22,14.59L20.59,16L18,13.41L15.41,16L14,14.59L16.59,12Z"/>
+                </svg>
+                <span>Click to unmute</span>
+            </div>
+        </transition>
     </div>
     <div v-else class="no-stream-message">
         <p>No stream available at the moment.</p>
     </div>
 </template>
 
-<style scoped>
+<style>
 .stream-player-container {
     width: 100%;
     height: 100%;
@@ -100,5 +158,41 @@ defineExpose({
 :deep(.video-js-container) {
     width: 100%;
     height: 100%;
+}
+
+/* Fade transition for overlay */
+.fade-enter-active, .fade-leave-active {
+    transition: opacity 0.8s ease;
+}
+
+.fade-enter-from, .fade-leave-to {
+    opacity: 0;
+}
+
+/* Unmute prompt styling */
+.unmute-prompt {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    z-index: 15;
+    transition: background 0.2s;
+}
+
+.unmute-prompt:hover {
+    background: rgba(0, 0, 0, 0.9);
+}
+
+.unmute-icon {
+    width: 24px;
+    height: 24px;
 }
 </style>

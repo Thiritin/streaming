@@ -28,16 +28,16 @@ const filteredCommands = computed(() => {
     if (!props.modelValue || !props.modelValue.startsWith('/')) {
         return [];
     }
-    
+
     const searchTerm = props.modelValue.slice(1).toLowerCase();
-    
+
     if (searchTerm === '') {
         return availableCommands.value;
     }
-    
+
     return availableCommands.value.filter(cmd => {
         const matchesName = cmd.name.toLowerCase().startsWith(searchTerm);
-        const matchesAlias = cmd.aliases?.some(alias => 
+        const matchesAlias = cmd.aliases?.some(alias =>
             alias.toLowerCase().startsWith(searchTerm)
         );
         return matchesName || matchesAlias;
@@ -57,7 +57,7 @@ function selectCommand(command) {
 
 function handleKeyDown(event) {
     if (!props.visible || filteredCommands.value.length === 0) return;
-    
+
     switch(event.key) {
         case 'ArrowUp':
             event.preventDefault();
@@ -89,31 +89,31 @@ defineExpose({
 
 <template>
     <transition name="fade-slide">
-        <div v-if="visible && filteredCommands.length > 0" 
-             class="absolute bottom-full mb-2 left-0 right-0 bg-gray-800 rounded-lg shadow-xl border border-gray-700 max-h-64 overflow-y-auto">
+        <div v-if="visible && filteredCommands.length > 0"
+             class="absolute bottom-full mb-2 left-0 right-0 bg-primary-800 rounded-lg shadow-xl border border-primary-700 max-h-64 overflow-y-auto">
             <div class="p-2">
-                <div class="text-xs text-gray-400 uppercase tracking-wider mb-2 px-2">
+                <div class="text-xs text-primary-400 uppercase tracking-wider mb-2 px-2">
                     Available Commands
                 </div>
-                <div v-for="(command, index) in filteredCommands" 
+                <div v-for="(command, index) in filteredCommands"
                      :key="command.name"
                      @click="selectCommand(command)"
                      :class="[
                          'cursor-pointer rounded px-2 py-2 mb-1 transition-colors',
-                         index === selectedIndex ? 'bg-primary-600 text-white' : 'hover:bg-gray-700 text-gray-300'
+                         index === selectedIndex ? 'bg-primary-600 text-white' : 'hover:bg-primary-700 text-primary-300'
                      ]">
                     <div class="flex items-start">
                         <div class="flex-1">
                             <div class="font-semibold">
                                 /{{ command.name }}
-                                <span v-if="command.aliases && command.aliases.length > 0" class="text-xs text-gray-400 ml-1">
+                                <span v-if="command.aliases && command.aliases.length > 0" class="text-xs text-primary-400 ml-1">
                                     (alias: {{ command.aliases.join(', ') }})
                                 </span>
                             </div>
-                            <div class="text-xs text-gray-400 mt-1">
+                            <div class="text-xs text-primary-400 mt-1">
                                 {{ command.description }}
                             </div>
-                            <div class="text-xs font-mono mt-1" :class="index === selectedIndex ? 'text-primary-200' : 'text-gray-500'">
+                            <div class="text-xs font-mono mt-1" :class="index === selectedIndex ? 'text-primary-200' : 'text-primary-500'">
                                 {{ command.syntax }}
                             </div>
                         </div>
@@ -124,7 +124,7 @@ defineExpose({
     </transition>
 </template>
 
-<style scoped>
+<style>
 .fade-slide-enter-active,
 .fade-slide-leave-active {
     transition: all 0.2s ease;

@@ -17,9 +17,18 @@ class ListServers extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
+            CreateAction::make()
+                ->label('New Manual Server')
+                ->icon('heroicon-o-plus'),
             Action::make('Enable Autoscaler')->action(fn() => AutoscalerService::enableAutoscaler())->hidden(AutoscalerService::isAutoscalerEnabled())->color('success'),
             Action::make('Disable Autoscaler')->action(fn() => AutoscalerService::disableAutoscaler())->hidden(!AutoscalerService::isAutoscalerEnabled())->color('danger'),
-            Action::make('Provision New Server')->action(fn() => CreateServerJob::dispatch()),
+            Action::make('Provision Cloud Server')
+                ->action(fn() => CreateServerJob::dispatch())
+                ->icon('heroicon-o-cloud')
+                ->color('primary')
+                ->requiresConfirmation()
+                ->modalHeading('Provision New Cloud Server')
+                ->modalDescription('This will provision a new server on Hetzner Cloud. Are you sure?'),
         ];
     }
 }

@@ -96,11 +96,11 @@ function highlightUsername(message) {
 function processMessageForDisplay(message) {
   // First apply username highlighting
   let processed = highlightUsername(encodeHtml(message));
-  
+
   // Apply client-side URL filtering for display (server already sanitized)
   const allowedDomains = page.props.chat?.config?.allowedDomains || ['eurofurence.org'];
   const urlPattern = /(?:https?:\/\/|www\.)(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s]*)?/gi;
-  
+
   processed = processed.replace(urlPattern, (match) => {
     // Check if URL is from allowed domain
     for (const domain of allowedDomains) {
@@ -110,7 +110,7 @@ function processMessageForDisplay(message) {
     }
     return '[url removed]';
   });
-  
+
   return processed;
 }
 
@@ -155,23 +155,23 @@ function sendMessage() {
 </script>
 
 <template>
-    <div class="flex flex-col">
+    <div class="flex flex-col bg-primary-950">
         <!-- Title -->
-        <div class="bg-primary-700 py-4 text-primary-200 text-center">
+        <div class="bg-primary-950 py-4 text-primary-100 text-center border-b border-primary-800">
             <h1 class="uppercase tracking-wider font-semibold">Stream Chat</h1>
         </div>
         <!-- Chat Messages -->
-        <div class="px-3 p-3 text-primary-200 flex-1 h-full overflow-auto" ref="messageContainer">
+        <div class="px-3 p-3 text-primary-100 flex-1 h-full overflow-auto bg-primary-900" ref="messageContainer">
             <div class="mb-0.5" v-for="message in chatMessages">
                 <div class="flex" v-if="message.name">
-                    <div class="text-xs pr-2 text-primary-400 mt-1">{{ message.time }}</div>
-                    <div :class="{'bg-black text-gray-400 py-1 px-1': message.is_command}">
-                            <span :title="message.role?.name || 'User'" class="font-semibold" :style="{color: message.role?.chat_color || '#808080'}">
+                    <div class="text-xs pr-2 text-primary-600 mt-1">{{ message.time }}</div>
+                    <div :class="{'bg-primary-950 text-primary-400 py-1 px-1 rounded': message.is_command}">
+                            <span :title="message.role?.name || 'User'" class="font-semibold" :style="{color: message.role?.chat_color || '#86efac'}">
                                 {{ message.name }}<span v-if="message.role?.is_staff"> ({{ message.role.name }})</span>
-                            </span>: <span class="message-content" v-html="processMessageForDisplay(message.message)"></span>
+                            </span>: <span class="message-content text-primary-200" v-html="processMessageForDisplay(message.message)"></span>
                     </div>
                 </div>
-                <div v-else class="rounded-lg text-center m-2 p-2 break-words bg-primary-600">
+                <div v-else class="rounded-lg text-center m-2 p-2 break-words bg-primary-900 text-primary-200">
                     {{ message.message }}
                 </div>
             </div>
@@ -181,7 +181,7 @@ function sendMessage() {
     </div>
 </template>
 
-<style scoped>
+<style>
 /* Message content word breaking */
 .message-content {
     word-break: break-word;

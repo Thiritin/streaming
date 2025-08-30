@@ -67,21 +67,6 @@ class OidcClientController extends Controller
             throw new UnexpectedValueException("Could not request user id from freshly fetched token.");
         }
 
-
-        $validGroups = ['54ZYODX15G2K1M76', 'OE7QZN2R7Q29KWML'];
-        $hasValidGroup = false;
-
-        foreach ($userinfo['groups'] as $group) {
-            if (in_array($group, $validGroups)) {
-                $hasValidGroup = true;
-                break; // Stop checking once we find a match
-            }
-        }
-
-        if (!$hasValidGroup) {
-            return Redirect::route('error.no-valid-ticket');
-        }
-
         $userid = $userinfo['sub'];
         $user = User::updateOrCreate([
             "sub" => $userinfo['sub']
@@ -97,6 +82,8 @@ class OidcClientController extends Controller
         Auth::loginUsingId($user->id);
         Session::put('access_token', $accessToken);
         Session::put("avatar" , $userinfo['avatar']);
+        
+        // Middleware will handle server assignment and redirect if needed
         return $this->redirectDestination($request);
     }
 
@@ -126,9 +113,10 @@ class OidcClientController extends Controller
         $roleMapping = [
             // Map group IDs to role slugs
             // Example mappings - adjust based on your registration system
-            'SUPER_SPONSOR_GROUP' => 'super-sponsor',
+            'SUPER_SPONSOR_GROUP' => 'supersponsor',
             'SPONSOR_GROUP' => 'sponsor',
             'ATTENDEE_GROUP' => 'attendee',
+            'STAFF_GROUP' => 'staff',
             // Add more mappings as needed
         ];
         

@@ -21,7 +21,15 @@ class ServerAssignmentJob implements ShouldQueue
     public function handle(): void
     {
         // Get all users waiting for provisioning
-        $users = User::where('is_provisioning',true)->get();
-        $users->each(fn($user) => $user->assignServerToUser());
+        $users = User::where('is_provisioning', true)->get();
+        
+        $users->each(function($user) {
+            $assigned = $user->assignServerToUser();
+            
+            if ($assigned) {
+                // Server assignment will trigger UserObserver which broadcasts ServerAssignmentChanged
+                \Log::info("Assigned server to user {$user->id} from provisioning queue");
+            }
+        });
     }
 }

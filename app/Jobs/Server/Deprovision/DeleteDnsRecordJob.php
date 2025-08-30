@@ -4,12 +4,13 @@ namespace App\Jobs\Server\Deprovision;
 
 use App\Enum\ServerTypeEnum;
 use App\Models\Server;
-use App\Services\ShellCommand;
+use App\Services\DnsKeyService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 
 class DeleteDnsRecordJob implements ShouldQueue
 {
@@ -32,14 +33,30 @@ class DeleteDnsRecordJob implements ShouldQueue
         }
 
         $hostname = $this->server->hostname;
+        $ttl = config('dns.ttl', 60);
 
-        ShellCommand::execute("
-nsupdate -v -k dns.key << EOF
-server 85.199.154.53
-zone stream.eurofurence.org
-update delete $hostname 60 A
-send
-EOF"
-        );
+        try {
+            $dnsService = new DnsKeyService();
+            
+            $commands = sprintf(
+                "update delete %s %d A",
+                $hostname,
+                $ttl
+            );
+
+            $result = $dnsService->executeNsupdate($commands);
+            
+            Log::info('DNS record deleted', [
+                'hostname' => $hostname,
+                'result' => $result
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to delete DNS record', [
+                'hostname' => $hostname,
+                'error' => $e->getMessage()
+            ]);
+            
+            throw $e;
+        }
     }
 }

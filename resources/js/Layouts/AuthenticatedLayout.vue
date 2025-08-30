@@ -7,6 +7,7 @@ import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import {Link} from '@inertiajs/vue3';
 import Logo from "@/Components/Logo.vue";
+import Container from "@/Components/Container.vue";
 
 const showingNavigationDropdown = ref(false);
 </script>
@@ -14,14 +15,14 @@ const showingNavigationDropdown = ref(false);
 <template>
   <div>
     <div class="min-h-screen bg-primary-900">
-      <nav class="bg-primary-800 absolute top-0 w-full z-50">
+      <nav class="bg-primary-800 sticky top-0 w-full z-50 shadow-lg">
         <!-- Primary Navigation Menu -->
-        <div class="mx-auto px-4 sm:px-6 lg:px-8">
+        <Container>
           <div class="flex justify-between h-12">
             <div class="flex">
               <!-- Logo -->
               <div class="shrink-0 flex items-center">
-                <Link :href="route('dashboard')">
+                <Link :href="route('shows.grid')">
                   <Logo
                       class="block h-9 w-auto fill-current text-primary-200"
                   />
@@ -30,11 +31,8 @@ const showingNavigationDropdown = ref(false);
 
               <!-- Navigation Links -->
               <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
-                <NavLink :href="route('dashboard')" :active="route().current('dashboard')">
+                <NavLink :href="route('shows.grid')" :active="route().current('shows.grid')">
                   Webstream
-                </NavLink>
-                <NavLink :href="route('external-stream')" :active="route().current('external-stream')">
-                  External Stream (VLC)
                 </NavLink>
                 <NavLink component="a" v-if="$page.props.auth.can_access_filament"
                          :href="route('filament.admin.pages.dashboard')">
@@ -51,7 +49,7 @@ const showingNavigationDropdown = ref(false);
                                         <span class="inline-flex rounded-md">
                                             <button
                                                 type="button"
-                                                class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-primary-400 bg-primary-800 hover:text-primary-300 focus:outline-none transition ease-in-out duration-150"
+                                                class="inline-flex items-center px-3 py-2 border border-primary-600 text-sm leading-4 font-medium rounded-md text-primary-200 bg-primary-700 hover:bg-primary-600 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-primary-800 transition ease-in-out duration-150"
                                             >
                                                 {{ $page.props.auth.user.name }}
 
@@ -116,7 +114,7 @@ const showingNavigationDropdown = ref(false);
               </button>
             </div>
           </div>
-        </div>
+        </Container>
 
         <!-- Responsive Navigation Menu -->
         <div
@@ -124,11 +122,8 @@ const showingNavigationDropdown = ref(false);
             class="sm:hidden z-50 relative"
         >
           <div class="pt-2 pb-3 space-y-1 z-50">
-            <ResponsiveNavLink :href="route('dashboard')" :active="route().current('dashboard')">
+            <ResponsiveNavLink :href="route('shows.grid')" :active="route().current('shows.grid')">
               Stream Online
-            </ResponsiveNavLink>
-            <ResponsiveNavLink :href="route('external-stream')" :active="route().current('external-stream')">
-              Stream via VLC
             </ResponsiveNavLink>
             <ResponsiveNavLink component="a" v-if="$page.props.auth.user.is_admin"
                                :href="route('filament.admin.pages.dashboard')">

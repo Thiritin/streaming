@@ -7,6 +7,8 @@ use App\Filament\Resources\SourceResource\RelationManagers;
 use App\Models\Source;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -43,16 +45,13 @@ class SourceResource extends Resource
                             ->required()
                             ->maxLength(255)
                             ->live(onBlur: true)
-                            ->afterStateUpdated(fn (string $state, Forms\Set $set) => 
-                                $set('slug', Str::slug($state))
-                            ),
+                            ->afterStateUpdated(function (string $state, Forms\Set $set) {
+                                $slug = Str::slug($state);
+                                $set('slug', $slug);
+                            }),
                         TextInput::make('slug')
                             ->required()
                             ->unique(ignoreRecord: true)
-                            ->maxLength(255),
-                        TextInput::make('location')
-                            ->label('Physical Location')
-                            ->placeholder('e.g., Hall 3, Outside, Main Stage')
                             ->maxLength(255),
                         Textarea::make('description')
                             ->rows(3)
@@ -61,33 +60,43 @@ class SourceResource extends Resource
                     ->columns(2),
                 
                 Section::make('Stream Configuration')
+                    ->description('OBS Studio Configuration')
                     ->schema([
-                        TextInput::make('stream_key')
-                            ->label('Stream Key')
-                            ->required()
-                            ->unique(ignoreRecord: true)
-                            ->default(fn () => Str::random(32))
-                            ->copyable()
-                            ->revealable()
-                            ->password()
-                            ->dehydrated(fn ($state) => filled($state))
-                            ->helperText('This key is used for RTMP push and is stored encrypted'),
-                        TextInput::make('rtmp_url')
-                            ->label('RTMP URL')
-                            ->url()
-                            ->placeholder('rtmp://localhost:1935/live/')
-                            ->helperText('Leave empty to auto-generate'),
-                        TextInput::make('flv_url')
-                            ->label('FLV URL')
-                            ->url()
-                            ->placeholder('http://localhost:8080/live/')
-                            ->helperText('Leave empty to auto-generate'),
-                        TextInput::make('priority')
-                            ->numeric()
-                            ->default(0)
-                            ->helperText('Higher priority sources appear first'),
-                    ])
-                    ->columns(2),
+                        TextInput::make('obs_server_url')
+                            ->label('OBS Server URL')
+                            ->default(function (?Source $record) {
+                                if (!$record) {
+                                    return 'Will be generated on save';
+                                }
+                                return $record->getRtmpServerUrl();
+                            })
+                            ->disabled()
+                            ->dehydrated(false)
+                            ->extraAttributes([
+                                'x-data' => '{}',
+                                'x-on:click' => "\$el.select(); navigator.clipboard.writeText(\$el.value); \$tooltip('Copied!', { timeout: 1500 })",
+                                'style' => 'cursor: pointer;'
+                            ])
+                            ->helperText('Click to copy • OBS Settings → Stream → Server')
+                            ->columnSpanFull(),
+                        TextInput::make('obs_stream_key_display')
+                            ->label('OBS Stream Key')
+                            ->default(function (?Source $record) {
+                                if (!$record || !$record->stream_key) {
+                                    return 'Will be generated on save';
+                                }
+                                return $record->getObsStreamKey();
+                            })
+                            ->disabled()
+                            ->dehydrated(false)
+                            ->extraAttributes([
+                                'x-data' => '{}',
+                                'x-on:click' => "\$el.select(); navigator.clipboard.writeText(\$el.value); \$tooltip('Copied!', { timeout: 1500 })",
+                                'style' => 'cursor: pointer;'
+                            ])
+                            ->helperText('Click to copy • OBS Settings → Stream → Stream Key')
+                            ->columnSpanFull(),
+                    ]),
                 
                 Section::make('Settings')
                     ->schema([
@@ -117,10 +126,6 @@ class SourceResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->weight('bold'),
-                TextColumn::make('location')
-                    ->searchable()
-                    ->sortable()
-                    ->placeholder('—'),
                 BadgeColumn::make('is_primary')
                     ->label('Type')
                     ->getStateUsing(fn ($record) => $record->is_primary ? 'Primary' : 'Secondary')
@@ -137,12 +142,12 @@ class SourceResource extends Resource
                     ->getStateUsing(fn ($record) => $record->liveShows()->count())
                     ->badge()
                     ->color(fn ($state) => $state > 0 ? 'success' : 'gray'),
-                TextColumn::make('stream_key')
-                    ->label('Stream Key')
+                TextColumn::make('slug')
+                    ->label('Stream Name')
+                    ->badge()
+                    ->color('info')
                     ->copyable()
-                    ->toggleable()
-                    ->limit(20)
-                    ->tooltip(fn ($record) => $record->stream_key),
+                    ->searchable(),
                 ToggleColumn::make('is_active')
                     ->label('Active')
                     ->onColor('success')
@@ -153,15 +158,12 @@ class SourceResource extends Resource
                             ->success()
                             ->send();
                     }),
-                TextColumn::make('priority')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->defaultSort('priority', 'desc')
+            ->defaultSort('created_at', 'desc')
             ->filters([
                 Tables\Filters\TernaryFilter::make('is_active')
                     ->label('Active Status')
@@ -177,13 +179,6 @@ class SourceResource extends Resource
                     ->placeholder('All types'),
             ])
             ->actions([
-                Tables\Actions\Action::make('copy_urls')
-                    ->label('Copy URLs')
-                    ->icon('heroicon-o-clipboard-document')
-                    ->color('gray')
-                    ->modalHeading('Stream URLs')
-                    ->modalContent(fn ($record) => view('filament.modals.source-urls', ['source' => $record]))
-                    ->modalSubmitAction(false),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     ->before(function ($record) {

@@ -1,3 +1,92 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@theme {
+    /* Primary color palette - green theme */
+    --color-primary-50: oklch(94.77% 0.075 181.53);
+    --color-primary-100: oklch(89.5% 0.159 181.34);
+    --color-primary-200: oklch(80.03% 0.142 181.59);
+    --color-primary-300: oklch(71.68% 0.127 181.62);
+    --color-primary-400: oklch(62.48% 0.111 181.51);
+    --color-primary-500: oklch(53.86% 0.096 181.61);
+    --color-primary-600: oklch(45.51% 0.081 181.98);
+    --color-primary-700: oklch(38.07% 0.068 181.7);
+    --color-primary-800: oklch(29.53% 0.053 180.86);
+    --color-primary-900: oklch(21.87% 0.039 183.18);
+    --color-primary-950: oklch(17.17% 0.031 183.02);
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-border: var(--border);
+    --color-ring: var(--ring);
+
+    --radius-lg: var(--radius);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
+}
+
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --border: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --radius: 0.625rem;
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --border: oklch(0.269 0 0);
+    --ring: oklch(0.439 0 0);
+}
+
+@layer base {
+    * {
+        border-color: var(--border);
+    }
+
+    body {
+        background-color: var(--background);
+        color: var(--foreground);
+    }
+}
+
+/* Animation keyframes */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.9;
+    }
+}
+
+@keyframes blink {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.3;
+    }
+}
+
+@keyframes appear {
+    0% {
+        opacity: 0;
+    }
+}
+
+/* Page transition styles */
+.page * {
+    @apply transition-colors;
+}

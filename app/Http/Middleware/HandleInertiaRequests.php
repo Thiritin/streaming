@@ -51,6 +51,7 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $user?->only('id', 'name', 'is_provisioning', 'timeout_expires_at', 'role'),
                 'can_access_filament' => $user?->can('filament.access'),
+                'has_server_assignment' => $user ? ($user->server_id && $user->streamkey ? true : false) : false,
             ],
             'chat' => [
                 'commands' => $chatCommands,
