@@ -12,9 +12,15 @@ class ShowSeeder extends Seeder
     public function run(): void
     {
         $source = Source::first();
-        
+
         if (!$source) {
             $this->command->error('No source found. Please run LocalDevelopmentSourceSeeder first.');
+            return;
+        }
+
+        // if shows already exist, skip seeding
+        if (Show::count() > 0) {
+            $this->command->info('Shows already exist, skipping seeding.');
             return;
         }
 
@@ -64,7 +70,7 @@ class ShowSeeder extends Seeder
 
         // Schedule 5 sequential events, each running an hour
         $eventStartTime = $now->copy()->addHours(2);
-        
+
         $events = [
             [
                 'title' => 'Artist Alley Showcase',
@@ -105,7 +111,7 @@ class ShowSeeder extends Seeder
                 'is_featured' => false,
                 'status' => 'scheduled',
             ]);
-            
+
             $eventStartTime->addHour();
         }
 
