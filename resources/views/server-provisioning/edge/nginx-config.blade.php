@@ -46,11 +46,19 @@ http {
                      max_size=2g inactive=1h use_temp_path=off
                      loader_files=200 loader_sleep=50ms loader_threshold=300ms;
 
-    # Upstream for origin Caddy server
-    upstream origin_caddy {
-        server {{ $originServer->hostname }}:443;
+@if($useInternalNetwork)
+    # Upstream for origin nginx via internal network (HTTP)
+    upstream origin_internal {
+        server {{ $originInternalUpstream }};
         keepalive 32;
     }
+@else
+    # Upstream for origin Caddy server (HTTPS)
+    upstream origin_caddy {
+        server {{ $originUpstream }};
+        keepalive 32;
+    }
+@endif
 
     server {
         listen 80;
@@ -92,7 +100,17 @@ http {
 
         # HLS m3u8 playlist files - proxy and cache from origin
         location ~ ^/live/(.+\.m3u8)$ {
-            # Proxy to origin Caddy server
+@if($useInternalNetwork)
+            # Proxy to origin nginx via internal network (HTTP)
+            proxy_pass http://origin_internal$request_uri;
+            proxy_http_version 1.1;
+            
+            proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header Connection "";
+@else
+            # Proxy to origin Caddy server (HTTPS)
             proxy_pass https://origin_caddy$request_uri;
             proxy_http_version 1.1;
             
@@ -104,6 +122,7 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header Connection "";
+@endif
 
             # Cache configuration for m3u8 playlists
             proxy_cache hls_cache;
@@ -136,7 +155,17 @@ http {
             auth_request /auth;
             auth_request_set $auth_status $upstream_status;
 
-            # Proxy to origin Caddy server
+@if($useInternalNetwork)
+            # Proxy to origin nginx via internal network (HTTP)
+            proxy_pass http://origin_internal$request_uri;
+            proxy_http_version 1.1;
+            
+            proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header Connection "";
+@else
+            # Proxy to origin Caddy server (HTTPS)
             proxy_pass https://origin_caddy$request_uri;
             proxy_http_version 1.1;
             
@@ -148,6 +177,7 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header Connection "";
+@endif
 
             # Cache configuration for TS segments
             proxy_cache segment_cache;

@@ -82,11 +82,11 @@ YAML;
             return '';
         }
 
-        // Get origin server for edge configs
+        // Get origin server for edge configs (only active ones)
         $originServer = null;
         if ($server->type->value === 'edge') {
             $originServer = Server::where('type', \App\Enum\ServerTypeEnum::ORIGIN)
-                ->where('status', 'active')
+                ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
                 ->first();
         }
 
@@ -104,9 +104,23 @@ YAML;
         }
 
         // For edge server, we need to connect to origin
-        $originHost = $originServer ? $originServer->hostname : $nginxUpstreamHost;
+        // Use a sensible default if no origin server is found
+        $originHost = $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org';
         // For nginx upstream block - just hostname:port, no protocol
         $originUpstream = $originHost . ':443';
+        
+        // Determine if we can use internal networking
+        $useInternalNetwork = false;
+        $originInternalUpstream = null;
+        
+        if ($server->type->value === 'edge' && $originServer) {
+            // Check if both servers are Hetzner servers with internal IPs
+            if ($server->canUseInternalNetworkWith($originServer)) {
+                $useInternalNetwork = true;
+                // Internal network uses HTTP on port 80 directly to nginx
+                $originInternalUpstream = $originServer->internal_ip . ':80';
+            }
+        }
 
         return View::make($viewName, [
             'server' => $server,
@@ -115,6 +129,8 @@ YAML;
             'nginxUpstream' => $nginxUpstream,
             'originUpstream' => $originUpstream,
             'originServer' => $originServer,
+            'useInternalNetwork' => $useInternalNetwork,
+            'originInternalUpstream' => $originInternalUpstream,
         ])->render();
     }
 

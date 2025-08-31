@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Events\Chat\Broadcasts\ChatMessageEvent;
 use App\Http\Requests\MessageRequest;
+use App\Models\Timeout;
 use App\Services\ChatMessageSanitizer;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
@@ -19,6 +20,30 @@ class MessageController extends Controller
         $maxTries = Cache::get('chat.maxTries', static fn () => config('chat.default.maxTries'));
         $rateDecay = Cache::get('chat.rateDecay', static fn () => config('chat.default.rateDecay'));
         $slowMode = Cache::get('chat.slowMode', static fn () => config('chat.default.slowMode'));
+
+        // Check if user is timed out
+        $activeTimeout = Timeout::where('user_id', $user->id)
+            ->where('expires_at', '>', now())
+            ->first();
+            
+        if ($activeTimeout) {
+            $remainingTime = now()->diffInSeconds($activeTimeout->expires_at);
+            $message = "You are timed out for {$remainingTime} more seconds";
+            if ($activeTimeout->reason) {
+                $message .= " (Reason: {$activeTimeout->reason})";
+            }
+            
+            return response([
+                'success' => false,
+                'error' => 'user_timed_out',
+                'message' => $message,
+                'timeout' => [
+                    'expires_at' => $activeTimeout->expires_at,
+                    'remaining_seconds' => $remainingTime,
+                    'reason' => $activeTimeout->reason,
+                ],
+            ], SymphonyResponse::HTTP_FORBIDDEN);
+        }
 
         if ($user->cant('chat.ignore.ratelimit') && !$user->isAdmin() && !$user->isModerator()) {
             if (RateLimiter::tooManyAttempts('send-message:'.$user->id, $maxTries)) {

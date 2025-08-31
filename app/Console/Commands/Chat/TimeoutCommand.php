@@ -59,12 +59,6 @@ class TimeoutCommand extends AbstractChatCommand
             return;
         }
 
-        // Check if target is admin/moderator
-        if ($targetUser->hasRole('admin') || $targetUser->hasRole('moderator')) {
-            $this->feedback($user, 'You cannot timeout administrators or moderators.', 'error');
-            return;
-        }
-
         // Parse duration
         $expiresAt = $this->parseDuration($duration);
         if (!$expiresAt) {

@@ -88,6 +88,11 @@ class StreamController extends Controller
         // Get HLS URL for the show
         $user = Auth::user();
         $hlsUrl = $show->getHlsUrl();
+        
+        // Add streamkey to the URL if user has one
+        if ($user && $user->streamkey) {
+            $hlsUrl .= '?streamkey=' . $user->streamkey;
+        }
 
         return Inertia::render('ExternalStream', [
             'show' => [

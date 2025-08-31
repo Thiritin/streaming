@@ -142,14 +142,7 @@ class ServerProvisionController extends Controller
             'last_heartbeat' => now(),
         ];
 
-        // Add edge-specific config if needed
-        if ($server->type === \App\Enum\ServerTypeEnum::EDGE) {
-            // Get the current origin server URL
-            $origin = Server::getOrigin();
-            if ($origin) {
-                $updateData['origin_url'] = $origin->getHlsBaseUrl();
-            }
-        }
+        // Edge servers will dynamically get origin URL when needed
 
         $server->update($updateData);
 

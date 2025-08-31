@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Timeout;
 use App\Services\CommandRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -29,6 +30,31 @@ class CommandController extends Controller
 
         $user = Auth::user();
         $commandInput = $request->input('command');
+
+        // Check if user is timed out (unless it's the help command)
+        if (!str_starts_with(trim($commandInput), '/help')) {
+            $activeTimeout = Timeout::where('user_id', $user->id)
+                ->where('expires_at', '>', now())
+                ->first();
+                
+            if ($activeTimeout) {
+                $remainingTime = now()->diffInSeconds($activeTimeout->expires_at);
+                $message = "You are timed out for {$remainingTime} more seconds";
+                if ($activeTimeout->reason) {
+                    $message .= " (Reason: {$activeTimeout->reason})";
+                }
+                
+                return response()->json([
+                    'success' => false,
+                    'error' => $message,
+                    'timeout' => [
+                        'expires_at' => $activeTimeout->expires_at,
+                        'remaining_seconds' => $remainingTime,
+                        'reason' => $activeTimeout->reason,
+                    ],
+                ], 403);
+            }
+        }
 
         // Rate limiting for commands
         $key = 'command-execute:' . $user->id;

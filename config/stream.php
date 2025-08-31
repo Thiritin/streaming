@@ -72,6 +72,6 @@ return [
         'hls_port' => env('DOCKER_HLS_PORT', 80),
     ],
 
-    // Internal session ID for system operations
-    'internal_session_id' => env('STREAM_INTERNAL_SESSION_ID', ''),
+    // System streamkey for internal operations (thumbnails, monitoring, etc.)
+    'system_streamkey' => env('STREAM_SYSTEM_STREAMKEY', ''),
 ];

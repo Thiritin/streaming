@@ -61,7 +61,6 @@ class LocalDevelopmentServersSeeder extends Seeder
                 'status' => ServerStatusEnum::ACTIVE,
                 'max_clients' => 100,
                 'immutable' => true,
-                'origin_url' => "http://origin:8080",
                 'viewer_count' => 0,
                 'last_heartbeat' => now(),
                 'health_status' => 'unknown',

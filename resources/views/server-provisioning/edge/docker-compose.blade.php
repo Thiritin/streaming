@@ -7,8 +7,7 @@ services:
     container_name: edge-nginx
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    tmpfs:
-      - /var/cache/nginx:rw,noexec,nosuid,size=512m
+      - /var/cache/nginx:/var/cache/nginx
     restart: unless-stopped
     networks:
       - streaming

@@ -39,10 +39,13 @@ start_ffmpeg() {
     # Double-check: look for any running FFmpeg process for this stream
     local existing_pid=$(pgrep -f "ffmpeg.*$SRS_RTMP_URL/$app/$stream" | head -1)
     if [[ -n "$existing_pid" ]]; then
-        echo "[$(date)] Found existing FFmpeg process for $stream_key (PID: $existing_pid), tracking it"
-        FFMPEG_PIDS[$stream_key]=$existing_pid
-        STREAM_APPS[$stream_key]="$app"
-        return 0
+        echo "[$(date)] Found existing FFmpeg process for $stream_key (PID: $existing_pid), killing it to start fresh"
+        kill -TERM "$existing_pid" 2>/dev/null
+        sleep 1
+        # Force kill if still running
+        if kill -0 "$existing_pid" 2>/dev/null; then
+            kill -KILL "$existing_pid" 2>/dev/null
+        fi
     fi
     
     echo "[$(date)] Starting FFmpeg for stream: $stream_key"
@@ -50,6 +53,12 @@ start_ffmpeg() {
     # Create output directory
     local output_dir="$OUTPUT_BASE_DIR"
     mkdir -p "$output_dir"
+    
+    # Clean up old segments and playlists for this stream
+    echo "[$(date)] Cleaning up old HLS files for $stream"
+    rm -f "$output_dir/${stream}_*.ts" 2>/dev/null
+    rm -f "$output_dir/${stream}_*.m3u8" 2>/dev/null
+    rm -f "$output_dir/${stream}.m3u8" 2>/dev/null
     
     # Generate a unique timestamp prefix for this session
     local timestamp_prefix=$(date +%s)

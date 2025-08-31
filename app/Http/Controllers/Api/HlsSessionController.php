@@ -54,21 +54,20 @@ class HlsSessionController extends Controller
             $paramName = $matches[1];
             $tokenValue = $matches[2];
             
-            // Check if it's the internal system session
-            if ($paramName === 'session_id' && $tokenValue === config('stream.internal_session_id')) {
-                Log::info('Auth bypassed for internal session', [
-                    'uri' => $originalUri,
-                    'purpose' => 'system-operation',
-                ]);
-                
-                // Return success with the internal session ID
+            // Check if it's the system streamkey (for thumbnails, monitoring, etc.)
+            $systemStreamkey = config('stream.system_streamkey');
+            if ($paramName === 'streamkey' && $systemStreamkey && $tokenValue === $systemStreamkey) {
+                // Return success for system operations (no logging for performance)
                 return response('', 200)
-                    ->header('X-Session-Id', $tokenValue);
+                    ->header('X-Session-Id', 'system');
             }
             
             // Check if it's a user's streamkey
             if ($paramName === 'streamkey' || $paramName === 'session_id') {
-                $user = \App\Models\User::where('streamkey', $tokenValue)->first();
+                // Cache user lookup for 5 minutes to avoid database queries
+                $user = Cache::remember("user:streamkey:{$tokenValue}", 300, function() use ($tokenValue) {
+                    return \App\Models\User::where('streamkey', $tokenValue)->first();
+                });
                 if ($user) {
                     $userId = $user->id;
                     $userName = $user->name;
@@ -103,16 +102,10 @@ class HlsSessionController extends Controller
             }
         }
         
-        Log::info('HLS auth request', [
-            'uri' => $originalUri,
-            'ip' => $realIp,
-            'edge_server' => $edgeServerId,
-            'user_id' => $userId,
-            'user_name' => $userName,
-        ]);
-        
-        // Check if source exists and is online
-        $source = Source::where('slug', $streamSlug)->first();
+        // Check if source exists and is online (cached for 10 seconds)
+        $source = Cache::remember("source:slug:{$streamSlug}", 10, function() use ($streamSlug) {
+            return Source::where('slug', $streamSlug)->first();
+        });
         
         if (!$source) {
             Log::warning('Source not found for HLS request', ['slug' => $streamSlug]);
@@ -223,14 +216,7 @@ class HlsSessionController extends Controller
             // Store in cache with 5 minute TTL (will be refreshed on each request)
             Cache::put($sessionKey, $sessionId, now()->addMinutes(5));
             
-            // Log new session
-            Log::info('New HLS session created', [
-                'session_id' => $sessionId,
-                'ip' => $ip,
-                'stream' => $streamSlug,
-                'edge_server' => $edgeServerId,
-                'user_id' => $userId,
-            ]);
+            // New session created (no logging for performance)
         } else {
             // Refresh TTL
             Cache::put($sessionKey, $sessionId, now()->addMinutes(5));

@@ -137,7 +137,7 @@ class Server extends Model
                 return $origin->getHlsBaseUrl();
             }
         }
-        return $this->origin_url;
+        return null;
     }
 
     /**
@@ -194,6 +194,36 @@ class Server extends Model
         $this->users()->update(['server_id' => null]);
         
         return parent::delete();
+    }
+
+    /**
+     * Check if this is a Hetzner cloud server
+     */
+    public function isHetznerServer(): bool
+    {
+        return !empty($this->hetzner_id);
+    }
+
+    /**
+     * Check if this server can use internal networking with another server
+     */
+    public function canUseInternalNetworkWith(?Server $otherServer): bool
+    {
+        if (!$otherServer) {
+            return false;
+        }
+
+        // Both servers must be Hetzner servers
+        if (!$this->isHetznerServer() || !$otherServer->isHetznerServer()) {
+            return false;
+        }
+
+        // Both servers must have internal IPs
+        if (empty($this->internal_ip) || empty($otherServer->internal_ip)) {
+            return false;
+        }
+
+        return true;
     }
 
     public function isReady(): bool

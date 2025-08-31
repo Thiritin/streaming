@@ -32,10 +32,21 @@ class HlsController extends Controller
         $streamkey = $request->get('streamkey');
 
         if ($streamkey) {
-            $user = User::where('streamkey', $streamkey)->first();
-            if (!$user) {
-                return response('Invalid streamkey', 401)
-                    ->header('Content-Type', 'text/plain');
+            // Check if it's the system streamkey first
+            $systemStreamkey = config('stream.system_streamkey');
+            if ($systemStreamkey && $streamkey === $systemStreamkey) {
+                // For system operations, create a minimal user object
+                $user = new User();
+                $user->id = 0;
+                $user->name = 'System';
+                $user->streamkey = $streamkey;
+            } else {
+                // Look up user by streamkey
+                $user = User::where('streamkey', $streamkey)->first();
+                if (!$user) {
+                    return response('Invalid streamkey', 401)
+                        ->header('Content-Type', 'text/plain');
+                }
             }
         } else {
             $user = Auth::user();
@@ -46,7 +57,15 @@ class HlsController extends Controller
         }
 
         $this->trackUserAccess($source, $user, $request);
-        $server = $user->getOrAssignServer();
+        
+        // For system user, get any available edge server
+        if ($user->id === 0) {
+            $server = \App\Models\Server::where('type', \App\Enum\ServerTypeEnum::EDGE)
+                ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
+                ->first();
+        } else {
+            $server = $user->getOrAssignServer();
+        }
         $port = $server->port ?? 8080;
         
         // Use HTTPS for port 443, HTTP for other ports
@@ -68,10 +87,17 @@ class HlsController extends Controller
             if ($response->successful()) {
                 $playlist = $response->body();
 
-                // Rewrite variant URLs to use our Laravel routes
-                $playlist = preg_replace(
+                // Rewrite variant URLs to use our Laravel routes and preserve streamkey
+                $playlist = preg_replace_callback(
                     '/^(' . preg_quote($stream, '/') . '_(sd|hd|fhd)\.m3u8)$/m',
-                    '/hls/$1',
+                    function($matches) use ($streamkey) {
+                        $url = '/hls/' . $matches[1];
+                        // Add streamkey parameter if present
+                        if ($streamkey) {
+                            $url .= '?streamkey=' . $streamkey;
+                        }
+                        return $url;
+                    },
                     $playlist
                 );
 
@@ -133,10 +159,21 @@ class HlsController extends Controller
         $streamkey = $request->get('streamkey');
 
         if ($streamkey) {
-            $user = User::where('streamkey', $streamkey)->first();
-            if (!$user) {
-                return response('Invalid streamkey', 401)
-                    ->header('Content-Type', 'text/plain');
+            // Check if it's the system streamkey first
+            $systemStreamkey = config('stream.system_streamkey');
+            if ($systemStreamkey && $streamkey === $systemStreamkey) {
+                // For system operations, create a minimal user object
+                $user = new User();
+                $user->id = 0;
+                $user->name = 'System';
+                $user->streamkey = $streamkey;
+            } else {
+                // Look up user by streamkey
+                $user = User::where('streamkey', $streamkey)->first();
+                if (!$user) {
+                    return response('Invalid streamkey', 401)
+                        ->header('Content-Type', 'text/plain');
+                }
             }
         } else {
             $user = Auth::user();
@@ -148,7 +185,15 @@ class HlsController extends Controller
         }
 
         $this->trackUserAccess($source, $user, $request);
-        $server = $user->getOrAssignServer();
+        
+        // For system user, get any available edge server
+        if ($user->id === 0) {
+            $server = \App\Models\Server::where('type', \App\Enum\ServerTypeEnum::EDGE)
+                ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
+                ->first();
+        } else {
+            $server = $user->getOrAssignServer();
+        }
 
         if (!$server || !$server->hostname) {
             return response('No server available', 503)
@@ -235,6 +280,11 @@ class HlsController extends Controller
      */
     private function trackUserAccess($source, $user, $request)
     {
+        // Skip tracking for system user
+        if ($user->id === 0) {
+            return;
+        }
+        
         // Build cache key for this user-source combination
         $cacheKey = "hls_heartbeat:{$source->id}:{$user->id}";
 
