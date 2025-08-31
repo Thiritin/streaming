@@ -10,6 +10,7 @@ use GuzzleHttp\Exception\ServerException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class Server extends Model
 {
@@ -31,6 +32,26 @@ class Server extends Model
         'max_clients' => 1000,
         'viewer_count' => 0,
     ];
+
+    /**
+     * Boot the model
+     */
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::creating(function ($server) {
+            // Auto-generate shared secret if not provided
+            if (empty($server->shared_secret)) {
+                $server->shared_secret = Str::random(40);
+            }
+            
+            // Set default status if not provided
+            if (empty($server->status)) {
+                $server->status = ServerStatusEnum::PROVISIONING;
+            }
+        });
+    }
 
     /**
      * Get the active origin server (there should only be one)

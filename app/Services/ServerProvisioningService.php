@@ -80,13 +80,42 @@ cd /opt/ef-streaming
 
 # Download configuration files
 echo "Downloading configuration files..."
-curl -H "X-Shared-Secret: {$sharedSecret}" \\
-     -o config/nginx.conf \\
-     "{$serverUrl}/api/server/config/nginx?server_id={$server->id}"
 
-curl -H "X-Shared-Secret: {$sharedSecret}" \\
-     -o config/edge.conf \\
-     "{$serverUrl}/api/server/config/srs?server_id={$server->id}"
+# Download appropriate configs based on server type
+if [ "{$server->type->value}" = "origin" ]; then
+    # Origin server configs
+    curl -H "X-Shared-Secret: {$sharedSecret}" \\
+         -o config/origin.conf \\
+         "{$serverUrl}/api/server/config/srs-origin?server_id={$server->id}"
+    
+    curl -H "X-Shared-Secret: {$sharedSecret}" \\
+         -o config/origin-nginx.conf \\
+         "{$serverUrl}/api/server/config/nginx-origin?server_id={$server->id}"
+    
+    curl -H "X-Shared-Secret: {$sharedSecret}" \\
+         -o config/origin-caddy.Caddyfile \\
+         "{$serverUrl}/api/server/config/caddy-origin?server_id={$server->id}"
+    
+    # Create FFmpeg HLS directory and download files
+    mkdir -p ffmpeg-hls
+    curl -H "X-Shared-Secret: {$sharedSecret}" \\
+         -o ffmpeg-hls/Dockerfile \\
+         "{$serverUrl}/api/server/config/ffmpeg-dockerfile?server_id={$server->id}"
+    
+    curl -H "X-Shared-Secret: {$sharedSecret}" \\
+         -o ffmpeg-hls/stream-manager.sh \\
+         "{$serverUrl}/api/server/config/ffmpeg-script?server_id={$server->id}"
+    chmod +x ffmpeg-hls/stream-manager.sh
+else
+    # Edge server configs
+    curl -H "X-Shared-Secret: {$sharedSecret}" \\
+         -o config/edge-nginx.conf \\
+         "{$serverUrl}/api/server/config/nginx-edge?server_id={$server->id}"
+    
+    curl -H "X-Shared-Secret: {$sharedSecret}" \\
+         -o config/edge-caddy.Caddyfile \\
+         "{$serverUrl}/api/server/config/caddy-edge?server_id={$server->id}"
+fi
 
 curl -H "X-Shared-Secret: {$sharedSecret}" \\
      -o docker-compose.yml \\
@@ -102,11 +131,14 @@ chmod +x scripts/hls_session_tracker.py
 # Install Python dependencies
 pip3 install requests
 
-# Configure NGINX
-echo "Configuring NGINX..."
-cp config/nginx.conf /etc/nginx/sites-available/ef-streaming
-ln -sf /etc/nginx/sites-available/ef-streaming /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
+# Configure host NGINX (optional - for local proxying)
+echo "Configuring host NGINX (optional)..."
+if [ -f config/host-nginx.conf ]; then
+    cp config/host-nginx.conf /etc/nginx/sites-available/ef-streaming
+    ln -sf /etc/nginx/sites-available/ef-streaming /etc/nginx/sites-enabled/
+    rm -f /etc/nginx/sites-enabled/default
+    nginx -t && systemctl reload nginx || echo "Host NGINX config skipped"
+fi
 
 # Create log directory for HLS tracking
 mkdir -p /var/log/nginx
@@ -274,31 +306,157 @@ YAML;
      */
     public function generateDockerCompose(Server $server): string
     {
-        $config = <<<YAML
+        $isOrigin = $server->type->value === 'origin';
+        $appUrl = config('app.url');
+        
+        if ($isOrigin) {
+            // Origin server configuration
+            $config = <<<YAML
 version: '3.8'
 
 services:
-  srs:
-    image: ossrs/srs:5
-    container_name: srs-server
+  # Origin SRS - RTMP ingest
+  origin-srs:
+    image: ossrs/srs:6
+    container_name: origin-srs
     restart: always
     ports:
       - "1935:1935"    # RTMP
       - "1985:1985"    # HTTP API
-      - "8080:8080"    # HTTP FLV/HLS
+      - "8082:8082"    # HTTP FLV
     volumes:
-      - ./config/edge.conf:/usr/local/srs/conf/edge.conf
-      - ./logs:/usr/local/srs/objs/logs
+      - ./config/origin.conf:/usr/local/srs/conf/origin.conf:ro
+      - ./logs/srs:/usr/local/srs/objs/logs
     environment:
-      - CANDIDATE=\${EXTERNAL_IP:-127.0.0.1}
-    command: ["./objs/srs", "-c", "/usr/local/srs/conf/edge.conf"]
+      - SRS_HTTP_PORT=8082
+    command: ["./objs/srs", "-c", "/usr/local/srs/conf/origin.conf"]
     networks:
       - streaming
+
+  # FFmpeg HLS transcoder
+  origin-ffmpeg-hls:
+    build:
+      context: ./ffmpeg-hls
+      dockerfile: Dockerfile
+    container_name: origin-ffmpeg-hls
+    restart: always
+    environment:
+      - SRS_API_URL=http://origin-srs:1985/api/v1
+      - SRS_RTMP_URL=rtmp://origin-srs:1935
+      - OUTPUT_BASE_DIR=/var/www/hls/live
+      - CHECK_INTERVAL=5
+    volumes:
+      - hls-content:/var/www/hls
+      - ./logs/ffmpeg:/var/log/ffmpeg
+    depends_on:
+      - origin-srs
+    networks:
+      - streaming
+
+  # Origin Nginx - Auth and serve HLS
+  origin-nginx:
+    image: nginx:alpine
+    container_name: origin-nginx
+    restart: always
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./config/origin-nginx.conf:/etc/nginx/nginx.conf:ro
+      - hls-content:/var/www/hls:ro
+      - nginx-cache:/var/cache/nginx
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - origin-ffmpeg-hls
+    networks:
+      - streaming
+
+  # Origin Caddy - SSL termination
+  origin-caddy:
+    image: caddy:alpine
+    container_name: origin-caddy
+    restart: always
+    ports:
+      - "8080:8080"    # Production port
+      - "443:443"      # HTTPS
+    environment:
+      - DOMAIN=\${DOMAIN:-localhost}
+      - NGINX_ORIGIN_PORT=8083
+    volumes:
+      - ./config/origin-caddy.Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - ./logs/caddy:/var/log/caddy
+    depends_on:
+      - origin-nginx
+    networks:
+      - streaming
+
+volumes:
+  hls-content:
+  nginx-cache:
+  caddy-data:
+  caddy-config:
 
 networks:
   streaming:
     driver: bridge
 YAML;
+        } else {
+            // Edge server configuration
+            $originUrl = $this->getOriginUrl();
+            
+            $config = <<<YAML
+version: '3.8'
+
+services:
+  # Edge Nginx - Cache and proxy from origin
+  edge-nginx:
+    image: nginx:alpine
+    container_name: edge-nginx
+    restart: always
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./config/edge-nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx-cache:/var/cache/nginx
+      - ./logs/nginx:/var/log/nginx
+    environment:
+      - ORIGIN_URL={$originUrl}
+      - APP_URL={$appUrl}
+    networks:
+      - streaming
+
+  # Edge Caddy - SSL termination
+  edge-caddy:
+    image: caddy:alpine
+    container_name: edge-caddy
+    restart: always
+    ports:
+      - "8080:8080"
+      - "443:443"
+    environment:
+      - DOMAIN=\${DOMAIN:-localhost}
+      - NGINX_EDGE_PORT=8081
+    volumes:
+      - ./config/edge-caddy.Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - ./logs/caddy:/var/log/caddy
+    depends_on:
+      - edge-nginx
+    networks:
+      - streaming
+
+volumes:
+  nginx-cache:
+  caddy-data:
+  caddy-config:
+
+networks:
+  streaming:
+    driver: bridge
+YAML;
+        }
 
         return $config;
     }
@@ -458,5 +616,332 @@ CONF;
     private function getCurrentTimestamp(): string
     {
         return now()->format('Y-m-d H:i:s');
+    }
+
+    /**
+     * Get origin server URL
+     */
+    private function getOriginUrl(): string
+    {
+        // Try to find an active origin server
+        $originServer = \App\Models\Server::where('type', 'origin')
+            ->where('status', 'active')
+            ->first();
+        
+        if ($originServer) {
+            $port = $originServer->port == 443 ? '' : ':' . $originServer->port;
+            $protocol = $originServer->port == 443 ? 'https' : 'http';
+            return "{$protocol}://{$originServer->hostname}{$port}";
+        }
+        
+        // Fallback to config value
+        return config('streaming.origin_url', 'http://origin.example.com:8080');
+    }
+
+    /**
+     * Generate Nginx configuration for origin
+     */
+    public function generateNginxOriginConfig(Server $server): string
+    {
+        $appUrl = config('app.url');
+        $sharedSecret = $server->shared_secret;
+        
+        return <<<NGINX
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 4096;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    access_log /var/log/nginx/access.log;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+
+    gzip on;
+    gzip_vary on;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript
+               application/json application/javascript application/xml+rss
+               application/vnd.apple.mpegurl video/mp2t;
+
+    upstream laravel_auth {
+        server {$appUrl};
+        keepalive 32;
+    }
+
+    proxy_cache_path /var/cache/nginx/auth levels=1:2 keys_zone=auth_cache:10m
+                     max_size=100m inactive=10s use_temp_path=off;
+
+    server {
+        listen 8083;
+        listen [::]:8083;
+        server_name _;
+
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+
+        location = /auth {
+            internal;
+            proxy_pass {$appUrl}/api/stream/auth;
+            proxy_pass_request_body off;
+            proxy_set_header Content-Length "";
+            proxy_set_header X-Original-URI \$request_uri;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Stream-Key \$arg_streamkey;
+            proxy_set_header X-Shared-Secret {$sharedSecret};
+            
+            proxy_cache auth_cache;
+            proxy_cache_key "\$remote_addr:\$arg_streamkey";
+            proxy_cache_valid 200 10s;
+            proxy_cache_valid 401 403 1s;
+        }
+
+        location ~ ^/live/(.+\.m3u8)\$ {
+            auth_request /auth;
+            root /var/www/hls;
+            try_files \$uri =404;
+            
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, HEAD, OPTIONS' always;
+            add_header Content-Type "application/vnd.apple.mpegurl";
+            add_header Cache-Control "no-cache, no-store, must-revalidate";
+        }
+
+        location ~ ^/live/(.+\.ts)\$ {
+            auth_request /auth;
+            root /var/www/hls;
+            try_files \$uri =404;
+            
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, HEAD, OPTIONS' always;
+            expires 1h;
+            add_header Cache-Control "public, max-age=3600, immutable";
+            add_header Content-Type "video/mp2t";
+        }
+
+        location / {
+            return 404;
+        }
+    }
+}
+NGINX;
+    }
+
+    /**
+     * Generate Nginx configuration for edge
+     */
+    public function generateNginxEdgeConfig(Server $server): string
+    {
+        $originUrl = $this->getOriginUrl();
+        $appUrl = config('app.url');
+        
+        return <<<NGINX
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 4096;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    access_log /var/log/nginx/access.log;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+
+    gzip on;
+    gzip_vary on;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript
+               application/json application/javascript application/xml+rss
+               application/vnd.apple.mpegurl video/mp2t;
+
+    limit_req_zone \$binary_remote_addr zone=viewer_limit:10m rate=30r/s;
+    limit_conn_zone \$binary_remote_addr zone=viewer_conn:10m;
+
+    proxy_cache_path /var/cache/nginx/hls levels=1:2 keys_zone=hls_cache:10m
+                     max_size=100m inactive=2s use_temp_path=off;
+    
+    proxy_cache_path /var/cache/nginx/segments levels=1:2 keys_zone=segment_cache:100m
+                     max_size=2g inactive=1h use_temp_path=off;
+
+    map \$args \$cache_key_args {
+        ~^(.*)&?streamkey=[^&]*(.*)$ \$1\$2;
+        default \$args;
+    }
+
+    upstream origin_server {
+        server {$originUrl};
+        keepalive 32;
+    }
+
+    server {
+        listen 8081;
+        listen [::]:8081;
+        server_name _;
+
+        limit_req zone=viewer_limit burst=50 nodelay;
+        limit_conn viewer_conn 10;
+
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+
+        location /hls/ {
+            proxy_pass {$appUrl};
+            proxy_http_version 1.1;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_cache off;
+        }
+
+        location ~ ^/live/(.+\.m3u8)\$ {
+            proxy_pass {$originUrl}\$request_uri;
+            proxy_http_version 1.1;
+            proxy_set_header Host \$host;
+            
+            proxy_cache hls_cache;
+            proxy_cache_key "\$scheme\$proxy_host\$uri\$cache_key_args";
+            proxy_cache_valid 200 2s;
+            proxy_cache_valid 404 1s;
+            proxy_cache_lock on;
+            
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header X-Cache-Status \$upstream_cache_status;
+            add_header Content-Type "application/vnd.apple.mpegurl";
+            add_header Cache-Control "no-cache, no-store, must-revalidate";
+        }
+
+        location ~ ^/live/(.+\.ts)\$ {
+            proxy_pass {$originUrl}\$request_uri;
+            proxy_http_version 1.1;
+            proxy_set_header Host \$host;
+            
+            proxy_cache segment_cache;
+            proxy_cache_key "\$scheme\$proxy_host\$uri";
+            proxy_cache_valid 200 1h;
+            proxy_cache_valid 404 10s;
+            proxy_cache_lock on;
+            
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header X-Cache-Status \$upstream_cache_status;
+            expires 1h;
+            add_header Cache-Control "public, max-age=3600, immutable";
+            add_header Content-Type "video/mp2t";
+        }
+
+        location / {
+            return 404;
+        }
+    }
+}
+NGINX;
+    }
+
+    /**
+     * Generate Caddy configuration for origin
+     */
+    public function generateCaddyOriginConfig(Server $server): string
+    {
+        $domain = $server->hostname ?: 'localhost';
+        
+        return <<<CADDY
+{$domain}:8080 {
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    reverse_proxy localhost:8083 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Original-URI {uri}
+        
+        transport http {
+            keepalive 32
+            keepalive_idle_conns 10
+        }
+    }
+}
+CADDY;
+    }
+
+    /**
+     * Generate Caddy configuration for edge
+     */
+    public function generateCaddyEdgeConfig(Server $server): string
+    {
+        $domain = $server->hostname ?: 'localhost';
+        
+        return <<<CADDY
+{$domain}:8080 {
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    reverse_proxy localhost:8081 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+CADDY;
+    }
+
+    /**
+     * Generate FFmpeg HLS Dockerfile
+     */
+    public function generateFFmpegDockerfile(): string
+    {
+        return <<<DOCKERFILE
+FROM alpine:latest
+
+RUN apk add --no-cache \\
+    ffmpeg \\
+    bash \\
+    curl \\
+    jq
+
+COPY stream-manager.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/stream-manager.sh
+
+CMD ["/usr/local/bin/stream-manager.sh"]
+DOCKERFILE;
+    }
+
+    /**
+     * Generate FFmpeg stream manager script
+     */
+    public function generateFFmpegStreamManager(): string
+    {
+        return file_get_contents(base_path('docker/ffmpeg-hls/stream-manager.sh'));
     }
 }

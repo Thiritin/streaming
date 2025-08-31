@@ -35,20 +35,38 @@ class ServerProvisionController extends Controller
         $contentType = 'text/plain';
 
         switch ($type) {
-            case 'nginx':
-                $content = file_get_contents(base_path('config/nginx-hls-auth.conf'));
-                // Replace placeholders
-                $content = str_replace('http://localhost:8000', config('app.url'), $content);
-                $content = str_replace('API_KEY=CHANGE_ME_TO_SECURE_KEY', "API_KEY={$sharedSecret}", $content);
+            case 'nginx-origin':
+                $content = $this->provisioningService->generateNginxOriginConfig($server);
+                break;
+                
+            case 'nginx-edge':
+                $content = $this->provisioningService->generateNginxEdgeConfig($server);
+                break;
+                
+            case 'caddy-origin':
+                $content = $this->provisioningService->generateCaddyOriginConfig($server);
+                break;
+                
+            case 'caddy-edge':
+                $content = $this->provisioningService->generateCaddyEdgeConfig($server);
                 break;
 
             case 'srs':
+            case 'srs-origin':
                 $content = $this->provisioningService->generateSrsConfig($server);
                 break;
 
             case 'docker-compose':
                 $content = $this->provisioningService->generateDockerCompose($server);
                 $contentType = 'application/x-yaml';
+                break;
+                
+            case 'ffmpeg-dockerfile':
+                $content = $this->provisioningService->generateFFmpegDockerfile();
+                break;
+                
+            case 'ffmpeg-script':
+                $content = $this->provisioningService->generateFFmpegStreamManager();
                 break;
 
             default:

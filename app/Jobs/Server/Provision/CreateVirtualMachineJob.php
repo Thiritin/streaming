@@ -6,6 +6,7 @@ use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Models\Server;
 use App\Services\Hetzner;
+use App\Services\ServerProvisioningService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -26,17 +27,18 @@ class CreateVirtualMachineJob implements ShouldQueue
         $hetznerServerType = ($this->server->type === ServerTypeEnum::ORIGIN) ? 'ccx33' : 'cx22';
         $hetznerClient = Hetzner::client();
         $name = $this->server->type->value.'-'.$this->server->id.'-'.Str::random(12);
+        
+        // Generate cloud-init script using the provisioning service
+        $provisioningService = app(ServerProvisioningService::class);
+        $cloudInitScript = $provisioningService->generateCloudInit($this->server);
+        
         $server = $hetznerClient->servers()->createInLocation(
             name: $name,
             serverType: $hetznerClient->serverTypes()->getByName($hetznerServerType),
             image: $hetznerClient->images()->getByName('ubuntu-22.04'),
             location: $hetznerClient->locations()->getByName('nbg1'),
             ssh_keys: [$hetznerClient->sshKeys()->getByName('Martin Becker 2023')->id],
-            user_data: view('cloudinit', [
-                'serverUrl' => config('app.url'),
-                'sharedSecret' => $this->server->shared_secret,
-                'type' => $this->server->type->value,
-            ])->render(),
+            user_data: $cloudInitScript,
             networks: [$hetznerClient->networks()->getByName('stream')->id],
             labels: [
                 'type' => $this->server->type->value,

@@ -138,25 +138,21 @@ class RoleSeeder extends Seeder
             ]
         );
 
-        // Staff role (for convention staff members)
+        // Digital Pass role for authenticated users without tickets
         Role::updateOrCreate(
-            ['slug' => 'staff'],
+            ['slug' => 'digital-pass'],
             [
-                'name' => 'Staff',
-                'description' => 'Convention staff member',
+                'name' => 'Digital Pass',
+                'description' => 'Authenticated user without ticket',
                 'chat_color' => null, // Use default chat color
-                'priority' => 15,
-                'assigned_at_login' => true, // Can be synced from registration system
-                'is_visible' => true,
+                'priority' => 5, // Lower priority than attendee
+                'assigned_at_login' => false,
+                'is_visible' => false, // Don't show badge
                 'permissions' => [
-                    'chat.bypass_slow_mode',
+                    'chat.send',
                     'stream.view',
-                    'metrics.view',
                 ],
-                'metadata' => [
-                    'badge' => 'STAFF',
-                    'icon' => 'id-badge',
-                ],
+                'metadata' => [],
             ]
         );
     }

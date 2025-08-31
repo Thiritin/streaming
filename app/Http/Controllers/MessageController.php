@@ -20,7 +20,7 @@ class MessageController extends Controller
         $rateDecay = Cache::get('chat.rateDecay', static fn () => config('chat.default.rateDecay'));
         $slowMode = Cache::get('chat.slowMode', static fn () => config('chat.default.slowMode'));
 
-        if ($user->cant('chat.ignore.ratelimit')) {
+        if ($user->cant('chat.ignore.ratelimit') && !$user->isAdmin() && !$user->isModerator()) {
             if (RateLimiter::tooManyAttempts('send-message:'.$user->id, $maxTries)) {
                 $seconds = RateLimiter::availableIn('send-message:'.$user->id);
 
@@ -72,7 +72,7 @@ class MessageController extends Controller
 
     private function getSecondsLeft($user, $slowMode, $maxTries)
     {
-        if ($user->can('chat.ignore.ratelimit')) {
+        if ($user->can('chat.ignore.ratelimit') || $user->isAdmin() || $user->isModerator()) {
             return 0;
         }
         // If slow mode is active always return seconds left

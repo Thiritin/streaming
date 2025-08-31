@@ -54,6 +54,7 @@ services:
                 - ping
             retries: 3
             timeout: 5s
+    # ORIGIN SERVICES
     origin-srs:
         image: ossrs/srs:6
         environment:
@@ -65,20 +66,72 @@ services:
         depends_on:
             - laravel.test
         restart: unless-stopped
-    # Nginx Edge Server - caches and serves HLS content from origin
+    
+    # Origin FFmpeg HLS Transcoder - Creates multi-bitrate HLS from SRS
+    origin-ffmpeg-hls:
+        build:
+            context: ./docker/ffmpeg-hls
+            dockerfile: Dockerfile
+        environment:
+            SRS_API_URL: http://localhost:1985/api/v1
+            SRS_RTMP_URL: rtmp://localhost:1935
+            OUTPUT_BASE_DIR: /var/www/hls/live
+            CHECK_INTERVAL: 5
+        volumes:
+            # HLS output directory shared with origin-nginx
+            - hls-content:/var/www/hls
+        network_mode: host
+        restart: unless-stopped
+        depends_on:
+            - origin-srs
+    
+    # Origin Nginx - Serves HLS with auth_request authentication
+    origin-nginx:
+        image: nginx:alpine
+        volumes:
+            - ./docker/origin-nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+            - hls-content:/var/www/hls:ro
+            - origin-nginx-cache:/var/cache/nginx
+            - origin-nginx-logs:/var/log/nginx
+        network_mode: host
+        depends_on:
+            - laravel.test
+            - origin-ffmpeg-hls
+        healthcheck:
+            test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8083/health"]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+        restart: unless-stopped
+    
+    # Origin Caddy - SSL termination for origin (port 8070 for local, 8080 in production)
+    origin-caddy:
+        image: caddy:alpine
+        environment:
+            DOMAIN: '${APP_URL:-localhost}'
+            CADDY_PORT: 8070
+            NGINX_ORIGIN_PORT: 8083
+        volumes:
+            - ./docker/origin-caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+            - origin-caddy-data:/data
+            - origin-caddy-config:/config
+            - origin-caddy-logs:/var/log/caddy
+        network_mode: host
+        depends_on:
+            - origin-nginx
+        restart: unless-stopped
+    # EDGE SERVICES
+    # Edge Nginx - Proxies and caches content from origin Caddy
     edge-nginx:
         image: nginx:alpine
         volumes:
             - ./docker/edge-nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-            - nginx-cache:/var/cache/nginx
-            - nginx-logs:/var/log/nginx
-            # Share the HLS tmpfs volume with ffmpeg-hls
-            - hls-tmpfs:/var/cache/hls:ro
+            - edge-nginx-cache:/var/cache/nginx
+            - edge-nginx-logs:/var/log/nginx
         network_mode: host
         depends_on:
             - laravel.test
-            - origin-srs
-            - ffmpeg-hls
+            - origin-caddy
         healthcheck:
             test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
             interval: 10s
@@ -86,25 +139,7 @@ services:
             retries: 3
         restart: unless-stopped
 
-    # Dynamic FFmpeg HLS Manager - Monitors SRS and creates synchronized multi-bitrate HLS
-    ffmpeg-hls:
-        build:
-            context: ./docker/ffmpeg-hls
-            dockerfile: Dockerfile
-        environment:
-            SRS_API_URL: http://localhost:1985/api/v1
-            SRS_RTMP_URL: rtmp://localhost:1935
-            OUTPUT_BASE_DIR: /var/cache/hls/live
-            CHECK_INTERVAL: 5
-        volumes:
-            # Share the HLS tmpfs volume with edge-nginx
-            - hls-tmpfs:/var/cache/hls
-        network_mode: host
-        restart: unless-stopped
-        depends_on:
-            - origin-srs
-
-    # Caddy - TLS termination for production
+    # Edge Caddy - SSL termination for edge server
     edge-caddy:
         image: caddy:alpine
         environment:
@@ -123,9 +158,23 @@ volumes:
         driver: local
     sail-redis:
         driver: local
-    nginx-cache:
+    # Origin volumes
+    hls-content:
         driver: local
-    nginx-logs:
+    origin-nginx-cache:
+        driver: local
+    origin-nginx-logs:
+        driver: local
+    origin-caddy-data:
+        driver: local
+    origin-caddy-config:
+        driver: local
+    origin-caddy-logs:
+        driver: local
+    # Edge volumes
+    edge-nginx-cache:
+        driver: local
+    edge-nginx-logs:
         driver: local
     caddy-data:
         driver: local
@@ -133,9 +182,3 @@ volumes:
         driver: local
     caddy-logs:
         driver: local
-    hls-tmpfs:
-        driver: local
-        driver_opts:
-            type: tmpfs
-            device: tmpfs
-            o: size=500m

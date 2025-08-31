@@ -21,8 +21,13 @@ class ViewInstallScript extends Page
     public string $installScript = '';
     public string $cloudInitScript = '';
     public string $dockerComposeConfig = '';
-    public string $nginxConfig = '';
+    public string $nginxOriginConfig = '';
+    public string $nginxEdgeConfig = '';
+    public string $caddyOriginConfig = '';
+    public string $caddyEdgeConfig = '';
     public string $srsConfig = '';
+    public string $ffmpegDockerfile = '';
+    public string $ffmpegScript = '';
     public string $activeTab = 'install';
     
     public function mount(Server $record): void
@@ -40,13 +45,15 @@ class ViewInstallScript extends Page
         $this->dockerComposeConfig = $provisioningService->generateDockerCompose($this->record);
         $this->srsConfig = $provisioningService->generateSrsConfig($this->record);
         
-        // Load NGINX config
-        $nginxConfigPath = base_path('config/nginx-hls-auth.conf');
-        if (file_exists($nginxConfigPath)) {
-            $this->nginxConfig = file_get_contents($nginxConfigPath);
-            // Replace placeholders
-            $this->nginxConfig = str_replace('http://localhost:8000', config('app.url'), $this->nginxConfig);
-            $this->nginxConfig = str_replace('API_KEY=CHANGE_ME_TO_SECURE_KEY', "API_KEY={$this->record->shared_secret}", $this->nginxConfig);
+        // Generate config files based on server type
+        if ($this->record->type->value === 'origin') {
+            $this->nginxOriginConfig = $provisioningService->generateNginxOriginConfig($this->record);
+            $this->caddyOriginConfig = $provisioningService->generateCaddyOriginConfig($this->record);
+            $this->ffmpegDockerfile = $provisioningService->generateFFmpegDockerfile();
+            $this->ffmpegScript = $provisioningService->generateFFmpegStreamManager();
+        } else {
+            $this->nginxEdgeConfig = $provisioningService->generateNginxEdgeConfig($this->record);
+            $this->caddyEdgeConfig = $provisioningService->generateCaddyEdgeConfig($this->record);
         }
     }
     

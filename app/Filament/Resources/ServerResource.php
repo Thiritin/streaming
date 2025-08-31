@@ -40,11 +40,12 @@ class ServerResource extends Resource
                 TextInput::make('hetzner_id')
                     ->disabled(fn ($operation): bool => $operation === 'edit')
                     ->nullable()
-                    ->helperText('Leave empty for locally managed servers'),
+                    ->helperText('Leave empty to auto-provision on Hetzner, or enter existing ID for manual servers'),
 
                 TextInput::make('hostname')
                     ->required()
-                    ->helperText('For local Docker: use container name (e.g., "ef-streaming-stream-1")'),
+                    ->default('auto-provision')
+                    ->helperText('Enter "auto-provision" to create on Hetzner, or specify hostname for manual servers'),
 
                 TextInput::make('ip')
                     ->nullable()

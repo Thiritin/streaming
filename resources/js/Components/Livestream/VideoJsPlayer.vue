@@ -140,7 +140,7 @@ const initializePlayer = async () => {
     // - If direct page load, use muted autoplay for reliability
     let initialMuted;
     let autoplayMode;
-    
+
     if (props.autoplay) {
         if (props.isInternalNavigation) {
             // User navigated from within the site - browser should allow unmuted autoplay
@@ -185,7 +185,7 @@ const initializePlayer = async () => {
                 useDevicePixelRatio: true,
                 bandwidth: 5000000, // Start with 5 Mbps - more conservative initial estimate
                 enableLowInitialPlaylist: false, // Start with best quality if bandwidth allows
-                allowSeeksWithinUnsafeLiveWindow: true,
+                allowSeeksWithinUnsafeLiveWindow: false,
                 customTagParsers: [],
                 customTagMappers: [],
                 experimentalBufferBasedABR: true, // Enable buffer-based ABR for smoother transitions
@@ -203,7 +203,7 @@ const initializePlayer = async () => {
                 bufferBasedABR: true,
                 experimentalExactManifestTimings: true,
                 maxGoalBufferLength: 30, // Keep 30 seconds buffered
-                goalBufferLength: 10, // Try to maintain 10 seconds
+                goalBufferLength: 20, // Try to maintain 10 seconds
                 maxBufferLength: 30,
                 bufferPruneAhead: 1,
                 renditionMixin: {
@@ -242,7 +242,7 @@ const initializePlayer = async () => {
     // Initialize plugins when player is ready
     player.ready(() => {
         console.log('Player is ready');
-        
+
         // Explicitly attempt to play if autoplay is enabled
         // This helps ensure playback starts even if the autoplay option doesn't trigger
         if (props.autoplay) {
@@ -276,7 +276,7 @@ const initializePlayer = async () => {
                 }
             }, 100);
         }
-        
+
         // Initialize hotkeys plugin after player is ready
         if (typeof player.hotkeys === 'function') {
             player.hotkeys({
@@ -428,13 +428,13 @@ const initializePlayer = async () => {
         }
         // Add quality selector for adaptive streams using master.m3u8
         const isAdaptiveStream = props.streamUrl && props.streamUrl.includes('master.m3u8');
-        
+
         if (isAdaptiveStream && player.qualityLevels) {
             // For adaptive streams, create a quality selector that controls the quality levels
             const MenuButton = videojs.getComponent('MenuButton');
             const MenuItem = videojs.getComponent('MenuItem');
             const qualityLevels = player.qualityLevels();
-            
+
             class AdaptiveQualityMenuItem extends MenuItem {
                 constructor(player, options) {
                     super(player, options);
@@ -442,10 +442,10 @@ const initializePlayer = async () => {
                     this.qualityIndex = options.qualityIndex;
                     this.isAuto = options.isAuto || false;
                 }
-                
+
                 handleClick() {
                     const qualityLevels = this.player().qualityLevels();
-                    
+
                     if (this.isAuto) {
                         // Enable all quality levels for auto mode
                         for (let i = 0; i < qualityLevels.length; i++) {
@@ -459,7 +459,7 @@ const initializePlayer = async () => {
                         }
                         console.log(`Locked to quality: ${this.qualityLevel.height}p`);
                     }
-                    
+
                     // Update menu items to show selected
                     const qualityMenu = this.player().controlBar.getChild('adaptiveQualityMenuButton');
                     if (qualityMenu && qualityMenu.menu) {
@@ -467,33 +467,33 @@ const initializePlayer = async () => {
                             item.selected(item === this);
                         });
                     }
-                    
+
                     // Emit quality change event
                     emit('qualityChanged', this.isAuto ? 'Auto' : `${this.qualityLevel.height}p`);
                 }
             }
-            
+
             class AdaptiveQualityMenuButton extends MenuButton {
                 constructor(player, options) {
                     super(player, options);
                     this.controlText('Quality');
                     this.addClass('vjs-quality-menu-button');
-                    
+
                     // Update button when quality levels are available
                     const qualityLevels = player.qualityLevels();
                     qualityLevels.on('addqualitylevel', () => {
                         this.update();
                     });
                 }
-                
+
                 buildCSSClass() {
                     return `vjs-quality-menu-button ${super.buildCSSClass()}`;
                 }
-                
+
                 createItems() {
                     const items = [];
                     const qualityLevels = this.player().qualityLevels();
-                    
+
                     // Add Auto option
                     const autoItem = new AdaptiveQualityMenuItem(this.player(), {
                         label: 'Auto',
@@ -501,7 +501,7 @@ const initializePlayer = async () => {
                     });
                     autoItem.selected(true); // Auto is selected by default
                     items.push(autoItem);
-                    
+
                     // Add quality options from the master playlist
                     const qualities = [];
                     for (let i = 0; i < qualityLevels.length; i++) {
@@ -513,34 +513,34 @@ const initializePlayer = async () => {
                             bitrate: level.bitrate
                         });
                     }
-                    
+
                     // Sort by height (quality) descending
                     qualities.sort((a, b) => b.height - a.height);
-                    
+
                     // Add menu items for each quality
                     qualities.forEach(quality => {
-                        const label = quality.height === 1080 ? 'Full HD (1080p)' :
-                                     quality.height === 720 ? 'HD (720p)' :
-                                     quality.height === 480 ? 'SD (480p)' :
+                        const label = quality.height === 1080 ? '1080p' :
+                                     quality.height === 720 ? '720p' :
+                                     quality.height === 480 ? '480p' :
                                      `${quality.height}p`;
-                        
+
                         const item = new AdaptiveQualityMenuItem(this.player(), {
                             label: label,
                             qualityLevel: quality.level,
                             qualityIndex: quality.index,
                             isAuto: false
                         });
-                        
+
                         items.push(item);
                     });
-                    
+
                     return items;
                 }
             }
-            
+
             // Register and add the adaptive quality menu button
             videojs.registerComponent('AdaptiveQualityMenuButton', AdaptiveQualityMenuButton);
-            
+
             // Wait for quality levels to be populated before adding the button
             const addQualityButton = () => {
                 if (qualityLevels.length > 0) {
@@ -551,210 +551,22 @@ const initializePlayer = async () => {
                     setTimeout(addQualityButton, 500);
                 }
             };
-            
+
             // Start checking for quality levels
             addQualityButton();
-            
-        } else if (!isAdaptiveStream && props.hlsUrls && (props.hlsUrls.fhd || props.hlsUrls.hd || props.hlsUrls.sd)) {
-            // Create custom quality menu button
-            const MenuButton = videojs.getComponent('MenuButton');
-            const MenuItem = videojs.getComponent('MenuItem');
-            
-            class QualityMenuItem extends MenuItem {
-                constructor(player, options) {
-                    super(player, options);
-                    this.qualityUrl = options.qualityUrl;
-                    this.qualityLabel = options.qualityLabel;
-                }
-                
-                handleClick() {
-                    // Get current time before switching
-                    const currentTime = this.player().currentTime();
-                    const wasPlaying = !this.player().paused();
-                    
-                    // Switch quality by changing source
-                    this.player().src({
-                        src: this.qualityUrl,
-                        type: 'application/x-mpegURL'
-                    });
-                    
-                    // When new source loads, seek to previous time and resume if playing
-                    this.player().one('loadedmetadata', () => {
-                        if (this.player().liveTracker) {
-                            // For live streams, go to live edge
-                            this.player().liveTracker.seekToLiveEdge();
-                        } else {
-                            // For VOD, seek to previous position
-                            this.player().currentTime(currentTime);
-                        }
-                        
-                        if (wasPlaying) {
-                            this.player().play().catch(e => console.error('Play after quality change failed:', e));
-                        }
-                    });
-                    
-                    // Update menu items to show selected
-                    const qualityMenu = this.player().controlBar.getChild('qualityMenuButton');
-                    if (qualityMenu && qualityMenu.menu) {
-                        qualityMenu.menu.children().forEach(item => {
-                            item.selected(item === this);
-                        });
-                    }
-                    
-                    // Emit quality change event
-                    emit('qualityChanged', this.qualityLabel);
-                }
-            }
-            
-            class QualityMenuButton extends MenuButton {
-                constructor(player, options) {
-                    super(player, options);
-                    this.controlText('Quality');
-                    
-                    // Add the icon class for the quality button
-                    this.addClass('vjs-quality-menu-button');
-                }
-                
-                buildCSSClass() {
-                    return `vjs-quality-menu-button ${super.buildCSSClass()}`;
-                }
-                
-                createItems() {
-                    const items = [];
-                    
-                    // Add quality options including auto/adaptive stream
-                    const qualities = [
-                        { url: props.streamUrl, label: 'Auto', key: 'auto' },
-                        { url: props.hlsUrls.fhd, label: 'Full HD (1080p)', key: 'fhd' },
-                        { url: props.hlsUrls.hd, label: 'HD (720p)', key: 'hd' },
-                        { url: props.hlsUrls.sd, label: 'SD (480p)', key: 'sd' }
-                    ];
-                    
-                    qualities.forEach(quality => {
-                        if (quality.url) {
-                            const item = new QualityMenuItem(this.player(), {
-                                label: quality.label,
-                                qualityUrl: quality.url,
-                                qualityLabel: quality.label
-                            });
-                            
-                            // Mark current quality as selected
-                            if (quality.url === props.streamUrl) {
-                                item.selected(true);
-                            }
-                            
-                            items.push(item);
-                        }
-                    });
-                    
-                    return items;
-                }
-            }
-            
-            // Register and add the quality menu button
-            videojs.registerComponent('QualityMenuButton', QualityMenuButton);
-            player.controlBar.addChild('QualityMenuButton', {}, player.controlBar.children().length - 2);
-            console.log('Manual quality selector added');
+
         }
     });
 
-    // Enhanced error recovery
-    let retryCount = 0;
-    let retryTimer = null;
-    const maxRetries = 10;
-    const retryDelay = 3000; // Start with 3 seconds
-    
-    const retryStream = () => {
-        if (retryTimer) {
-            clearTimeout(retryTimer);
-        }
-        
-        retryCount++;
-        const delay = Math.min(retryDelay * Math.pow(1.5, retryCount - 1), 30000); // Exponential backoff, max 30s
-        
-        console.log(`Retrying stream (attempt ${retryCount}/${maxRetries}) in ${delay/1000}s...`);
-        
-        retryTimer = setTimeout(() => {
-            if (player && !player.isDisposed()) {
-                // Reset the source to force a fresh load
-                const currentSource = player.currentSource();
-                if (currentSource) {
-                    console.log('Attempting to reload stream...');
-                    player.src(currentSource);
-                    player.load();
-                    
-                    // For live streams, try to go to live edge
-                    if (props.isLive) {
-                        player.one('loadedmetadata', () => {
-                            if (player.liveTracker) {
-                                player.liveTracker.seekToLiveEdge();
-                            }
-                        });
-                    }
-                    
-                    player.play().catch(e => {
-                        console.error('Retry play failed:', e);
-                        if (retryCount < maxRetries) {
-                            retryStream(); // Try again
-                        }
-                    });
-                }
-            }
-        }, delay);
-    };
 
     // Event listeners
     player.on('error', (error) => {
-        const errorCode = error?.code || player.error()?.code;
-        const errorMessage = error?.message || player.error()?.message || 'Unknown error';
-        
-        console.error('Video.js error:', errorCode, errorMessage);
+        console.error('Video.js error:', error);
         emit('error', error);
-
-        // Handle specific error types
-        if (errorCode === 2) {
-            // Network error - likely stream is down
-            console.log('Network error detected - stream may be restarting');
-        } else if (errorCode === 4) {
-            // Media error - format/codec issue
-            console.log('Media error detected - checking stream format');
-        }
-
-        // Auto-retry logic for live streams
-        if (props.isLive && retryCount < maxRetries) {
-            retryStream();
-        }
     });
-    
-    // Reset retry count on successful playback
+
     player.on('playing', () => {
-        if (retryCount > 0) {
-            console.log('Stream recovered successfully');
-            retryCount = 0;
-            if (retryTimer) {
-                clearTimeout(retryTimer);
-                retryTimer = null;
-            }
-        }
         emit('playing');
-    });
-    
-    // Handle stalled playback
-    player.on('waiting', () => {
-        console.log('Playback waiting for data...');
-        
-        // Set a timeout to retry if stuck waiting
-        setTimeout(() => {
-            if (player && !player.isDisposed() && player.paused() && props.isLive) {
-                console.log('Playback stalled, attempting recovery...');
-                player.play().catch(e => {
-                    console.error('Recovery play failed:', e);
-                    if (retryCount < maxRetries) {
-                        retryStream();
-                    }
-                });
-            }
-        }, 10000); // Wait 10 seconds before considering it stalled
     });
 
     player.on('pause', () => {
@@ -767,14 +579,14 @@ const initializePlayer = async () => {
 
     player.on('loadedmetadata', () => {
         emit('loadedmetadata');
-        
+
         console.log('Metadata loaded');
 
         // For live streams, seek to live edge
         if (props.isLive && player.liveTracker) {
             player.liveTracker.seekToLiveEdge();
         }
-        
+
         // Try autoplay again when metadata is loaded
         if (props.autoplay && player.paused()) {
             if (props.isInternalNavigation && !player.muted()) {
@@ -797,11 +609,11 @@ const initializePlayer = async () => {
             }
         }
     });
-    
+
     // Also try on loadeddata event
     player.on('loadeddata', () => {
         console.log('Data loaded');
-        
+
         if (props.autoplay && player.paused()) {
             // Skip if already trying in other events
             if (!player.muted() && !props.isInternalNavigation) {
@@ -818,11 +630,11 @@ const initializePlayer = async () => {
             });
         }
     });
-    
+
     // Try on canplay event - fires when playback can start
     player.on('canplay', () => {
         console.log('Can play');
-        
+
         if (props.autoplay && player.paused()) {
             // Last attempt - ensure we try to play
             console.log('Final autoplay attempt on canplay...');
@@ -865,7 +677,7 @@ const initializePlayer = async () => {
     // Track quality changes for adaptive streams
     if (player.qualityLevels) {
         const qualityLevels = player.qualityLevels();
-        
+
         // Monitor when quality levels are added (when playlist loads)
         qualityLevels.on('addqualitylevel', (event) => {
             const level = event.qualityLevel;
@@ -876,17 +688,17 @@ const initializePlayer = async () => {
         qualityLevels.on('change', () => {
             let currentQuality = null;
             let availableQualities = [];
-            
+
             for (let i = 0; i < qualityLevels.length; i++) {
                 const level = qualityLevels[i];
                 availableQualities.push({
                     height: level.height,
-                    width: level.width, 
+                    width: level.width,
                     bitrate: level.bitrate,
                     enabled: level.enabled,
                     index: i
                 });
-                
+
                 // Find the currently selected quality (enabled = true means it's selected)
                 if (level.enabled) {
                     currentQuality = {
@@ -898,16 +710,16 @@ const initializePlayer = async () => {
                     };
                 }
             }
-            
+
             if (currentQuality) {
                 console.log(`Quality switched to: ${currentQuality.height}p @ ${currentQuality.bitrate} bps`);
                 emit('qualityChanged', currentQuality);
             }
-            
+
             // Also emit available qualities for UI display
             emit('qualityLevelsAvailable', availableQualities);
         });
-        
+
         // Monitor the actual representation switch (when quality actually changes during playback)
         if (player.tech_ && player.tech_.vhs) {
             player.tech_.vhs.representations().forEach((rep, index) => {
@@ -917,7 +729,7 @@ const initializePlayer = async () => {
             });
         }
     }
-    
+
     // Note: We're using our custom quality selector instead of the built-in HLS quality selector
     // This gives us more control over the UI and behavior
 
