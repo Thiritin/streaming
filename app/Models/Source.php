@@ -140,7 +140,7 @@ class Source extends Model
 
     /**
      * Get the base RTMP server URL for OBS configuration.
-     * Returns URL in format: rtmp://server:port/live
+     * Returns URL in format: rtmp://server:port/ingress
      */
     public function getRtmpServerUrl()
     {
@@ -151,12 +151,12 @@ class Source extends Model
 
         if (!$originServer) {
             // Fallback to local config if no origin server found
-            return app()->isLocal() ? 'rtmp://localhost:1935/live' : 'rtmp://localhost:1935/live';
+            return app()->isLocal() ? 'rtmp://localhost:1935/ingress' : 'rtmp://localhost:1935/ingress';
         }
 
         // Use the server's hostname and port
         $port = $originServer->port ?? 1935;
-        return "rtmp://{$originServer->hostname}:{$port}/live";
+        return "rtmp://{$originServer->hostname}:{$port}/ingress";
     }
 
     /**
@@ -170,7 +170,7 @@ class Source extends Model
 
     /**
      * Get the full RTMP push URL (for reference/testing).
-     * Returns URL in format: rtmp://server:port/live/<slug>?secret=<stream_key>
+     * Returns URL in format: rtmp://server:port/ingress/<slug>?secret=<stream_key>
      */
     public function getRtmpPushUrl()
     {

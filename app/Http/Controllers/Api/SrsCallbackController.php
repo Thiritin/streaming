@@ -30,6 +30,18 @@ class SrsCallbackController extends Controller
         $tcUrl = $request->input('tcUrl');
         $param = $request->input('param'); // Query string from RTMP URL (e.g., "?secret=xyz")
         
+        // Only allow publishing to "ingress" app
+        // The "live" app is for transcoded streams only
+        if ($app === 'live') {
+            Log::warning('Direct publishing to live app rejected - use ingress app', [
+                'app' => $app,
+                'stream' => $stream,
+                'ip' => $request->ip(),
+            ]);
+            
+            return response()->json(['code' => 403, 'msg' => 'Publishing to live app not allowed - use ingress app'], 403);
+        }
+        
         // Remove the leading '?' if present and parse parameters
         $param = ltrim($param, '?');
         parse_str($param, $params);
