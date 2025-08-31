@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Server;
 use App\Models\Source;
 use App\Models\SourceUser;
 use App\Models\User;
@@ -336,20 +337,7 @@ class HlsController extends Controller
             ($localIpv4Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv4Subnet)) ||
             ($localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet))
         )) {
-            // Create a virtual server object with the override hostname
-            $server = new \App\Models\Server();
-            $server->hostname = $localHostname;
-            $server->port = 8080; // Default port, can be made configurable if needed
-
-            Log::info('Using local streaming server override', [
-                'client_ip' => $clientIp,
-                'override_hostname' => $localHostname,
-                'matched_ipv4_subnet' => $localIpv4Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv4Subnet) ? $localIpv4Subnet : null,
-                'matched_ipv6_subnet' => $localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet) ? $localIpv6Subnet : null,
-                'user_id' => $user->id,
-            ]);
-
-            return $server;
+            return Server::where('hostname', $localHostname)->first();
         }
 
         return $user->getOrAssignServer($clientIp);
