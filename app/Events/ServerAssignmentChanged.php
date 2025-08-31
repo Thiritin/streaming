@@ -30,7 +30,7 @@ class ServerAssignmentChanged implements ShouldBroadcast
 
             return [
                 'hlsUrls' => $data['hls_urls'] ?? null,
-                'clientId' => $data['client_id'],
+                'clientId' => $data['client_id'] ?? null,
                 'provisioning' => false,
                 'hasAssignment' => true,
             ];

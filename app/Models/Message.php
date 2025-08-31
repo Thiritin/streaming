@@ -15,7 +15,8 @@ class Message extends Model
         'is_command',
         'type',
         'priority',
-        'metadata'
+        'metadata',
+        'deleted_by_user_id'
     ];
     
     protected $casts = [

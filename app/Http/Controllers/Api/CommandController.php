@@ -115,6 +115,29 @@ class CommandController extends Controller
                 'message' => 'Command executed successfully.',
                 'command' => $command->name(),
             ]);
+        } catch (\InvalidArgumentException $e) {
+            Log::warning('Command validation failed', [
+                'user_id' => $user->id,
+                'command' => $command->name(),
+                'input' => $commandInput,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 422);
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            Log::warning('Command authorization failed', [
+                'user_id' => $user->id,
+                'command' => $command->name(),
+                'input' => $commandInput,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 403);
         } catch (\Exception $e) {
             Log::error('Command execution failed', [
                 'user_id' => $user->id,

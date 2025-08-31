@@ -99,10 +99,39 @@ onMounted(() => {
             clearOldMessages();
         })
         .listen('.messagesDeleted', (e) => {
+            console.log('Received messagesDeleted event:', e);
+            console.log('IDs to delete:', e.ids);
+            console.log('Current messages:', chatMessages.value.map(m => ({ id: m.id, name: m.name })));
+            
+            // Count messages before deletion for feedback
+            const beforeCount = chatMessages.value.length;
+            
             chatMessages.value = chatMessages.value.filter((message) => {
                 // Make sure message id is not in e.ids
-                return !e.ids.includes(message.id);
+                const shouldKeep = !e.ids.includes(message.id);
+                if (!shouldKeep) {
+                    console.log('Deleting message:', message.id, message.name, message.message);
+                }
+                return shouldKeep;
             })
+            
+            const deletedCount = beforeCount - chatMessages.value.length;
+            console.log('Deleted count:', deletedCount);
+            
+            // Show system message about the deletion if messages were removed
+            if (deletedCount > 0) {
+                const currentTime = new Date();
+                chatMessages.value.push({
+                    id: `system_${Date.now()}`,
+                    name: null,
+                    time: padWithZeros(currentTime.getHours()) + ':' + padWithZeros(currentTime.getMinutes()),
+                    message: `${deletedCount} message${deletedCount > 1 ? 's' : ''} deleted by a moderator`,
+                    is_command: false,
+                    type: 'system',
+                    feedback_type: 'warning'
+                });
+                scrollToBottom();
+            }
         })
         .listen('.rateLimit', (e) => {
             rateLimit.value.slowMode = e.slowMode;
@@ -232,7 +261,7 @@ async function sendMessage() {
         error.value = '';
         const currentTime = new Date();
         chatMessages.value.push({
-            'id': null,
+            'id': response.data.message_id || null,
             'name': usePage().props.auth.user.name,
             "time": padWithZeros(currentTime.getHours()) + ':' + padWithZeros(currentTime.getMinutes()),
             "message": message.value,

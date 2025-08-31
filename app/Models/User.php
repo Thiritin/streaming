@@ -99,10 +99,17 @@ class User extends Authenticatable implements FilamentUser
     public function assignServerToUser(): bool
     {
         // Find the edge server with the least viewers (best load balancing)
-        $server = Server::where('status', ServerStatusEnum::ACTIVE)
-            ->where('type', ServerTypeEnum::EDGE)
-            ->orderBy('viewer_count', 'asc')
-            ->first();
+        // Exclude the current server if it's being deprovisioned
+        $query = Server::where('status', ServerStatusEnum::ACTIVE)
+            ->where('type', ServerTypeEnum::EDGE);
+        
+        // If the user is currently assigned to a server, exclude it from selection
+        // This ensures during reassignment we don't assign back to the deprovisioning server
+        if ($this->server_id) {
+            $query->where('id', '!=', $this->server_id);
+        }
+        
+        $server = $query->orderBy('viewer_count', 'asc')->first();
 
         if (is_null($server) || is_null($server->id)) {
             // No available servers, clear any stale assignment
@@ -113,10 +120,13 @@ class User extends Authenticatable implements FilamentUser
             return false;
         }
 
+        // Preserve existing streamkey if user already has one, otherwise generate new
+        $streamkey = $this->streamkey ?: Str::random(32);
+        
         // Assign Server to User
         $this->update([
             'server_id' => $server->id,
-            'streamkey' => Str::random(32),
+            'streamkey' => $streamkey,
         ]);
 
         return true;

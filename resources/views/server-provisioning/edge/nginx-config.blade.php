@@ -47,13 +47,13 @@ http {
                      loader_files=200 loader_sleep=50ms loader_threshold=300ms;
 
 @if($useInternalNetwork)
-    # Upstream for origin nginx via internal network (HTTP)
+    # Upstream for origin Caddy via internal network (HTTPS with internal IP)
     upstream origin_internal {
         server {{ $originInternalUpstream }};
         keepalive 32;
     }
 @else
-    # Upstream for origin Caddy server (HTTPS)
+    # Upstream for origin Caddy server (HTTPS with public hostname)
     upstream origin_caddy {
         server {{ $originUpstream }};
         keepalive 32;
@@ -101,9 +101,13 @@ http {
         # HLS m3u8 playlist files - proxy and cache from origin
         location ~ ^/live/(.+\.m3u8)$ {
 @if($useInternalNetwork)
-            # Proxy to origin nginx via internal network (HTTP)
-            proxy_pass http://origin_internal$request_uri;
+            # Proxy to origin Caddy via internal network (HTTPS with internal IP)
+            proxy_pass https://origin_internal$request_uri;
             proxy_http_version 1.1;
+            
+            # SSL/SNI configuration for proper certificate validation
+            proxy_ssl_server_name on;
+            proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
             
             proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
             proxy_set_header X-Real-IP $remote_addr;
@@ -156,9 +160,13 @@ http {
             auth_request_set $auth_status $upstream_status;
 
 @if($useInternalNetwork)
-            # Proxy to origin nginx via internal network (HTTP)
-            proxy_pass http://origin_internal$request_uri;
+            # Proxy to origin Caddy via internal network (HTTPS with internal IP)
+            proxy_pass https://origin_internal$request_uri;
             proxy_http_version 1.1;
+            
+            # SSL/SNI configuration for proper certificate validation
+            proxy_ssl_server_name on;
+            proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
             
             proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
             proxy_set_header X-Real-IP $remote_addr;

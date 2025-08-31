@@ -85,6 +85,7 @@ class MessageController extends Controller
 
         return response([
             'success' => true,
+            'message_id' => $messageModel->id,
             'rateLimit' => [
                 'maxTries' => $maxTries,
                 'secondsLeft' => $this->getSecondsLeft($user, $slowMode, $maxTries),

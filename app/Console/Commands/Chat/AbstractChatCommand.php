@@ -229,13 +229,13 @@ abstract class AbstractChatCommand implements CommandInterface
         if ($validator->fails()) {
             $errors = $validator->errors()->all();
             $this->feedback($user, implode("\n", $errors), 'error');
-            return;
+            throw new \InvalidArgumentException(implode("\n", $errors));
         }
 
         // Check authorization
         if (!$this->authorize($user)) {
             $this->feedback($user, 'You do not have permission to use this command.', 'error');
-            return;
+            throw new \Illuminate\Auth\Access\AuthorizationException('You do not have permission to use this command.');
         }
 
         // Execute the command

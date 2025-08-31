@@ -117,8 +117,8 @@ YAML;
             // Check if both servers are Hetzner servers with internal IPs
             if ($server->canUseInternalNetworkWith($originServer)) {
                 $useInternalNetwork = true;
-                // Internal network uses HTTP on port 80 directly to nginx
-                $originInternalUpstream = $originServer->internal_ip . ':80';
+                // Internal network uses HTTPS on port 443 to Caddy (using internal IP)
+                $originInternalUpstream = $originServer->internal_ip . ':443';
             }
         }
 
