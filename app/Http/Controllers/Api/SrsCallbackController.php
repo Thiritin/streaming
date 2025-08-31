@@ -29,14 +29,29 @@ class SrsCallbackController extends Controller
         $stream = $request->input('stream');
         $tcUrl = $request->input('tcUrl');
         $param = $request->input('param'); // Query string from RTMP URL (e.g., "?secret=xyz")
+        $clientIp = $request->input('ip'); // The actual client IP from SRS
         
-        // Only allow publishing to "ingress" app
-        // The "live" app is for transcoded streams only
+        // Allow internal transcoding to publish to "live" app
+        // Block external clients from publishing directly to "live" app
         if ($app === 'live') {
-            Log::warning('Direct publishing to live app rejected - use ingress app', [
+            // Check if this is an internal transcoding output (from localhost)
+            if ($clientIp === '127.0.0.1' || $clientIp === '::1') {
+                // This is internal transcoding from ffmpeg, allow it
+                Log::info('Internal transcoding to live app allowed', [
+                    'app' => $app,
+                    'stream' => $stream,
+                    'ip' => $clientIp,
+                ]);
+                
+                // Allow internal transcoding without authentication
+                return response()->json(['code' => 0]);
+            }
+            
+            // External client trying to publish to live app - reject
+            Log::warning('External publishing to live app rejected - use ingress app', [
                 'app' => $app,
                 'stream' => $stream,
-                'ip' => $request->ip(),
+                'ip' => $clientIp,
             ]);
             
             return response()->json(['code' => 403, 'msg' => 'Publishing to live app not allowed - use ingress app'], 403);

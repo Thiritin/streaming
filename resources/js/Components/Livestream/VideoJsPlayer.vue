@@ -64,7 +64,7 @@ const props = defineProps({
     }
 });
 
-const emit = defineEmits(['error', 'playing', 'pause', 'ended', 'loadedmetadata', 'qualityChanged', 'useractive', 'userinactive', 'volumechange', 'toggleStats']);
+const emit = defineEmits(['error', 'playing', 'pause', 'ended', 'loadedmetadata', 'qualityChanged', 'qualityLevelsAvailable', 'useractive', 'userinactive', 'volumechange', 'toggleStats']);
 
 const videoPlayer = ref(null);
 let player = null;
@@ -178,19 +178,37 @@ const initializePlayer = async () => {
             vhs: {
                 overrideNative: true,
                 smoothQualityChange: true,
-                fastQualityChange: true,
+                fastQualityChange: false, // Disable fast quality change for smoother transitions
                 handlePartialData: true,
                 useBandwidthFromLocalStorage: true,
                 limitRenditionByPlayerDimensions: true,
                 useDevicePixelRatio: true,
-                bandwidth: 16777216, // Start with 16 Mbps bandwidth assumption
-                enableLowInitialPlaylist: true,
+                bandwidth: 5000000, // Start with 5 Mbps - more conservative initial estimate
+                enableLowInitialPlaylist: false, // Start with best quality if bandwidth allows
                 allowSeeksWithinUnsafeLiveWindow: true,
                 customTagParsers: [],
                 customTagMappers: [],
-                experimentalBufferBasedABR: false,
+                experimentalBufferBasedABR: true, // Enable buffer-based ABR for smoother transitions
                 experimentalLLHLS: false,
-                cacheEncryptionKeys: true
+                cacheEncryptionKeys: true,
+                maxPlaylistRetries: 3,
+                // ABR algorithm settings for smoother switching
+                abrEwmaFastLive: 3.0, // Faster adaptation for live
+                abrEwmaSlowLive: 9.0,
+                abrEwmaFastVoD: 3.0,
+                abrEwmaSlowVoD: 9.0,
+                abrBandwidthEstimator: 0.6, // Conservative bandwidth estimation
+                abrEwmaDefaultEstimate: 5000000, // 5 Mbps default
+                // Buffer settings for smoother playback
+                bufferBasedABR: true,
+                experimentalExactManifestTimings: true,
+                maxGoalBufferLength: 30, // Keep 30 seconds buffered
+                goalBufferLength: 10, // Try to maintain 10 seconds
+                maxBufferLength: 30,
+                bufferPruneAhead: 1,
+                renditionMixin: {
+                    excludeUntil: Infinity // Don't exclude renditions permanently
+                }
             }
         },
         techOrder: ['html5'],
@@ -408,8 +426,136 @@ const initializePlayer = async () => {
             document.addEventListener('click', handleFirstInteraction, { once: true });
             document.addEventListener('touchstart', handleFirstInteraction, { once: true });
         }
-        // Add manual quality selector for our separate HLS streams
-        if (props.hlsUrls && (props.hlsUrls.fhd || props.hlsUrls.hd || props.hlsUrls.sd)) {
+        // Add quality selector for adaptive streams using master.m3u8
+        const isAdaptiveStream = props.streamUrl && props.streamUrl.includes('master.m3u8');
+        
+        if (isAdaptiveStream && player.qualityLevels) {
+            // For adaptive streams, create a quality selector that controls the quality levels
+            const MenuButton = videojs.getComponent('MenuButton');
+            const MenuItem = videojs.getComponent('MenuItem');
+            const qualityLevels = player.qualityLevels();
+            
+            class AdaptiveQualityMenuItem extends MenuItem {
+                constructor(player, options) {
+                    super(player, options);
+                    this.qualityLevel = options.qualityLevel;
+                    this.qualityIndex = options.qualityIndex;
+                    this.isAuto = options.isAuto || false;
+                }
+                
+                handleClick() {
+                    const qualityLevels = this.player().qualityLevels();
+                    
+                    if (this.isAuto) {
+                        // Enable all quality levels for auto mode
+                        for (let i = 0; i < qualityLevels.length; i++) {
+                            qualityLevels[i].enabled = true;
+                        }
+                        console.log('Switched to Auto quality mode');
+                    } else {
+                        // Disable all quality levels except the selected one
+                        for (let i = 0; i < qualityLevels.length; i++) {
+                            qualityLevels[i].enabled = (i === this.qualityIndex);
+                        }
+                        console.log(`Locked to quality: ${this.qualityLevel.height}p`);
+                    }
+                    
+                    // Update menu items to show selected
+                    const qualityMenu = this.player().controlBar.getChild('adaptiveQualityMenuButton');
+                    if (qualityMenu && qualityMenu.menu) {
+                        qualityMenu.menu.children().forEach(item => {
+                            item.selected(item === this);
+                        });
+                    }
+                    
+                    // Emit quality change event
+                    emit('qualityChanged', this.isAuto ? 'Auto' : `${this.qualityLevel.height}p`);
+                }
+            }
+            
+            class AdaptiveQualityMenuButton extends MenuButton {
+                constructor(player, options) {
+                    super(player, options);
+                    this.controlText('Quality');
+                    this.addClass('vjs-quality-menu-button');
+                    
+                    // Update button when quality levels are available
+                    const qualityLevels = player.qualityLevels();
+                    qualityLevels.on('addqualitylevel', () => {
+                        this.update();
+                    });
+                }
+                
+                buildCSSClass() {
+                    return `vjs-quality-menu-button ${super.buildCSSClass()}`;
+                }
+                
+                createItems() {
+                    const items = [];
+                    const qualityLevels = this.player().qualityLevels();
+                    
+                    // Add Auto option
+                    const autoItem = new AdaptiveQualityMenuItem(this.player(), {
+                        label: 'Auto',
+                        isAuto: true
+                    });
+                    autoItem.selected(true); // Auto is selected by default
+                    items.push(autoItem);
+                    
+                    // Add quality options from the master playlist
+                    const qualities = [];
+                    for (let i = 0; i < qualityLevels.length; i++) {
+                        const level = qualityLevels[i];
+                        qualities.push({
+                            level: level,
+                            index: i,
+                            height: level.height,
+                            bitrate: level.bitrate
+                        });
+                    }
+                    
+                    // Sort by height (quality) descending
+                    qualities.sort((a, b) => b.height - a.height);
+                    
+                    // Add menu items for each quality
+                    qualities.forEach(quality => {
+                        const label = quality.height === 1080 ? 'Full HD (1080p)' :
+                                     quality.height === 720 ? 'HD (720p)' :
+                                     quality.height === 480 ? 'SD (480p)' :
+                                     `${quality.height}p`;
+                        
+                        const item = new AdaptiveQualityMenuItem(this.player(), {
+                            label: label,
+                            qualityLevel: quality.level,
+                            qualityIndex: quality.index,
+                            isAuto: false
+                        });
+                        
+                        items.push(item);
+                    });
+                    
+                    return items;
+                }
+            }
+            
+            // Register and add the adaptive quality menu button
+            videojs.registerComponent('AdaptiveQualityMenuButton', AdaptiveQualityMenuButton);
+            
+            // Wait for quality levels to be populated before adding the button
+            const addQualityButton = () => {
+                if (qualityLevels.length > 0) {
+                    player.controlBar.addChild('AdaptiveQualityMenuButton', {}, player.controlBar.children().length - 2);
+                    console.log('Adaptive quality selector added with', qualityLevels.length, 'qualities');
+                } else {
+                    // Wait and try again if no quality levels yet
+                    setTimeout(addQualityButton, 500);
+                }
+            };
+            
+            // Start checking for quality levels
+            addQualityButton();
+            
+        } else if (!isAdaptiveStream && props.hlsUrls && (props.hlsUrls.fhd || props.hlsUrls.hd || props.hlsUrls.sd)) {
             // Create custom quality menu button
             const MenuButton = videojs.getComponent('MenuButton');
             const MenuItem = videojs.getComponent('MenuItem');
@@ -638,26 +784,64 @@ const initializePlayer = async () => {
         emit('volumechange');
     });
 
-    // Track quality changes
+    // Track quality changes for adaptive streams
     if (player.qualityLevels) {
         const qualityLevels = player.qualityLevels();
+        
+        // Monitor when quality levels are added (when playlist loads)
+        qualityLevels.on('addqualitylevel', (event) => {
+            const level = event.qualityLevel;
+            console.log(`Quality level added: ${level.height}p @ ${level.bitrate} bps`);
+        });
 
+        // Monitor quality changes
         qualityLevels.on('change', () => {
             let currentQuality = null;
+            let availableQualities = [];
+            
             for (let i = 0; i < qualityLevels.length; i++) {
-                if (qualityLevels[i].enabled) {
+                const level = qualityLevels[i];
+                availableQualities.push({
+                    height: level.height,
+                    width: level.width, 
+                    bitrate: level.bitrate,
+                    enabled: level.enabled,
+                    index: i
+                });
+                
+                // Find the currently selected quality (enabled = true means it's selected)
+                if (level.enabled) {
                     currentQuality = {
-                        height: qualityLevels[i].height,
-                        width: qualityLevels[i].width,
-                        bitrate: qualityLevels[i].bitrate,
-                        index: i
+                        height: level.height,
+                        width: level.width,
+                        bitrate: level.bitrate,
+                        index: i,
+                        label: `${level.height}p`
                     };
-                    break;
                 }
             }
-            emit('qualityChanged', currentQuality);
+            
+            if (currentQuality) {
+                console.log(`Quality switched to: ${currentQuality.height}p @ ${currentQuality.bitrate} bps`);
+                emit('qualityChanged', currentQuality);
+            }
+            
+            // Also emit available qualities for UI display
+            emit('qualityLevelsAvailable', availableQualities);
         });
+        
+        // Monitor the actual representation switch (when quality actually changes during playback)
+        if (player.tech_ && player.tech_.vhs) {
+            player.tech_.vhs.representations().forEach((rep, index) => {
+                rep.on('enabled', () => {
+                    console.log(`Representation ${index} enabled: ${rep.height}p @ ${rep.bandwidth} bps`);
+                });
+            });
+        }
     }
+    
+    // Note: We're using our custom quality selector instead of the built-in HLS quality selector
+    // This gives us more control over the UI and behavior
 
     // Handle live stream specific features
     if (props.isLive) {

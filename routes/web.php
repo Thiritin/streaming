@@ -28,6 +28,15 @@ Route::get('/test-chat', [\App\Http\Controllers\TestChatController::class, 'inde
 
 Route::get('/auth/frontchannel-logout', \App\Http\Controllers\Auth\FrontChannelLogoutController::class)->name('auth.frontchannel-logout');
 
+// HLS streaming endpoints (no auth required for basic access, but streamkey validates per-user)
+Route::prefix('hls')->group(function () {
+    // Master playlist for adaptive bitrate streaming
+    Route::get('/{stream}/master.m3u8', [\App\Http\Controllers\HlsController::class, 'master'])->name('hls.master');
+    
+    // Variant playlists (quality-specific)
+    Route::get('/{variant}.m3u8', [\App\Http\Controllers\HlsController::class, 'variant'])->name('hls.variant');
+});
+
 Route::middleware(['auth:web', 'ensure.server'])->group(function () {
     // Provisioning wait page - middleware allows this route even without server
     Route::get('/provisioning/wait', [\App\Http\Controllers\ProvisioningController::class, 'wait'])->name('provisioning.wait');
@@ -38,9 +47,6 @@ Route::middleware(['auth:web', 'ensure.server'])->group(function () {
     Route::get('/show/{show:slug}', [\App\Http\Controllers\StreamController::class, 'show'])->name('show.view');
     Route::get('/show/{show:slug}/external', [\App\Http\Controllers\StreamController::class, 'external'])->name('show.external');
     Route::post('/message/send', [\App\Http\Controllers\MessageController::class, 'send'])->name('message.send');
-
-    // Source heartbeat endpoint
-    Route::post('/sources/{source}/heartbeat', [\App\Http\Controllers\SourceHeartbeatController::class, 'heartbeat'])->name('source.heartbeat');
 
     // Emote routes
     Route::get('/emotes', [\App\Http\Controllers\EmoteController::class, 'index'])->name('emotes.index');

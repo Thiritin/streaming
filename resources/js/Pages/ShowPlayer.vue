@@ -108,38 +108,8 @@ const shouldUseLowerResolution = () => {
     return isMobile();
 };
 
-// Heartbeat functionality
-let heartbeatInterval = null;
-
-const sendHeartbeat = async () => {
-    if (!activeShow.value?.source_id) return;
-    
-    try {
-        const response = await axios.post(`/sources/${activeShow.value.source_id}/heartbeat`);
-        if (response.data.active_viewers !== undefined) {
-            listeners.value = response.data.active_viewers;
-        }
-    } catch (error) {
-        console.error('Heartbeat failed:', error);
-    }
-};
-
-const startHeartbeat = () => {
-    if (heartbeatInterval) return;
-    
-    // Send initial heartbeat
-    sendHeartbeat();
-    
-    // Send heartbeat every 90 seconds
-    heartbeatInterval = setInterval(sendHeartbeat, 90000);
-};
-
-const stopHeartbeat = () => {
-    if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-    }
-};
+// Viewer tracking is now handled automatically by HLS playlist requests
+// No need for separate heartbeat functionality
 
 // HLS availability checker
 const checkHlsAvailability = async () => {
@@ -209,10 +179,6 @@ const stopHlsChecker = () => {
 
 // Lifecycle
 onMounted(() => {
-    // Start heartbeat if we have a show with a source
-    if (activeShow.value?.source_id && status.value === 'online') {
-        startHeartbeat();
-    }
     
     // Subscribe to source status updates if we have a source
     if (activeShow.value?.source_id) {
@@ -228,16 +194,11 @@ onMounted(() => {
                     isReconnecting.value = true;
                     startHlsChecker();
                     
-                    if (status.value === 'online') {
-                        startHeartbeat();
-                    }
                 } else if (e.status === 'error') {
-                    // Keep heartbeat running if in error state to maintain viewer count
                     console.log('Source entered error state');
                     isReconnecting.value = false;
                     stopHlsChecker();
                 } else if (e.status === 'offline') {
-                    stopHeartbeat();
                     isReconnecting.value = false;
                     stopHlsChecker();
                 }
@@ -251,12 +212,6 @@ onMounted(() => {
             }
             status.value = e.status;
             
-            // Start/stop heartbeat based on status
-            if (e.status === 'online' && activeShow.value?.source_id) {
-                startHeartbeat();
-            } else {
-                stopHeartbeat();
-            }
         })
         .listen('.stream.listeners.changed', (e) => {
             listeners.value = e.listeners;
@@ -292,11 +247,9 @@ onMounted(() => {
             // Handle source switching for a show
             if (activeShow.value && activeShow.value.id === e.show.id) {
                 hlsUrls.value = e.hlsUrls;
-                // Restart heartbeat with new source
+                // Update source ID
                 if (e.show.source_id && status.value === 'online') {
                     activeShow.value.source_id = e.show.source_id;
-                    stopHeartbeat();
-                    startHeartbeat();
                 }
             }
         });
@@ -304,7 +257,6 @@ onMounted(() => {
 
 // Cleanup on unmount
 onUnmounted(() => {
-    stopHeartbeat();
     stopHlsChecker();
     
     // Leave the source channel

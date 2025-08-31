@@ -183,40 +183,28 @@ class Source extends Model
      */
     public function getHlsUrls($user = null)
     {
-        $protocol = app()->isLocal() ? 'http' : 'https';
-
-        // Get the appropriate server based on user assignment
-        $server = null;
-        if ($user) {
-            // Get or assign an edge server for the user
-            $server = $user->getOrAssignServer();
-        }
-
-        // If no user or no assigned server, get the first available edge server
-        if (!$server) {
-            $server = \App\Models\Server::where('type', \App\Enum\ServerTypeEnum::EDGE)
-                ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
-                ->first();
-        }
-
-        // If still no server, throw exception
-        if (!$server) {
-            throw new \RuntimeException('No active edge server available for HLS URLs');
-        }
-
-        // Add streamkey parameter if user is provided and has a streamkey
+        // Generate streamkey parameter if user has one
+        // This will be passed from master to variant playlists
         $streamkeyParam = '';
         if ($user && $user->streamkey) {
             $streamkeyParam = '?streamkey=' . urlencode($user->streamkey);
         }
 
-        $host = $server->getHostWithPort();
-
+        // Use our Laravel HLS controller for all HLS access
+        // This provides master playlist, variant proxying, and user tracking
+        // In development, Laravel runs on port 80, but we access it through localhost directly
+        $baseUrl = app()->isLocal() ? 'http://localhost' : config('app.url');
+        
         return [
-            'stream' => "{$protocol}://{$host}/live/{$this->slug}_fhd.m3u8{$streamkeyParam}",
-            'fhd' => "{$protocol}://{$host}/live/{$this->slug}_fhd.m3u8{$streamkeyParam}",
-            'hd' => "{$protocol}://{$host}/live/{$this->slug}_hd.m3u8{$streamkeyParam}",
-            'sd' => "{$protocol}://{$host}/live/{$this->slug}_sd.m3u8{$streamkeyParam}",
+            // Master playlist for adaptive bitrate streaming (no streamkey needed here)
+            // The master controller will add streamkey to variant URLs internally
+            'master' => "{$baseUrl}/hls/{$this->slug}/master.m3u8{$streamkeyParam}",
+            'stream' => "{$baseUrl}/hls/{$this->slug}/master.m3u8{$streamkeyParam}", // Default to master
+            
+            // Direct variant playlists (proxied through Laravel) - these need streamkey
+            'fhd' => "{$baseUrl}/hls/{$this->slug}_fhd.m3u8{$streamkeyParam}",
+            'hd' => "{$baseUrl}/hls/{$this->slug}_hd.m3u8{$streamkeyParam}",
+            'sd' => "{$baseUrl}/hls/{$this->slug}_sd.m3u8{$streamkeyParam}",
         ];
     }
 
