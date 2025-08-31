@@ -9,8 +9,10 @@ use Filament\Models\Contracts\FilamentUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
+use App\Helpers\IpSubnetHelper;
 
 class User extends Authenticatable implements FilamentUser
 {
@@ -50,8 +52,35 @@ class User extends Authenticatable implements FilamentUser
     }
 
 
-    public function getOrAssignServer()
+    public function getOrAssignServer($clientIp = null)
     {
+        // Check for subnet-based override first
+        if ($clientIp) {
+            $localIpv4Subnet = config('stream.local_streaming_ipv4_subnet');
+            $localIpv6Subnet = config('stream.local_streaming_ipv6_subnet');
+            $localHostname = config('stream.local_streaming_hostname');
+            
+            if ($localHostname && (
+                ($localIpv4Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv4Subnet)) ||
+                ($localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet))
+            )) {
+                // Create a virtual server object with the override hostname
+                $server = new Server();
+                $server->hostname = $localHostname;
+                $server->port = 8080;
+                
+                Log::info('Using local streaming server override for user', [
+                    'client_ip' => $clientIp,
+                    'override_hostname' => $localHostname,
+                    'matched_ipv4_subnet' => $localIpv4Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv4Subnet) ? $localIpv4Subnet : null,
+                    'matched_ipv6_subnet' => $localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet) ? $localIpv6Subnet : null,
+                    'user_id' => $this->id,
+                ]);
+                
+                return $server;
+            }
+        }
+        
         $server = $this->server;
 
         if (is_null($server) || is_null($this->streamkey)) {
@@ -109,7 +138,26 @@ class User extends Authenticatable implements FilamentUser
             $query->where('id', '!=', $this->server_id);
         }
         
-        $server = $query->orderBy('viewer_count', 'asc')->first();
+        // Only select servers that haven't reached their capacity
+        // This prevents overloading servers beyond their max_clients limit
+        $server = $query->whereRaw('viewer_count < max_clients')
+            ->orderBy('viewer_count', 'asc')
+            ->first();
+        
+        // If no servers have capacity, still try to get the least loaded one
+        // This ensures users can still connect in emergency situations
+        if (!$server) {
+            $server = $query->orderBy('viewer_count', 'asc')->first();
+            
+            if ($server) {
+                Log::warning('All servers at capacity, assigning to least loaded server', [
+                    'server_id' => $server->id,
+                    'viewer_count' => $server->viewer_count,
+                    'max_clients' => $server->max_clients,
+                    'user_id' => $this->id,
+                ]);
+            }
+        }
 
         if (is_null($server) || is_null($server->id)) {
             // No available servers, clear any stale assignment

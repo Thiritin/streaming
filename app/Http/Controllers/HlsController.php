@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use App\Helpers\IpSubnetHelper;
 
 class HlsController extends Controller
 {
@@ -57,17 +58,11 @@ class HlsController extends Controller
         }
 
         $this->trackUserAccess($source, $user, $request);
-        
-        // For system user, get any available edge server
-        if ($user->id === 0) {
-            $server = \App\Models\Server::where('type', \App\Enum\ServerTypeEnum::EDGE)
-                ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
-                ->first();
-        } else {
-            $server = $user->getOrAssignServer();
-        }
+
+        // Check for IP-based server override
+        $server = $this->getServerForRequest($request, $user);
         $port = $server->port ?? 8080;
-        
+
         // Use HTTPS for port 443, HTTP for other ports
         if ($port == 443) {
             $masterUrl = "https://{$server->hostname}/live/{$stream}_master.m3u8";
@@ -185,15 +180,9 @@ class HlsController extends Controller
         }
 
         $this->trackUserAccess($source, $user, $request);
-        
-        // For system user, get any available edge server
-        if ($user->id === 0) {
-            $server = \App\Models\Server::where('type', \App\Enum\ServerTypeEnum::EDGE)
-                ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
-                ->first();
-        } else {
-            $server = $user->getOrAssignServer();
-        }
+
+        // Check for IP-based server override
+        $server = $this->getServerForRequest($request, $user);
 
         if (!$server || !$server->hostname) {
             return response('No server available', 503)
@@ -284,7 +273,7 @@ class HlsController extends Controller
         if ($user->id === 0) {
             return;
         }
-        
+
         // Build cache key for this user-source combination
         $cacheKey = "hls_heartbeat:{$source->id}:{$user->id}";
 
@@ -331,5 +320,38 @@ class HlsController extends Controller
         ]);
     }
 
+    /**
+     * Get the appropriate server for the request, checking for subnet-based overrides
+     */
+    private function getServerForRequest(Request $request, $user)
+    {
+        // Check if we should use a local override based on client IP subnet
+        $clientIp = $request->ip();
+        $localIpv4Subnet = config('stream.local_streaming_ipv4_subnet');
+        $localIpv6Subnet = config('stream.local_streaming_ipv6_subnet');
+        $localHostname = config('stream.local_streaming_hostname');
 
+        // Check if the client IP matches the configured subnets
+        if ($localHostname && (
+            ($localIpv4Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv4Subnet)) ||
+            ($localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet))
+        )) {
+            // Create a virtual server object with the override hostname
+            $server = new \App\Models\Server();
+            $server->hostname = $localHostname;
+            $server->port = 8080; // Default port, can be made configurable if needed
+
+            Log::info('Using local streaming server override', [
+                'client_ip' => $clientIp,
+                'override_hostname' => $localHostname,
+                'matched_ipv4_subnet' => $localIpv4Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv4Subnet) ? $localIpv4Subnet : null,
+                'matched_ipv6_subnet' => $localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet) ? $localIpv6Subnet : null,
+                'user_id' => $user->id,
+            ]);
+
+            return $server;
+        }
+
+        return $user->getOrAssignServer($clientIp);
+    }
 }

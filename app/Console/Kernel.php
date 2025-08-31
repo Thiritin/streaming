@@ -19,6 +19,12 @@ class Kernel extends ConsoleKernel
         $schedule->job(new \App\Jobs\ServerAssignmentJob)->everyFifteenSeconds();
         // Disabled: CleanUpInactiveServerAssignmentsJob - clients table has been dropped
         // $schedule->job(new \App\Jobs\CleanUpInactiveServerAssignmentsJob)->everyFiveMinutes();
+        
+        // Update server viewer counts based on active source_users
+        $schedule->job(new \App\Jobs\UpdateServerViewerCountsJob)->everyThirtySeconds();
+        
+        // Clean up stale viewer sessions that haven't been active for 3+ minutes
+        $schedule->job(new \App\Jobs\CleanupStaleViewerSessionsJob)->everyMinute();
 
         // Health check for edge servers every minute
         $schedule->job(new \App\Jobs\Server\ServerHealthCheckJob)->everyMinute();

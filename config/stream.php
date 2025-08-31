@@ -74,4 +74,10 @@ return [
 
     // System streamkey for internal operations (thumbnails, monitoring, etc.)
     'system_streamkey' => env('STREAM_SYSTEM_STREAMKEY', ''),
+
+    // Local streaming server override configuration
+    // When client IPs match these subnets, force use of the specified hostname
+    'local_streaming_ipv4_subnet' => env('LOCAL_STREAMING_IPV4_SUBNET', ''),
+    'local_streaming_ipv6_subnet' => env('LOCAL_STREAMING_IPV6_SUBNET', ''),
+    'local_streaming_hostname' => env('LOCAL_STREAMING_HOSTNAME', ''),
 ];
