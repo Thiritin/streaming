@@ -28,7 +28,7 @@ class Server extends Model
     ];
 
     protected $attributes = [
-        'port' => 8080,
+        'port' => 443,
         'max_clients' => 1000,
         'viewer_count' => 0,
     ];
@@ -181,19 +181,19 @@ class Server extends Model
 
     public function deprovision()
     {
-        // Prevent deletion of the origin server if it's the only one
-        if ($this->type === ServerTypeEnum::ORIGIN && $this->status === ServerStatusEnum::ACTIVE) {
-            $otherOrigins = static::where('type', ServerTypeEnum::ORIGIN)
-                ->where('id', '!=', $this->id)
-                ->where('status', ServerStatusEnum::ACTIVE)
-                ->count();
-            
-            if ($otherOrigins === 0) {
-                throw new \Exception('Cannot deprovision the only active origin server');
-            }
-        }
-
+        // Allow deprovisioning any server without restrictions
         DeleteServerJob::dispatch($this);
+    }
+
+    /**
+     * Override delete to unassign users first
+     */
+    public function delete()
+    {
+        // Unassign all users from this server before deletion
+        $this->users()->update(['server_id' => null]);
+        
+        return parent::delete();
     }
 
     public function isReady(): bool

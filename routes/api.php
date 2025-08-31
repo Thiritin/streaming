@@ -56,4 +56,8 @@ Route::prefix('srs')->group(function () {
     Route::post('on-hls', [App\Http\Controllers\Api\SrsCallbackController::class, 'onHls'])->name('api.srs.on-hls');
     Route::post('on-play', [App\Http\Controllers\Api\SrsCallbackController::class, 'play'])->name('api.srs.on-play');
     Route::post('on-stop', [App\Http\Controllers\Api\SrsCallbackController::class, 'stop'])->name('api.srs.on-stop');
+    Route::post('dvr', [App\Http\Controllers\Api\SrsDvrController::class, 'handleDvrCallback'])->name('api.srs.dvr');
 });
+
+// DVR uploader webhooks
+Route::post('dvr/upload-webhook', [App\Http\Controllers\Api\SrsDvrController::class, 'handleUploadWebhook'])->name('api.dvr.upload-webhook');

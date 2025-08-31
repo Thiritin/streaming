@@ -30,12 +30,12 @@ class AdminPanelProvider extends PanelProvider
             ->brandName('EF Streaming Admin')
             ->favicon(asset('favicon.ico'))
             ->colors([
-                'primary' => Color::Emerald,
+                'primary' => Color::Purple,
                 'gray' => Color::Slate,
             ])
             ->navigationGroups([
                 'Streaming',
-                'Infrastructure', 
+                'Infrastructure',
                 'User Management',
                 'Chat',
             ])

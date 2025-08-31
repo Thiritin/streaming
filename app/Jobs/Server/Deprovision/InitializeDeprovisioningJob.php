@@ -20,6 +20,10 @@ class InitializeDeprovisioningJob implements ShouldQueue
 
     public function handle(): void
     {
+        // Unassign all users from this server immediately
+        $this->server->users()->update(['server_id' => null]);
+        
+        // Update server status to deprovisioning
         $this->server->update([
             'status' => ServerStatusEnum::DEPROVISIONING,
         ]);

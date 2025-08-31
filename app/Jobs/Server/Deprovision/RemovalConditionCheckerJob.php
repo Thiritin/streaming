@@ -12,7 +12,8 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Bus;
 
 /**
- * Any Server this job gets has already been marked for deprovisioning, this is a last check to make sure the server can be safely removed.
+ * Force deprovisions a server that has been marked for removal.
+ * This job immediately deletes the server without waiting for users to disconnect.
  */
 class RemovalConditionCheckerJob implements ShouldQueue
 {
@@ -27,15 +28,11 @@ class RemovalConditionCheckerJob implements ShouldQueue
             return;
         }
 
-        // Easy check: Is the server still in use? If not we can remove it.
-        if (! $this->server->isInUse()) {
-            Bus::chain([
-                new DeleteDnsRecordJob($this->server),
-                new DeleteVirtualMachineJob($this->server),
-            ])->dispatch();
-        } // Server is still in use, check back in 30 minutes.
-        else {
-            $this->release(now()->addMinutes(30));
-        }
+        // Force clear the server - no longer wait for users to disconnect
+        // This will immediately proceed with deletion regardless of usage
+        Bus::chain([
+            new DeleteDnsRecordJob($this->server),
+            new DeleteVirtualMachineJob($this->server),
+        ])->dispatch();
     }
 }

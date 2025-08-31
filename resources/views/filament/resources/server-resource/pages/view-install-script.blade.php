@@ -69,8 +69,34 @@
         <div class="mt-6">
             <!-- Install Script Tab -->
             <div x-show="activeTab === 'install'" x-cloak>
+                <!-- Quick Install One-Liner -->
+                <div class="mb-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                    <h3 class="font-semibold text-green-900 dark:text-green-300 mb-2">🚀 Quick Install (One-Liner)</h3>
+                    <p class="text-sm text-green-800 dark:text-green-200 mb-3">
+                        Run this command directly on your Ubuntu 22.04 server as root:
+                    </p>
+                    @php
+                        $oneLiner = sprintf(
+                            "curl -fsSL '%s/api/server/scripts/install?shared_secret=%s' | bash",
+                            config('app.url'),
+                            $record->shared_secret
+                        );
+                    @endphp
+                    <div class="relative">
+                        <button @click="copyToClipboard(@js($oneLiner))"
+                            class="absolute top-2 right-2 p-2 bg-green-100 dark:bg-green-700 rounded hover:bg-green-200 dark:hover:bg-green-600 transition"
+                            title="Copy to clipboard">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                        </button>
+                        <pre class="bg-gray-900 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">{{ $oneLiner }}</pre>
+                    </div>
+                </div>
+
+                <!-- Manual Installation Instructions -->
                 <div class="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <h3 class="font-semibold text-blue-900 dark:text-blue-300 mb-2">Installation Instructions</h3>
+                    <h3 class="font-semibold text-blue-900 dark:text-blue-300 mb-2">Manual Installation</h3>
                     <ol class="list-decimal list-inside space-y-1 text-sm text-blue-800 dark:text-blue-200">
                         <li>SSH into your Ubuntu 22.04 server as root</li>
                         <li>Copy the script below and save it as <code class="bg-blue-100 dark:bg-blue-800 px-1 rounded">install.sh</code></li>
@@ -290,7 +316,7 @@
                             @elseif($record->status === 'provisioning') bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100
                             @else bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300
                             @endif">
-                            {{ ucfirst($record->status) }}
+                            {{ ucfirst($record->status->value) }}
                         </span>
                     </dd>
                 </div>

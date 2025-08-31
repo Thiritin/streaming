@@ -4,15 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Source;
 use App\Models\SourceUser;
-use App\Models\Server;
-use App\Enum\ServerTypeEnum;
-use App\Enum\ServerStatusEnum;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
 
 class HlsController extends Controller
 {
@@ -30,72 +27,83 @@ class HlsController extends Controller
                 ->header('Content-Type', 'text/plain');
         }
 
-        // Track user access
-        $user = Auth::user();
-        if ($user) {
-            $this->trackUserAccess($source, $user, $request);
+        // Check for streamkey parameter first, then fall back to authenticated user
+        $user = null;
+        $streamkey = $request->get('streamkey');
+
+        if ($streamkey) {
+            $user = User::where('streamkey', $streamkey)->first();
+            if (!$user) {
+                return response('Invalid streamkey', 401)
+                    ->header('Content-Type', 'text/plain');
+            }
+        } else {
+            $user = Auth::user();
+            if (!$user) {
+                return response('Authentication required', 401)
+                    ->header('Content-Type', 'text/plain');
+            }
         }
 
-        // Get edge server to fetch master playlist from
-        $edgeServer = $this->getEdgeServer($request);
-
-        // Try to fetch FFmpeg-generated master playlist from edge server
-        $edgeMasterUrl = "http://{$edgeServer->hostname}:8081/live/{$stream}_master.m3u8";
+        $this->trackUserAccess($source, $user, $request);
+        $server = $user->getOrAssignServer();
+        $port = $server->port ?? 8080;
+        
+        // Use HTTPS for port 443, HTTP for other ports
+        if ($port == 443) {
+            $masterUrl = "https://{$server->hostname}/live/{$stream}_master.m3u8";
+        } else {
+            $masterUrl = "http://{$server->hostname}:{$port}/live/{$stream}_master.m3u8";
+        }
 
         try {
-            $response = Http::timeout(5)->get($edgeMasterUrl);
+            // Fetch the master playlist from the server
+            // For HTTPS, allow self-signed certificates in development
+            $httpClient = Http::timeout(3);
+            if (str_starts_with($masterUrl, 'https://')) {
+                $httpClient = $httpClient->withOptions(['verify' => false]);
+            }
+            $response = $httpClient->get($masterUrl);
 
             if ($response->successful()) {
-                // Read the FFmpeg-generated master playlist from edge
-                $content = $response->body();
+                $playlist = $response->body();
 
-                // Fix the variant URLs to use our Laravel routes (no direct file references)
-                // FFmpeg generates: test-stream_sd.m3u8, test-stream_hd.m3u8, etc.
-                // We need: /hls/test-stream_sd.m3u8, /hls/test-stream_hd.m3u8, etc.
-                $content = preg_replace(
+                // Rewrite variant URLs to use our Laravel routes
+                $playlist = preg_replace(
                     '/^(' . preg_quote($stream, '/') . '_(sd|hd|fhd)\.m3u8)$/m',
                     '/hls/$1',
-                    $content
+                    $playlist
                 );
 
-                return response($content, 200)
+                return response($playlist, 200)
                     ->header('Content-Type', 'application/vnd.apple.mpegurl')
-                    ->header('Cache-Control', 'max-age=1')
-                    ->header('Access-Control-Allow-Origin', '*')
-                    ->header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
-                    ->header('Access-Control-Allow-Headers', 'Range')
-                    ->header('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
+                    ->header('Cache-Control', 'max-age=1');
             }
+
+            // Log non-successful HTTP response
+            Log::warning('Failed to fetch master playlist - HTTP error', [
+                'stream' => $stream,
+                'server' => $server->hostname,
+                'url' => $masterUrl,
+                'status_code' => $response->status(),
+                'response_body' => $response->body(),
+                'user_id' => $user->id,
+                'streamkey' => $streamkey ?? null,
+            ]);
+
+            return response('Failed to fetch playlist', 502)
+                ->header('Content-Type', 'text/plain');
+
         } catch (\Exception $e) {
-            Log::warning('Failed to fetch master playlist from edge', [
-                'url' => $edgeMasterUrl,
+            Log::error('Failed to fetch master playlist from assigned server', [
+                'server' => $server->hostname,
+                'url' => $masterUrl,
                 'error' => $e->getMessage(),
             ]);
+
+            return response('Error fetching playlist', 500)
+                ->header('Content-Type', 'text/plain');
         }
-
-        // Fallback: Build master playlist if FFmpeg version doesn't exist on edge
-        $playlist = "#EXTM3U\n";
-        $playlist .= "#EXT-X-VERSION:6\n";
-
-        // Full HD variant - NO streamkey in master playlist
-        $playlist .= "#EXT-X-STREAM-INF:BANDWIDTH=6811200,RESOLUTION=1920x1080,CODECS=\"avc1.4d4028,mp4a.40.2\"\n";
-        $playlist .= "/hls/{$stream}_fhd.m3u8\n\n";
-
-        // HD variant - NO streamkey in master playlist
-        $playlist .= "#EXT-X-STREAM-INF:BANDWIDTH=3476000,RESOLUTION=1280x720,CODECS=\"avc1.4d401f,mp4a.40.2\"\n";
-        $playlist .= "/hls/{$stream}_hd.m3u8\n\n";
-
-        // SD variant - NO streamkey in master playlist
-        $playlist .= "#EXT-X-STREAM-INF:BANDWIDTH=1790800,RESOLUTION=854x480,CODECS=\"avc1.42c01f,mp4a.40.2\"\n";
-        $playlist .= "/hls/{$stream}_sd.m3u8\n";
-
-        return response($playlist, 200)
-            ->header('Content-Type', 'application/vnd.apple.mpegurl')
-            ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
-            ->header('Access-Control-Allow-Origin', '*')
-            ->header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
-            ->header('Access-Control-Allow-Headers', 'Range')
-            ->header('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
     }
 
     /**
@@ -120,76 +128,103 @@ class HlsController extends Controller
                 ->header('Content-Type', 'text/plain');
         }
 
-        // Track user access and get streamkey
-        $user = Auth::user();
-        $streamkey = null;
-        if ($user) {
-            $this->trackUserAccess($source, $user, $request);
+        // Check for streamkey parameter first, then fall back to authenticated user
+        $user = null;
+        $streamkey = $request->get('streamkey');
+
+        if ($streamkey) {
+            $user = User::where('streamkey', $streamkey)->first();
+            if (!$user) {
+                return response('Invalid streamkey', 401)
+                    ->header('Content-Type', 'text/plain');
+            }
+        } else {
+            $user = Auth::user();
+            if (!$user) {
+                return response('Authentication required', 401)
+                    ->header('Content-Type', 'text/plain');
+            }
             $streamkey = $user->streamkey;
         }
 
-        // Get edge server
-        $edgeServer = $this->getEdgeServer($request);
+        $this->trackUserAccess($source, $user, $request);
+        $server = $user->getOrAssignServer();
 
-        // Fetch the variant playlist from edge server
-        $edgeUrl = "http://{$edgeServer->hostname}:{$edgeServer->port}/live/{$variant}.m3u8";
+        if (!$server || !$server->hostname) {
+            return response('No server available', 503)
+                ->header('Content-Type', 'text/plain');
+        }
+
+        $hostname = $server->hostname;
+        $port = $server->port ?? 8080;
+
+        // Fetch the variant playlist from Edge server
+        // Use HTTPS for port 443, HTTP for other ports
+        if ($port == 443) {
+            $edgeUrl = "https://{$hostname}/live/{$variant}.m3u8";
+        } else {
+            $edgeUrl = "http://{$hostname}:{$port}/live/{$variant}.m3u8";
+        }
 
         try {
-            $response = Http::timeout(5)->get($edgeUrl);
+            // For HTTPS, allow self-signed certificates in development
+            $httpClient = Http::timeout(3);
+            if (str_starts_with($edgeUrl, 'https://')) {
+                $httpClient = $httpClient->withOptions(['verify' => false]);
+            }
+            $response = $httpClient->get($edgeUrl);
 
-            if (!$response->successful()) {
-                Log::warning('Failed to fetch variant playlist from edge', [
-                    'url' => $edgeUrl,
-                    'status' => $response->status(),
-                ]);
-                return response('Failed to fetch playlist', 502)
-                    ->header('Content-Type', 'text/plain');
+            if ($response->successful()) {
+                $playlist = $response->body();
+
+                // Rewrite .ts segment URLs to use full edge server URL with streamkey
+                $playlist = preg_replace_callback(
+                    '/^([^#\s]+\.ts)$/m',
+                    function($matches) use ($hostname, $port, $streamkey) {
+                        $segment = $matches[1];
+                        // Use HTTPS for port 443, HTTP for other ports
+                        if ($port == 443) {
+                            $url = "https://{$hostname}/live/{$segment}";
+                        } else {
+                            $url = "http://{$hostname}:{$port}/live/{$segment}";
+                        }
+                        if ($streamkey) {
+                            $url .= '?streamkey=' . $streamkey;
+                        }
+                        return $url;
+                    },
+                    $playlist
+                );
+
+                return response($playlist, 200)
+                    ->header('Content-Type', 'application/vnd.apple.mpegurl')
+                    ->header('Cache-Control', 'max-age=1');
             }
 
-            $playlist = $response->body();
+            // Log non-successful HTTP response
+            Log::warning('Failed to fetch variant playlist - HTTP error', [
+                'variant' => $variant,
+                'stream' => $streamSlug,
+                'quality' => $quality,
+                'server' => $server->hostname,
+                'url' => $edgeUrl,
+                'status_code' => $response->status(),
+                'response_body' => $response->body(),
+                'user_id' => $user->id,
+                'streamkey' => $streamkey ?? null,
+            ]);
 
-            // Build the base URL for TS segments on the edge server
-            $edgeBaseUrl = "http://{$edgeServer->hostname}:{$edgeServer->port}/live";
-
-            // Rewrite TS segment URLs to use absolute edge server URLs with optional streamkey
-            $playlist = preg_replace_callback(
-                '/^([^#].+\.ts)(\?.*)?$/m',
-                function ($matches) use ($edgeBaseUrl, $streamkey) {
-                    $tsFile = $matches[1];
-                    $existingParams = $matches[2] ?? '';
-
-                    // Build absolute URL to edge server
-                    $absoluteUrl = "{$edgeBaseUrl}/{$tsFile}";
-
-                    // Add streamkey if available
-                    if ($streamkey) {
-                        if ($existingParams) {
-                            $absoluteUrl .= $existingParams . '&streamkey=' . $streamkey;
-                        } else {
-                            $absoluteUrl .= '?streamkey=' . $streamkey;
-                        }
-                    } else if ($existingParams) {
-                        $absoluteUrl .= $existingParams;
-                    }
-
-                    return $absoluteUrl;
-                },
-                $playlist
-            );
-
-            return response($playlist, 200)
-                ->header('Content-Type', 'application/vnd.apple.mpegurl')
-                ->header('Cache-Control', 'max-age=2')
-                ->header('Access-Control-Allow-Origin', '*')
-                ->header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
-                ->header('Access-Control-Allow-Headers', 'Range')
-                ->header('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
+            return response('Failed to fetch playlist', 502)
+                ->header('Content-Type', 'text/plain');
 
         } catch (\Exception $e) {
-            Log::error('Error fetching variant playlist', [
+            Log::error('Failed to fetch variant playlist from edge server', [
+                'server' => $server->hostname,
+                'variant' => $variant,
                 'url' => $edgeUrl,
                 'error' => $e->getMessage(),
             ]);
+
             return response('Error fetching playlist', 500)
                 ->header('Content-Type', 'text/plain');
         }
@@ -246,26 +281,5 @@ class HlsController extends Controller
         ]);
     }
 
-    /**
-     * Get the appropriate edge server for the request
-     */
-    private function getEdgeServer($request)
-    {
-        // For now, just get any active edge server
-        // In production, this could use geo-location, load balancing, etc.
-        $edgeServer = Server::where('type', ServerTypeEnum::EDGE)
-            ->where('status', ServerStatusEnum::ACTIVE)
-            ->first();
-
-        // Fallback to local if no edge server
-        if (!$edgeServer) {
-            return (object) [
-                'hostname' => 'localhost',
-                'port' => 8081,
-            ];
-        }
-
-        return $edgeServer;
-    }
 
 }

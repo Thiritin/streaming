@@ -23,7 +23,7 @@ http://localhost:8070 {
         
         # Connection pooling for better performance
         transport http {
-            keepalive 32
+            keepalive 32s
             keepalive_idle_conns 10
         }
     }

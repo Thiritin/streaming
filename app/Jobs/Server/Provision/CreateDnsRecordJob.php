@@ -22,9 +22,8 @@ class CreateDnsRecordJob implements ShouldQueue
 
     public function handle(): void
     {
-        if ($this->server->type === ServerTypeEnum::ORIGIN) {
-            return;
-        }
+        // Create DNS records for both origin and edge servers
+        // Origin servers also need DNS records for their hostname
 
         $hostname = $this->server->hostname;
         $ip = $this->server->ip;

@@ -1,7 +1,3 @@
-# SRS Origin Server Configuration
-# Simple passthrough - no transcoding, no HLS
-# FFmpeg container handles HLS ABR generation with perfect GOP alignment
-
 listen              1935;
 max_connections     300;
 server_id           71;
@@ -32,9 +28,9 @@ vhost __defaultVhost__ {
     # Webhook authentication for publishing
     http_hooks {
         enabled         on;
-        on_publish      http://127.0.0.1/api/srs/auth;
-        on_unpublish    http://127.0.0.1/api/srs/unpublish;
-        on_dvr          http://127.0.0.1/api/srs/dvr;
+        on_publish      {{ $serverUrl }}/api/srs/auth;
+        on_unpublish    {{ $serverUrl }}/api/srs/unpublish;
+        on_dvr          {{ $serverUrl }}/api/srs/dvr;
     }
 
     # DVR configuration for recording streams
@@ -55,17 +51,7 @@ vhost __defaultVhost__ {
         time_jitter         full;
     }
 
-    # No HLS - FFmpeg handles this
-    hls {
-        enabled         off;
-    }
-
-    # No transcoding - FFmpeg handles this
-    transcode {
-        enabled         off;
-    }
-
-    # Keep GOP cache for lower latency on playback start
+    # Force low latency for all streams
     play {
         gop_cache       on;
         mw_latency      1800;

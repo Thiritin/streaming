@@ -78,7 +78,6 @@ start_ffmpeg() {
         -hls_time 2 \
         -hls_list_size 60 \
         -hls_delete_threshold 60 \
-        -hls_playlist_type event \
         -hls_flags independent_segments+delete_segments+program_date_time+discont_start \
         -hls_segment_type mpegts \
         -start_number 0 \

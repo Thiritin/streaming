@@ -31,15 +31,9 @@ http {
                application/json application/javascript application/xml+rss
                application/vnd.apple.mpegurl video/mp2t;
 
-    # Upstream for Laravel authentication service
-    upstream laravel_auth {
-        server localhost:80;
-        keepalive 32;
-    }
-
     server {
-        listen 8083;
-        listen [::]:8083;
+        listen 80;
+        listen [::]:80;
         server_name _;
 
         # Health check endpoint
@@ -49,22 +43,7 @@ http {
             add_header Content-Type text/plain;
         }
 
-        # Authentication subrequest endpoint
-        location = /auth {
-            internal;
-            proxy_pass http://laravel_auth/api/hls/auth;
-            proxy_pass_request_body off;
-            proxy_set_header Content-Length "";
-            proxy_set_header X-Original-URI $request_uri;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            
-            # Pass streamkey as header for authentication
-            proxy_set_header X-Stream-Key $arg_streamkey;
-        }
-
-        # HLS m3u8 playlist files - serve from shared volume (no auth needed)
+        # HLS m3u8 playlist files - serve from shared volume (no auth needed on origin)
         location ~ ^/live/(.+\.m3u8)$ {
             # No authentication for m3u8 playlists
             
@@ -77,12 +56,8 @@ http {
             add_header X-Content-Type-Options "nosniff";
         }
 
-        # TS segment files - serve from shared volume
+        # TS segment files - serve from shared volume (no auth needed on origin)
         location ~ ^/live/(.+\.ts)$ {
-            # Perform authentication check
-            auth_request /auth;
-            auth_request_set $auth_status $upstream_status;
-            
             # Serve files from the HLS output directory
             root /var/www/hls;
             try_files $uri =404;

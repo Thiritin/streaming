@@ -18,6 +18,8 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Table;
+use Filament\Tables\Filters\SelectFilter;
+use Illuminate\Database\Eloquent\Builder;
 
 class ServerResource extends Resource
 {
@@ -40,12 +42,11 @@ class ServerResource extends Resource
                 TextInput::make('hetzner_id')
                     ->disabled(fn ($operation): bool => $operation === 'edit')
                     ->nullable()
-                    ->helperText('Leave empty to auto-provision on Hetzner, or enter existing ID for manual servers'),
+                    ->helperText('Hetzner server ID (will be auto-filled for cloud servers)'),
 
                 TextInput::make('hostname')
                     ->required()
-                    ->default('auto-provision')
-                    ->helperText('Enter "auto-provision" to create on Hetzner, or specify hostname for manual servers'),
+                    ->helperText('Server hostname (e.g., "edge-1.example.com" or Docker container name)'),
 
                 TextInput::make('ip')
                     ->nullable()
@@ -81,13 +82,15 @@ class ServerResource extends Resource
                     ->required(),
 
                 Select::make('status')->options([
-                    'provisioning' => 'Provisioning',
-                    'active' => 'Active',
+                    ServerStatusEnum::PROVISIONING->value => 'Provisioning',
+                    ServerStatusEnum::ACTIVE->value => 'Active',
                     ServerStatusEnum::DEPROVISIONING->value => 'Deprovisioning',
-                    'deleted' => 'Deleted',
+                    ServerStatusEnum::DELETED->value => 'Deleted',
+                    ServerStatusEnum::ERROR->value => 'Error',
                 ])
                     ->default('active')
-                    ->required(),
+                    ->required()
+                    ->helperText('Manually change the server status'),
 
                 Checkbox::make('immutable')
                     ->hidden(fn (?Server $record): bool => $record?->type !== ServerTypeEnum::EDGE)
@@ -141,6 +144,7 @@ class ServerResource extends Resource
                         'provisioning' => 'warning',
                         'deprovisioning' => 'danger',
                         'deleted' => 'gray',
+                        'error' => 'danger',
                         default => 'secondary',
                     }),
 
@@ -207,7 +211,25 @@ class ServerResource extends Resource
                     ->modalHeading('Delete Manual Server')
                     ->modalDescription('Are you sure you want to delete this manually managed server?')
                     ->action(fn (Server $record) => $record->delete()),
-            ])->poll();
+            ])
+            ->filters([
+                SelectFilter::make('status')
+                    ->options([
+                        'active' => 'Active',
+                        'provisioning' => 'Provisioning', 
+                        'deprovisioning' => 'Deprovisioning',
+                        'deleted' => 'Deleted',
+                        'error' => 'Error',
+                    ])
+                    ->multiple(),
+                SelectFilter::make('type')
+                    ->options([
+                        'origin' => 'Origin',
+                        'edge' => 'Edge',
+                    ]),
+            ])
+            ->modifyQueryUsing(fn (Builder $query) => $query->where('status', '!=', 'deleted'))
+            ->poll();
     }
 
     public static function getRelations(): array

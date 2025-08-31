@@ -1,3 +1,104 @@
+# EF Streaming Edge Server Installation Script
+# Generated: 2025-08-31 18:55:53
+# Server ID: 10
+# Hostname: edge-10-Ur16YGLgHK2J.stream.eurofurence.org
+
+set -e
+
+echo "================================================"
+echo "EF Streaming Server Installation"
+echo "Server Type: edge"
+echo "Generated: 2025-08-31 18:55:53"
+echo "================================================"
+
+# Update system
+apt-get update
+apt-get upgrade -y
+
+# Install Docker
+if ! command -v docker &> /dev/null; then
+    echo "Installing Docker..."
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sh get-docker.sh
+    rm get-docker.sh
+else
+    echo "Docker already installed"
+fi
+
+# Install Docker Compose
+if ! command -v docker-compose &> /dev/null; then
+    echo "Installing Docker Compose..."
+    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+else
+    echo "Docker Compose already installed"
+fi
+
+# Create working directory
+mkdir -p /opt/ef-streaming
+cd /opt/ef-streaming
+
+# Create environment file
+cat > .env <<EOF
+SERVER_ID=10
+SERVER_TYPE=edge
+SHARED_SECRET=2rf93eFTm1dmlxRwDVyfGgkk5QYxVixG7TUW3JLK
+APP_URL=https://well-oarfish-oddly.ngrok-free.app
+
+# DVR S3 Storage Configuration
+DVR_AWS_ACCESS_KEY_ID=
+DVR_AWS_SECRET_ACCESS_KEY=
+DVR_AWS_DEFAULT_REGION=eu-west-1
+DVR_AWS_BUCKET=streaming-dvr
+DVR_AWS_ENDPOINT=https://s3.eurofurence.org
+EOF
+
+# Download Edge Docker Compose configuration
+cat > docker-compose.yml <<'DOCKERCOMPOSE'
+version: '3.8'
+
+services:
+  # Edge Nginx - Caching proxy for HLS content
+  edge-nginx:
+    image: nginx:alpine
+    container_name: edge-nginx
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,size=512m
+    restart: unless-stopped
+    networks:
+      - streaming
+
+  # Edge Caddy - SSL termination for edge
+  edge-caddy:
+    image: caddy:alpine
+    container_name: edge-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: edge-10-Ur16YGLgHK2J.stream.eurofurence.org
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    depends_on:
+      - edge-nginx
+    networks:
+      - streaming
+
+networks:
+  streaming:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:DOCKERCOMPOSE
+
+# Create Edge Nginx configuration
+cat > nginx.conf <<'NGINXCONF'
 user nginx;
 worker_processes auto;
 error_log /var/log/nginx/error.log warn;
@@ -46,16 +147,15 @@ http {
                      max_size=2g inactive=1h use_temp_path=off
                      loader_files=200 loader_sleep=50ms loader_threshold=300ms;
 
-
     # Upstream for origin Caddy server
     upstream origin_caddy {
-        server localhost:8070;
+        server origin-8-1Fn5B9fkKSmO.stream.eurofurence.org:8070;
         keepalive 32;
     }
 
     server {
-        listen 8081;
-        listen [::]:8081;
+        listen 80;
+        listen [::]:80;
         server_name _;
 
         # Rate limiting
@@ -72,7 +172,7 @@ http {
         # Authentication subrequest endpoint
         location = /auth {
             internal;
-            proxy_pass http://localhost:80/api/hls/auth;
+            proxy_pass http://well-oarfish-oddly.ngrok-free.app:443/api/hls/auth;
             proxy_pass_request_body off;
             proxy_set_header Content-Length "";
             proxy_set_header X-Original-URI $request_uri;
@@ -171,4 +271,77 @@ http {
             return 404;
         }
     }
-}
+}NGINXCONF
+
+# Create Edge Caddy configuration
+cat > Caddyfile <<'CADDYFILE'
+edge-10-Ur16YGLgHK2J.stream.eurofurence.org {
+    reverse_proxy edge-nginx:80
+}CADDYFILE
+# Start services
+echo "Starting Docker services..."
+docker compose up -d
+
+# Wait for services to be ready
+echo "Waiting for services to start..."
+WAITED=0
+MAX_WAIT=60
+while [ $WAITED -lt $MAX_WAIT ]; do
+    if [ "edge" = "origin" ]; then
+        # For origin, check if SRS is responding
+        if curl -s http://localhost:1985/api/v1/versions > /dev/null 2>&1; then
+            echo "Origin services are ready!"
+            break
+        fi
+    else
+        # For edge, check if nginx is responding
+        if curl -s http://localhost:8081/health > /dev/null 2>&1; then
+            echo "Edge services are ready!"
+            break
+        fi
+    fi
+    echo "Waiting for services... ($WAITED/$MAX_WAIT seconds)"
+    sleep 5
+    WAITED=$((WAITED + 5))
+done
+
+# Show service status
+docker compose ps
+
+# Get server information
+# Force IPv4 for PUBLIC_IP and use the configured hostname
+PUBLIC_IP=$(curl -4 -s ifconfig.me)
+HOSTNAME="edge-10-Ur16YGLgHK2J.stream.eurofurence.org"
+
+echo "================================================"
+echo "Server Information:"
+echo "  Public IP: $PUBLIC_IP"
+echo "  Hostname: $HOSTNAME"
+echo "  Server Type: edge"
+echo "  Server ID: 10"
+echo "================================================"
+
+# Register server with main app (optional - may fail if network not ready)
+echo "Attempting to register server with main application..."
+curl -L -X POST "https://well-oarfish-oddly.ngrok-free.app/api/server/register" \
+     -H "X-Shared-Secret: 2rf93eFTm1dmlxRwDVyfGgkk5QYxVixG7TUW3JLK" \
+     -H "Content-Type: application/json" \
+     -d "{
+         \"server_id\": \"10\",
+         \"hostname\": \"$HOSTNAME\",
+         \"ip\": \"$PUBLIC_IP\",
+         \"status\": \"active\"
+     }" || echo "Registration failed - server will register on first heartbeat"
+
+echo "================================================"
+echo "Installation complete!"
+echo "Server is ready at: $PUBLIC_IP"
+echo "================================================"
+
+# Setup auto-restart on boot
+systemctl enable docker
+
+# Setup heartbeat cron job (every minute)
+(crontab -l 2>/dev/null; echo "* * * * * /opt/ef-streaming/heartbeat.sh") | crontab -
+
+exit 0

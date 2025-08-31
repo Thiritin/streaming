@@ -58,6 +58,20 @@ return [
             'bucket_endpoint' => false,
         ],
 
+        'dvr' => [
+            'driver' => 's3',
+            'key' => env('DVR_AWS_ACCESS_KEY_ID'),
+            'secret' => env('DVR_AWS_SECRET_ACCESS_KEY'),
+            'region' => env('DVR_AWS_DEFAULT_REGION', 'eu-west-1'),
+            'bucket' => env('DVR_AWS_BUCKET'),
+            'url' => env('DVR_AWS_URL'),
+            'endpoint' => env('DVR_AWS_ENDPOINT'),
+            'use_path_style_endpoint' => env('DVR_AWS_USE_PATH_STYLE_ENDPOINT', true),
+            'throw' => true,
+            'disable_asserts' => true,
+            'bucket_endpoint' => false,
+        ],
+
     ],
 
     /*

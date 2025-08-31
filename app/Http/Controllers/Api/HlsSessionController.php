@@ -29,8 +29,8 @@ class HlsSessionController extends Controller
         $hlsContext = null;
         
         // Parse stream slug from URI first to create cache keys
-        // Format: /live/{slug}_quality/index.m3u8 or /live/{slug}_quality/segment.ts
-        if (!preg_match('#^/live/([^/_]+)(?:_\w+)?/#', $originalUri, $slugMatches)) {
+        // Format: /live/{slug}_quality.m3u8 or /live/{slug}_quality_segment.ts or /live/{slug}_master.m3u8
+        if (!preg_match('#^/live/([^/_]+?)(?:_(?:master|fhd|hd|sd|ld))?(?:\.|_)#', $originalUri, $slugMatches)) {
             Log::warning('Invalid HLS URI format', ['uri' => $originalUri]);
             return response()->json(['error' => 'Invalid URI'], 403);
         }

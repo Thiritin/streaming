@@ -22,12 +22,11 @@ class ServerProvisionController extends Controller
      */
     public function config(Request $request, string $type)
     {
-        $serverId = $request->query('server_id');
         $sharedSecret = $request->header('X-Shared-Secret') ?: $request->query('shared_secret');
 
-        // Find server by ID and validate shared secret
-        $server = Server::find($serverId);
-        if (!$server || $server->shared_secret !== $sharedSecret) {
+        // Find server by shared secret
+        $server = Server::where('shared_secret', $sharedSecret)->first();
+        if (!$server) {
             return response('Unauthorized', 401);
         }
 
@@ -61,14 +60,6 @@ class ServerProvisionController extends Controller
                 $contentType = 'application/x-yaml';
                 break;
                 
-            case 'ffmpeg-dockerfile':
-                $content = $this->provisioningService->generateFFmpegDockerfile();
-                break;
-                
-            case 'ffmpeg-script':
-                $content = $this->provisioningService->generateFFmpegStreamManager();
-                break;
-
             default:
                 return response('Not found', 404);
         }
@@ -82,12 +73,11 @@ class ServerProvisionController extends Controller
      */
     public function script(Request $request, string $script)
     {
-        $serverId = $request->query('server_id');
         $sharedSecret = $request->header('X-Shared-Secret') ?: $request->query('shared_secret');
 
-        // Find server by ID and validate shared secret
-        $server = Server::find($serverId);
-        if (!$server || $server->shared_secret !== $sharedSecret) {
+        // Find server by shared secret
+        $server = Server::where('shared_secret', $sharedSecret)->first();
+        if (!$server) {
             return response('Unauthorized', 401);
         }
 

@@ -42,18 +42,47 @@ class ViewInstallScript extends Page
         
         $this->installScript = $provisioningService->generateInstallScript($this->record);
         $this->cloudInitScript = $provisioningService->generateCloudInit($this->record);
-        $this->dockerComposeConfig = $provisioningService->generateDockerCompose($this->record);
-        $this->srsConfig = $provisioningService->generateSrsConfig($this->record);
         
-        // Generate config files based on server type
+        // Extract configurations from the install script
+        $this->extractConfigurationsFromScript($this->installScript);
+    }
+    
+    protected function extractConfigurationsFromScript(string $script): void
+    {
+        // Extract Docker Compose configuration
+        if (preg_match("/cat > docker-compose\.yml <<'DOCKERCOMPOSE'(.*?)DOCKERCOMPOSE/s", $script, $matches)) {
+            $this->dockerComposeConfig = trim($matches[1]);
+        }
+        
+        // Extract SRS configuration
+        if (preg_match("/cat > srs\.conf <<'SRSCONF'(.*?)SRSCONF/s", $script, $matches)) {
+            $this->srsConfig = trim($matches[1]);
+        }
+        
+        // Extract Nginx configuration
+        if (preg_match("/cat > nginx\.conf <<'NGINXCONF'(.*?)NGINXCONF/s", $script, $matches)) {
+            if ($this->record->type->value === 'origin') {
+                $this->nginxOriginConfig = trim($matches[1]);
+            } else {
+                $this->nginxEdgeConfig = trim($matches[1]);
+            }
+        }
+        
+        // Extract Caddy configuration
+        if (preg_match("/cat > Caddyfile <<'CADDYFILE'(.*?)CADDYFILE/s", $script, $matches)) {
+            if ($this->record->type->value === 'origin') {
+                $this->caddyOriginConfig = trim($matches[1]);
+            } else {
+                $this->caddyEdgeConfig = trim($matches[1]);
+            }
+        }
+        
+        // For origin servers, extract FFmpeg related configurations
         if ($this->record->type->value === 'origin') {
-            $this->nginxOriginConfig = $provisioningService->generateNginxOriginConfig($this->record);
-            $this->caddyOriginConfig = $provisioningService->generateCaddyOriginConfig($this->record);
-            $this->ffmpegDockerfile = $provisioningService->generateFFmpegDockerfile();
-            $this->ffmpegScript = $provisioningService->generateFFmpegStreamManager();
-        } else {
-            $this->nginxEdgeConfig = $provisioningService->generateNginxEdgeConfig($this->record);
-            $this->caddyEdgeConfig = $provisioningService->generateCaddyEdgeConfig($this->record);
+            // Note: FFmpeg Dockerfile and script would need to be added to the ServerProvisioningService
+            // For now, we'll leave these empty as they're not in the current implementation
+            $this->ffmpegDockerfile = "# FFmpeg Dockerfile not available in current implementation";
+            $this->ffmpegScript = "# FFmpeg stream manager script not available in current implementation";
         }
     }
     

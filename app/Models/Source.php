@@ -149,14 +149,7 @@ class Source extends Model
             ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
             ->first();
 
-        if (!$originServer) {
-            // Fallback to local config if no origin server found
-            return app()->isLocal() ? 'rtmp://localhost:1935/ingress' : 'rtmp://localhost:1935/ingress';
-        }
-
-        // Use the server's hostname and port
-        $port = $originServer->port ?? 1935;
-        return "rtmp://{$originServer->hostname}:{$port}/ingress";
+        return "rtmp://{$originServer->hostname}:1935/ingress";
     }
 
     /**

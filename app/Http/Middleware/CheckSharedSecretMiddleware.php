@@ -14,7 +14,10 @@ class CheckSharedSecretMiddleware
      */
     public function handle(Request $request, Closure $next)
     {
-        $server = Server::where('shared_secret', $request->get('shared_secret'))->first();
+        // Check for shared secret in header first, then fall back to request parameter
+        $sharedSecret = $request->header('X-Shared-Secret') ?: $request->get('shared_secret');
+        
+        $server = Server::where('shared_secret', $sharedSecret)->first();
         // Throw auth exception
         if (is_null($server)) {
             throw new AuthenticationException('Invalid shared secret');
