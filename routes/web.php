@@ -14,6 +14,11 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+// up route
+Route::get('/up', function () {
+    return response('OK', 200);
+});
+
 Route::middleware('guest')->group(function () {
     Route::get('/auth/login', [\App\Http\Controllers\Auth\OidcClientController::class, 'login'])->name('auth.login');
     Route::get('/auth/callback', [
@@ -32,7 +37,7 @@ Route::get('/auth/frontchannel-logout', \App\Http\Controllers\Auth\FrontChannelL
 Route::prefix('hls')->group(function () {
     // Master playlist for adaptive bitrate streaming
     Route::get('/{stream}/master.m3u8', [\App\Http\Controllers\HlsController::class, 'master'])->name('hls.master');
-    
+
     // Variant playlists (quality-specific)
     Route::get('/{variant}.m3u8', [\App\Http\Controllers\HlsController::class, 'variant'])->name('hls.variant');
 });
