@@ -19,20 +19,31 @@ class ShowStatisticsService
             return;
         }
 
-        // Get viewer count from cache (set by edge servers)
-        // Try to find the source for this show
-        $source = Source::where('slug', $show->slug)
-            ->orWhere('id', $show->source_id)
-            ->first();
-            
-        $currentViewerCount = 0;
-        if ($source) {
-            $currentViewerCount = Cache::get("stream_total_viewers:{$source->slug}", 0);
-        }
+        // Get the source for this show
+        $source = $show->source;
         
-        // For unique viewers, we'll use the total count for now
-        // In a real implementation, you'd track unique IPs/sessions
-        $uniqueViewers = $currentViewerCount;
+        $currentViewerCount = 0;
+        $uniqueViewers = 0;
+        
+        if ($source) {
+            // Get active viewer count from source_users table
+            $currentViewerCount = $source->activeViewers()->count();
+            
+            // For unique viewers, count distinct users who have watched this source today
+            $uniqueViewers = DB::table('source_users')
+                ->where('source_id', $source->id)
+                ->where('joined_at', '>=', now()->startOfDay())
+                ->distinct('user_id')
+                ->count('user_id');
+                
+            // Also check cache as fallback (in case edge servers are reporting)
+            $cachedCount = Cache::get("stream_total_viewers:{$source->slug}", 0);
+            
+            // Use the higher of the two counts (in case edge servers are reporting higher numbers)
+            if ($cachedCount > $currentViewerCount) {
+                $currentViewerCount = $cachedCount;
+            }
+        }
 
         ShowStatistic::create([
             'show_id' => $show->id,

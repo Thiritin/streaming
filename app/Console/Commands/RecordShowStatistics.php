@@ -38,8 +38,13 @@ class RecordShowStatistics extends Command
         
         foreach ($liveShows as $show) {
             try {
+                // First refresh the viewer count from source_users table
+                $show->updateViewerCount();
+                
+                // Then record statistics
                 $service->recordStatistics($show);
-                $this->info("Recorded statistics for show: {$show->title}");
+                
+                $this->info("Recorded statistics for show: {$show->title} (Viewers: {$show->viewer_count})");
             } catch (\Exception $e) {
                 $this->error("Failed to record statistics for show {$show->title}: {$e->getMessage()}");
             }

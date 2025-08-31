@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7-labs
-FROM php:8.3-alpine as base
+FROM php:8.4-alpine as base
 WORKDIR /app
 
 ENV COMPOSER_MEMORY_LIMIT=-1
@@ -11,7 +11,7 @@ ADD --chmod=0755 https://github.com/mlocati/docker-php-extension-installer/relea
 
 RUN apk update \
     && apk add --no-cache curl git unzip openssl tar ca-certificates bind-tools \
-    && install-php-extensions gd bcmath pdo_mysql zip intl opcache pcntl redis swoole @composer \
+    && install-php-extensions gd bcmath pdo_mysql zip intl opcache pcntl redis @composer \
     && rm -rf /var/cache/apk/*
 
 RUN chown -R www-data:www-data /app
@@ -37,10 +37,10 @@ RUN COMPOSER_ALLOW_SUPERUSER=1 | composer require tightenco/ziggy:^2 --ignore-pl
 ######################################################
 FROM node:20-alpine as vite
 WORKDIR /app
-COPY package.json package-lock.json tailwind.config.js vite.config.js postcss.config.js ./
-COPY .env.build ./.env
-RUN npm install
+COPY package.json package-lock.json vite.config.js ./
+RUN npm install --force
 COPY ./resources /app/resources
+COPY ./.env.build /app/.env
 COPY --from=vite-vendor-build /app/vendor/tightenco/ziggy /app/vendor/tightenco/ziggy
 RUN npm run build
 ######################################################
