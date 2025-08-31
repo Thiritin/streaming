@@ -17,12 +17,17 @@ class Kernel extends ConsoleKernel
         $schedule->job(new \App\Jobs\SaveViewCountJob)->everyMinute();
         $schedule->job(new \App\Jobs\Server\ScalingJob)->everyMinute();
         $schedule->job(new \App\Jobs\ServerAssignmentJob)->everyFifteenSeconds();
-        $schedule->job(new \App\Jobs\CheckClientActivityJob)->everyFifteenMinutes();
-        $schedule->job(new \App\Jobs\CleanUpUnusedClientsJob)->everyMinute();
-        $schedule->job(new \App\Jobs\CleanUpInactiveServerAssignmentsJob)->everyFiveMinutes();
+        // Disabled: CleanUpInactiveServerAssignmentsJob - clients table has been dropped
+        // $schedule->job(new \App\Jobs\CleanUpInactiveServerAssignmentsJob)->everyFiveMinutes();
+
+        // Health check for edge servers every minute
+        $schedule->job(new \App\Jobs\Server\ServerHealthCheckJob)->everyMinute();
 
         // Capture thumbnails for live streams every minute
         $schedule->command('thumbnails:capture')->everyMinute();
+        
+        // Record viewer statistics for live shows every minute
+        $schedule->command('statistics:record')->everyMinute();
     }
 
     /**

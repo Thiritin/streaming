@@ -8,27 +8,21 @@ services:
         image: sail-8.4/app
         extra_hosts:
             - 'host.docker.internal:host-gateway'
-        ports:
-            - '${APP_PORT:-80}:80'
-            - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
-            - '${REVERB_PORT:-8080}:${REVERB_SERVER_PORT:-8080}'
         environment:
             WWWUSER: '${WWWUSER}'
             LARAVEL_SAIL: 1
             XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
             XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
+            # SUPERVISOR_PHP_COMMAND: "/usr/bin/php -d variables_order=EGPCS /var/www/html/artisan serve --host=0.0.0.0 --port=80"
         volumes:
             - '.:/var/www/html'
-        networks:
-            - sail
+        network_mode: host
         depends_on:
             - mysql
             - redis
     mysql:
         image: 'mysql/mysql-server:8.0'
-        ports:
-            - '${FORWARD_DB_PORT:-3306}:3306'
         environment:
             MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
             MYSQL_ROOT_HOST: '%'
@@ -39,8 +33,7 @@ services:
         volumes:
             - 'sail-mysql:/var/lib/mysql'
             - './docker/mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
-        networks:
-            - sail
+        network_mode: host
         healthcheck:
             test:
                 - CMD
@@ -51,12 +44,9 @@ services:
             timeout: 5s
     redis:
         image: 'redis:alpine'
-        ports:
-            - '${FORWARD_REDIS_PORT:-6379}:6379'
         volumes:
             - 'sail-redis:/data'
-        networks:
-            - sail
+        network_mode: host
         healthcheck:
             test:
                 - CMD
@@ -64,43 +54,49 @@ services:
                 - ping
             retries: 3
             timeout: 5s
-    origin:
-        ports:
-            - '1935:1935'
-            - '8085:8080'
-            - '1985:1985'
-        image: ossrs/srs:6
-        networks:
-            - sail
-        volumes:
-            - $PWD/origin.conf:/usr/local/srs/conf/custom.conf:ro
-            - srs-logs:/usr/local/srs/objs
-        command: ./objs/srs -c /usr/local/srs/conf/custom.conf
-    hls-edge:
-        image: nginx:alpine
-        container_name: hls-edge
-        ports:
-            - '${HLS_EDGE_PORT:-8083}:80'
-        volumes:
-            - './docker/nginx-hls/nginx.conf:/etc/nginx/nginx.conf:ro'
-            - './docker/nginx-hls/index.html:/usr/share/nginx/html/index.html:ro'
-            - 'nginx-cache:/var/cache/nginx'
-        networks:
-            - sail
-        depends_on:
-            - origin
+    origin-srs:
+        image: ossrs/srs:5
         environment:
-            - NGINX_HOST=${HLS_EDGE_HOST:-localhost}
-            - NGINX_PORT=80
+            SRS_HTTP_PORT: 8082
+        network_mode: host
+        volumes:
+            - ./docker/origin-srs/origin.conf:/usr/local/srs/conf/custom.conf:ro
+        command: ./objs/srs -c /usr/local/srs/conf/custom.conf
+        depends_on:
+            - laravel.test
+        restart: unless-stopped
+    # Nginx Edge Server - caches and serves HLS content from origin
+    edge-nginx:
+        image: nginx:alpine
+        volumes:
+            - ./docker/edge-nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+            - nginx-cache:/var/cache/nginx
+            - nginx-logs:/var/log/nginx
+        network_mode: host
+        depends_on:
+            - laravel.test
+            - origin-srs
         healthcheck:
-            test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+            test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
             interval: 10s
             timeout: 5s
             retries: 3
         restart: unless-stopped
-networks:
-    sail:
-        driver: bridge
+
+    # Caddy - TLS termination for production
+    edge-caddy:
+        image: caddy:alpine
+        environment:
+            DOMAIN: '${APP_URL:-localhost}'
+            CADDY_PORT: 8080
+            NGINX_EDGE_PORT: 8081
+        volumes:
+            - ./docker/edge-caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+            - caddy-data:/data
+            - caddy-config:/config
+            - caddy-logs:/var/log/caddy
+        network_mode: host
+        restart: unless-stopped
 volumes:
     sail-mysql:
         driver: local
@@ -108,5 +104,11 @@ volumes:
         driver: local
     nginx-cache:
         driver: local
-    srs-logs:
+    nginx-logs:
+        driver: local
+    caddy-data:
+        driver: local
+    caddy-config:
+        driver: local
+    caddy-logs:
         driver: local

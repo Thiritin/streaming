@@ -57,6 +57,10 @@ const props = defineProps({
     playerId: {
         type: String,
         default: 'video-player'
+    },
+    isInternalNavigation: {
+        type: Boolean,
+        default: false
     }
 });
 
@@ -131,19 +135,39 @@ const initializePlayer = async () => {
     const savedVolume = getCookie('player_volume');
     const savedMuted = getCookie('player_muted');
 
-    // For autoplay, we must start muted due to browser policies
-    // We'll only unmute on actual user interaction to avoid pausing
-    const initialMuted = props.autoplay ? true : (savedMuted !== null ? savedMuted === 'true' : props.muted);
+    // Smart autoplay logic:
+    // - If internal navigation (user already interacted), try unmuted autoplay
+    // - If direct page load, use muted autoplay for reliability
+    let initialMuted;
+    let autoplayMode;
+    
+    if (props.autoplay) {
+        if (props.isInternalNavigation) {
+            // User navigated from within the site - browser should allow unmuted autoplay
+            initialMuted = savedMuted !== null ? savedMuted === 'true' : false;
+            autoplayMode = 'play'; // Try unmuted autoplay
+            console.log('Internal navigation - attempting unmuted autoplay');
+        } else {
+            // Direct page load - must use muted autoplay
+            initialMuted = true;
+            autoplayMode = 'muted';
+            console.log('Direct page load - using muted autoplay');
+        }
+    } else {
+        initialMuted = savedMuted !== null ? savedMuted === 'true' : props.muted;
+        autoplayMode = false;
+    }
 
     // Video.js options
     const options = {
-        autoplay: props.autoplay ? 'muted' : false, // Always use muted autoplay for reliability
+        autoplay: autoplayMode,
         controls: props.controls,
         muted: initialMuted,
         volume: savedVolume !== null ? parseFloat(savedVolume) : 1.0,
         fluid: true,
         responsive: true,
         preload: 'auto',
+        playsinline: true, // Important for mobile
         liveui: props.isLive,
         liveTracker: {
             trackingThreshold: 30,  // Allow 30 seconds behind before considering "not live"
@@ -199,6 +223,42 @@ const initializePlayer = async () => {
 
     // Initialize plugins when player is ready
     player.ready(() => {
+        console.log('Player is ready');
+        
+        // Explicitly attempt to play if autoplay is enabled
+        // This helps ensure playback starts even if the autoplay option doesn't trigger
+        if (props.autoplay) {
+            // Wait a moment for the player to fully initialize
+            setTimeout(() => {
+                if (props.isInternalNavigation) {
+                    // Try unmuted first for internal navigation
+                    console.log('Attempting unmuted autoplay (internal navigation)...');
+                    player.play().then(() => {
+                        console.log('Unmuted autoplay successful!');
+                    }).catch(e => {
+                        console.error('Unmuted autoplay failed, falling back to muted:', e);
+                        // Fallback to muted autoplay
+                        player.muted(true);
+                        player.play().then(() => {
+                            console.log('Muted autoplay successful');
+                            showUnmutePrompt.value = true; // Show unmute prompt
+                        }).catch(err => {
+                            console.error('Muted autoplay also failed:', err);
+                        });
+                    });
+                } else {
+                    // Direct load - go straight to muted autoplay
+                    console.log('Attempting muted autoplay (direct load)...');
+                    player.muted(true);
+                    player.play().then(() => {
+                        console.log('Muted autoplay successful');
+                    }).catch(e => {
+                        console.error('Muted autoplay failed:', e);
+                    });
+                }
+            }, 100);
+        }
+        
         // Initialize hotkeys plugin after player is ready
         if (typeof player.hotkeys === 'function') {
             player.hotkeys({
@@ -483,10 +543,72 @@ const initializePlayer = async () => {
 
     player.on('loadedmetadata', () => {
         emit('loadedmetadata');
+        
+        console.log('Metadata loaded');
 
         // For live streams, seek to live edge
         if (props.isLive && player.liveTracker) {
             player.liveTracker.seekToLiveEdge();
+        }
+        
+        // Try autoplay again when metadata is loaded
+        if (props.autoplay && player.paused()) {
+            if (props.isInternalNavigation && !player.muted()) {
+                // Try unmuted first for internal navigation
+                console.log('Attempting unmuted autoplay on metadata...');
+                player.play().catch(e => {
+                    console.error('Unmuted autoplay failed on metadata, trying muted:', e);
+                    player.muted(true);
+                    player.play().catch(err => console.error('Muted autoplay on metadata failed:', err));
+                });
+            } else {
+                // Already muted or direct load
+                console.log('Attempting autoplay on metadata loaded...');
+                player.muted(true);
+                player.play().then(() => {
+                    console.log('Autoplay on metadata successful');
+                }).catch(e => {
+                    console.error('Autoplay on metadata failed:', e);
+                });
+            }
+        }
+    });
+    
+    // Also try on loadeddata event
+    player.on('loadeddata', () => {
+        console.log('Data loaded');
+        
+        if (props.autoplay && player.paused()) {
+            // Skip if already trying in other events
+            if (!player.muted() && !props.isInternalNavigation) {
+                // Should be muted for direct load
+                player.muted(true);
+            }
+            console.log('Attempting autoplay on data loaded...');
+            player.play().catch(e => {
+                if (!player.muted()) {
+                    console.error('Unmuted play failed on data loaded, trying muted:', e);
+                    player.muted(true);
+                    player.play().catch(err => console.error('Muted play on data loaded failed:', err));
+                }
+            });
+        }
+    });
+    
+    // Try on canplay event - fires when playback can start
+    player.on('canplay', () => {
+        console.log('Can play');
+        
+        if (props.autoplay && player.paused()) {
+            // Last attempt - ensure we try to play
+            console.log('Final autoplay attempt on canplay...');
+            player.play().catch(e => {
+                if (!player.muted()) {
+                    console.error('Unmuted play failed on canplay, trying muted:', e);
+                    player.muted(true);
+                    player.play().catch(err => console.error('All autoplay attempts failed:', err));
+                }
+            });
         }
     });
 

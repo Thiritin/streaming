@@ -19,7 +19,7 @@ class Capacity extends BaseWidget
     {
         $maxClients = Server::where('status', ServerStatusEnum::ACTIVE)->where('type', ServerTypeEnum::EDGE)->sum('max_clients');
         $maxClientsProvisioning = Server::where('status', ServerStatusEnum::PROVISIONING)->where('type', ServerTypeEnum::EDGE)->sum('max_clients');
-        $waitingUsers = User::where('is_provisioning', true)->count();
+        $waitingUsers = User::whereNull('server_id')->count();
 
         return [
             Card::make('Max clients', $maxClients),

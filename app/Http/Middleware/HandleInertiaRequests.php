@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Services\ChatCommandService;
+use App\Services\CommandRegistry;
 use App\Services\ChatMessageSanitizer;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -35,11 +35,21 @@ class HandleInertiaRequests extends Middleware
         $chatCommands = [];
         $chatConfig = [];
         $emotes = [];
-        $userBadge = null;
 
         if ($user) {
-            $commandService = new ChatCommandService;
-            $chatCommands = $commandService->getAvailableCommands($user);
+            // Use new CommandRegistry for commands
+            $commandRegistry = app(CommandRegistry::class);
+            $availableCommands = $commandRegistry->availableFor($user);
+            
+            // Transform to array format for frontend
+            $chatCommands = array_map(function($cmd) {
+                return [
+                    'name' => $cmd['name'],
+                    'description' => $cmd['description'],
+                    'syntax' => $cmd['signature'],
+                    'aliases' => $cmd['aliases'] ?? [],
+                ];
+            }, array_values($availableCommands));
 
             $sanitizer = new ChatMessageSanitizer;
             $chatConfig = [
@@ -55,13 +65,11 @@ class HandleInertiaRequests extends Middleware
                 'favorites' => $emoteService->getUserFavorites($user),
             ];
 
-            // Get user badge
-            $userBadge = $user->badge;
         }
 
         return array_merge(parent::share($request), [
             'auth' => [
-                'user' => $user?->only('id', 'name', 'is_provisioning', 'timeout_expires_at', 'role', 'badge'),
+                'user' => $user?->only('id', 'name', 'role'),
                 'can_access_filament' => $user?->can('filament.access'),
                 'has_server_assignment' => $user ? ($user->server_id && $user->streamkey ? true : false) : false,
             ],

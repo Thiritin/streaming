@@ -5,7 +5,6 @@ namespace App\Filament\Pages;
 use App\Enum\StreamStatusEnum;
 use App\Events\StreamStatusEvent;
 use App\Filament\Widgets\Capacity;
-use App\Filament\Widgets\ClientsActive;
 use App\Filament\Widgets\ServerActive;
 use App\Filament\Widgets\ViewCountChart;
 use Filament\Pages\Actions\Action;
@@ -13,13 +12,13 @@ use Filament\Pages\Page;
 
 class Stream extends Page
 {
-    protected static ?string $navigationIcon = 'heroicon-o-cog';
+    protected static ?string $navigationIcon = 'heroicon-o-adjustments-horizontal';
 
-    protected static ?int $navigationSort = 99;
+    protected static ?int $navigationSort = 3;
 
-    protected static ?string $navigationGroup = 'Mission Control Center';
+    protected static ?string $navigationGroup = 'Streaming';
 
-    protected static ?string $navigationLabel = 'Stream Settings';
+    protected static ?string $navigationLabel = 'Stream Control';
 
     protected static string $view = 'filament.pages.stream';
 
@@ -53,7 +52,6 @@ class Stream extends Page
     protected function getHeaderWidgets(): array
     {
         return [
-            ClientsActive::class,
             ServerActive::class,
             Capacity::class,
             ViewCountChart::class,

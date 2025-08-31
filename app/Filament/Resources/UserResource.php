@@ -26,6 +26,12 @@ class UserResource extends Resource
     protected static ?string $slug = 'users';
 
     protected static ?string $recordTitleAttribute = 'name';
+    
+    protected static ?string $navigationIcon = 'heroicon-o-users';
+    
+    protected static ?string $navigationGroup = 'User Management';
+    
+    protected static ?int $navigationSort = 20;
 
     public static function form(Form $form): Form
     {
@@ -39,8 +45,6 @@ class UserResource extends Resource
                     ->disabled()
                     ->required(),
 
-                Checkbox::make('is_provisioning'),
-
                 TextInput::make('reg_id')
                     ->disabled()
                     ->integer(),
@@ -51,9 +55,6 @@ class UserResource extends Resource
                             ->where('type', ServerTypeEnum::EDGE)
                             ->where('status', ServerStatusEnum::ACTIVE))
                     ->nullable(),
-
-                DatePicker::make('timeout_expires_at')
-                    ->label('Timeout Expires Date'),
 
                 Placeholder::make('updated_at')
                     ->label('Last Modified Date')
@@ -76,10 +77,6 @@ class UserResource extends Resource
                     ->sortable(),
 
                 TextColumn::make('reg_id'),
-
-                TextColumn::make('timeout_expires_at')
-                    ->label('Timeout Expires Date')
-                    ->date(),
             ]);
     }
 

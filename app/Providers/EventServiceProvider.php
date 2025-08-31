@@ -5,8 +5,6 @@ namespace App\Providers;
 use App\Events\Chat\Commands\SlowModeDisabled;
 use App\Events\Chat\Commands\SlowModeEnabled;
 use App\Events\Chat\DeleteMessagesEvent;
-use App\Events\ClientPlayEvent;
-use App\Events\ClientPlayOtherDeviceEvent;
 use App\Events\StreamListenerChangeEvent;
 use App\Events\StreamStatusEvent;
 use App\Events\UserWaitingForProvisioningEvent;
@@ -15,11 +13,9 @@ use App\Listeners\Chat\SlowMode\AnnounceSlowModeDeactivationListener;
 use App\Listeners\Chat\SlowMode\AnnounceSlowModeListener;
 use App\Listeners\Chat\SlowMode\SlowModeDisableListener;
 use App\Listeners\Chat\SlowMode\SlowModeEnableListener;
-use App\Listeners\DispatchPaysOtherDeviceNotifcationListener;
 use App\Listeners\SaveListenerCountListener;
 use App\Listeners\SetCacheStatusListener;
 use App\Listeners\SetUserWaitingForProvisioningListener;
-use App\Listeners\StopClientStreamsListener;
 use App\Listeners\StreamScalingListener;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
@@ -45,12 +41,6 @@ class EventServiceProvider extends ServiceProvider
         ],
         UserWaitingForProvisioningEvent::class => [
             SetUserWaitingForProvisioningListener::class,
-        ],
-        ClientPlayEvent::class => [
-            DispatchPaysOtherDeviceNotifcationListener::class,
-        ],
-        ClientPlayOtherDeviceEvent::class => [
-            StopClientStreamsListener::class,
         ],
         SlowModeEnabled::class => [
             SlowModeEnableListener::class,

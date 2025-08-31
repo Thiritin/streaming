@@ -5,7 +5,6 @@ namespace App\Filament\Resources;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Filament\Resources\ServerResource\Pages;
-use App\Filament\Resources\ServerResource\RelationManagers\ClientsRelationManager;
 use App\Models\Server;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Placeholder;
@@ -16,6 +15,8 @@ use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\BadgeColumn;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Table;
 
 class ServerResource extends Resource
@@ -25,6 +26,12 @@ class ServerResource extends Resource
     protected static ?string $slug = 'servers';
 
     protected static ?string $recordTitleAttribute = 'id';
+    
+    protected static ?string $navigationIcon = 'heroicon-o-server-stack';
+    
+    protected static ?string $navigationGroup = 'Infrastructure';
+    
+    protected static ?int $navigationSort = 10;
 
     public static function form(Form $form): Form
     {
@@ -32,18 +39,15 @@ class ServerResource extends Resource
             ->schema([
                 TextInput::make('hetzner_id')
                     ->disabled(fn ($operation): bool => $operation === 'edit')
-                    ->default('manual')
-                    ->helperText('Use "manual" for locally managed servers')
-                    ->required(),
+                    ->nullable()
+                    ->helperText('Leave empty for locally managed servers'),
 
                 TextInput::make('hostname')
-                    ->disabled(fn ($operation): bool => $operation === 'edit')
                     ->required()
                     ->helperText('For local Docker: use container name (e.g., "ef-streaming-stream-1")'),
 
                 TextInput::make('ip')
-                    ->disabled(fn ($operation): bool => $operation === 'edit')
-                    ->required()
+                    ->nullable()
                     ->helperText('For local Docker: use container IP or "localhost"'),
 
                 TextInput::make('port')
@@ -107,7 +111,9 @@ class ServerResource extends Resource
             ->columns([
                 TextColumn::make('hetzner_id')
                     ->label('Server ID')
-                    ->searchable(),
+                    ->searchable()
+                    ->placeholder('-')
+                    ->formatStateUsing(fn ($state) => $state ?: '-'),
 
                 TextColumn::make('type')
                     ->badge()
@@ -137,23 +143,66 @@ class ServerResource extends Resource
                         default => 'secondary',
                     }),
 
+                TextColumn::make('viewer_count')
+                    ->label('Viewers')
+                    ->sortable()
+                    ->badge()
+                    ->color('info')
+                    ->formatStateUsing(fn ($state, $record) => 
+                        $record && $record->type === ServerTypeEnum::EDGE ? $state : '-'
+                    )
+                    ->description(fn ($record) => 
+                        $record && $record->type === ServerTypeEnum::EDGE && $record->max_clients > 0 
+                            ? round(($record->viewer_count / $record->max_clients) * 100) . '% capacity'
+                            : null
+                    ),
+
+                IconColumn::make('last_heartbeat')
+                    ->label('Heartbeat')
+                    ->icon(fn ($record) => $record && $record->hasRecentHeartbeat() ? 'heroicon-o-check-circle' : 'heroicon-o-x-circle')
+                    ->color(fn ($record) => $record && $record->hasRecentHeartbeat() ? 'success' : 'danger')
+                    ->tooltip(fn ($record) => $record && $record->last_heartbeat 
+                        ? 'Last heartbeat: ' . $record->last_heartbeat->diffForHumans()
+                        : 'No heartbeat received'
+                    ),
+
+                BadgeColumn::make('health_status')
+                    ->label('Health')
+                    ->color(fn ($state): string => match ($state) {
+                        'healthy' => 'success',
+                        'unhealthy' => 'danger',
+                        'unknown' => 'gray',
+                        default => 'secondary',
+                    })
+                    ->tooltip(fn ($record) => 
+                        $record && $record->last_health_check 
+                            ? "Last check: {$record->last_health_check->diffForHumans()}\n{$record->health_check_message}"
+                            : 'No health check performed'
+                    )
+                    ->visible(fn ($record) => $record && $record->type === ServerTypeEnum::EDGE),
+
                 TextColumn::make('max_clients')
                     ->label('Max Clients')
                     ->sortable()
                     ->visible(fn (): bool => true),
             ])->actions([
                 EditAction::make(),
+                Action::make('viewInstallScript')
+                    ->label('Install Script')
+                    ->icon('heroicon-o-code-bracket')
+                    ->color('info')
+                    ->url(fn (Server $record): string => static::getUrl('install-script', ['record' => $record])),
                 Action::make('Deprovision')
                     ->icon('heroicon-o-trash')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->visible(fn (?Server $record): bool => $record && $record->hetzner_id !== 'manual')
+                    ->visible(fn (?Server $record): bool => $record && !empty($record->hetzner_id))
                     ->action(fn (Server $record) => $record->deprovision()),
                 Action::make('Delete')
                     ->icon('heroicon-o-x-mark')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->visible(fn (?Server $record): bool => $record && $record->hetzner_id === 'manual')
+                    ->visible(fn (?Server $record): bool => $record && empty($record->hetzner_id))
                     ->modalHeading('Delete Manual Server')
                     ->modalDescription('Are you sure you want to delete this manually managed server?')
                     ->action(fn (Server $record) => $record->delete()),
@@ -162,9 +211,7 @@ class ServerResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            ClientsRelationManager::class,
-        ];
+        return [];
     }
 
     public static function getPages(): array
@@ -173,6 +220,7 @@ class ServerResource extends Resource
             'index' => Pages\ListServers::route('/'),
             'create' => Pages\CreateServer::route('/create'),
             'edit' => Pages\EditServer::route('/{record}/edit'),
+            'install-script' => Pages\ViewInstallScript::route('/{record}/install-script'),
         ];
     }
 

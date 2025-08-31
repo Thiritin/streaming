@@ -4,7 +4,7 @@ import EmojiPicker from 'vue3-emoji-picker'
 import {onMounted, onUnmounted, reactive, ref, watch, computed} from "vue";
 import { usePage } from '@inertiajs/vue3';
 import PrimaryButton from "@/Components/PrimaryButton.vue";
-import FaIconBold from "@/Components/Icons/FaIconBold.vue";
+import FaEmojiIcon from "@/Components/Icons/FaEmojiIcon.vue";
 import RateLimitInfoBox from "@/Components/Livestream/RateLimitInfoBox.vue";
 import CommandSuggestion from "@/Components/Livestream/CommandSuggestion.vue";
 import Textarea from "@/Components/ui/Textarea.vue";
@@ -113,9 +113,28 @@ function handleInput(value) {
 }
 
 function handleKeyDown(event) {
-    // If command suggestions are visible, let the component handle arrow keys
+    // If command suggestions are visible, let the component handle arrow keys and tab
     if (showCommandSuggestions.value && commandSuggestion.value) {
-        if (['ArrowUp', 'ArrowDown', 'Tab', 'Enter', 'Escape'].includes(event.key)) {
+        if (['ArrowUp', 'ArrowDown', 'Tab'].includes(event.key)) {
+            commandSuggestion.value.handleKeyDown(event);
+            return;
+        }
+        // For Enter key with command suggestions visible
+        if (event.key === 'Enter') {
+            // Check if there are actually filtered commands to select
+            if (commandSuggestion.value.hasFilteredCommands && commandSuggestion.value.hasFilteredCommands()) {
+                // Let the command suggestion handle it
+                commandSuggestion.value.handleKeyDown(event);
+                // Only return if a command was actually selected
+                if (event.defaultPrevented) {
+                    return;
+                }
+            }
+            // Close suggestions if no commands available
+            showCommandSuggestions.value = false;
+        }
+        // For Escape, always let command suggestions handle it first
+        if (event.key === 'Escape') {
             commandSuggestion.value.handleKeyDown(event);
             return;
         }
@@ -132,7 +151,6 @@ function handleKeyDown(event) {
     // Escape closes emoji picker
     if (event.key === 'Escape') {
         showEmojiPicker.value = false;
-        showCommandSuggestions.value = false;
     }
 }
 
@@ -188,11 +206,12 @@ onUnmounted(() => {
             @close="showCommandSuggestions = false"
             @select="onCommandSelect"
             @update:modelValue="$emit('update:modelValue', $event)"
+            class="z-50"
         />
 
         <!-- Emote Suggestions -->
         <div v-if="showEmoteSuggestions && filteredEmotes.length > 0"
-             class="absolute bottom-full mb-2 left-0 right-0 bg-primary-800 rounded-lg shadow-xl border border-primary-700 max-h-48 overflow-y-auto">
+             class="absolute bottom-full mb-2 left-0 right-0 bg-primary-800 rounded-lg shadow-xl border border-primary-700 max-h-48 overflow-y-auto z-50">
             <div class="p-2">
                 <div class="text-xs text-primary-400 uppercase tracking-wider mb-2 px-2">
                     Emotes
@@ -229,12 +248,10 @@ onUnmounted(() => {
                     'resize-none max-h-24 overflow-auto',
                     isOverLimit ? 'border-red-500 focus:ring-red-500' : ''
                 ]"/>
-        <transition>
-            <EmojiPicker ref="emojiPicker" :display-recent="true" class="absolute bottom-[160px] z-50"
-                         v-if="showEmojiPicker" theme="dark" :native="true"
-                         :disable-skin-tones="true"
-                         @select="onSelectEmoji"/>
-        </transition>
+        <EmojiPicker ref="emojiPicker" :display-recent="true" class="absolute bottom-full mb-2 z-50"
+                     v-show="showEmojiPicker" theme="dark" :native="true"
+                     :disable-skin-tones="true"
+                     @select="onSelectEmoji"/>
             <!-- Character counter -->
             <div class="absolute bottom-2 right-2 text-xs" :class="isOverLimit ? 'text-red-400' : 'text-primary-500'">
                 {{ characterCount }}/{{ maxMessageLength }}
@@ -248,12 +265,11 @@ onUnmounted(() => {
                 </transition>
             </div>
             <div class="flex gap-3 justify-end self-baseline">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    @click="toggleEmojiPicker">
-                    <FaIconBold class="fill-current"></FaIconBold>
-                </Button>
+                <button
+                    @click.stop="toggleEmojiPicker"
+                    class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-primary-950 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 text-primary-100 hover:bg-primary-800 h-9 px-3">
+                    <FaEmojiIcon class="fill-current"></FaEmojiIcon>
+                </button>
                 <Button
                     @click="$emit('sendMessage')"
                     :disabled="characterCount === 0 || blockSendingDueToRateLimit || isOverLimit"

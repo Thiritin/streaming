@@ -20,9 +20,7 @@ class UserFactory extends Factory
         return [
             'sub' => fake()->unique()->uuid(),
             'name' => fake()->name(),
-            'is_provisioning' => false,
             'reg_id' => fake()->optional()->numberBetween(1000, 9999),
-            'level' => 0,
             'remember_token' => Str::random(10),
         ];
     }

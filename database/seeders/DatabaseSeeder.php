@@ -3,8 +3,6 @@
 namespace Database\Seeders;
 
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-use App\Enum\ServerStatusEnum;
-use App\Models\Server;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\App;
 
@@ -23,16 +21,14 @@ class DatabaseSeeder extends Seeder
         // ]);
         $this->call([
             RoleSeeder::class,
-            EurofurenceRolesSeeder::class,
         ]);
+        
+        // Create local development servers and test source for testing
         if (App::isLocal()) {
-            Server::create([
-                'hostname' => 'localhost:8080',
-                'ip' => 1,
-                'status' => ServerStatusEnum::ACTIVE->value,
-                'hetzner_id' => null,
-                'immutable' => true,
-                'shared_secret' => '9fmtTpLSkNF9j8hSoa0sqBSwru53Mahyvrrro9uo7fr',
+            $this->call([
+                LocalDevelopmentServersSeeder::class,
+                LocalDevelopmentSourceSeeder::class,
+                ShowSeeder::class,
             ]);
         }
     }

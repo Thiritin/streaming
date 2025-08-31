@@ -15,15 +15,12 @@ class ShowThumbnailUpdated implements ShouldBroadcast
 
     public Show $show;
 
-    public string $thumbnailUrl;
-
     /**
      * Create a new event instance.
      */
-    public function __construct(Show $show, string $thumbnailUrl)
+    public function __construct(Show $show)
     {
         $this->show = $show;
-        $this->thumbnailUrl = $thumbnailUrl;
     }
 
     /**
@@ -44,7 +41,7 @@ class ShowThumbnailUpdated implements ShouldBroadcast
     {
         return [
             'show_id' => $this->show->id,
-            'thumbnail_url' => $this->thumbnailUrl,
+            'thumbnail_url' => $this->show->thumbnail_url, // Uses accessor for signed URL
             'updated_at' => $this->show->thumbnail_updated_at?->toIso8601String(),
         ];
     }

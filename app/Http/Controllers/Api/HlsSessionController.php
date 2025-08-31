@@ -2,269 +2,265 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Controller;
+use App\Models\Server;
 use App\Models\Source;
-use App\Models\SourceUser;
-use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class HlsSessionController extends Controller
 {
     /**
-     * Validate HLS session for NGINX auth_request
+     * Authenticate HLS viewer request from edge server
+     * Called by nginx auth_request directive
      */
     public function auth(Request $request)
     {
-        $sessionToken = $request->header('X-Session-Token') ?: $request->query('session');
+        // Get request details
         $originalUri = $request->header('X-Original-URI');
-        $clientIp = $request->header('X-Real-IP') ?: $request->ip();
+        $realIp = $request->header('X-Real-IP', $request->ip());
+        $edgeServerId = $request->header('X-Edge-Server');
         
-        // Extract stream name from URI
-        $streamName = null;
-        if ($originalUri && preg_match('/\/live\/([^\/\?]+)/', $originalUri, $matches)) {
-            $streamName = str_replace(['_fhd', '_hd', '_sd', '_ld', '.m3u8', '.ts'], '', $matches[1]);
+        $userId = null;
+        $userName = null;
+        $user = null;
+        $hlsContext = null;
+        
+        // Parse stream slug from URI first to create cache keys
+        // Format: /live/{slug}_quality/index.m3u8 or /live/{slug}_quality/segment.ts
+        if (!preg_match('#^/live/([^/_]+)(?:_\w+)?/#', $originalUri, $slugMatches)) {
+            Log::warning('Invalid HLS URI format', ['uri' => $originalUri]);
+            return response()->json(['error' => 'Invalid URI'], 403);
         }
         
-        // Validate session token
-        if (!$sessionToken || !$this->isValidSession($sessionToken, $clientIp, $streamName)) {
-            return response('Unauthorized', 401);
-        }
+        $streamSlug = $slugMatches[1];
         
-        // Update session activity
-        Cache::put("hls_session:{$sessionToken}", [
-            'ip' => $clientIp,
-            'stream' => $streamName,
-            'last_activity' => now(),
-        ], now()->addMinutes(5));
-        
-        return response('OK', 200);
-    }
-    
-    /**
-     * Create new HLS session for a user
-     */
-    public function createSession(Request $request)
-    {
-        $user = auth()->user();
-        if (!$user) {
-            return response()->json(['error' => 'Unauthorized'], 401);
-        }
-        
-        // Generate unique session token
-        $sessionToken = Str::random(40);
-        $clientIp = $request->ip();
-        
-        // Store session data
-        Cache::put("hls_session:{$sessionToken}", [
-            'user_id' => $user->id,
-            'ip' => $clientIp,
-            'created_at' => now(),
-            'last_activity' => now(),
-        ], now()->addHours(24));
-        
-        return response()->json([
-            'session' => $sessionToken,
-            'expires_in' => 86400, // 24 hours
-        ]);
-    }
-    
-    /**
-     * Session start notification from tracker
-     */
-    public function sessionStart(Request $request)
-    {
-        // Validate API key
-        if (!$this->validateApiKey($request)) {
-            return response()->json(['error' => 'Unauthorized'], 401);
-        }
-        
-        $data = $request->validate([
-            'session' => 'required|string',
-            'ip' => 'required|ip',
-            'stream' => 'required|string',
-            'timestamp' => 'required|date',
-        ]);
-        
-        // Find source by stream name
-        $source = Source::where('slug', $data['stream'])->first();
-        if (!$source) {
-            Log::warning('HLS session start for unknown stream', $data);
-            return response()->json(['status' => 'ignored'], 200);
-        }
-        
-        // Get user from session if available
-        $sessionData = Cache::get("hls_session:{$data['session']}");
-        $userId = $sessionData['user_id'] ?? null;
-        
-        // Create or update source_user record
-        if ($userId) {
-            $sourceUser = SourceUser::firstOrCreate(
-                [
-                    'source_id' => $source->id,
-                    'user_id' => $userId,
-                    'session_token' => $data['session'],
-                ],
-                [
-                    'joined_at' => $data['timestamp'],
-                    'ip_address' => $data['ip'],
-                ]
-            );
+        // Extract HLS context if present (from SRS edge server)
+        if (preg_match('/[?&]hls_ctx=([^&]+)/', $originalUri, $ctxMatches)) {
+            $hlsContext = $ctxMatches[1];
             
-            // Update viewer count on associated shows
-            foreach ($source->shows()->live()->get() as $show) {
-                $show->updateViewerCount();
-            }
-            
-            Log::info('HLS session started', [
-                'session' => $data['session'],
-                'user_id' => $userId,
-                'source' => $source->slug,
-            ]);
-        }
-        
-        return response()->json(['status' => 'ok']);
-    }
-    
-    /**
-     * Session heartbeat from tracker
-     */
-    public function sessionHeartbeat(Request $request)
-    {
-        // Validate API key
-        if (!$this->validateApiKey($request)) {
-            return response()->json(['error' => 'Unauthorized'], 401);
-        }
-        
-        $data = $request->validate([
-            'session' => 'required|string',
-            'stream' => 'required|string',
-            'timestamp' => 'required|date',
-            'segments_watched' => 'integer',
-        ]);
-        
-        // Update session activity
-        $sessionData = Cache::get("hls_session:{$data['session']}");
-        if ($sessionData) {
-            $sessionData['last_activity'] = now();
-            $sessionData['segments_watched'] = $data['segments_watched'] ?? 0;
-            Cache::put("hls_session:{$data['session']}", $sessionData, now()->addMinutes(5));
-            
-            // Update source_user if exists
-            if (isset($sessionData['user_id'])) {
-                SourceUser::where('session_token', $data['session'])
-                    ->where('left_at', null)
-                    ->update(['last_heartbeat' => now()]);
+            // Check if we have stored user info for this HLS context
+            $storedUserInfo = Cache::get("hls_context:{$hlsContext}");
+            if ($storedUserInfo) {
+                $userId = $storedUserInfo['user_id'];
+                $userName = $storedUserInfo['user_name'];
             }
         }
         
-        return response()->json(['status' => 'ok']);
-    }
-    
-    /**
-     * Session end notification from tracker
-     */
-    public function sessionEnd(Request $request)
-    {
-        // Validate API key
-        if (!$this->validateApiKey($request)) {
-            return response()->json(['error' => 'Unauthorized'], 401);
-        }
-        
-        $data = $request->validate([
-            'session' => 'required|string',
-            'ip' => 'required|ip',
-            'stream' => 'required|string',
-            'duration_seconds' => 'required|numeric',
-            'segments_watched' => 'integer',
-            'qualities_used' => 'array',
-        ]);
-        
-        // Mark source_user as left
-        $sourceUser = SourceUser::where('session_token', $data['session'])
-            ->where('left_at', null)
-            ->first();
+        // Check for session ID or streamkey in the URL parameters
+        if (preg_match('/[?&](session_id|streamkey)=([^&]+)/', $originalUri, $matches)) {
+            $paramName = $matches[1];
+            $tokenValue = $matches[2];
             
-        if ($sourceUser) {
-            $sourceUser->update([
-                'left_at' => now(),
-                'duration_seconds' => $data['duration_seconds'],
-                'metadata' => array_merge($sourceUser->metadata ?? [], [
-                    'segments_watched' => $data['segments_watched'] ?? 0,
-                    'qualities_used' => $data['qualities_used'] ?? [],
-                ]),
-            ]);
+            // Check if it's the internal system session
+            if ($paramName === 'session_id' && $tokenValue === config('stream.internal_session_id')) {
+                Log::info('Auth bypassed for internal session', [
+                    'uri' => $originalUri,
+                    'purpose' => 'system-operation',
+                ]);
+                
+                // Return success with the internal session ID
+                return response('', 200)
+                    ->header('X-Session-Id', $tokenValue);
+            }
             
-            // Update viewer count on associated shows
-            $source = Source::where('slug', $data['stream'])->first();
-            if ($source) {
-                foreach ($source->shows()->live()->get() as $show) {
-                    $show->updateViewerCount();
+            // Check if it's a user's streamkey
+            if ($paramName === 'streamkey' || $paramName === 'session_id') {
+                $user = \App\Models\User::where('streamkey', $tokenValue)->first();
+                if ($user) {
+                    $userId = $user->id;
+                    $userName = $user->name;
+                    
+                    // Store user info with HLS context for segment requests
+                    if ($hlsContext) {
+                        Cache::put("hls_context:{$hlsContext}", [
+                            'user_id' => $userId,
+                            'user_name' => $userName,
+                            'streamkey' => $tokenValue,
+                        ], now()->addHours(2));
+                    }
+                    
+                    // Also store by IP as fallback
+                    $sessionKey = "hls_user:{$realIp}:{$streamSlug}";
+                    Cache::put($sessionKey, [
+                        'user_id' => $userId,
+                        'user_name' => $userName,
+                        'streamkey' => $tokenValue,
+                    ], now()->addMinutes(10));
                 }
             }
+        } else if (!$userId) {
+            // For segment requests without streamkey and no hls_ctx match, check cache by IP+stream
+            $sessionKey = "hls_user:{$realIp}:{$streamSlug}";
+            $storedUserInfo = Cache::get($sessionKey);
+            if ($storedUserInfo) {
+                $userId = $storedUserInfo['user_id'];
+                $userName = $storedUserInfo['user_name'];
+                // Refresh the cache TTL
+                Cache::put($sessionKey, $storedUserInfo, now()->addMinutes(10));
+            }
+        }
+        
+        Log::info('HLS auth request', [
+            'uri' => $originalUri,
+            'ip' => $realIp,
+            'edge_server' => $edgeServerId,
+            'user_id' => $userId,
+            'user_name' => $userName,
+        ]);
+        
+        // Check if source exists and is online
+        $source = Source::where('slug', $streamSlug)->first();
+        
+        if (!$source) {
+            Log::warning('Source not found for HLS request', ['slug' => $streamSlug]);
+            return response()->json(['error' => 'Stream not found'], 404);
+        }
+        
+        if ($source->status !== \App\Enum\SourceStatusEnum::ONLINE) {
+            Log::info('Source offline for HLS request', [
+                'slug' => $streamSlug,
+                'status' => $source->status->value,
+            ]);
+            return response()->json(['error' => 'Stream offline'], 404);
+        }
+        
+        // Create or retrieve session ID for this viewer
+        $sessionId = $this->getOrCreateSession($realIp, $streamSlug, $edgeServerId, $userId);
+        
+        // Return success with session ID
+        return response()
+            ->json(['status' => 'ok'])
+            ->header('X-Session-Id', $sessionId);
+    }
+    
+    /**
+     * Handle heartbeat from edge server with viewer counts
+     */
+    public function heartbeat(Request $request)
+    {
+        $request->validate([
+            'server_id' => 'required|string',
+            'viewer_count' => 'required|integer|min:0',
+            'streams' => 'array',
+            'timestamp' => 'required|date',
+        ]);
+        
+        $serverId = $request->input('server_id');
+        $viewerCount = $request->input('viewer_count');
+        $streams = $request->input('streams', []);
+        
+        Log::info('Edge server heartbeat', [
+            'server_id' => $serverId,
+            'viewer_count' => $viewerCount,
+            'streams' => $streams,
+        ]);
+        
+        // Find server by hostname or hetzner_id
+        $server = Server::where('hostname', $serverId)
+            ->orWhere('hetzner_id', $serverId)
+            ->first();
             
-            Log::info('HLS session ended', [
-                'session' => $data['session'],
-                'user_id' => $sourceUser->user_id,
-                'duration' => $data['duration_seconds'],
-            ]);
-        }
-        
-        // Clean up cache
-        Cache::forget("hls_session:{$data['session']}");
-        
-        return response()->json(['status' => 'ok']);
-    }
-    
-    /**
-     * Check if session is valid
-     */
-    private function isValidSession(string $sessionToken, string $clientIp, ?string $streamName): bool
-    {
-        $sessionData = Cache::get("hls_session:{$sessionToken}");
-        
-        if (!$sessionData) {
-            return false;
-        }
-        
-        // Check IP match (optional, can be disabled for mobile networks)
-        if (config('stream.validate_session_ip', false) && $sessionData['ip'] !== $clientIp) {
-            Log::warning('Session IP mismatch', [
-                'session' => $sessionToken,
-                'expected' => $sessionData['ip'],
-                'actual' => $clientIp,
-            ]);
-            return false;
-        }
-        
-        // Check if session is not expired (last activity within 5 minutes)
-        if (isset($sessionData['last_activity'])) {
-            $lastActivity = $sessionData['last_activity'];
-            if ($lastActivity instanceof \DateTime) {
-                $lastActivity = \Carbon\Carbon::instance($lastActivity);
+        if (!$server) {
+            // Try to find by container name for local development
+            if (str_contains($serverId, 'docker')) {
+                $server = Server::where('hetzner_id', 'manual')
+                    ->where('type', \App\Enum\ServerTypeEnum::EDGE)
+                    ->first();
             }
-            if (now()->diffInMinutes($lastActivity) > 5) {
-                return false;
+            
+            if (!$server) {
+                Log::warning('Unknown edge server in heartbeat', ['server_id' => $serverId]);
+                return response()->json(['error' => 'Unknown server'], 404);
             }
         }
         
-        return true;
+        // Update server viewer count
+        $server->updateViewerCount($viewerCount);
+        
+        // Store stream-specific viewer counts in cache
+        foreach ($streams as $streamSlug => $count) {
+            Cache::put(
+                "stream_viewers:{$streamSlug}:{$server->id}",
+                $count,
+                now()->addMinutes(2)
+            );
+        }
+        
+        // Calculate total viewers across all edges for each stream
+        foreach ($streams as $streamSlug => $count) {
+            $this->updateStreamViewerCount($streamSlug);
+        }
+        
+        return response()->json([
+            'status' => 'ok',
+            'server' => [
+                'id' => $server->id,
+                'hostname' => $server->hostname,
+            ],
+        ]);
     }
     
     /**
-     * Validate API key from tracker
+     * Get or create a session for a viewer
      */
-    private function validateApiKey(Request $request): bool
+    private function getOrCreateSession($ip, $streamSlug, $edgeServerId, $userId = null)
     {
-        $apiKey = $request->header('X-API-Key');
-        $expectedKey = config('stream.hls_tracker_api_key');
+        // Generate session key - include user ID if available for unique sessions per user
+        $sessionKey = $userId 
+            ? "hls_session:user:{$userId}:{$streamSlug}:{$edgeServerId}"
+            : "hls_session:{$ip}:{$streamSlug}:{$edgeServerId}";
         
-        if (!$expectedKey) {
-            // If no key configured, allow all requests (development)
-            return true;
+        // Check cache for existing session
+        $sessionId = Cache::get($sessionKey);
+        
+        if (!$sessionId) {
+            // Generate new session ID
+            $sessionId = Str::uuid()->toString();
+            
+            // Store in cache with 5 minute TTL (will be refreshed on each request)
+            Cache::put($sessionKey, $sessionId, now()->addMinutes(5));
+            
+            // Log new session
+            Log::info('New HLS session created', [
+                'session_id' => $sessionId,
+                'ip' => $ip,
+                'stream' => $streamSlug,
+                'edge_server' => $edgeServerId,
+                'user_id' => $userId,
+            ]);
+        } else {
+            // Refresh TTL
+            Cache::put($sessionKey, $sessionId, now()->addMinutes(5));
         }
         
-        return $apiKey === $expectedKey;
+        return $sessionId;
     }
+    
+    /**
+     * Update total viewer count for a stream across all edges
+     */
+    private function updateStreamViewerCount($streamSlug)
+    {
+        // Get all edge servers
+        $edges = Server::getActiveEdges();
+        
+        $totalViewers = 0;
+        foreach ($edges as $edge) {
+            $count = Cache::get("stream_viewers:{$streamSlug}:{$edge->id}", 0);
+            $totalViewers += $count;
+        }
+        
+        // Store total count
+        Cache::put("stream_total_viewers:{$streamSlug}", $totalViewers, now()->addMinutes(2));
+        
+        Log::info('Stream viewer count updated', [
+            'stream' => $streamSlug,
+            'total_viewers' => $totalViewers,
+            'edge_count' => $edges->count(),
+        ]);
+    }
+    
 }

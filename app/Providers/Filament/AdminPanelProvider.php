@@ -27,9 +27,20 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->brandName('EF Streaming Admin')
+            ->favicon(asset('favicon.ico'))
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => Color::Emerald,
+                'gray' => Color::Slate,
             ])
+            ->navigationGroups([
+                'Streaming',
+                'Infrastructure', 
+                'User Management',
+                'Chat',
+            ])
+            ->collapsibleNavigationGroups(false)
+            ->sidebarCollapsibleOnDesktop()
             ->maxContentWidth('100%')
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Enum\StreamStatusEnum;
-use App\Models\Client;
 use App\Models\Message;
 use App\Models\Show;
 use App\Models\Source;
@@ -30,7 +29,7 @@ class StreamController extends Controller
             ->orderBy('viewer_count', 'desc')
             ->orderBy('priority', 'desc')
             ->get()
-            ->map(function ($show) {
+            ->map(function ($show) use ($user) {
                 return [
                     'id' => $show->id,
                     'title' => $show->title,
@@ -42,6 +41,7 @@ class StreamController extends Controller
                     'viewer_count' => $show->viewer_count,
                     'is_featured' => $show->is_featured,
                     'started_at' => $show->actual_start ?? $show->scheduled_start,
+                    'hls_urls' => $show->getHlsUrls($user),
                 ];
             });
 
@@ -85,8 +85,9 @@ class StreamController extends Controller
                 ->with('error', 'This show is not available for viewing');
         }
 
-        // Get HLS URLs for the show
-        $hlsUrls = $show->getHlsUrls();
+        // Get HLS URLs for the show, passing the authenticated user for tracking
+        $user = Auth::user();
+        $hlsUrls = $show->getHlsUrls($user);
 
         return Inertia::render('ExternalStream', [
             'show' => [
@@ -133,8 +134,8 @@ class StreamController extends Controller
                 ];
             });
 
-        // Get HLS URLs from the selected show
-        $hlsUrls = $show->getHlsUrls();
+        // Get HLS URLs from the selected show, passing the authenticated user for tracking
+        $hlsUrls = $show->getHlsUrls($user);
 
         return Inertia::render('ShowPlayer', [
             'initialProvisioning' => false,
@@ -143,7 +144,11 @@ class StreamController extends Controller
                 'title' => $show->title,
                 'slug' => $show->slug,
                 'description' => $show->description,
-                'source' => $show->source ? $show->source->name : null,
+                'source' => $show->source ? [
+                    'id' => $show->source->id,
+                    'name' => $show->source->name,
+                    'status' => $show->source->status->value,
+                ] : null,
                 'source_id' => $show->source_id,
                 'status' => $show->status,
                 'thumbnail_url' => $show->thumbnail_url,
@@ -157,10 +162,7 @@ class StreamController extends Controller
             'initialHlsUrls' => $hlsUrls,
             'initialStatus' => $show->isLive() ? 'online' : \Cache::get('stream.status', static fn () => StreamStatusEnum::OFFLINE->value),
             'initialListeners' => $show->viewer_count ?? StreamInfoService::getUserCount(),
-            'initialOtherDevice' => Client::where('user_id', $user->id)
-                ->connected()
-                ->where('client', '=', 'vlc')
-                ->exists(),
+            'initialOtherDevice' => false, // This feature has been removed with Client model
             'chatMessages' => array_values(Message::with('user')
                 ->where('is_command', false)
                 ->orWhere(fn ($q) => $q->where('is_command', true)->where('user_id',
@@ -175,6 +177,7 @@ class StreamController extends Controller
                     'is_command' => (bool) $message->is_command,
                     'name' => $message->user->name ?? 'System',
                     'role' => $message->user?->role,
+                    'badge' => $message->user?->badge,
                     'time' => $message->created_at->format('H:i'),
                 ])->toArray()),
             'rateLimit' => [

@@ -17,7 +17,7 @@ class EmoteResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-face-smile';
 
-    protected static ?string $navigationGroup = 'Chat Management';
+    protected static ?string $navigationGroup = 'Chat';
 
     protected static ?int $navigationSort = 30;
 
@@ -32,7 +32,7 @@ class EmoteResource extends Resource
                             ->unique(ignoreRecord: true)
                             ->regex('/^[a-z0-9_]+$/')
                             ->maxLength(20),
-                        Forms\Components\FileUpload::make('url')
+                        Forms\Components\FileUpload::make('s3_key')
                             ->label('Emote Image')
                             ->image()
                             ->imageResizeMode('cover')
@@ -41,7 +41,14 @@ class EmoteResource extends Resource
                             ->imageResizeTargetHeight(64)
                             ->disk('s3')
                             ->directory('emotes')
-                            ->visibility('public'),
+                            ->visibility('private')
+                            ->preserveFilenames()
+                            ->loadStateFromRelationshipsUsing(static function (Forms\Components\FileUpload $component, ?Emote $record): void {
+                                if ($record && $record->s3_key) {
+                                    // Set the stored path value so Filament knows where the file is
+                                    $component->state($record->s3_key);
+                                }
+                            }),
                         Forms\Components\Toggle::make('is_global')
                             ->label('Available for all users')
                             ->helperText('If disabled, only the uploader can use this emote'),

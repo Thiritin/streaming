@@ -1,7 +1,8 @@
 <script setup>
 import VideoJsPlayer from "@/Components/Livestream/VideoJsPlayer.vue";
 import StreamStatsOverlay from "@/Components/Livestream/StreamStatsOverlay.vue";
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
     hlsUrls: Object,
@@ -12,6 +13,36 @@ const props = defineProps({
 const controlsVisible = ref(true);
 const showUnmutePrompt = ref(false);
 const showStats = ref(false);
+
+// Detect if user navigated internally vs direct page load
+// Internal navigation means user has already interacted with the site
+const isInternalNavigation = ref(false);
+
+onMounted(() => {
+    // Check if this is an internal navigation
+    // We can detect this by checking if there's a referrer from the same origin
+    // or by checking session storage for a navigation flag
+    const referrer = document.referrer;
+    const currentOrigin = window.location.origin;
+    
+    // Check if referrer is from same origin
+    if (referrer && referrer.startsWith(currentOrigin)) {
+        isInternalNavigation.value = true;
+        console.log('Internal navigation detected - will try unmuted autoplay');
+    } else {
+        // Check session storage as backup
+        const hasNavigated = sessionStorage.getItem('has_navigated');
+        if (hasNavigated === 'true') {
+            isInternalNavigation.value = true;
+            console.log('Previous navigation detected - will try unmuted autoplay');
+        } else {
+            console.log('Direct page load - will use muted autoplay');
+        }
+    }
+    
+    // Mark that user has navigated within the site
+    sessionStorage.setItem('has_navigated', 'true');
+});
 
 // Handle player events
 const handleError = (error) => {
@@ -89,9 +120,10 @@ defineExpose({
             :stream-url="hlsUrls.stream"
             :hls-urls="hlsUrls"
             :autoplay="true"
-            :muted="false"
+            :muted="!isInternalNavigation"
             :controls="true"
             :is-live="true"
+            :is-internal-navigation="isInternalNavigation"
             @error="handleError"
             @playing="handlePlaying"
             @qualityChanged="handleQualityChanged"
@@ -102,13 +134,6 @@ defineExpose({
             ref="playerRef"
         />
         
-        <!-- Show info overlay (only visible when controls are visible) -->
-        <transition name="fade">
-            <div v-if="showInfo && controlsVisible" class="show-info-overlay">
-                <div class="show-title">{{ showInfo.title }}</div>
-                <div v-if="showInfo.source" class="show-source">{{ showInfo.source }}</div>
-            </div>
-        </transition>
         
         <!-- Stream Statistics Overlay -->
         <StreamStatsOverlay 

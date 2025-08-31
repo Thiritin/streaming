@@ -32,12 +32,6 @@ class EnsureServerAssigned
             $assigned = $user->assignServerToUser();
 
             if (! $assigned) {
-                // If assignment failed and user isn't marked as provisioning,
-                // they need to be added to the queue
-                if (! $user->is_provisioning) {
-                    $user->update(['is_provisioning' => true]);
-                }
-
                 // Redirect to waiting queue
                 return redirect()->route('provisioning.wait');
             }

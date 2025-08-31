@@ -16,8 +16,6 @@ class User extends Authenticatable implements FilamentUser
 {
     use HasApiTokens, HasFactory, Notifiable;
 
-    public mixed $provisioning;
-
     /**
      * The attributes that are mass assignable.
      *
@@ -25,7 +23,7 @@ class User extends Authenticatable implements FilamentUser
      */
     protected $guarded = [];
 
-    protected $appends = ['role', 'chat_color', 'badge'];
+    protected $appends = ['role', 'chat_color'];
 
     /**
      * The attributes that should be hidden for serialization.
@@ -44,9 +42,6 @@ class User extends Authenticatable implements FilamentUser
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
-        'is_provisioning' => 'boolean',
-        'timeout_expires_at' => 'datetime',
-        'badge_type' => 'string',
     ];
 
     public function server()
@@ -54,10 +49,6 @@ class User extends Authenticatable implements FilamentUser
         return $this->belongsTo(Server::class);
     }
 
-    public function clients(): \Illuminate\Database\Eloquent\Relations\HasMany
-    {
-        return $this->hasMany(Client::class);
-    }
 
     public function getOrAssignServer()
     {
@@ -80,7 +71,6 @@ class User extends Authenticatable implements FilamentUser
         if (is_null($server)) {
             return [
                 'hls_urls' => null,
-                'client_id' => null,
             ];
         }
 
@@ -94,21 +84,13 @@ class User extends Authenticatable implements FilamentUser
             $protocol = 'https';
         }
 
-        $client = $this->clients()
-            ->whereNull('start')
-            ->whereNull('stop')
-            ->firstOrCreate([
-                'server_id' => $server->id,
-            ]);
-
         $data['hls_urls'] = [];
-        $data['client_id'] = $client->id;
 
         // HLS URLs only
-        $data['hls_urls']['master'] = $protocol."://$hostname/live/livestream.m3u8?streamkey=".$this->streamkey.'&client_id='.$client->id;
+        $data['hls_urls']['master'] = $protocol."://$hostname/live/livestream.m3u8?streamkey=".$this->streamkey;
         foreach (['original', 'fhd', 'hd', 'sd', 'ld', 'audio_hd', 'audio_sd'] as $quality) {
             $qualityUrl = ($quality !== 'original') ? '_'.$quality : '';
-            $data['hls_urls'][$quality] = $protocol."://$hostname/live/livestream$qualityUrl.m3u8?streamkey=".$this->streamkey.'&client_id='.$client->id;
+            $data['hls_urls'][$quality] = $protocol."://$hostname/live/livestream$qualityUrl.m3u8?streamkey=".$this->streamkey;
         }
 
         return $data;
@@ -116,18 +98,10 @@ class User extends Authenticatable implements FilamentUser
 
     public function assignServerToUser(): bool
     {
+        // Find the edge server with the least viewers (best load balancing)
         $server = Server::where('status', ServerStatusEnum::ACTIVE)
             ->where('type', ServerTypeEnum::EDGE)
-            ->addSelect([
-                'client_count' => Client::selectRaw('count(*)')
-                    ->whereColumn('clients.server_id', 'servers.id')
-                    ->connected(),
-            ])
-            ->groupBy('servers.id')
-            ->orderBy('client_count',
-                'desc') // Desc fill servers with most clients first, Asc fill servers with least clients first
-            ->selectRaw('servers.id, max_clients as max_clients')
-            ->havingRaw('client_count < max_clients')
+            ->orderBy('viewer_count', 'asc')
             ->first();
 
         if (is_null($server) || is_null($server->id)) {
@@ -143,7 +117,6 @@ class User extends Authenticatable implements FilamentUser
         $this->update([
             'server_id' => $server->id,
             'streamkey' => Str::random(32),
-            'is_provisioning' => false, // Clear provisioning flag on successful assignment
         ]);
 
         return true;
@@ -419,55 +392,4 @@ class User extends Authenticatable implements FilamentUser
             ->withTimestamps();
     }
 
-    /**
-     * Get the user's badge for chat display.
-     */
-    public function getBadgeAttribute(): ?array
-    {
-        if (! $this->badge_type) {
-            // Check roles for badge assignment
-            if ($this->isAdmin()) {
-                $this->badge_type = 'admin';
-            } elseif ($this->isModerator()) {
-                $this->badge_type = 'moderator';
-            }
-        }
-
-        if (! $this->badge_type) {
-            return null;
-        }
-
-        return [
-            'type' => $this->badge_type,
-            'label' => $this->getBadgeLabel(),
-            'color' => $this->getBadgeColor(),
-        ];
-    }
-
-    /**
-     * Get badge label.
-     */
-    private function getBadgeLabel(): string
-    {
-        return match ($this->badge_type) {
-            'subscriber_yellow', 'subscriber_purple' => 'S',
-            'moderator' => 'MOD',
-            'admin' => 'ADMIN',
-            default => '',
-        };
-    }
-
-    /**
-     * Get badge color.
-     */
-    private function getBadgeColor(): string
-    {
-        return match ($this->badge_type) {
-            'subscriber_yellow' => '#FFD700', // Gold
-            'subscriber_purple' => '#9B59B6', // Purple
-            'moderator' => '#00FF00', // Green
-            'admin' => '#FF0000', // Red
-            default => '#808080',
-        };
-    }
 }

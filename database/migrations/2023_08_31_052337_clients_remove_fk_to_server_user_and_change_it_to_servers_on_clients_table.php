@@ -9,7 +9,13 @@ return new class extends Migration
 {
     public function up(): void
     {
-        \App\Models\Client::truncate();
+        // Check if clients table exists before trying to modify it
+        if (!Schema::hasTable('clients')) {
+            return;
+        }
+        
+        // Truncate clients table directly using DB facade
+        DB::table('clients')->truncate();
 
         // Check if the column exists before trying to drop it
         if (Schema::hasColumn('clients', 'server_user_id')) {
@@ -51,6 +57,11 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Check if clients table exists before trying to modify it
+        if (!Schema::hasTable('clients')) {
+            return;
+        }
+        
         Schema::table('clients', function (Blueprint $table) {
             $table->dropConstrainedForeignIdFor(\App\Models\Server::class);
             $table->foreignId('server_user_id')->nullable()->after('id')->constrained('server_user', 'id', 'server_user_id_fk')->cascadeOnDelete();

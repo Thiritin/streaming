@@ -35,7 +35,7 @@ class ShowResource extends Resource
 {
     protected static ?string $model = Show::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-tv';
+    protected static ?string $navigationIcon = 'heroicon-o-play-circle';
 
     protected static ?string $navigationGroup = 'Streaming';
 
@@ -63,7 +63,7 @@ class ShowResource extends Resource
                         Select::make('source_id')
                             ->label('Source')
                             ->required()
-                            ->options(Source::active()->pluck('name', 'id'))
+                            ->options(Source::ordered()->pluck('name', 'id'))
                             ->searchable()
                             ->preload()
                             ->helperText('Select the stream source for this show'),
@@ -126,11 +126,22 @@ class ShowResource extends Resource
                         Toggle::make('is_featured')
                             ->label('Featured Show')
                             ->helperText('Featured shows appear prominently on the homepage'),
-                        FileUpload::make('thumbnail_url')
+                        FileUpload::make('thumbnail_path')
                             ->label('Thumbnail')
                             ->image()
+                            ->disk('s3')
                             ->directory('shows/thumbnails')
-                            ->visibility('public')
+                            ->maxSize(5120) // 5MB max
+                            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                            ->imagePreviewHeight('250')
+                            ->visibility('private')
+                            ->preserveFilenames()
+                            ->loadStateFromRelationshipsUsing(static function (FileUpload $component, ?Show $record): void {
+                                if ($record && $record->thumbnail_path) {
+                                    // Set the stored path value so Filament knows where the file is
+                                    $component->state($record->thumbnail_path);
+                                }
+                            })
                             ->columnSpanFull(),
                         TagsInput::make('tags')
                             ->separator(',')
@@ -178,7 +189,7 @@ class ShowResource extends Resource
     {
         return $table
             ->columns([
-                ImageColumn::make('thumbnail_url')
+                ImageColumn::make('thumbnail_url')  // Use the accessor that returns signed URL
                     ->label('Thumbnail')
                     ->square()
                     ->size(40),
@@ -295,12 +306,10 @@ class ShowResource extends Resource
                             ->send();
                     }),
                 Action::make('view_stats')
-                    ->label('Stats')
+                    ->label('View Statistics')
                     ->icon('heroicon-o-chart-bar')
-                    ->color('gray')
-                    ->modalHeading(fn (Show $record) => "Statistics for {$record->title}")
-                    ->modalContent(fn (Show $record) => view('filament.modals.show-stats', ['show' => $record]))
-                    ->modalSubmitAction(false),
+                    ->color('info')
+                    ->url(fn (Show $record) => static::getUrl('statistics', ['record' => $record])),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     ->before(function (Show $record) {
@@ -355,7 +364,8 @@ class ShowResource extends Resource
                     ->icon('heroicon-o-presentation-chart-line')
                     ->url(route('filament.admin.pages.stream'))
                     ->openUrlInNewTab(),
-            ]);
+            ])
+            ->poll('5s');
     }
 
     public static function getRelations(): array
@@ -371,6 +381,7 @@ class ShowResource extends Resource
             'index' => Pages\ListShows::route('/'),
             'create' => Pages\CreateShow::route('/create'),
             'edit' => Pages\EditShow::route('/{record}/edit'),
+            'statistics' => Pages\ViewShowStatistics::route('/{record}/statistics'),
         ];
     }
 

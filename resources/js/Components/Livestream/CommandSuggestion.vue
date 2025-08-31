@@ -56,7 +56,16 @@ function selectCommand(command) {
 }
 
 function handleKeyDown(event) {
-    if (!props.visible || filteredCommands.value.length === 0) return;
+    if (!props.visible) return;
+    
+    // If no filtered commands, don't handle any keys
+    if (filteredCommands.value.length === 0) {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            emit('close');
+        }
+        return;
+    }
 
     switch(event.key) {
         case 'ArrowUp':
@@ -68,11 +77,18 @@ function handleKeyDown(event) {
             selectedIndex.value = Math.min(filteredCommands.value.length - 1, selectedIndex.value + 1);
             break;
         case 'Tab':
-        case 'Enter':
             event.preventDefault();
             if (filteredCommands.value[selectedIndex.value]) {
                 selectCommand(filteredCommands.value[selectedIndex.value]);
             }
+            break;
+        case 'Enter':
+            // Only prevent default and select if we have a valid selection
+            if (filteredCommands.value[selectedIndex.value]) {
+                event.preventDefault();
+                selectCommand(filteredCommands.value[selectedIndex.value]);
+            }
+            // Otherwise let the enter key propagate normally
             break;
         case 'Escape':
             event.preventDefault();
@@ -81,16 +97,17 @@ function handleKeyDown(event) {
     }
 }
 
-// Expose method for parent to use
+// Expose methods for parent to use
 defineExpose({
-    handleKeyDown
+    handleKeyDown,
+    hasFilteredCommands: () => filteredCommands.value.length > 0
 });
 </script>
 
 <template>
     <transition name="fade-slide">
         <div v-if="visible && filteredCommands.length > 0"
-             class="absolute bottom-full mb-2 left-0 right-0 bg-primary-800 rounded-lg shadow-xl border border-primary-700 max-h-64 overflow-y-auto">
+             class="absolute bottom-full mb-2 left-0 right-0 bg-primary-800 rounded-lg shadow-xl border border-primary-700 max-h-64 overflow-y-auto z-50">
             <div class="p-2">
                 <div class="text-xs text-primary-400 uppercase tracking-wider mb-2 px-2">
                     Available Commands

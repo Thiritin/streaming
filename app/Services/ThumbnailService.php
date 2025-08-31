@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Storage;
 
 class ThumbnailService
 {
-    protected string $storagePath = 'public/thumbnails';
+    protected string $storagePath = 'shows/thumbnails';
 
     protected int $thumbnailWidth = 640;
 
@@ -17,7 +17,7 @@ class ThumbnailService
 
     protected int $quality = 85;
 
-    protected int $captureTimeout = 10; // seconds
+    protected int $captureTimeout = 30; // seconds - increased for HLS streams
 
     /**
      * Capture a thumbnail from an HLS stream
@@ -28,7 +28,14 @@ class ThumbnailService
             return null;
         }
 
+        // Skip thumbnail capture in local development
+        if (app()->isLocal()) {
+            Log::info("Skipping thumbnail capture in local development for show {$show->id}");
+            return null;
+        }
+
         $hlsUrls = $show->source->getHlsUrls();
+            
         if (! $hlsUrls) {
             Log::warning("No HLS URLs available for show {$show->id}");
 
@@ -36,12 +43,20 @@ class ThumbnailService
         }
 
         // Use the SD quality for thumbnail capture (balance between quality and speed)
-        $streamUrl = $hlsUrls['sd'] ?? $hlsUrls['master'];
+        $streamUrl = $hlsUrls['sd'] ?? $hlsUrls['master'] ?? $hlsUrls['stream'];
+        
+        // Add internal session ID for authentication
+        if (config('stream.internal_session_id')) {
+            $separator = str_contains($streamUrl, '?') ? '&' : '?';
+            $streamUrl .= $separator . 'session_id=' . config('stream.internal_session_id');
+        }
+        
+        Log::info("Capturing thumbnail for show {$show->id} from URL: {$streamUrl}");
 
         // Generate unique filename
         $filename = $this->generateFilename($show);
         $tempPath = storage_path('app/temp/'.$filename);
-        $finalPath = $this->storagePath.'/'.$filename;
+        $s3Path = $this->storagePath.'/'.$filename;
 
         // Ensure temp directory exists
         if (! file_exists(dirname($tempPath))) {
@@ -56,8 +71,17 @@ class ThumbnailService
                 throw new \Exception('Failed to capture thumbnail');
             }
 
-            // Move to storage
-            Storage::put($finalPath, file_get_contents($tempPath));
+            // Upload to S3 (private)
+            $uploaded = Storage::disk('s3')->putFileAs(
+                $this->storagePath,
+                $tempPath,
+                $filename,
+                ['visibility' => 'private']
+            );
+
+            if (!$uploaded) {
+                throw new \Exception('Failed to upload thumbnail to S3');
+            }
 
             // Clean up temp file
             @unlink($tempPath);
@@ -65,19 +89,16 @@ class ThumbnailService
             // Clean up old thumbnails for this show
             $this->cleanupOldThumbnails($show);
 
-            // Generate public URL
-            $publicUrl = Storage::url($finalPath);
-
-            // Update show model
+            // Update show model with the path (not URL)
             $show->update([
-                'thumbnail_url' => $publicUrl,
+                'thumbnail_path' => $s3Path,
                 'thumbnail_updated_at' => now(),
                 'thumbnail_capture_error' => null,
             ]);
 
-            Log::info("Thumbnail captured for show {$show->id}: {$publicUrl}");
+            Log::info("Thumbnail captured for show {$show->id}: {$s3Path}");
 
-            return $publicUrl;
+            return $s3Path;
 
         } catch (\Exception $e) {
             Log::error("Failed to capture thumbnail for show {$show->id}: ".$e->getMessage());
@@ -146,7 +167,7 @@ class ThumbnailService
     protected function cleanupOldThumbnails(Show $show): void
     {
         $pattern = "show_{$show->id}_*.jpg";
-        $files = Storage::files($this->storagePath);
+        $files = Storage::disk('s3')->files($this->storagePath);
 
         $showThumbnails = array_filter($files, function ($file) use ($show) {
             return fnmatch($this->storagePath.'/'."show_{$show->id}_*.jpg", $file);
@@ -154,13 +175,13 @@ class ThumbnailService
 
         // Sort by timestamp (newest first)
         usort($showThumbnails, function ($a, $b) {
-            return Storage::lastModified($b) - Storage::lastModified($a);
+            return Storage::disk('s3')->lastModified($b) - Storage::disk('s3')->lastModified($a);
         });
 
         // Keep only the 5 most recent
         $toDelete = array_slice($showThumbnails, 5);
         foreach ($toDelete as $file) {
-            Storage::delete($file);
+            Storage::disk('s3')->delete($file);
         }
     }
 
@@ -170,17 +191,69 @@ class ThumbnailService
     public function deleteShowThumbnails(Show $show): void
     {
         $pattern = "show_{$show->id}_*.jpg";
-        $files = Storage::files($this->storagePath);
+        $files = Storage::disk('s3')->files($this->storagePath);
 
         $showThumbnails = array_filter($files, function ($file) use ($show) {
             return fnmatch($this->storagePath.'/'."show_{$show->id}_*.jpg", $file);
         });
 
         foreach ($showThumbnails as $file) {
-            Storage::delete($file);
+            Storage::disk('s3')->delete($file);
         }
 
         Log::info("Deleted thumbnails for show {$show->id}");
+    }
+
+    /**
+     * Upload an existing image file to S3 as thumbnail
+     */
+    public function uploadThumbnail(Show $show, string $localPath): ?string
+    {
+        try {
+            if (!file_exists($localPath)) {
+                throw new \Exception('File does not exist: ' . $localPath);
+            }
+
+            // Generate filename
+            $filename = $this->generateFilename($show);
+            $s3Path = $this->storagePath.'/'.$filename;
+
+            // Upload to S3
+            $uploaded = Storage::disk('s3')->putFileAs(
+                $this->storagePath,
+                $localPath,
+                $filename,
+                ['visibility' => 'private']
+            );
+
+            if (!$uploaded) {
+                throw new \Exception('Failed to upload to S3');
+            }
+
+            // Clean up old thumbnails
+            $this->cleanupOldThumbnails($show);
+
+            // Update show model with path
+            $show->update([
+                'thumbnail_path' => $s3Path,
+                'thumbnail_updated_at' => now(),
+                'thumbnail_capture_error' => null,
+            ]);
+
+            Log::info("Thumbnail uploaded for show {$show->id}: {$s3Path}");
+
+            return $s3Path;
+
+        } catch (\Exception $e) {
+            Log::error("Failed to upload thumbnail for show {$show->id}: " . $e->getMessage());
+            
+            $show->update([
+                'thumbnail_capture_error' => $e->getMessage(),
+                'thumbnail_updated_at' => now(),
+            ]);
+
+            return null;
+        }
     }
 
     /**

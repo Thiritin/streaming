@@ -45,11 +45,14 @@ class CaptureThumbnailJob implements ShouldQueue
         }
 
         try {
-            $thumbnailUrl = $thumbnailService->captureFromHls($this->show);
+            $thumbnailPath = $thumbnailService->captureFromHls($this->show);
 
-            if ($thumbnailUrl) {
-                // Broadcast the update
-                broadcast(new ShowThumbnailUpdated($this->show, $thumbnailUrl));
+            if ($thumbnailPath) {
+                // Refresh the show to get updated thumbnail_path
+                $this->show->refresh();
+                
+                // Broadcast the update (event will use accessor for signed URL)
+                broadcast(new ShowThumbnailUpdated($this->show));
 
                 Log::info("Thumbnail captured and broadcast for show {$this->show->id}");
             }

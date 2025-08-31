@@ -23,6 +23,9 @@ Route::middleware('guest')->group(function () {
     Route::get('/login', \App\Http\Controllers\Auth\LoginController::class)->name('login');
 });
 
+// Test route for chat commands
+Route::get('/test-chat', [\App\Http\Controllers\TestChatController::class, 'index']);
+
 Route::get('/auth/frontchannel-logout', \App\Http\Controllers\Auth\FrontChannelLogoutController::class)->name('auth.frontchannel-logout');
 
 Route::middleware(['auth:web', 'ensure.server'])->group(function () {

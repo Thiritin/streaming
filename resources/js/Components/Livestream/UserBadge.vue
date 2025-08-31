@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 
 const props = defineProps({
-    badge: {
+    role: {
         type: Object,
         default: null
     },
@@ -26,38 +26,31 @@ const badgeClasses = computed(() => {
 });
 
 const badgeStyles = computed(() => {
-    if (!props.badge) return {};
+    if (!props.role || !props.role.metadata?.badge) return {};
 
-    // Define badge styling based on type
-    switch (props.badge.type) {
-        case 'admin':
-            return {
-                backgroundColor: '#dc2626', // Red
-                color: '#ffffff'
-            };
-        case 'moderator':
-            return {
-                backgroundColor: '#16a34a', // Green
-                color: '#ffffff'
-            };
-        case 'subscriber_yellow':
-            return {
-                backgroundColor: '#fbbf24', // Yellow
-                color: '#000000'
-            };
-        case 'subscriber_purple':
-            return {
-                backgroundColor: '#a855f7', // Purple
-                color: '#ffffff'
-            };
-        default:
-            return {};
-    }
+    // Use role's chat color for badge background, or fallback to default colors
+    const colorMap = {
+        'admin': '#dc2626', // Red
+        'moderator': '#16a34a', // Green
+        'sponsor': '#fbbf24', // Yellow/Gold
+        'supersponsor': '#a855f7', // Purple
+        'staff': '#3b82f6', // Blue
+    };
+
+    const backgroundColor = props.role.chat_color || colorMap[props.role.slug] || '#6b7280';
+    
+    // Determine text color based on background brightness
+    const isLight = backgroundColor === '#fbbf24' || backgroundColor === '#f6cb21';
+    
+    return {
+        backgroundColor: backgroundColor,
+        color: isLight ? '#000000' : '#ffffff'
+    };
 });
 </script>
 
 <template>
-    <span v-if="badge" :class="badgeClasses" :style="badgeStyles">
-        {{ badge.label }}
+    <span v-if="role && role.metadata?.badge" :class="badgeClasses" :style="badgeStyles">
+        {{ role.metadata.badge }}
     </span>
 </template>

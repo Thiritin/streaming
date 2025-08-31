@@ -28,18 +28,12 @@ class ProvisioningController extends Controller
             return redirect()->route('shows.grid');
         }
 
-        // Ensure user is marked as provisioning so they're in the queue
-        if (! $user->is_provisioning) {
-            $user->update(['is_provisioning' => true]);
-            $user->refresh();
-        }
-
-        // Get accurate queue position based on when they were marked as provisioning
-        $queuePosition = User::where('is_provisioning', true)
+        // Get queue position based on users without server assignment
+        $queuePosition = User::whereNull('server_id')
             ->where('updated_at', '<', $user->updated_at)
             ->count() + 1;
 
-        $totalWaiting = User::where('is_provisioning', true)->count();
+        $totalWaiting = User::whereNull('server_id')->count();
 
         return Inertia::render('ProvisioningWait', [
             'queuePosition' => $queuePosition,

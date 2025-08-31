@@ -15,12 +15,12 @@ class ServerProvisioningService
     {
         $serverUrl = config('app.url');
         $sharedSecret = $server->shared_secret ?: Str::random(32);
-        
+
         // Update server with shared secret if not set
         if (!$server->shared_secret) {
             $server->update(['shared_secret' => $sharedSecret]);
         }
-        
+
         // Generate the install script
         $script = <<<BASH
 #!/bin/bash
@@ -85,7 +85,7 @@ curl -H "X-Shared-Secret: {$sharedSecret}" \\
      "{$serverUrl}/api/server/config/nginx?server_id={$server->id}"
 
 curl -H "X-Shared-Secret: {$sharedSecret}" \\
-     -o config/srs.conf \\
+     -o config/edge.conf \\
      "{$serverUrl}/api/server/config/srs?server_id={$server->id}"
 
 curl -H "X-Shared-Secret: {$sharedSecret}" \\
@@ -226,14 +226,14 @@ BASH;
 
         return $script;
     }
-    
+
     /**
      * Generate cloud-init configuration for Hetzner
      */
     public function generateCloudInit(Server $server): string
     {
         $installScript = $this->generateInstallScript($server);
-        
+
         // Convert to cloud-init format
         $cloudInit = <<<YAML
 #cloud-config
@@ -259,7 +259,7 @@ YAML;
         foreach ($lines as $line) {
             $cloudInit .= "      " . $line . "\n";
         }
-        
+
         $cloudInit .= <<<YAML
 
 runcmd:
@@ -268,7 +268,7 @@ YAML;
 
         return $cloudInit;
     }
-    
+
     /**
      * Generate Docker Compose configuration
      */
@@ -287,11 +287,11 @@ services:
       - "1985:1985"    # HTTP API
       - "8080:8080"    # HTTP FLV/HLS
     volumes:
-      - ./config/srs.conf:/usr/local/srs/conf/srs.conf
+      - ./config/edge.conf:/usr/local/srs/conf/edge.conf
       - ./logs:/usr/local/srs/objs/logs
     environment:
       - CANDIDATE=\${EXTERNAL_IP:-127.0.0.1}
-    command: ["./objs/srs", "-c", "/usr/local/srs/conf/srs.conf"]
+    command: ["./objs/srs", "-c", "/usr/local/srs/conf/edge.conf"]
     networks:
       - streaming
 
@@ -302,7 +302,7 @@ YAML;
 
         return $config;
     }
-    
+
     /**
      * Generate SRS configuration
      */
@@ -310,7 +310,7 @@ YAML;
     {
         $serverUrl = config('app.url');
         $isOrigin = $server->type->value === 'origin';
-        
+
         $config = <<<CONF
 # SRS Configuration
 # Server Type: {$server->type->value}
@@ -347,12 +347,12 @@ CONF;
         if ($isOrigin) {
             // Origin server - receives RTMP and transcodes
             $config .= <<<CONF
-    
+
     # Security - validate stream key
     on_publish {
         url {$serverUrl}/api/srs/auth;
     }
-    
+
     # Notify when stream starts/stops
     on_play {
         url {$serverUrl}/api/srs/play;
@@ -360,7 +360,7 @@ CONF;
     on_stop {
         url {$serverUrl}/api/srs/stop;
     }
-    
+
     # HLS output
     hls {
         enabled         on;
@@ -372,12 +372,12 @@ CONF;
         hls_m3u8_file   [app]/[stream]/index.m3u8;
         hls_ts_file     [app]/[stream]/[seq].ts;
     }
-    
+
     # Transcode to multiple qualities
     transcode {
         enabled     on;
         ffmpeg      /usr/local/bin/ffmpeg;
-        
+
         # Full HD - 1080p
         engine fhd {
             enabled         on;
@@ -394,7 +394,7 @@ CONF;
             achannels       2;
             output          rtmp://127.0.0.1:[port]/live/[stream]_fhd;
         }
-        
+
         # HD - 720p
         engine hd {
             enabled         on;
@@ -411,7 +411,7 @@ CONF;
             achannels       2;
             output          rtmp://127.0.0.1:[port]/live/[stream]_hd;
         }
-        
+
         # SD - 480p
         engine sd {
             enabled         on;
@@ -433,10 +433,10 @@ CONF;
         } else {
             // Edge server - just proxy HLS
             $config .= <<<CONF
-    
+
     # Edge server - proxy mode
     mode            remote;
-    
+
     # HLS proxy
     hls {
         enabled         on;
@@ -446,12 +446,12 @@ CONF;
     }
 CONF;
         }
-        
+
         $config .= "\n}\n";
-        
+
         return $config;
     }
-    
+
     /**
      * Get current timestamp for script generation
      */

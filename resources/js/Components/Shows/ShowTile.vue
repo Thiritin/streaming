@@ -1,23 +1,56 @@
 <template>
-  <Link 
-    :href="route('show.view', show.slug)"
-    class="show-tile group relative block overflow-hidden rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+  <div 
+    @mouseenter="handleMouseEnter"
+    @mouseleave="handleMouseLeave"
+    class="show-tile-wrapper"
   >
-    <!-- Thumbnail Container -->
-    <div class="aspect-video relative bg-primary-900 overflow-hidden">
-      <!-- Thumbnail Image -->
-      <img 
-        v-if="currentThumbnail"
-        :src="currentThumbnail"
-        :alt="show.title"
-        class="w-full h-full object-cover"
-        @error="handleImageError"
-      />
-      
-      <!-- Placeholder when no thumbnail -->
-      <div v-else class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-800 to-primary-900">
-        <FaVideoIcon class="w-20 h-20 text-primary-600" />
-      </div>
+    <Link 
+      :href="route('show.view', show.slug)"
+      class="show-tile group relative block overflow-hidden rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+    >
+      <!-- Thumbnail Container -->
+      <div class="aspect-video relative bg-primary-900 overflow-hidden">
+        <!-- Video Preview (only for live shows) -->
+        <Transition
+          enter-active-class="transition-all duration-700 ease-out"
+          enter-from-class="opacity-0 blur-xl scale-105"
+          enter-to-class="opacity-100 blur-0 scale-100"
+          leave-active-class="transition-all duration-300 ease-in"
+          leave-from-class="opacity-100 blur-0 scale-100"
+          leave-to-class="opacity-0 blur-md scale-105"
+        >
+          <video
+            v-if="showVideoPreview && isLive && streamUrl"
+            ref="videoPreview"
+            class="w-full h-full object-cover absolute inset-0 z-10"
+            muted
+            playsinline
+            @error="handleVideoError"
+          />
+        </Transition>
+        
+        <!-- Thumbnail Image -->
+        <Transition
+          enter-active-class="transition-all duration-500 ease-out"
+          enter-from-class="opacity-0 blur-md"
+          enter-to-class="opacity-100 blur-0"
+          leave-active-class="transition-all duration-500 ease-in"
+          leave-from-class="opacity-100 blur-0"
+          leave-to-class="opacity-0 blur-lg"
+        >
+          <img 
+            v-if="currentThumbnail && !showVideoPreview"
+            :src="currentThumbnail"
+            :alt="show.title"
+            class="w-full h-full object-cover absolute inset-0"
+            @error="handleImageError"
+          />
+        </Transition>
+        
+        <!-- Placeholder when no thumbnail -->
+        <div v-if="!currentThumbnail && !showVideoPreview" class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-800 to-primary-900">
+          <FaVideoIcon class="w-20 h-20 text-white" />
+        </div>
       
       <!-- Live Badge -->
       <div v-if="isLive" class="absolute top-3 left-3 flex items-center space-x-2">
@@ -69,14 +102,16 @@
       </p>
     </div>
   </Link>
+  </div>
 </template>
 
 <script setup>
 import { Link } from '@inertiajs/vue3';
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, Transition } from 'vue';
 import FaVideoIcon from '../Icons/FaVideoIcon.vue';
 import FaIconUser from '../Icons/FaIconUser.vue';
 import FaPlayIcon from '../Icons/FaPlayIcon.vue';
+import Hls from 'hls.js';
 
 // Props
 const props = defineProps({
@@ -87,16 +122,103 @@ const props = defineProps({
 });
 
 // Reactive state
-const currentThumbnail = ref(props.show.thumbnail_url);
+const currentThumbnail = ref(props.show.thumbnail_url); // Using accessor that returns signed URL
+const showVideoPreview = ref(false);
+const videoPreview = ref(null);
 let updateInterval = null;
+let hoverTimeout = null;
+let hlsInstance = null;
 
 // Computed properties
 const isLive = computed(() => props.show.status === 'live');
 const isUpcoming = computed(() => props.show.status === 'scheduled');
 
+// Get the SD quality stream URL for preview (480p)
+const streamUrl = computed(() => {
+  if (!props.show.hls_urls) return null;
+  // Use SD quality (480p) for preview to save bandwidth
+  return props.show.hls_urls.sd || null;
+});
+
 // Methods
 const handleImageError = () => {
   currentThumbnail.value = null;
+};
+
+const handleVideoError = () => {
+  // If video fails to load, hide the preview
+  showVideoPreview.value = false;
+};
+
+const handleMouseEnter = () => {
+  // Only show video preview for live shows
+  if (!isLive.value || !streamUrl.value) return;
+  
+  // Add a small delay to prevent loading on quick hovers
+  hoverTimeout = setTimeout(() => {
+    showVideoPreview.value = true;
+    // Wait for next tick to ensure video element is rendered
+    nextTick(() => {
+      if (videoPreview.value && streamUrl.value) {
+        // Initialize HLS.js
+        if (Hls.isSupported()) {
+          hlsInstance = new Hls({
+            enableWorker: true,
+            lowLatencyMode: false,
+            backBufferLength: 60,
+            maxBufferSize: 30 * 1000 * 1000, // 30MB
+            maxBufferLength: 10, // seconds
+            startLevel: 0, // Start with lowest quality for faster loading
+          });
+          
+          hlsInstance.loadSource(streamUrl.value);
+          hlsInstance.attachMedia(videoPreview.value);
+          
+          hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+            videoPreview.value.play().catch((error) => {
+              console.log('Video autoplay failed:', error);
+              showVideoPreview.value = false;
+            });
+          });
+          
+          hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+            if (data.fatal) {
+              console.log('HLS fatal error:', data);
+              showVideoPreview.value = false;
+            }
+          });
+        } else if (videoPreview.value.canPlayType('application/vnd.apple.mpegurl')) {
+          // Native HLS support (Safari)
+          videoPreview.value.src = streamUrl.value;
+          videoPreview.value.play().catch((error) => {
+            console.log('Video autoplay failed:', error);
+            showVideoPreview.value = false;
+          });
+        }
+      }
+    });
+  }, 300); // 300ms delay
+};
+
+const handleMouseLeave = () => {
+  // Clear the hover timeout if mouse leaves before delay
+  if (hoverTimeout) {
+    clearTimeout(hoverTimeout);
+    hoverTimeout = null;
+  }
+  
+  // Clean up HLS instance
+  if (hlsInstance) {
+    hlsInstance.destroy();
+    hlsInstance = null;
+  }
+  
+  // Stop and hide video preview
+  if (videoPreview.value) {
+    videoPreview.value.pause();
+    videoPreview.value.src = '';
+  }
+  showVideoPreview.value = false;
 };
 
 const formatViewerCount = (count) => {
@@ -151,9 +273,9 @@ const formatScheduledTime = (scheduledTime) => {
   tomorrow.setDate(tomorrow.getDate() + 1);
   
   const timeStr = date.toLocaleTimeString('en-US', { 
-    hour: 'numeric', 
+    hour: '2-digit', 
     minute: '2-digit',
-    hour12: true 
+    hour12: false 
   });
   
   if (date.toDateString() === today.toDateString()) {
@@ -165,9 +287,9 @@ const formatScheduledTime = (scheduledTime) => {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
-      hour: 'numeric',
+      hour: '2-digit',
       minute: '2-digit',
-      hour12: true
+      hour12: false
     });
   }
 };
@@ -193,6 +315,12 @@ onMounted(() => {
 onUnmounted(() => {
   if (updateInterval) {
     clearInterval(updateInterval);
+  }
+  if (hoverTimeout) {
+    clearTimeout(hoverTimeout);
+  }
+  if (hlsInstance) {
+    hlsInstance.destroy();
   }
   Echo.leave(`show.${props.show.id}`);
 });

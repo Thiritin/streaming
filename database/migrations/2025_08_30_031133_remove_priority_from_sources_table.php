@@ -11,9 +11,20 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('sources', function (Blueprint $table) {
-            $table->dropColumn('priority');
-        });
+        if (Schema::hasColumn('sources', 'priority')) {
+            // Drop the index first if it exists
+            Schema::table('sources', function (Blueprint $table) {
+                try {
+                    $table->dropIndex('sources_priority_index');
+                } catch (\Exception $e) {
+                    // Index might not exist
+                }
+            });
+            
+            Schema::table('sources', function (Blueprint $table) {
+                $table->dropColumn('priority');
+            });
+        }
     }
 
     /**

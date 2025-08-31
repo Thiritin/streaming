@@ -2,10 +2,8 @@
 
 namespace App\Jobs\Server;
 
-use App\Jobs\CheckClientActivityJob;
 use App\Jobs\Server\Deprovision\InitializeDeprovisioningJob;
 use App\Jobs\Server\Deprovision\RemovalConditionCheckerJob;
-use App\Jobs\Server\Deprovision\ServerMoveClientsToOtherServerJob;
 use App\Models\Server;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -26,9 +24,6 @@ class DeleteServerJob implements ShouldQueue
     {
         Bus::chain([
             new InitializeDeprovisioningJob($this->server),
-            new CheckClientActivityJob($this->server),
-            new ServerMoveClientsToOtherServerJob($this->server),
-            (new CheckClientActivityJob($this->server))->delay(now()->addMinute()),
             (new RemovalConditionCheckerJob($this->server))->delay(now()->addMinutes(5)),
         ])->dispatch();
     }

@@ -152,18 +152,27 @@ class Emote extends Model
 
     /**
      * Get the full URL for the emote.
+     * Returns a signed URL for S3 access.
      */
     public function getUrlAttribute($value)
     {
+        // If a URL is explicitly set in database, return it
         if ($value) {
             return $value;
         }
 
-        if ($this->s3_key) {
-            return Storage::disk('s3')->url($this->s3_key);
+        // If no S3 key, return null
+        if (!$this->s3_key) {
+            return null;
         }
 
-        return null;
+        // Return a temporary signed URL (valid for 1 hour)
+        try {
+            return Storage::disk('s3')->temporaryUrl($this->s3_key, now()->addHour());
+        } catch (\Exception $e) {
+            // Fallback to regular URL if temporary URL fails
+            return Storage::disk('s3')->url($this->s3_key);
+        }
     }
 
     /**

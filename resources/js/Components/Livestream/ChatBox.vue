@@ -1,7 +1,6 @@
 <script setup>
 import {onMounted, reactive, ref} from "vue";
 import ChatMessageBox from "@/Components/Livestream/ChatMessageBox.vue";
-import UserBadge from "@/Components/Livestream/UserBadge.vue";
 import {usePage} from '@inertiajs/vue3'
 import {inject} from 'vue'
 
@@ -33,6 +32,7 @@ let props = defineProps({
 })
 
 const rateLimit = ref(props.rateLimit)
+const commandFeedback = ref([])
 
 // messageContainer.value?.scrollIntoView({behavior: "smooth"})
 
@@ -46,6 +46,32 @@ function scrollToBottom() {
         setTimeout(() => {
             container.lastElementChild.scrollIntoView({behavior: "smooth", block: "end"});
         }, 50);
+    }
+}
+
+function showCommandFeedback(message, type = 'info', data = {}) {
+    const currentTime = new Date();
+    const feedbackId = `feedback_${Date.now()}`;
+    
+    // Add feedback message to chat as a system message
+    chatMessages.value.push({
+        id: feedbackId,
+        name: null, // System message has no name
+        time: padWithZeros(currentTime.getHours()) + ':' + padWithZeros(currentTime.getMinutes()),
+        message: message,
+        is_command: false,
+        type: 'system',
+        feedback_type: type, // success, error, warning, info
+        data: data
+    });
+    
+    scrollToBottom();
+    
+    // Auto-remove info messages after 10 seconds
+    if (type === 'info') {
+        setTimeout(() => {
+            chatMessages.value = chatMessages.value.filter(msg => msg.id !== feedbackId);
+        }, 10000);
     }
 }
 
@@ -78,6 +104,15 @@ onMounted(() => {
             rateLimit.value.rateDecay = e.rateDecay;
             rateLimit.value.maxTries = e.maxTries;
         });
+
+    // Register private command feedback listener
+    if (page.props.auth?.user) {
+        Echo
+            .private(`user.${page.props.auth.user.id}`)
+            .listen('.command.feedback', (e) => {
+                showCommandFeedback(e.message, e.type, e.data);
+            });
+    }
 
     // Wait 2 seconds before scrolling to bottom
     setTimeout(() => {
@@ -139,9 +174,35 @@ function encodeHtml(html) {
     return html.replace(/[\u00A0-\u9999<>\&]/g, i => '&#'+i.charCodeAt(0)+';')
 }
 
-function sendMessage() {
+async function sendMessage() {
     if (message.value.length === 0) return;
-    // Append to chatMessages
+    
+    const cleanInput = message.value.trim();
+    
+    // Check if it's a command
+    if (cleanInput.startsWith('/')) {
+        // Handle commands via API
+        try {
+            const response = await axios.post('/api/command/execute', {
+                command: cleanInput
+            });
+            
+            // Clear input on success
+            message.value = '';
+            error.value = '';
+            
+            // Show success feedback if provided
+            if (response.data?.message) {
+                showCommandFeedback(response.data.message, 'success');
+            }
+        } catch (e) {
+            error.value = e.response?.data?.error || 'Command execution failed';
+            console.error('Command execution failed:', e);
+        }
+        return;
+    }
+    
+    // Regular message handling
     axios.post(route('message.send'), {
         message: message.value
     }).then((response) => {
@@ -152,9 +213,8 @@ function sendMessage() {
             'name': usePage().props.auth.user.name,
             "time": padWithZeros(currentTime.getHours()) + ':' + padWithZeros(currentTime.getMinutes()),
             "message": message.value,
-            "is_command": isCommand(message.value),
-            "role": usePage().props.auth.user.role,
-            "badge": usePage().props.auth.user.badge
+            "is_command": false,
+            "role": usePage().props.auth.user.role
         })
         message.value = '';
         scrollToBottom();
@@ -180,15 +240,33 @@ function sendMessage() {
         <!-- Chat Messages -->
         <div class="px-3 p-3 text-white flex-1 h-full overflow-auto bg-primary-900/95" ref="messageContainer">
             <div class="mb-0.5" v-for="message in chatMessages">
+                <!-- Regular user messages -->
                 <div class="flex" v-if="message.name">
-                    <div class="text-xs pr-2 text-primary-400 mt-1">{{ message.time }}</div>
+                    <div class="text-xs pr-2 text-primary-400 mt-1 font-mono">{{ message.time }}</div>
                     <div :class="{'bg-primary-800/70 text-primary-200 py-1 px-1 rounded': message.is_command}">
-                        <UserBadge v-if="message.badge" :badge="message.badge" size="sm" class="mr-1" />
                         <span :title="message.role?.name || 'User'" class="font-semibold" :style="{color: message.role?.chat_color || '#86efac'}">
                             {{ message.name }}<span v-if="message.role?.is_staff"> ({{ message.role.name }})</span>
                         </span>: <span class="message-content text-primary-100" v-html="processMessageForDisplay(message.message)"></span>
                     </div>
                 </div>
+                <!-- System messages / Command feedback -->
+                <div v-else-if="message.type === 'system'" 
+                     :class="[
+                        'rounded-lg m-2 p-2 break-words',
+                        message.feedback_type === 'success' ? 'bg-green-900/50 text-green-200 border border-green-700' :
+                        message.feedback_type === 'error' ? 'bg-red-900/50 text-red-200 border border-red-700' :
+                        message.feedback_type === 'warning' ? 'bg-yellow-900/50 text-yellow-200 border border-yellow-700' :
+                        'bg-primary-800/70 text-primary-100 border border-primary-700'
+                     ]">
+                    <div class="flex items-start">
+                        <span class="text-xs text-primary-400 mr-2 font-mono">{{ message.time }}</span>
+                        <div class="flex-1">
+                            <span class="font-semibold text-xs uppercase tracking-wider mr-2">System</span>
+                            <span v-html="message.message"></span>
+                        </div>
+                    </div>
+                </div>
+                <!-- General system messages (old format) -->
                 <div v-else class="rounded-lg text-center m-2 p-2 break-words bg-primary-800/70 text-primary-100">
                     {{ message.message }}
                 </div>

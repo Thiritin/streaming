@@ -28,6 +28,11 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
         });
 
+        // No rate limit for HLS endpoints - they need to handle many requests
+        RateLimiter::for('hls', function (Request $request) {
+            return Limit::none();
+        });
+
         $this->routes(function () {
             Route::middleware('api')
                 ->prefix('api')

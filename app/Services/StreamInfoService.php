@@ -11,9 +11,10 @@ class StreamInfoService
     {
         return Cache::remember('stream.listeners', 30,
             function () {
-                return DB::table('clients')
-                    ->whereNotNull('start')
-                    ->whereNull('stop')
+                return DB::table('source_users')
+                    ->whereNotNull('joined_at')
+                    ->whereNull('left_at')
+                    ->where('last_heartbeat_at', '>', now()->subMinutes(3))
                     ->distinct('user_id')
                     ->count('user_id') ?? 0;
             });

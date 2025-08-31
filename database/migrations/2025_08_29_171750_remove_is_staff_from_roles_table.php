@@ -11,9 +11,20 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('roles', function (Blueprint $table) {
-            $table->dropColumn('is_staff');
-        });
+        if (Schema::hasColumn('roles', 'is_staff')) {
+            // Drop the index first if it exists
+            Schema::table('roles', function (Blueprint $table) {
+                try {
+                    $table->dropIndex('roles_is_staff_index');
+                } catch (\Exception $e) {
+                    // Index might not exist
+                }
+            });
+            
+            Schema::table('roles', function (Blueprint $table) {
+                $table->dropColumn('is_staff');
+            });
+        }
     }
 
     /**

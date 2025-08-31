@@ -5,6 +5,7 @@ namespace App\Models;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class Show extends Model
@@ -21,7 +22,7 @@ class Show extends Model
         'actual_start',
         'actual_end',
         'status',
-        'thumbnail_url',
+        'thumbnail_path',
         'thumbnail_updated_at',
         'thumbnail_capture_error',
         'viewer_count',
@@ -100,6 +101,14 @@ class Show extends Model
     public function viewerSessions()
     {
         return $this->hasMany(SourceUser::class, 'source_id', 'source_id');
+    }
+
+    /**
+     * Get show statistics for this show.
+     */
+    public function showStatistics()
+    {
+        return $this->hasMany(ShowStatistic::class);
     }
 
     /**
@@ -261,15 +270,41 @@ class Show extends Model
     }
 
     /**
-     * Get HLS URLs from the show's source.
+     * Get the full URL for the thumbnail path stored in database.
+     * Returns a signed URL for S3 access.
      */
-    public function getHlsUrls()
+    public function getThumbnailUrlAttribute()
+    {
+        $value = $this->thumbnail_path;
+        if (! $value) {
+            return null;
+        }
+
+        // If it's already a full URL, return it
+        if (filter_var($value, FILTER_VALIDATE_URL)) {
+            return $value;
+        }
+
+        // Return a temporary signed URL (valid for 1 hour)
+        try {
+            return Storage::disk('s3')->temporaryUrl($value, now()->addHour());
+        } catch (\Exception $e) {
+            // Fallback to regular URL if temporary URL fails
+            return Storage::disk('s3')->url($value);
+        }
+    }
+
+    /**
+     * Get HLS URLs from the show's source.
+     * @param \App\Models\User|null $user Optional user to append streamkey for tracking
+     */
+    public function getHlsUrls($user = null)
     {
         if (! $this->source) {
             return null;
         }
 
-        return $this->source->getHlsUrls();
+        return $this->source->getHlsUrls($user);
     }
 
     /**
@@ -281,55 +316,18 @@ class Show extends Model
             throw new \Exception('Show must be live with an active source to capture screenshot');
         }
 
-        // Get the HLS URL for the stream
-        $hlsUrls = $this->getHlsUrls();
-        if (! $hlsUrls || ! isset($hlsUrls['stream'])) {
-            throw new \Exception('No HLS stream URL available');
+        // Use the ThumbnailService to capture the screenshot
+        // This ensures proper URL handling for Docker environments
+        $thumbnailService = app(\App\Services\ThumbnailService::class);
+        $result = $thumbnailService->captureFromHls($this);
+        
+        if (!$result) {
+            // Get the error from the model if it was set
+            $error = $this->thumbnail_capture_error ?? 'Failed to capture screenshot';
+            throw new \Exception($error);
         }
-
-        $streamUrl = $hlsUrls['stream'];
-
-        // Generate a unique filename
-        $filename = 'shows/thumbnails/'.$this->slug.'_'.now()->timestamp.'.jpg';
-        $storagePath = storage_path('app/public/'.$filename);
-
-        // Ensure directory exists
-        $directory = dirname($storagePath);
-        if (! file_exists($directory)) {
-            mkdir($directory, 0755, true);
-        }
-
-        try {
-            // Use ffmpeg to capture a frame from the HLS stream
-            $command = sprintf(
-                'ffmpeg -i "%s" -vframes 1 -q:v 2 -f image2 "%s" 2>&1',
-                $streamUrl,
-                $storagePath
-            );
-
-            exec($command, $output, $returnCode);
-
-            if ($returnCode !== 0) {
-                $this->update([
-                    'thumbnail_capture_error' => implode("\n", $output),
-                    'thumbnail_updated_at' => now(),
-                ]);
-                throw new \Exception('FFmpeg failed: '.implode("\n", $output));
-            }
-
-            // Update the show with the new thumbnail
-            $this->update([
-                'thumbnail_url' => $filename,
-                'thumbnail_updated_at' => now(),
-                'thumbnail_capture_error' => null,
-            ]);
-
-            return $filename;
-
-        } catch (\Exception $e) {
-            \Log::error('Screenshot capture failed for show '.$this->id.': '.$e->getMessage());
-            throw $e;
-        }
+        
+        return $result;
     }
 
     /**

@@ -7,18 +7,15 @@ use App\Filament\Resources\SourceResource\Pages;
 use App\Filament\Resources\SourceResource\RelationManagers;
 use App\Models\Source;
 use Filament\Forms;
-use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\Str;
 
@@ -26,7 +23,7 @@ class SourceResource extends Resource
 {
     protected static ?string $model = Source::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-signal';
+    protected static ?string $navigationIcon = 'heroicon-o-video-camera';
 
     protected static ?string $navigationGroup = 'Streaming';
 
@@ -90,24 +87,6 @@ class SourceResource extends Resource
                             })
                             ->helperText('Click to copy → OBS Settings → Stream → Stream Key'),
                     ]),
-
-                Section::make('Settings')
-                    ->schema([
-                        Toggle::make('is_active')
-                            ->label('Active')
-                            ->default(true)
-                            ->helperText('Inactive sources cannot receive streams'),
-                        Toggle::make('is_primary')
-                            ->label('Primary Source')
-                            ->helperText('Mark as the main/permanent stream source'),
-                        KeyValue::make('metadata')
-                            ->label('Additional Configuration')
-                            ->keyLabel('Key')
-                            ->valueLabel('Value')
-                            ->addButtonLabel('Add Configuration')
-                            ->columnSpanFull(),
-                    ])
-                    ->columns(2),
             ]);
     }
 
@@ -130,13 +109,12 @@ class SourceResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->weight('bold'),
-                BadgeColumn::make('is_primary')
-                    ->label('Type')
-                    ->getStateUsing(fn ($record) => $record->is_primary ? 'Primary' : 'Secondary')
-                    ->colors([
-                        'success' => fn ($state) => $state === 'Primary',
-                        'gray' => fn ($state) => $state === 'Secondary',
-                    ]),
+                TextColumn::make('slug')
+                    ->label('Stream Name')
+                    ->badge()
+                    ->color('info')
+                    ->copyable()
+                    ->searchable(),
                 TextColumn::make('shows_count')
                     ->label('Total Shows')
                     ->counts('shows')
@@ -146,41 +124,24 @@ class SourceResource extends Resource
                     ->getStateUsing(fn ($record) => $record->liveShows()->count())
                     ->badge()
                     ->color(fn ($state) => $state > 0 ? 'success' : 'gray'),
-                TextColumn::make('slug')
-                    ->label('Stream Name')
-                    ->badge()
-                    ->color('info')
-                    ->copyable()
-                    ->searchable(),
-                ToggleColumn::make('is_active')
-                    ->label('Active')
-                    ->onColor('success')
-                    ->offColor('danger')
-                    ->afterStateUpdated(function ($record, $state) {
-                        Notification::make()
-                            ->title($state ? 'Source activated' : 'Source deactivated')
-                            ->success()
-                            ->send();
-                    }),
                 TextColumn::make('created_at')
+                    ->dateTime()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
-                Tables\Filters\TernaryFilter::make('is_active')
-                    ->label('Active Status')
-                    ->boolean()
-                    ->trueLabel('Active only')
-                    ->falseLabel('Inactive only')
-                    ->placeholder('All sources'),
-                Tables\Filters\TernaryFilter::make('is_primary')
-                    ->label('Source Type')
-                    ->boolean()
-                    ->trueLabel('Primary only')
-                    ->falseLabel('Secondary only')
-                    ->placeholder('All types'),
+                Tables\Filters\SelectFilter::make('status')
+                    ->label('Status')
+                    ->options([
+                        SourceStatusEnum::ONLINE->value => 'Online',
+                        SourceStatusEnum::OFFLINE->value => 'Offline',
+                    ])
+                    ->placeholder('All statuses'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -214,7 +175,8 @@ class SourceResource extends Resource
                             }
                         }),
                 ]),
-            ]);
+            ])
+            ->poll('10s');
     }
 
     public static function getRelations(): array
@@ -235,11 +197,12 @@ class SourceResource extends Resource
 
     public static function getNavigationBadge(): ?string
     {
-        return static::getModel()::active()->count();
+        $onlineCount = static::getModel()::where('status', SourceStatusEnum::ONLINE)->count();
+        return $onlineCount > 0 ? (string) $onlineCount : null;
     }
 
     public static function getNavigationBadgeColor(): ?string
     {
-        return static::getModel()::active()->count() > 0 ? 'success' : 'gray';
+        return 'success';
     }
 }

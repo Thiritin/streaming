@@ -18,8 +18,8 @@ class ServerAssignmentJob implements ShouldQueue
 
     public function handle(): void
     {
-        // Get all users waiting for provisioning
-        $users = User::where('is_provisioning', true)->get();
+        // Get all users without server assignment
+        $users = User::whereNull('server_id')->get();
 
         $users->each(function ($user) {
             $assigned = $user->assignServerToUser();

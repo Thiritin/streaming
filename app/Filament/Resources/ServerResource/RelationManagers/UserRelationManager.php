@@ -27,8 +27,6 @@ class UserRelationManager extends RelationManager
                 TextInput::make('name')
                     ->required(),
 
-                Checkbox::make('is_provisioning'),
-
                 Placeholder::make('created_at')
                     ->label('Created Date')
                     ->content(fn (?User $record): string => $record?->created_at?->diffForHumans() ?? '-'),
@@ -48,8 +46,6 @@ class UserRelationManager extends RelationManager
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
-
-                TextColumn::make('is_provisioning'),
             ]);
     }
 }
