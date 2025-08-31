@@ -17,7 +17,5 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
-Caddyfile
-custom.conf
-origin.conf
 dns.key
+logs/
