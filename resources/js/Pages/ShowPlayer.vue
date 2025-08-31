@@ -31,8 +31,8 @@ const props = defineProps({
         required: false,
         default: () => []
     },
-    initialHlsUrls: {
-        type: Object,
+    initialHlsUrl: {
+        type: String,
         required: false,
     },
     initialStatus: {
@@ -65,7 +65,7 @@ const props = defineProps({
 const otherDevice = ref(props.initialOtherDevice);
 const activeShow = ref(props.currentShow);
 const shows = ref(props.availableShows);
-const hlsUrls = ref(props.initialHlsUrls);
+const hlsUrl = ref(props.initialHlsUrl);
 const status = ref(props.initialStatus);
 const sourceStatus = ref(props.currentShow?.source?.status || 'offline');
 const listeners = ref(props.initialListeners);
@@ -79,7 +79,7 @@ const maxHlsCheckAttempts = 15; // 30 seconds total (15 * 2 seconds)
 
 // Computed properties
 const showChatBox = computed(() => status.value !== 'offline');
-const showPlayer = computed(() => activeShow.value && hlsUrls.value && status.value === 'online' && sourceStatus.value === 'online' && provisioning.value === false && otherDevice.value === false && !isReconnecting.value);
+const showPlayer = computed(() => activeShow.value && hlsUrl.value && status.value === 'online' && sourceStatus.value === 'online' && provisioning.value === false && otherDevice.value === false && !isReconnecting.value);
 const showTitle = computed(() => activeShow.value ? activeShow.value.title : 'No Show Active');
 const otherLiveShows = computed(() => shows.value.filter(s => s.id !== activeShow.value?.id && s.status === 'live' && s.slug));
 
@@ -113,11 +113,11 @@ const shouldUseLowerResolution = () => {
 
 // HLS availability checker
 const checkHlsAvailability = async () => {
-    if (!hlsUrls.value?.stream) return false;
+    if (!hlsUrl.value) return false;
     
     try {
         // Try to fetch the HLS manifest with HEAD request
-        const response = await fetch(hlsUrls.value.stream, {
+        const response = await fetch(hlsUrl.value, {
             method: 'HEAD',
             mode: 'cors',
             cache: 'no-cache'
@@ -238,15 +238,15 @@ onMounted(() => {
                     ...e.show,
                     slug: e.show.slug || activeShow.value.slug
                 };
-                if (e.hlsUrls) {
-                    hlsUrls.value = e.hlsUrls;
+                if (e.hlsUrl) {
+                    hlsUrl.value = e.hlsUrl;
                 }
             }
         })
         .listen('.show.source.changed', (e) => {
             // Handle source switching for a show
             if (activeShow.value && activeShow.value.id === e.show.id) {
-                hlsUrls.value = e.hlsUrls;
+                hlsUrl.value = e.hlsUrl;
                 // Update source ID
                 if (e.show.source_id && status.value === 'online') {
                     activeShow.value.source_id = e.show.source_id;
@@ -324,7 +324,7 @@ onUnmounted(() => {
                 <div class="flex-1 overflow-auto">
                     <div v-if="showPlayer">
                         <StreamPlayer ref="streamPlayer"
-                                      :hls-urls="hlsUrls"
+                                      :hls-url="hlsUrl"
                                       :show-info="activeShow"
                                       class="z-10 relative w-full bg-black max-h-[calc(100vh_-_12vh)]"></StreamPlayer>
 

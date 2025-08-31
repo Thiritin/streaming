@@ -28,29 +28,20 @@ class ThumbnailService
             return null;
         }
 
-        // Skip thumbnail capture in local development
-        if (app()->isLocal()) {
-            Log::info("Skipping thumbnail capture in local development for show {$show->id}");
-            return null;
-        }
+        $streamUrl = $show->source->getHlsUrl();
 
-        $hlsUrls = $show->source->getHlsUrls();
-            
-        if (! $hlsUrls) {
-            Log::warning("No HLS URLs available for show {$show->id}");
+        if (! $streamUrl) {
+            Log::warning("No HLS URL available for show {$show->id}");
 
             return null;
         }
 
-        // Use the SD quality for thumbnail capture (balance between quality and speed)
-        $streamUrl = $hlsUrls['sd'] ?? $hlsUrls['master'] ?? $hlsUrls['stream'];
-        
         // Add internal session ID for authentication
         if (config('stream.internal_session_id')) {
             $separator = str_contains($streamUrl, '?') ? '&' : '?';
             $streamUrl .= $separator . 'session_id=' . config('stream.internal_session_id');
         }
-        
+
         Log::info("Capturing thumbnail for show {$show->id} from URL: {$streamUrl}");
 
         // Generate unique filename
@@ -246,7 +237,7 @@ class ThumbnailService
 
         } catch (\Exception $e) {
             Log::error("Failed to upload thumbnail for show {$show->id}: " . $e->getMessage());
-            
+
             $show->update([
                 'thumbnail_capture_error' => $e->getMessage(),
                 'thumbnail_updated_at' => now(),

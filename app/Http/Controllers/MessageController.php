@@ -53,6 +53,7 @@ class MessageController extends Controller
         $messageModel = $user->messages()->create([
             'message' => $message,
             'is_command' => false,
+            'type' => 'user',
         ]);
 
         broadcast(new ChatMessageEvent($messageModel, $user))->toOthers();

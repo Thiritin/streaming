@@ -658,25 +658,103 @@ const initializePlayer = async () => {
         }
     });
 
+    // Enhanced error recovery
+    let retryCount = 0;
+    let retryTimer = null;
+    const maxRetries = 10;
+    const retryDelay = 3000; // Start with 3 seconds
+    
+    const retryStream = () => {
+        if (retryTimer) {
+            clearTimeout(retryTimer);
+        }
+        
+        retryCount++;
+        const delay = Math.min(retryDelay * Math.pow(1.5, retryCount - 1), 30000); // Exponential backoff, max 30s
+        
+        console.log(`Retrying stream (attempt ${retryCount}/${maxRetries}) in ${delay/1000}s...`);
+        
+        retryTimer = setTimeout(() => {
+            if (player && !player.isDisposed()) {
+                // Reset the source to force a fresh load
+                const currentSource = player.currentSource();
+                if (currentSource) {
+                    console.log('Attempting to reload stream...');
+                    player.src(currentSource);
+                    player.load();
+                    
+                    // For live streams, try to go to live edge
+                    if (props.isLive) {
+                        player.one('loadedmetadata', () => {
+                            if (player.liveTracker) {
+                                player.liveTracker.seekToLiveEdge();
+                            }
+                        });
+                    }
+                    
+                    player.play().catch(e => {
+                        console.error('Retry play failed:', e);
+                        if (retryCount < maxRetries) {
+                            retryStream(); // Try again
+                        }
+                    });
+                }
+            }
+        }, delay);
+    };
+
     // Event listeners
     player.on('error', (error) => {
-        console.error('Video.js error:', error);
+        const errorCode = error?.code || player.error()?.code;
+        const errorMessage = error?.message || player.error()?.message || 'Unknown error';
+        
+        console.error('Video.js error:', errorCode, errorMessage);
         emit('error', error);
 
+        // Handle specific error types
+        if (errorCode === 2) {
+            // Network error - likely stream is down
+            console.log('Network error detected - stream may be restarting');
+        } else if (errorCode === 4) {
+            // Media error - format/codec issue
+            console.log('Media error detected - checking stream format');
+        }
+
         // Auto-retry logic for live streams
-        if (props.isLive) {
-            setTimeout(() => {
-                if (player && !player.isDisposed()) {
-                    player.src(options.sources[0]);
-                    player.load();
-                    player.play().catch(e => console.error('Retry play failed:', e));
-                }
-            }, 5000);
+        if (props.isLive && retryCount < maxRetries) {
+            retryStream();
         }
     });
-
+    
+    // Reset retry count on successful playback
     player.on('playing', () => {
+        if (retryCount > 0) {
+            console.log('Stream recovered successfully');
+            retryCount = 0;
+            if (retryTimer) {
+                clearTimeout(retryTimer);
+                retryTimer = null;
+            }
+        }
         emit('playing');
+    });
+    
+    // Handle stalled playback
+    player.on('waiting', () => {
+        console.log('Playback waiting for data...');
+        
+        // Set a timeout to retry if stuck waiting
+        setTimeout(() => {
+            if (player && !player.isDisposed() && player.paused() && props.isLive) {
+                console.log('Playback stalled, attempting recovery...');
+                player.play().catch(e => {
+                    console.error('Recovery play failed:', e);
+                    if (retryCount < maxRetries) {
+                        retryStream();
+                    }
+                });
+            }
+        }, 10000); // Wait 10 seconds before considering it stalled
     });
 
     player.on('pause', () => {

@@ -295,16 +295,15 @@ class Show extends Model
     }
 
     /**
-     * Get HLS URLs from the show's source.
-     * @param \App\Models\User|null $user Optional user to append streamkey for tracking
+     * Get HLS master playlist URL from the show's source.
      */
-    public function getHlsUrls($user = null)
+    public function getHlsUrl()
     {
         if (! $this->source) {
             return null;
         }
 
-        return $this->source->getHlsUrls($user);
+        return $this->source->getHlsUrl();
     }
 
     /**
@@ -335,9 +334,7 @@ class Show extends Model
      */
     public function getStreamUrl()
     {
-        $urls = $this->getHlsUrls();
-
-        return $urls ? ($urls['stream'] ?? $urls['master'] ?? null) : null;
+        return $this->getHlsUrl();
     }
 
     /**

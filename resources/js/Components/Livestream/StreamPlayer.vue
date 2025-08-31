@@ -5,7 +5,7 @@ import { ref, computed, onMounted } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
-    hlsUrls: Object,
+    hlsUrl: String,
     showInfo: Object
 })
 
@@ -115,10 +115,10 @@ defineExpose({
 </script>
 
 <template>
-    <div class="stream-player-container" v-if="hlsUrls && hlsUrls.stream">
+    <div class="stream-player-container" v-if="hlsUrl">
         <VideoJsPlayer 
-            :stream-url="hlsUrls.stream"
-            :hls-urls="hlsUrls"
+            :stream-url="hlsUrl"
+            :hls-url="hlsUrl"
             :autoplay="true"
             :muted="!isInternalNavigation"
             :controls="true"

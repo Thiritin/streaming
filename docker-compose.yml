@@ -72,10 +72,13 @@ services:
             - ./docker/edge-nginx/nginx.conf:/etc/nginx/nginx.conf:ro
             - nginx-cache:/var/cache/nginx
             - nginx-logs:/var/log/nginx
+            # Share the HLS tmpfs volume with ffmpeg-hls
+            - hls-tmpfs:/var/cache/hls:ro
         network_mode: host
         depends_on:
             - laravel.test
             - origin-srs
+            - ffmpeg-hls
         healthcheck:
             test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
             interval: 10s
@@ -83,20 +86,23 @@ services:
             retries: 3
         restart: unless-stopped
 
-    # FFmpeg HLS ABR Generator (commented out for now)
-    # ffmpeg-hls:
-    #     build:
-    #         context: ./docker/ffmpeg-hls
-    #         dockerfile: Dockerfile
-    #     environment:
-    #         STREAM_NAME: test-stream
-    #         RTMP_INPUT: rtmp://origin-srs:1935/live/test-stream
-    #     volumes:
-    #         - ./docker/origin-srs/objs/nginx/html:/var/www/html/hls
-    #     network_mode: host
-    #     restart: unless-stopped
-    #     depends_on:
-    #         - origin-srs
+    # Dynamic FFmpeg HLS Manager - Monitors SRS and creates synchronized multi-bitrate HLS
+    ffmpeg-hls:
+        build:
+            context: ./docker/ffmpeg-hls
+            dockerfile: Dockerfile
+        environment:
+            SRS_API_URL: http://localhost:1985/api/v1
+            SRS_RTMP_URL: rtmp://localhost:1935
+            OUTPUT_BASE_DIR: /var/cache/hls/live
+            CHECK_INTERVAL: 5
+        volumes:
+            # Share the HLS tmpfs volume with edge-nginx
+            - hls-tmpfs:/var/cache/hls
+        network_mode: host
+        restart: unless-stopped
+        depends_on:
+            - origin-srs
 
     # Caddy - TLS termination for production
     edge-caddy:
@@ -127,3 +133,9 @@ volumes:
         driver: local
     caddy-logs:
         driver: local
+    hls-tmpfs:
+        driver: local
+        driver_opts:
+            type: tmpfs
+            device: tmpfs
+            o: size=500m

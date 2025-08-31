@@ -11,43 +11,11 @@ http://localhost:8080 {
         format json
     }
 
-    # Health check endpoint (bypass proxy)
-    handle /health {
-        respond "healthy" 200
-    }
-
-    # Proxy all HLS traffic to nginx edge
-    handle /live/* {
-        # Add CORS headers for HLS
-        header {
-            Access-Control-Allow-Origin *
-            Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
-            Access-Control-Allow-Headers "Range"
-            Access-Control-Expose-Headers "Content-Length, Content-Range"
-        }
-
-        # Reverse proxy to nginx edge container on port 8081
-        reverse_proxy localhost:8081 {
-            # Keep alive connections
-            transport http {
-                keepalive 30s
-                keepalive_idle_conns 10
-            }
-
-            # Pass through real IP
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-
-            # Health check for nginx
-            health_uri /health
-            health_interval 10s
-            health_timeout 2s
-        }
-    }
-
-    # Default: return 404 for other paths
-    handle {
-        respond "Not Found" 404
+    # Forward ALL traffic to nginx edge server
+    reverse_proxy localhost:8081 {
+        # Pass through real IP
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
     }
 }

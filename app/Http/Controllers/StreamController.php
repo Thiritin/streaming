@@ -41,7 +41,7 @@ class StreamController extends Controller
                     'viewer_count' => $show->viewer_count,
                     'is_featured' => $show->is_featured,
                     'started_at' => $show->actual_start ?? $show->scheduled_start,
-                    'hls_urls' => $show->getHlsUrls($user),
+                    'hls_url' => $show->getHlsUrl(),
                 ];
             });
 
@@ -85,9 +85,9 @@ class StreamController extends Controller
                 ->with('error', 'This show is not available for viewing');
         }
 
-        // Get HLS URLs for the show, passing the authenticated user for tracking
+        // Get HLS URL for the show
         $user = Auth::user();
-        $hlsUrls = $show->getHlsUrls($user);
+        $hlsUrl = $show->getHlsUrl();
 
         return Inertia::render('ExternalStream', [
             'show' => [
@@ -98,7 +98,7 @@ class StreamController extends Controller
                 'source' => $show->source ? $show->source->name : null,
                 'status' => $show->status,
                 'can_watch' => $show->canWatch(),
-                'hls_urls' => $hlsUrls,
+                'hls_url' => $hlsUrl,
             ],
         ]);
     }
@@ -134,8 +134,8 @@ class StreamController extends Controller
                 ];
             });
 
-        // Get HLS URLs from the selected show, passing the authenticated user for tracking
-        $hlsUrls = $show->getHlsUrls($user);
+        // Get HLS URL from the selected show
+        $hlsUrl = $show->getHlsUrl();
 
         return Inertia::render('ShowPlayer', [
             'initialProvisioning' => false,
@@ -159,7 +159,7 @@ class StreamController extends Controller
                 'actual_end' => $show->actual_end,
             ],
             'availableShows' => $availableShows,
-            'initialHlsUrls' => $hlsUrls,
+            'initialHlsUrl' => $hlsUrl,
             'initialStatus' => $show->isLive() ? 'online' : \Cache::get('stream.status', static fn () => StreamStatusEnum::OFFLINE->value),
             'initialListeners' => $show->viewer_count ?? StreamInfoService::getUserCount(),
             'initialOtherDevice' => false, // This feature has been removed with Client model
@@ -177,7 +177,7 @@ class StreamController extends Controller
                     'is_command' => (bool) $message->is_command,
                     'name' => $message->user->name ?? 'System',
                     'role' => $message->user?->role,
-                    'badge' => $message->user?->badge,
+                    'chat_color' => $message->user?->chat_color,
                     'time' => $message->created_at->format('H:i'),
                 ])->toArray()),
             'rateLimit' => [

@@ -58,7 +58,7 @@ class Source extends Model
 
         static::updating(function ($source) {
             // Update slug if name changes
-            if ($source->isDirty('name') && ! $source->isDirty('slug')) {
+            if ($source->isDirty('name') && !$source->isDirty('slug')) {
                 $source->slug = Str::slug($source->name);
             }
             // Stream key should remain separate from slug for security
@@ -161,11 +161,11 @@ class Source extends Model
 
     /**
      * Get the stream key for OBS configuration.
-     * Returns: <slug>?secret=<stream_key>
+     * Returns: <slug>?secret=<stream_key>STr
      */
     public function getObsStreamKey()
     {
-        return $this->slug . '?secret=' . $this->stream_key;
+        return $this->slug.'?secret='.$this->stream_key;
     }
 
     /**
@@ -174,87 +174,14 @@ class Source extends Model
      */
     public function getRtmpPushUrl()
     {
-        return $this->getRtmpServerUrl() . '/' . $this->slug . '?secret=' . $this->stream_key;
+        return $this->getRtmpServerUrl().'/'.$this->slug.'?secret='.$this->stream_key;
     }
 
     /**
-     * Get HLS URLs for all quality variants.
-     * @param \App\Models\User|null $user Optional user to append streamkey for tracking
+     * Get HLS master playlist URL.
      */
-    public function getHlsUrls($user = null)
+    public function getHlsUrl()
     {
-        // Generate streamkey parameter if user has one
-        // This will be passed from master to variant playlists
-        $streamkeyParam = '';
-        if ($user && $user->streamkey) {
-            $streamkeyParam = '?streamkey=' . urlencode($user->streamkey);
-        }
-
-        // Use our Laravel HLS controller for all HLS access
-        // This provides master playlist, variant proxying, and user tracking
-        // In development, Laravel runs on port 80, but we access it through localhost directly
-        $baseUrl = app()->isLocal() ? 'http://localhost' : config('app.url');
-        
-        return [
-            // Master playlist for adaptive bitrate streaming (no streamkey needed here)
-            // The master controller will add streamkey to variant URLs internally
-            'master' => "{$baseUrl}/hls/{$this->slug}/master.m3u8{$streamkeyParam}",
-            'stream' => "{$baseUrl}/hls/{$this->slug}/master.m3u8{$streamkeyParam}", // Default to master
-            
-            // Direct variant playlists (proxied through Laravel) - these need streamkey
-            'fhd' => "{$baseUrl}/hls/{$this->slug}_fhd.m3u8{$streamkeyParam}",
-            'hd' => "{$baseUrl}/hls/{$this->slug}_hd.m3u8{$streamkeyParam}",
-            'sd' => "{$baseUrl}/hls/{$this->slug}_sd.m3u8{$streamkeyParam}",
-        ];
-    }
-
-    /**
-     * Get HLS URLs for internal Docker container access.
-     * Used by background jobs and console commands running inside Docker.
-     */
-    public function getInternalHlsUrls()
-    {
-        // Use Docker container names for internal access when running in Docker
-        if (app()->isLocal() && $this->isRunningInDocker()) {
-            // Check if we can resolve the Docker service name 'edge'
-            $host = 'edge';
-            $testConnection = @fsockopen($host, 80, $errno, $errstr, 1);
-
-            if (!$testConnection) {
-                // Fallback to full container name if service alias doesn't work
-                $host = 'ef-streaming-edge-1';
-            } else {
-                @fclose($testConnection);
-            }
-
-            $port = config('stream.docker.hls_port', 80);
-            $protocol = 'http';
-
-            $baseUrl = $port == 80 ? "{$protocol}://{$host}" : "{$protocol}://{$host}:{$port}";
-
-            // No authentication token needed for internal access
-            return [
-                'stream' => "{$baseUrl}/live/{$this->slug}_fhd/index.m3u8",
-                'fhd' => "{$baseUrl}/live/{$this->slug}_fhd/index.m3u8",
-                'hd' => "{$baseUrl}/live/{$this->slug}_hd/index.m3u8",
-                'sd' => "{$baseUrl}/live/{$this->slug}_sd/index.m3u8",
-                'master' => "{$baseUrl}/live/{$this->slug}/index.m3u8",
-            ];
-        }
-
-        // Fallback to regular URLs for non-Docker or production
-        return $this->getHlsUrls();
-    }
-
-    /**
-     * Check if the application is running inside a Docker container.
-     */
-    public function isRunningInDocker(): bool
-    {
-        // Check for Docker environment indicators
-        return file_exists('/.dockerenv') ||
-               (file_exists('/proc/1/cgroup') &&
-                str_contains(file_get_contents('/proc/1/cgroup'), 'docker')) ||
-               env('LARAVEL_SAIL') == 1;
+        return route('hls.master', ['stream' => $this->slug]);
     }
 }

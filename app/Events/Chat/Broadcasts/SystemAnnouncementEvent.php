@@ -3,18 +3,17 @@
 namespace App\Events\Chat\Broadcasts;
 
 use App\Models\Message;
-use App\Models\User;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class ChatMessageEvent implements ShouldBroadcast
+class SystemAnnouncementEvent implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public readonly Message $message, public readonly User $user) {}
+    public function __construct(public readonly Message $message) {}
 
     public function broadcastOn(): array
     {
@@ -27,11 +26,15 @@ class ChatMessageEvent implements ShouldBroadcast
     {
         return [
             'id' => $this->message->id,
-            'name' => $this->user->name,
+            'name' => 'System Announcement',
             'time' => $this->message->created_at->format('H:i'),
             'message' => $this->message->message,
-            'role' => $this->user->role,
-            'chat_color' => $this->user->chat_color,
+            'role' => (object) [
+                'name' => 'System',
+                'slug' => 'system',
+                'chat_color' => '#FFD700'
+            ],
+            'chat_color' => '#FFD700',
             'type' => $this->message->type,
             'priority' => $this->message->priority,
             'metadata' => $this->message->metadata,

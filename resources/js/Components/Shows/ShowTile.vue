@@ -133,11 +133,11 @@ let hlsInstance = null;
 const isLive = computed(() => props.show.status === 'live');
 const isUpcoming = computed(() => props.show.status === 'scheduled');
 
-// Get the SD quality stream URL for preview (480p)
+// Get the stream URL for preview
 const streamUrl = computed(() => {
-  if (!props.show.hls_urls) return null;
-  // Use SD quality (480p) for preview to save bandwidth
-  return props.show.hls_urls.sd || null;
+  if (!props.show.hls_url) return null;
+  // Use master playlist which will adapt quality based on bandwidth
+  return props.show.hls_url;
 });
 
 // Methods

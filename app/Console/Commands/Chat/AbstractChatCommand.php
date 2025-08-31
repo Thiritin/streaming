@@ -178,8 +178,8 @@ abstract class AbstractChatCommand implements CommandInterface
     {
         $signature = $this->signature();
         
-        // Extract parameter names from signature
-        preg_match_all('/{([^}]+)}/', $signature, $matches);
+        // Extract parameter names from signature - support both {} and <> brackets
+        preg_match_all('/[{<]([^}>]+)[}>]/', $signature, $matches);
         $paramNames = $matches[1] ?? [];
         
         $mapped = [];
@@ -192,7 +192,13 @@ abstract class AbstractChatCommand implements CommandInterface
                 [$cleanName, $default] = explode('=', $cleanName, 2);
                 $mapped[$cleanName] = $rawParams[$index] ?? $default;
             } else {
-                $mapped[$cleanName] = $rawParams[$index] ?? null;
+                // For the last parameter, if there are more raw params than expected,
+                // combine them all into the last parameter (for message-like parameters)
+                if ($index === count($paramNames) - 1 && count($rawParams) > count($paramNames)) {
+                    $mapped[$cleanName] = implode(' ', array_slice($rawParams, $index));
+                } else {
+                    $mapped[$cleanName] = $rawParams[$index] ?? null;
+                }
             }
         }
         

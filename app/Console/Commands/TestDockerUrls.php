@@ -63,12 +63,10 @@ class TestDockerUrls extends Command
         $this->info("Testing with source: {$source->name} (slug: {$source->slug})");
         $this->newLine();
         
-        // Test regular URLs
-        $this->info('📡 Regular HLS URLs (for browser access):');
-        $regularUrls = $source->getHlsUrls();
-        foreach ($regularUrls as $quality => $url) {
-            $this->line("  {$quality}: {$url}");
-        }
+        // Test regular URL
+        $this->info('📡 Regular HLS URL (for browser access):');
+        $regularUrl = $source->getHlsUrl();
+        $this->line("  Master: {$regularUrl}");
         
         $this->newLine();
         
@@ -94,10 +92,9 @@ class TestDockerUrls extends Command
         
         // Show what ThumbnailService would use
         $this->info('📸 ThumbnailService would use:');
-        $urlsForThumbnail = app()->runningInConsole() 
-            ? $source->getInternalHlsUrls() 
-            : $source->getHlsUrls();
-        $streamUrl = $urlsForThumbnail['sd'] ?? $urlsForThumbnail['master'] ?? $urlsForThumbnail['stream'];
+        $streamUrl = app()->runningInConsole() 
+            ? ($source->getInternalHlsUrls()['stream'] ?? $source->getHlsUrl())
+            : $source->getHlsUrl();
         $this->line("  URL: {$streamUrl}");
         
         $this->newLine();

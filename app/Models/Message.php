@@ -9,7 +9,18 @@ class Message extends Model
 {
     use SoftDeletes;
 
-    protected $fillable = ['message', 'user_id', 'is_command'];
+    protected $fillable = [
+        'message', 
+        'user_id', 
+        'is_command',
+        'type',
+        'priority',
+        'metadata'
+    ];
+    
+    protected $casts = [
+        'metadata' => 'array',
+    ];
 
     public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {

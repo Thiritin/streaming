@@ -3,7 +3,8 @@
 namespace App\Console\Commands\Chat;
 
 use App\Models\User;
-use App\Events\SystemMessageEvent;
+use App\Models\Message;
+use App\Events\Chat\Broadcasts\SystemAnnouncementEvent;
 use Illuminate\Support\Facades\Log;
 
 class BroadcastCommand extends AbstractChatCommand
@@ -30,53 +31,41 @@ class BroadcastCommand extends AbstractChatCommand
 
     protected function execute(User $user, array $parameters): void
     {
-        $message = trim($parameters['message']);
+        $messageContent = trim($parameters['message'] ?? '');
 
-        if (empty($message)) {
+        if (empty($messageContent)) {
             $this->feedback($user, 'Broadcast message cannot be empty.', 'error');
             return;
         }
 
         // Check message length
-        if (strlen($message) > 500) {
+        if (strlen($messageContent) > 500) {
             $this->feedback($user, 'Broadcast message is too long (max 500 characters).', 'error');
             return;
         }
 
-        // Create system message with special styling
-        $systemMessage = [
-            'id' => uniqid('system_'),
+        // Create the message in the database
+        $message = Message::create([
+            'message' => $messageContent,
+            'user_id' => null, // System messages don't have a user
+            'is_command' => false,
             'type' => 'announcement',
-            'content' => $message,
-            'user' => [
-                'name' => 'System Announcement',
-                'avatar' => null,
-                'badges' => ['system'],
-            ],
-            'timestamp' => now()->toIso8601String(),
             'priority' => 'high',
-        ];
+            'metadata' => [
+                'sent_by_user_id' => $user->id,
+                'sent_by_user_name' => $user->name,
+            ]
+        ]);
 
-        // Broadcast to all users
-        broadcast(new SystemMessageEvent($systemMessage))->toOthers();
-
-        // Send confirmation to moderator
-        $this->feedback($user, 'System announcement broadcast successfully.', 'success');
+        // Broadcast the announcement using the dedicated system announcement event
+        broadcast(new SystemAnnouncementEvent($message));
 
         // Log the broadcast
         Log::info('System broadcast sent', [
             'moderator_id' => $user->id,
             'moderator_name' => $user->name,
-            'message' => $message,
+            'message' => $messageContent,
             'timestamp' => now(),
-        ]);
-
-        // Optionally store in database for persistence
-        \App\Models\SystemMessage::create([
-            'content' => $message,
-            'type' => 'announcement',
-            'sent_by_user_id' => $user->id,
-            'priority' => 'high',
         ]);
     }
 

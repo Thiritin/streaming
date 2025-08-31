@@ -136,3 +136,4 @@ Filament admin panel at `/admin` provides:
 - **NEVER use fetch() or make API calls** unless absolutely necessary. Always use Inertia.js 2 props for passing data from backend to frontend. Data should be passed through page controllers or HandleInertiaRequests middleware for global data.
 - Never use -gray- for tailwind colors always use -primary- as main color
 - no need t orun build i got a npm run dev running
+- Always use sail instead of docker-compose

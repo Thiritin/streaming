@@ -90,8 +90,13 @@ onMounted(() => {
         .channel('chat')
         .listen('.message', (e) => {
             const currentTime = new Date();
+            // Add the message type to the message object if not present
+            if (!e.type) {
+                e.type = 'user';
+            }
             chatMessages.value.push(e);
             scrollToBottom();
+            clearOldMessages();
         })
         .listen('.messagesDeleted', (e) => {
             chatMessages.value = chatMessages.value.filter((message) => {
@@ -122,6 +127,24 @@ onMounted(() => {
 })
 const currentTime = new Date();
 let chatMessages = ref(props.chatMessages);
+
+function getRoleBadgeText(role) {
+    if (!role || !role.slug) return '';
+    
+    // Role abbreviations for existing roles
+    const abbreviations = {
+        'admin': 'ADM',
+        'moderator': 'MOD',
+        'supersponsor': 'S',
+        'sponsor': 'S',
+        'staff': 'STF',
+        'attendee': 'ATT'
+    };
+    
+    // Return abbreviation if exists, otherwise first 3 letters
+    return abbreviations[role.slug.toLowerCase()] || 
+           role.name.substring(0, 3).toUpperCase();
+}
 
 function highlightUsername(message) {
   const currentUser = usePage().props.auth.user.name;
@@ -214,7 +237,8 @@ async function sendMessage() {
             "time": padWithZeros(currentTime.getHours()) + ':' + padWithZeros(currentTime.getMinutes()),
             "message": message.value,
             "is_command": false,
-            "role": usePage().props.auth.user.role
+            "role": usePage().props.auth.user.role,
+            "chat_color": usePage().props.auth.user.chat_color
         })
         message.value = '';
         scrollToBottom();
@@ -240,12 +264,47 @@ async function sendMessage() {
         <!-- Chat Messages -->
         <div class="px-3 p-3 text-white flex-1 h-full overflow-auto bg-primary-900/95" ref="messageContainer">
             <div class="mb-0.5" v-for="message in chatMessages">
+                <!-- System announcements (broadcast messages) -->
+                <div v-if="message.type === 'announcement'" 
+                     :class="[
+                        'rounded-lg m-2 p-3 break-words border-2',
+                        message.priority === 'high' ? 
+                            'bg-gradient-to-r from-yellow-900/50 to-orange-900/50 text-yellow-100 border-yellow-600' :
+                            'bg-gradient-to-r from-blue-900/50 to-purple-900/50 text-blue-100 border-blue-600'
+                     ]">
+                    <div class="flex items-start">
+                        <span class="text-xs text-primary-300 mr-2 font-mono">{{ message.time }}</span>
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="inline-flex items-center px-2 py-1 text-xs font-bold bg-yellow-600 text-yellow-100 rounded uppercase tracking-wider">
+                                    📢 ANNOUNCEMENT
+                                </span>
+                            </div>
+                            <div class="text-sm font-medium" v-html="processMessageForDisplay(message.message)"></div>
+                        </div>
+                    </div>
+                </div>
                 <!-- Regular user messages -->
-                <div class="flex" v-if="message.name">
+                <div v-else-if="message.type === 'user' && message.name" class="flex">
                     <div class="text-xs pr-2 text-primary-400 mt-1 font-mono">{{ message.time }}</div>
                     <div :class="{'bg-primary-800/70 text-primary-200 py-1 px-1 rounded': message.is_command}">
-                        <span :title="message.role?.name || 'User'" class="font-semibold" :style="{color: message.role?.chat_color || '#86efac'}">
-                            {{ message.name }}<span v-if="message.role?.is_staff"> ({{ message.role.name }})</span>
+                        <span class="inline-flex items-center gap-1.5">
+                            <!-- Badge based on role -->
+                            <span v-if="message.role" 
+                                  class="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold rounded-sm uppercase tracking-wider"
+                                  :style="{
+                                      backgroundColor: message.role.chat_color + '30',
+                                      borderColor: message.role.chat_color,
+                                      color: message.role.chat_color
+                                  }"
+                                  :title="message.role.name"
+                                  style="border-width: 1px; border-style: solid; min-width: 24px; text-shadow: 0 0 2px rgba(0,0,0,0.3);">
+                                {{ getRoleBadgeText(message.role) }}
+                            </span>
+                            <!-- Username -->
+                            <span :title="message.role?.name || 'User'" class="font-semibold" :style="{color: message.role?.chat_color || '#86efac'}">
+                                {{ message.name }}
+                            </span>
                         </span>: <span class="message-content text-primary-100" v-html="processMessageForDisplay(message.message)"></span>
                     </div>
                 </div>
@@ -264,6 +323,30 @@ async function sendMessage() {
                             <span class="font-semibold text-xs uppercase tracking-wider mr-2">System</span>
                             <span v-html="message.message"></span>
                         </div>
+                    </div>
+                </div>
+                <!-- Legacy messages without type (backward compatibility) -->
+                <div v-else-if="!message.type && message.name" class="flex">
+                    <div class="text-xs pr-2 text-primary-400 mt-1 font-mono">{{ message.time }}</div>
+                    <div :class="{'bg-primary-800/70 text-primary-200 py-1 px-1 rounded': message.is_command}">
+                        <span class="inline-flex items-center gap-1.5">
+                            <!-- Badge based on role -->
+                            <span v-if="message.role" 
+                                  class="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold rounded-sm uppercase tracking-wider"
+                                  :style="{
+                                      backgroundColor: message.role.chat_color + '30',
+                                      borderColor: message.role.chat_color,
+                                      color: message.role.chat_color
+                                  }"
+                                  :title="message.role.name"
+                                  style="border-width: 1px; border-style: solid; min-width: 24px; text-shadow: 0 0 2px rgba(0,0,0,0.3);">
+                                {{ getRoleBadgeText(message.role) }}
+                            </span>
+                            <!-- Username -->
+                            <span :title="message.role?.name || 'User'" class="font-semibold" :style="{color: message.role?.chat_color || '#86efac'}">
+                                {{ message.name }}
+                            </span>
+                        </span>: <span class="message-content text-primary-100" v-html="processMessageForDisplay(message.message)"></span>
                     </div>
                 </div>
                 <!-- General system messages (old format) -->
