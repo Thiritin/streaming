@@ -22,7 +22,6 @@
         "lkdevelopment/hetzner-cloud-php-sdk": "^2.7",
         "pusher/pusher-php-server": "^7.2",
         "sentry/sentry-laravel": "^4.11",
-        "spatie/laravel-permission": "^6.10",
         "tightenco/ziggy": "^2.4"
     },
     "require-dev": {
