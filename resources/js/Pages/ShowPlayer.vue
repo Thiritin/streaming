@@ -394,7 +394,7 @@ onUnmounted(() => {
             <title>{{ showTitle }} - Stream</title>
         </Head>
 
-        <div class="flex flex-col md:flex-row md:h-[calc(100vh-3rem)] md:overflow-hidden">
+        <div class="flex flex-col xl:flex-row xl:h-[calc(100vh-3rem)] xl:overflow-hidden">
             <!-- Livestream -->
             <div class="w-full flex-1 flex flex-col">
                 <!-- Back to Shows Bar - Fixed at top -->
@@ -417,7 +417,7 @@ onUnmounted(() => {
                             <button 
                                 v-if="showChatBox"
                                 @click="isChatDrawerOpen = true"
-                                class="md:hidden inline-flex items-center px-3 py-1 text-sm bg-primary-800 hover:bg-primary-700 text-primary-300 hover:text-white rounded transition-colors relative"
+                                class="xl:hidden inline-flex items-center px-3 py-1 text-sm bg-primary-800 hover:bg-primary-700 text-primary-300 hover:text-white rounded transition-colors relative"
                             >
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
@@ -448,32 +448,11 @@ onUnmounted(() => {
                         <StreamPlayer ref="streamPlayer"
                                       :hls-url="hlsUrl"
                                       :show-info="activeShow"
-                                      class="z-10 relative w-full bg-black max-h-[calc(100vh_-_12vh)]"></StreamPlayer>
+                                      class="z-10 relative w-full bg-black mx-auto max-h-[60vh] sm:max-h-[70vh] md:max-h-[80vh] lg:max-h-[calc(100vh-12vh)]"></StreamPlayer>
 
                         <!-- Player Controls Bar -->
                     <div class="player-controls-bar bg-primary-900 border-t border-primary-800 px-4 py-2">
                         <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <!-- Stats Toggle -->
-                                <button @click="streamPlayer?.handleToggleStats()" 
-                                        class="px-3 py-1 text-sm bg-primary-800 hover:bg-primary-700 text-primary-300 hover:text-white rounded transition-colors flex items-center gap-2"
-                                        title="Stream Statistics (I)">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                                    </svg>
-                                    Stats
-                                </button>
-                                
-                                <!-- Keyboard Shortcuts Help -->
-                                <button @click="streamPlayer?.handleShowKeyboardHelp()" 
-                                        class="px-3 py-1 text-sm bg-primary-800 hover:bg-primary-700 text-primary-300 hover:text-white rounded transition-colors flex items-center gap-2"
-                                        title="Keyboard Shortcuts (?)">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                    </svg>
-                                    Help
-                                </button>
-                            </div>
                             <div class="flex items-center gap-2 text-sm text-primary-400">
                                 <span>{{ listeners }} viewers</span>
                             </div>
@@ -573,7 +552,7 @@ onUnmounted(() => {
                 </div>
             </div>
             <!-- Chat - Desktop Only -->
-            <div v-if="showChatBox" class="hidden md:block w-full md:w-1/6 md:min-w-[300px]">
+            <div v-if="showChatBox" class="hidden xl:block w-full xl:w-1/6 xl:min-w-[300px]">
                 <ChatBox :rate-limit="rateLimit" :chat-messages="chatMessages"
                          class="h-full md:overflow-hidden"></ChatBox>
             </div>
@@ -583,7 +562,7 @@ onUnmounted(() => {
         <button 
             v-if="showChatBox && showPlayer && !isChatDrawerOpen"
             @click="isChatDrawerOpen = true"
-            class="md:hidden fixed bottom-4 right-4 z-30 bg-primary-700 hover:bg-primary-600 text-white rounded-full p-4 shadow-lg transition-all duration-300 hover:scale-110"
+            class="xl:hidden fixed bottom-4 right-4 z-30 bg-primary-700 hover:bg-primary-600 text-white rounded-full p-4 shadow-lg transition-all duration-300 hover:scale-110"
         >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>

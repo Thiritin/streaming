@@ -59,6 +59,12 @@ class SourceResource extends Resource
                             ->required()
                             ->native(false)
                             ->helperText('Set the current status of the streaming source'),
+                        TextInput::make('priority')
+                            ->numeric()
+                            ->default(0)
+                            ->minValue(0)
+                            ->maxValue(999)
+                            ->helperText('Higher priority sources appear first on the homepage'),
                         Textarea::make('description')
                             ->rows(3)
                             ->columnSpanFull(),
@@ -129,6 +135,11 @@ class SourceResource extends Resource
                     ->color('info')
                     ->copyable()
                     ->searchable(),
+                TextColumn::make('priority')
+                    ->label('Priority')
+                    ->sortable()
+                    ->badge()
+                    ->color('primary'),
                 TextColumn::make('shows_count')
                     ->label('Total Shows')
                     ->counts('shows')
@@ -147,7 +158,7 @@ class SourceResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->defaultSort('created_at', 'desc')
+            ->defaultSort('priority', 'desc')
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status')

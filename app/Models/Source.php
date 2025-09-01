@@ -18,6 +18,7 @@ class Source extends Model
         'slug',
         'description',
         'stream_key',
+        'priority',
     ];
 
     protected $casts = [
@@ -131,11 +132,11 @@ class Source extends Model
     }
 
     /**
-     * Get sources ordered by name.
+     * Get sources ordered by priority (descending) then by name.
      */
     public function scopeOrdered($query)
     {
-        return $query->orderBy('name');
+        return $query->orderBy('priority', 'desc')->orderBy('name');
     }
 
     /**

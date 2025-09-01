@@ -21,7 +21,7 @@
                     <a 
                         v-for="liveShow in otherLiveShows" 
                         :key="liveShow.id"
-                        :href="`/shows/${liveShow.slug}`"
+                        :href="route('show.view', liveShow.slug)"
                         class="block bg-primary-800 hover:bg-primary-700 rounded-lg p-4 transition-colors"
                     >
                         <div class="flex items-center justify-between">
@@ -51,7 +51,7 @@
                     <a 
                         v-for="upcomingShow in upcomingShows" 
                         :key="upcomingShow.id"
-                        :href="`/shows/${upcomingShow.slug}`"
+                        :href="route('show.view', upcomingShow.slug)"
                         class="block bg-primary-800 hover:bg-primary-700 rounded-lg p-4 transition-colors"
                     >
                         <div class="text-left">

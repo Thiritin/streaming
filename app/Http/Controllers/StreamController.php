@@ -25,9 +25,11 @@ class StreamController extends Controller
 
         // Get live shows
         $liveShows = Show::with('source')
-            ->live()
-            ->orderBy('viewer_count', 'desc')
-            ->orderBy('priority', 'desc')
+            ->where('shows.status', 'live')
+            ->leftJoin('sources', 'shows.source_id', '=', 'sources.id')
+            ->orderBy('sources.priority', 'desc')
+            ->orderBy('shows.viewer_count', 'desc')
+            ->select('shows.*')
             ->get()
             ->map(function ($show) use ($user) {
                 return [
