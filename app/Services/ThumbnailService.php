@@ -36,10 +36,11 @@ class ThumbnailService
             return null;
         }
 
-        // Add internal session ID for authentication
-        if (config('stream.internal_session_id')) {
+        // Add system streamkey for authentication
+        $systemStreamkey = config('stream.system_streamkey') ?: env('STREAM_KEY');
+        if ($systemStreamkey) {
             $separator = str_contains($streamUrl, '?') ? '&' : '?';
-            $streamUrl .= $separator . 'session_id=' . config('stream.internal_session_id');
+            $streamUrl .= $separator . 'streamkey=' . $systemStreamkey;
         }
 
         Log::info("Capturing thumbnail for show {$show->id} from URL: {$streamUrl}");

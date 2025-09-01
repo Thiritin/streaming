@@ -6,7 +6,7 @@
       <!-- Header -->
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Live Streams</h1>
-        <p class="text-primary-400">Watch live shows and catch up on recorded content</p>
+        <p class="text-primary-400">Experience Eurofurence Live!</p>
       </div>
 
       <!-- Live Shows Section -->

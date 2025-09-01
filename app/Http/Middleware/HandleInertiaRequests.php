@@ -2,8 +2,8 @@
 
 namespace App\Http\Middleware;
 
-use App\Services\CommandRegistry;
 use App\Services\ChatMessageSanitizer;
+use App\Services\CommandRegistry;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -40,9 +40,9 @@ class HandleInertiaRequests extends Middleware
             // Use new CommandRegistry for commands
             $commandRegistry = app(CommandRegistry::class);
             $availableCommands = $commandRegistry->availableFor($user);
-            
+
             // Transform to array format for frontend
-            $chatCommands = array_map(function($cmd) {
+            $chatCommands = array_map(function ($cmd) {
                 return [
                     'name' => $cmd['name'],
                     'description' => $cmd['description'],
@@ -69,7 +69,10 @@ class HandleInertiaRequests extends Middleware
 
         return array_merge(parent::share($request), [
             'auth' => [
-                'user' => $user?->only('id', 'name', 'role'),
+                'user' => $user ? array_merge(
+                    $user->only('id', 'name', 'role'),
+                    ['is_staff' => $user->isStaff()]
+                ) : null,
                 'can_access_filament' => $user?->can('filament.access'),
                 'has_server_assignment' => $user ? ($user->server_id && $user->streamkey ? true : false) : false,
             ],

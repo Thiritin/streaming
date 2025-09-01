@@ -59,7 +59,7 @@ class User extends Authenticatable implements FilamentUser
             $localIpv4Subnet = config('stream.local_streaming_ipv4_subnet');
             $localIpv6Subnet = config('stream.local_streaming_ipv6_subnet');
             $localHostname = config('stream.local_streaming_hostname');
-            
+
             if ($localHostname && (
                 ($localIpv4Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv4Subnet)) ||
                 ($localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet))
@@ -68,7 +68,7 @@ class User extends Authenticatable implements FilamentUser
                 $server = new Server();
                 $server->hostname = $localHostname;
                 $server->port = 8080;
-                
+
                 Log::info('Using local streaming server override for user', [
                     'client_ip' => $clientIp,
                     'override_hostname' => $localHostname,
@@ -76,11 +76,11 @@ class User extends Authenticatable implements FilamentUser
                     'matched_ipv6_subnet' => $localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet) ? $localIpv6Subnet : null,
                     'user_id' => $this->id,
                 ]);
-                
+
                 return $server;
             }
         }
-        
+
         $server = $this->server;
 
         if (is_null($server) || is_null($this->streamkey)) {
@@ -131,24 +131,24 @@ class User extends Authenticatable implements FilamentUser
         // Exclude the current server if it's being deprovisioned
         $query = Server::where('status', ServerStatusEnum::ACTIVE)
             ->where('type', ServerTypeEnum::EDGE);
-        
+
         // If the user is currently assigned to a server, exclude it from selection
         // This ensures during reassignment we don't assign back to the deprovisioning server
         if ($this->server_id) {
             $query->where('id', '!=', $this->server_id);
         }
-        
+
         // Only select servers that haven't reached their capacity
         // This prevents overloading servers beyond their max_clients limit
         $server = $query->whereRaw('viewer_count < max_clients')
             ->orderBy('viewer_count', 'asc')
             ->first();
-        
+
         // If no servers have capacity, still try to get the least loaded one
         // This ensures users can still connect in emergency situations
         if (!$server) {
             $server = $query->orderBy('viewer_count', 'asc')->first();
-            
+
             if ($server) {
                 Log::warning('All servers at capacity, assigning to least loaded server', [
                     'server_id' => $server->id,
@@ -170,7 +170,7 @@ class User extends Authenticatable implements FilamentUser
 
         // Preserve existing streamkey if user already has one, otherwise generate new
         $streamkey = $this->streamkey ?: Str::random(32);
-        
+
         // Assign Server to User
         $this->update([
             'server_id' => $server->id,

@@ -340,6 +340,11 @@ class HlsController extends Controller
             return Server::where('hostname', $localHostname)->first();
         }
 
+        // For system users, just return the first available edge server
+        if ($user->id === 0) {
+            return Server::getActiveEdges()->first();
+        }
+
         return $user->getOrAssignServer($clientIp);
     }
 }
