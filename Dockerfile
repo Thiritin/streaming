@@ -10,7 +10,7 @@ ENV COMPOSER_MEMORY_LIMIT=-1
 ADD --chmod=0755 https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl git unzip openssl tar ca-certificates dnsutils \
+    && apt-get install -y --no-install-recommends curl git unzip openssl tar ca-certificates dnsutils ffmpeg \
     && install-php-extensions gd bcmath pdo_mysql zip intl opcache pcntl redis @composer \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
