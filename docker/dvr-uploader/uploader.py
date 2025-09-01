@@ -13,6 +13,8 @@ from pathlib import Path
 from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
+from botocore.config import Config
+from boto3.s3.transfer import TransferConfig
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import requests
@@ -34,12 +36,22 @@ RECORDINGS_PATH = os.environ.get('RECORDINGS_PATH', '/dvr/recordings')
 DELETE_AFTER_UPLOAD = os.environ.get('DELETE_AFTER_UPLOAD', 'true').lower() == 'true'
 WEBHOOK_URL = os.environ.get('WEBHOOK_URL')  # Optional webhook for notifications
 FILE_AGE_SECONDS = int(os.environ.get('FILE_AGE_SECONDS', '30'))  # Wait time before upload
-UPLOAD_DELAY_SECONDS = int(os.environ.get('UPLOAD_DELAY_SECONDS', '5'))  # Delay between uploads
-MAX_UPLOAD_RATE_MBPS = float(os.environ.get('MAX_UPLOAD_RATE_MBPS', '5'))  # Max upload rate in MB/s
+MAX_CONCURRENT_UPLOADS = int(os.environ.get('MAX_CONCURRENT_UPLOADS', '5'))  # Max concurrent file uploads
 
-# S3 client configuration
+# S3 client configuration with optimized connection pool
+boto_config = Config(
+    max_pool_connections=100,  # Increased from default 10 to support concurrent uploads
+    retries={
+        'max_attempts': 3,
+        'mode': 'adaptive'
+    },
+    read_timeout=300,  # 5 minutes for large uploads
+    connect_timeout=60
+)
+
 s3_config = {
     'region_name': S3_REGION,
+    'config': boto_config
 }
 
 if S3_ACCESS_KEY and S3_SECRET_KEY:
@@ -49,12 +61,32 @@ if S3_ACCESS_KEY and S3_SECRET_KEY:
 if S3_ENDPOINT:
     s3_config['endpoint_url'] = S3_ENDPOINT
 
-# Initialize S3 client
+# Initialize S3 client with optimized config
 s3_client = boto3.client('s3', **s3_config)
 
-# Track files being processed
+# Multipart transfer configuration optimized for 800MB files
+transfer_config = TransferConfig(
+    multipart_threshold=100 * 1024 * 1024,  # 100MB threshold
+    multipart_chunksize=100 * 1024 * 1024,  # 100MB chunks (8 parts for 800MB)
+    max_concurrency=5,  # 5 threads per file upload
+    use_threads=True
+)
+
+# Track files being processed and upload concurrency
 processing_files = set()
 file_lock = threading.Lock()
+upload_semaphore = threading.Semaphore(MAX_CONCURRENT_UPLOADS)
+
+# Metrics tracking
+upload_metrics = {
+    'queue_depth': 0,
+    'uploads_in_progress': 0,
+    'uploads_completed': 0,
+    'uploads_failed': 0,
+    'total_bytes_uploaded': 0,
+    'last_upload_speed_mbps': 0
+}
+metrics_lock = threading.Lock()
 
 
 class DVRFileHandler(FileSystemEventHandler):
@@ -94,12 +126,20 @@ class DVRFileHandler(FileSystemEventHandler):
             files_to_process = []
             
             with file_lock:
+                queue_depth = len(self.pending_files)
+                if queue_depth > 10:
+                    logger.warning(f"Upload queue depth high: {queue_depth} files pending")
+                
                 for file_path, last_modified in list(self.pending_files.items()):
                     if current_time - last_modified > FILE_AGE_SECONDS:
                         if file_path not in processing_files:
                             files_to_process.append(file_path)
                             del self.pending_files[file_path]
                             processing_files.add(file_path)
+            
+            # Update metrics
+            with metrics_lock:
+                upload_metrics['queue_depth'] = len(self.pending_files) + len(processing_files)
             
             for file_path in files_to_process:
                 threading.Thread(
@@ -111,68 +151,86 @@ class DVRFileHandler(FileSystemEventHandler):
 
 def process_file(file_path):
     """Process and upload a recording file"""
-    try:
-        # Add delay between uploads to reduce system impact
-        time.sleep(UPLOAD_DELAY_SECONDS)
-        
-        logger.info(f"Processing file: {file_path}")
-        
-        # Verify file exists and is not being written
-        if not os.path.exists(file_path):
-            logger.warning(f"File no longer exists: {file_path}")
-            return
-        
-        # Get file size to ensure it's complete
-        file_size = os.path.getsize(file_path)
-        if file_size == 0:
-            logger.warning(f"File is empty: {file_path}")
-            return
-        
-        # Wait a moment and check size again to ensure writing is complete
-        time.sleep(2)
-        new_size = os.path.getsize(file_path)
-        if new_size != file_size:
-            logger.info(f"File still being written: {file_path}")
-            # Re-add to pending
-            with file_lock:
-                handler.pending_files[file_path] = time.time()
-                processing_files.discard(file_path)
-            return
-        
-        # Parse the file path to extract metadata
-        path_parts = Path(file_path).parts
-        relative_path = Path(file_path).relative_to(RECORDINGS_PATH)
-        
-        # Generate S3 key with dvr/ prefix
-        s3_key = f"dvr/{relative_path}"
-        
-        # Upload to S3
-        logger.info(f"Uploading to S3: {s3_key}")
-        upload_to_s3(file_path, s3_key)
-        
-        # Send webhook notification if configured
-        if WEBHOOK_URL:
-            notify_webhook(file_path, s3_key)
-        
-        # Delete local file if configured
-        if DELETE_AFTER_UPLOAD:
-            os.remove(file_path)
-            logger.info(f"Deleted local file: {file_path}")
+    # Use semaphore to limit concurrent uploads
+    with upload_semaphore:
+        try:
+            # Update metrics
+            with metrics_lock:
+                upload_metrics['uploads_in_progress'] += 1
             
-            # Clean up empty directories
-            cleanup_empty_dirs(os.path.dirname(file_path))
+            start_time = time.time()
+            logger.info(f"Processing file: {file_path}")
+            
+            # Verify file exists and is not being written
+            if not os.path.exists(file_path):
+                logger.warning(f"File no longer exists: {file_path}")
+                return
+            
+            # Get file size to ensure it's complete
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                logger.warning(f"File is empty: {file_path}")
+                return
         
-        logger.info(f"Successfully processed: {file_path}")
-        
-    except Exception as e:
-        logger.error(f"Error processing file {file_path}: {e}")
-    finally:
-        with file_lock:
-            processing_files.discard(file_path)
+            # Wait a moment and check size again to ensure writing is complete
+            time.sleep(2)
+            new_size = os.path.getsize(file_path)
+            if new_size != file_size:
+                logger.info(f"File still being written: {file_path}")
+                # Re-add to pending
+                with file_lock:
+                    handler.pending_files[file_path] = time.time()
+                    processing_files.discard(file_path)
+                return
+            
+            # Parse the file path to extract metadata
+            path_parts = Path(file_path).parts
+            relative_path = Path(file_path).relative_to(RECORDINGS_PATH)
+            
+            # Generate S3 key with dvr/ prefix
+            s3_key = f"dvr/{relative_path}"
+            
+            # Upload to S3
+            logger.info(f"Uploading to S3: {s3_key}")
+            upload_to_s3(file_path, s3_key)
+            
+            # Send webhook notification if configured
+            if WEBHOOK_URL:
+                notify_webhook(file_path, s3_key)
+            
+            # Delete local file if configured
+            if DELETE_AFTER_UPLOAD:
+                os.remove(file_path)
+                logger.info(f"Deleted local file: {file_path}")
+                
+                # Clean up empty directories
+                cleanup_empty_dirs(os.path.dirname(file_path))
+            
+            # Calculate upload speed
+            elapsed_time = time.time() - start_time
+            file_size_mb = os.path.getsize(file_path) / (1024 * 1024) if os.path.exists(file_path) else 0
+            upload_speed = file_size_mb / elapsed_time if elapsed_time > 0 else 0
+            
+            with metrics_lock:
+                upload_metrics['uploads_completed'] += 1
+                upload_metrics['total_bytes_uploaded'] += file_size_mb * 1024 * 1024
+                upload_metrics['last_upload_speed_mbps'] = upload_speed * 8
+            
+            logger.info(f"Successfully processed: {file_path} ({file_size_mb:.1f}MB in {elapsed_time:.1f}s, {upload_speed:.1f}MB/s)")
+            
+            except Exception as e:
+            logger.error(f"Error processing file {file_path}: {e}")
+            with metrics_lock:
+                upload_metrics['uploads_failed'] += 1
+        finally:
+            with file_lock:
+                processing_files.discard(file_path)
+            with metrics_lock:
+                upload_metrics['uploads_in_progress'] -= 1
 
 
 def upload_to_s3(file_path, s3_key):
-    """Upload file to S3 with multipart support for large files"""
+    """Upload file to S3 with optimized multipart support for large files"""
     try:
         # Determine content type
         content_type = 'video/mp4' if file_path.endswith('.mp4') else 'video/x-flv'
@@ -199,21 +257,13 @@ def upload_to_s3(file_path, s3_key):
         except:
             pass
         
-        # Use multipart upload for files larger than 50MB
-        if file_size > 50 * 1024 * 1024:  # 50MB threshold
-            logger.info(f"Using multipart upload for large file ({file_size / (1024*1024):.1f}MB)")
+        logger.info(f"Starting upload: {s3_key} ({file_size / (1024*1024):.1f}MB)")
+        
+        # Use optimized multipart upload for all files over 100MB
+        if file_size > 100 * 1024 * 1024:  # 100MB threshold
+            logger.info(f"Using optimized multipart upload ({file_size / (1024*1024):.1f}MB with {file_size / (100*1024*1024):.0f} parts)")
             
-            # Configure multipart transfer with conservative settings to avoid impacting FFmpeg
-            from boto3.s3.transfer import TransferConfig
-            config = TransferConfig(
-                multipart_threshold=1024 * 25,  # 25MB
-                max_concurrency=2,  # Reduced from 10 to minimize CPU/network impact
-                multipart_chunksize=1024 * 10,  # Smaller 10MB chunks for smoother uploads
-                use_threads=True
-                # Note: max_bandwidth might not be available in all boto3 versions
-            )
-            
-            # Upload using multipart
+            # Upload using optimized multipart config
             s3_client.upload_file(
                 file_path,
                 S3_BUCKET,
@@ -222,7 +272,7 @@ def upload_to_s3(file_path, s3_key):
                     'ContentType': content_type,
                     'Metadata': metadata
                 },
-                Config=config
+                Config=transfer_config  # Use global optimized config
             )
         else:
             # Regular upload for smaller files
@@ -328,8 +378,27 @@ def scan_existing_files():
                     logger.error(f"Error checking file {file_path}: {e}")
 
 
+def print_metrics():
+    """Print upload metrics periodically"""
+    while True:
+        time.sleep(60)  # Print every minute
+        with metrics_lock:
+            logger.info(
+                f"Upload Metrics - Queue: {upload_metrics['queue_depth']}, "
+                f"In Progress: {upload_metrics['uploads_in_progress']}, "
+                f"Completed: {upload_metrics['uploads_completed']}, "
+                f"Failed: {upload_metrics['uploads_failed']}, "
+                f"Last Speed: {upload_metrics['last_upload_speed_mbps']:.1f} Mbps"
+            )
+            
+            # Alert if queue is getting too deep
+            if upload_metrics['queue_depth'] > 20:
+                logger.error(f"CRITICAL: Upload queue depth is {upload_metrics['queue_depth']} - falling behind!")
+
+
 if __name__ == "__main__":
     logger.info("DVR S3 Uploader Service starting...")
+    logger.info(f"Configuration: MAX_CONCURRENT_UPLOADS={MAX_CONCURRENT_UPLOADS}, FILE_AGE_SECONDS={FILE_AGE_SECONDS}")
     
     # Verify S3 configuration
     if not S3_BUCKET:
@@ -338,6 +407,10 @@ if __name__ == "__main__":
     
     # Create recordings directory if it doesn't exist
     os.makedirs(RECORDINGS_PATH, exist_ok=True)
+    
+    # Start metrics reporting thread
+    metrics_thread = threading.Thread(target=print_metrics, daemon=True)
+    metrics_thread.start()
     
     # Test S3 connection
     try:
