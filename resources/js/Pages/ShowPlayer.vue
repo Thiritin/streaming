@@ -11,6 +11,9 @@ import StreamTechnicalIssuesStatusPage from "@/Components/Livestream/StatusPages
 import StreamStartingSoonStatusPage from "@/Components/Livestream/StatusPages/StreamStartingSoonStatusPage.vue";
 import StreamErrorStatusPage from "@/Components/Livestream/StatusPages/StreamErrorStatusPage.vue";
 import StreamReconnectingStatusPage from "@/Components/Livestream/StatusPages/StreamReconnectingStatusPage.vue";
+import ShowScheduledStatusPage from "@/Components/Livestream/StatusPages/ShowScheduledStatusPage.vue";
+import ShowEndedStatusPage from "@/Components/Livestream/StatusPages/ShowEndedStatusPage.vue";
+import ShowCancelledStatusPage from "@/Components/Livestream/StatusPages/ShowCancelledStatusPage.vue";
 import ShowTile from "@/Components/Shows/ShowTile.vue";
 import MobileDrawer from "@/Components/MobileDrawer.vue";
 import Container from "@/Components/Container.vue";
@@ -78,10 +81,11 @@ let hlsCheckAttempts = 0;
 const maxHlsCheckAttempts = 15; // 30 seconds total (15 * 2 seconds)
 
 // Computed properties
-const showChatBox = computed(() => status.value !== 'offline');
-const showPlayer = computed(() => activeShow.value && hlsUrl.value && status.value === 'online' && sourceStatus.value === 'online' && provisioning.value === false && otherDevice.value === false && !isReconnecting.value);
+const showChatBox = computed(() => status.value !== 'offline' && activeShow.value?.status === 'live');
+const showPlayer = computed(() => activeShow.value && activeShow.value.status === 'live' && hlsUrl.value && status.value === 'online' && sourceStatus.value === 'online' && provisioning.value === false && otherDevice.value === false && !isReconnecting.value);
 const showTitle = computed(() => activeShow.value ? activeShow.value.title : 'No Show Active');
 const otherLiveShows = computed(() => shows.value.filter(s => s.id !== activeShow.value?.id && s.status === 'live' && s.slug));
+const upcomingShows = computed(() => shows.value.filter(s => s.id !== activeShow.value?.id && s.status === 'scheduled' && s.slug).slice(0, 3));
 
 // Methods
 const isMobile = () => {
@@ -253,6 +257,115 @@ onMounted(() => {
                 }
             }
         });
+    
+    // Listen for show-specific events
+    if (activeShow.value?.id) {
+        Echo.channel(`show.${activeShow.value.id}`)
+            .listen('.show.live', (e) => {
+                console.log('Show went live:', e);
+                
+                // Update show data
+                activeShow.value = {
+                    ...activeShow.value,
+                    id: e.id || activeShow.value.id,
+                    title: e.title || activeShow.value.title,
+                    slug: e.slug || activeShow.value.slug,
+                    status: 'live',
+                    source: e.source || activeShow.value.source,
+                    source_id: e.source?.id || activeShow.value.source_id,
+                    actual_start: e.actual_start || activeShow.value.actual_start
+                };
+                
+                // Update stream and source status
+                status.value = 'online';
+                if (e.source?.status) {
+                    sourceStatus.value = e.source.status;
+                } else if (activeShow.value.source?.status) {
+                    sourceStatus.value = activeShow.value.source.status;
+                } else {
+                    sourceStatus.value = 'online'; // Assume online if show is live
+                }
+                
+                // Update HLS URL
+                if (e.stream_url) {
+                    hlsUrl.value = e.stream_url;
+                } else if (e.hlsUrl) {
+                    hlsUrl.value = e.hlsUrl;
+                }
+                
+                // Subscribe to source updates if we have a new source
+                if (e.source?.id && e.source.id !== activeShow.value.source_id) {
+                    // Leave old source channel
+                    if (activeShow.value.source_id) {
+                        Echo.leave(`source.${activeShow.value.source_id}`);
+                    }
+                    
+                    // Join new source channel
+                    Echo.channel(`source.${e.source.id}`)
+                        .listen('.source.status.changed', (sourceEvent) => {
+                            console.log('Source status changed:', sourceEvent);
+                            const previousStatus = sourceStatus.value;
+                            sourceStatus.value = sourceEvent.status;
+                            
+                            // Handle transitions to online from offline/error
+                            if (sourceEvent.status === 'online' && ['offline', 'error'].includes(previousStatus)) {
+                                console.log('Source transitioning to online - starting reconnection process');
+                                isReconnecting.value = true;
+                                startHlsChecker();
+                            } else if (sourceEvent.status === 'error') {
+                                console.log('Source entered error state');
+                                isReconnecting.value = false;
+                                stopHlsChecker();
+                            } else if (sourceEvent.status === 'offline') {
+                                isReconnecting.value = false;
+                                stopHlsChecker();
+                            }
+                        });
+                }
+            })
+            .listen('.show.ended', (e) => {
+                console.log('Show ended:', e);
+                
+                // Update show data
+                activeShow.value = {
+                    ...activeShow.value,
+                    id: e.id || activeShow.value.id,
+                    title: e.title || activeShow.value.title,
+                    slug: e.slug || activeShow.value.slug,
+                    status: 'ended',
+                    actual_end: e.actual_end || activeShow.value.actual_end,
+                    peak_viewer_count: e.peak_viewer_count || activeShow.value.peak_viewer_count
+                };
+                
+                // Update stream status to offline when show ends
+                status.value = 'offline';
+                sourceStatus.value = 'offline';
+                
+                // Stop any reconnection attempts
+                isReconnecting.value = false;
+                stopHlsChecker();
+            })
+            .listen('.show.cancelled', (e) => {
+                console.log('Show cancelled:', e);
+                
+                // Update show data
+                activeShow.value = {
+                    ...activeShow.value,
+                    id: e.id || activeShow.value.id,
+                    title: e.title || activeShow.value.title,
+                    slug: e.slug || activeShow.value.slug,
+                    status: 'cancelled'
+                };
+                
+                // Update stream status to offline when show is cancelled
+                status.value = 'offline';
+                sourceStatus.value = 'offline';
+                
+                // Stop any reconnection attempts
+                isReconnecting.value = false;
+                stopHlsChecker();
+            });
+    }
 });
 
 // Cleanup on unmount
@@ -263,6 +376,15 @@ onUnmounted(() => {
     if (activeShow.value?.source_id) {
         Echo.leave(`source.${activeShow.value.source_id}`);
     }
+    
+    // Leave the show channel
+    if (activeShow.value?.id) {
+        Echo.leave(`show.${activeShow.value.id}`);
+    }
+    
+    // Leave the shows channel
+    Echo.leave('shows');
+    Echo.leave('StreamInfo');
 });
 </script>
 
@@ -383,6 +505,24 @@ onUnmounted(() => {
                         </div>
                     </Container>
                     </div>
+                    <!-- Show Status Pages -->
+                    <div v-else-if="activeShow?.status === 'scheduled'">
+                        <ShowScheduledStatusPage :show="activeShow" />
+                    </div>
+                    <div v-else-if="activeShow?.status === 'ended'">
+                        <ShowEndedStatusPage 
+                            :show="activeShow" 
+                            :other-live-shows="otherLiveShows"
+                            main-stream-url="/stream" />
+                    </div>
+                    <div v-else-if="activeShow?.status === 'cancelled'">
+                        <ShowCancelledStatusPage 
+                            :show="activeShow" 
+                            :other-live-shows="otherLiveShows"
+                            :upcoming-shows="upcomingShows"
+                            main-stream-url="/schedule" />
+                    </div>
+                    <!-- Stream Status Pages -->
                     <div v-else-if="status === 'starting_soon'">
                         <StreamStartingSoonStatusPage></StreamStartingSoonStatusPage>
                     </div>

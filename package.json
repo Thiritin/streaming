@@ -24,6 +24,7 @@
     "dependencies": {
         "@headlessui/vue": "^1.7.23",
         "@silvermine/videojs-chromecast": "^1.5.0",
+        "dayjs": "^1.11.18",
         "floating-vue": "^5.2.2",
         "hls.js": "^1.6.11",
         "laravel-echo": "^1.15.2",

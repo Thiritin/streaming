@@ -53,14 +53,10 @@
         </div>
       
       <!-- Live Badge -->
-      <div v-if="isLive" class="absolute top-3 left-3 flex items-center space-x-2">
-        <span class="live-badge bg-red-600 text-white px-3 py-1.5 rounded text-sm font-bold uppercase flex items-center">
+      <div v-if="isLive" class="absolute top-3 left-3">
+        <span class="bg-red-600 text-white px-3 py-1.5 rounded text-sm font-bold uppercase flex items-center">
           <span class="live-dot"></span>
           LIVE
-        </span>
-        <span v-if="show.viewer_count > 0" class="bg-black/70 text-white px-3 py-1.5 rounded text-sm">
-          <FaIconUser class="inline w-3 h-3 mr-1" />
-          {{ formatViewerCount(show.viewer_count) }}
         </span>
       </div>
       
@@ -109,7 +105,6 @@
 import { Link } from '@inertiajs/vue3';
 import { ref, computed, onMounted, onUnmounted, nextTick, Transition } from 'vue';
 import FaVideoIcon from '../Icons/FaVideoIcon.vue';
-import FaIconUser from '../Icons/FaIconUser.vue';
 import FaPlayIcon from '../Icons/FaPlayIcon.vue';
 import Hls from 'hls.js';
 
@@ -221,13 +216,6 @@ const handleMouseLeave = () => {
   showVideoPreview.value = false;
 };
 
-const formatViewerCount = (count) => {
-  if (count >= 1000) {
-    return (count / 1000).toFixed(1) + 'K';
-  }
-  return count.toString();
-};
-
 const formatDuration = (startTime) => {
   const start = new Date(startTime);
   const now = new Date();
@@ -327,10 +315,6 @@ onUnmounted(() => {
 </script>
 
 <style>
-.live-badge {
-  animation: pulse 2s ease-in-out infinite;
-}
-
 .live-dot {
   width: 0.5rem;
   height: 0.5rem;

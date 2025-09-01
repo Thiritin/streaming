@@ -48,12 +48,14 @@ class ShowWentLive implements ShouldBroadcast
             'title' => $this->show->title,
             'slug' => $this->show->slug,
             'status' => $this->show->status,
-            'source' => [
+            'source' => $this->show->source ? [
                 'id' => $this->show->source->id,
                 'name' => $this->show->source->name,
                 'location' => $this->show->source->location,
-            ],
+                'status' => $this->show->source->status->value,
+            ] : null,
             'stream_url' => $this->show->getStreamUrl(),
+            'hls_url' => $this->show->getHlsUrl(),
             'thumbnail_url' => $this->show->thumbnail_url,
             'actual_start' => $this->show->actual_start,
         ];

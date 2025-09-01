@@ -10,6 +10,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Session;
 use UnexpectedValueException;
@@ -74,8 +75,11 @@ class OidcClientController extends Controller
         ]);
         $user = $user->fresh();
 
-        // Sync roles from registration system
-        $roleSlugs = $this->mapGroupsToRoles($userinfo['groups'] ?? []);
+        // Fetch attendee packages from EF registration API
+        $packages = $this->fetchAttendeePackages($userid);
+
+        // Sync roles from registration system (groups and packages)
+        $roleSlugs = $this->mapGroupsAndPackagesToRoles($userinfo['groups'] ?? [], $packages);
         $user->syncRolesFromLogin($roleSlugs);
 
         Auth::loginUsingId($user->id);
@@ -106,31 +110,96 @@ class OidcClientController extends Controller
     }
 
     /**
-     * Map registration system groups to role slugs
+     * Fetch attendee packages from EF registration API
      */
-    private function mapGroupsToRoles(array $groups): array
+    private function fetchAttendeePackages(string $userId): array
     {
-        $roleMapping = [
-            // Map group IDs to role slugs
-            // Example mappings - adjust based on your registration system
-            'SUPER_SPONSOR_GROUP' => 'supersponsor',
-            'SPONSOR_GROUP' => 'sponsor',
-            'ATTENDEE_GROUP' => 'attendee',
-            'STAFF_GROUP' => 'staff',
-            // Add more mappings as needed
-        ];
+        try {
+            $attsrvUrl = config('services.attsrv.url');
+            if (! $attsrvUrl) {
+                Log::warning('ATTSRV_URL not configured, skipping package fetch');
 
+                return [];
+            }
+
+            // Fetch attendee data from registration API
+            $response = Http::timeout(5)->get($attsrvUrl.'/api/v1/attendees/'.$userId);
+
+            if (! $response->successful()) {
+                Log::warning('Failed to fetch attendee packages', [
+                    'user_id' => $userId,
+                    'status' => $response->status(),
+                ]);
+
+                return [];
+            }
+
+            $attendeeData = $response->json();
+
+            // Extract packages from the response
+            // The exact structure depends on the EF API response format
+            $packages = $attendeeData['packages'] ?? [];
+
+            Log::info('Fetched attendee packages', [
+                'user_id' => $userId,
+                'packages' => $packages,
+            ]);
+
+            return $packages;
+        } catch (\Exception $e) {
+            Log::error('Error fetching attendee packages', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    /**
+     * Map registration system groups and packages to role slugs
+     */
+    private function mapGroupsAndPackagesToRoles(array $groups, array $packages): array
+    {
         $roles = [];
-        foreach ($groups as $group) {
-            if (isset($roleMapping[$group])) {
-                $roles[] = $roleMapping[$group];
+
+        // Check packages for sponsor/supersponsor
+        foreach ($packages as $package) {
+            $packageName = strtolower($package);
+
+            if (str_contains($packageName, 'supersponsor')) {
+                $roles[] = 'supersponsor';
+            } elseif (str_contains($packageName, 'sponsor')) {
+                $roles[] = 'sponsor';
             }
         }
 
-        // Default role if no specific roles found
-        if (empty($roles)) {
+        // Map groups to roles (for other roles like staff, moderator, etc.)
+        $groupMapping = [
+            'STAFF_GROUP' => 'staff',
+            'MODERATOR_GROUP' => 'moderator',
+            // Add more group mappings as needed
+        ];
+
+        foreach ($groups as $group) {
+            if (isset($groupMapping[$group])) {
+                $roles[] = $groupMapping[$group];
+            }
+        }
+
+        // Add attendee role as base role if not already included
+        if (! in_array('attendee', $roles)) {
             $roles[] = 'attendee';
         }
+
+        // Remove duplicates
+        $roles = array_unique($roles);
+
+        Log::info('Mapped roles for user', [
+            'groups' => $groups,
+            'packages' => $packages,
+            'roles' => $roles,
+        ]);
 
         return $roles;
     }

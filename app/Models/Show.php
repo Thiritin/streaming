@@ -22,12 +22,12 @@ class Show extends Model
         'actual_start',
         'actual_end',
         'status',
+        'auto_mode',
         'thumbnail_path',
         'thumbnail_updated_at',
         'thumbnail_capture_error',
         'viewer_count',
         'peak_viewer_count',
-        'is_featured',
         'priority',
         'tags',
         'metadata',
@@ -40,7 +40,7 @@ class Show extends Model
         'actual_start' => 'datetime',
         'actual_end' => 'datetime',
         'thumbnail_updated_at' => 'datetime',
-        'is_featured' => 'boolean',
+        'auto_mode' => 'boolean',
         'tags' => 'array',
         'metadata' => 'array',
     ];
@@ -242,14 +242,6 @@ class Show extends Model
     }
 
     /**
-     * Scope for featured shows.
-     */
-    public function scopeFeatured($query)
-    {
-        return $query->where('is_featured', true);
-    }
-
-    /**
      * Scope for shows happening today.
      */
     public function scopeToday($query)
@@ -378,5 +370,40 @@ class Show extends Model
     {
         $count = $this->source ? $this->source->activeViewers()->count() : 0;
         $this->update(['viewer_count' => $count]);
+    }
+
+    /**
+     * Check if show is in auto mode.
+     */
+    public function isAutoMode()
+    {
+        return $this->auto_mode === true;
+    }
+
+    /**
+     * Check if show is within scheduled time window.
+     */
+    public function isWithinScheduledTime()
+    {
+        $now = now();
+        // Use lte (less than or equal) and gte (greater than or equal) for inclusive boundaries
+        return $this->scheduled_start->lte($now) && $this->scheduled_end->gte($now);
+    }
+
+    /**
+     * Check if show has passed its scheduled end time.
+     */
+    public function isPastScheduledEnd()
+    {
+        // Use lt (less than) for exclusive comparison
+        return $this->scheduled_end->lt(now());
+    }
+
+    /**
+     * Scope for auto mode shows.
+     */
+    public function scopeAutoMode($query)
+    {
+        return $query->where('auto_mode', true);
     }
 }

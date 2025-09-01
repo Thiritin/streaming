@@ -1,7 +1,7 @@
 <script setup>
-import {onMounted, reactive, ref} from "vue";
+import {onMounted, onUnmounted, reactive, ref, watch, nextTick} from "vue";
 import ChatMessageBox from "@/Components/Livestream/ChatMessageBox.vue";
-import {usePage} from '@inertiajs/vue3'
+import {usePage, router} from '@inertiajs/vue3'
 import {inject} from 'vue'
 
 const axios = inject('axios')
@@ -19,8 +19,14 @@ const page = usePage()
 
 let message = ref('');
 let error = ref('');
+let isSending = ref(false);
 let messageContainer = ref(null)
 let viewCatcher = ref(null);
+let isAutoScrollEnabled = ref(true);
+let lastScrollTop = ref(0);
+let isLoadingOlder = ref(false);
+let hasMoreMessages = ref(true);
+let firstMessageId = ref(null);
 let props = defineProps({
     chatMessages: {
         type: Array,
@@ -40,13 +46,86 @@ function padWithZeros(number) {
     return number.toString().padStart(2, '0');
 }
 
-function scrollToBottom() {
+function scrollToBottom(force = false) {
+    if (!isAutoScrollEnabled.value && !force) return;
+    
     const container = messageContainer.value;
-    if (container && container.lastElementChild) {
+    if (container) {
         setTimeout(() => {
-            container.lastElementChild.scrollIntoView({behavior: "smooth", block: "end"});
+            container.scrollTop = container.scrollHeight;
         }, 50);
     }
+}
+
+async function loadOlderMessages() {
+    if (isLoadingOlder.value || !hasMoreMessages.value) return;
+    
+    isLoadingOlder.value = true;
+    
+    try {
+        // Load older messages via API
+        const response = await axios.get('/messages/older', {
+            params: {
+                before_id: firstMessageId.value
+            }
+        });
+        
+        if (response.data.messages && response.data.messages.length > 0) {
+            // Store current scroll height
+            const container = messageContainer.value;
+            const previousScrollHeight = container ? container.scrollHeight : 0;
+            
+            // Prepend older messages to the beginning
+            chatMessages.value = [...response.data.messages, ...chatMessages.value];
+            
+            // Update first message ID for next load
+            firstMessageId.value = response.data.messages[0].id;
+            
+            // Update hasMore flag
+            hasMoreMessages.value = response.data.hasMore;
+            
+            // Preserve scroll position after DOM update
+            await nextTick();
+            if (container) {
+                const newScrollHeight = container.scrollHeight;
+                const scrollDiff = newScrollHeight - previousScrollHeight;
+                container.scrollTop = container.scrollTop + scrollDiff;
+            }
+        } else {
+            hasMoreMessages.value = false;
+        }
+    } catch (error) {
+        console.error('Failed to load older messages:', error);
+    } finally {
+        isLoadingOlder.value = false;
+    }
+}
+
+function handleScroll() {
+    const container = messageContainer.value;
+    if (!container) return;
+    
+    const scrollTop = container.scrollTop;
+    const scrollHeight = container.scrollHeight;
+    const clientHeight = container.clientHeight;
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
+    const isNearTop = scrollTop < 200; // Load when within 200px of top
+    
+    // Trigger lazy loading when scrolled near the top
+    if (isNearTop && !isLoadingOlder.value && hasMoreMessages.value) {
+        loadOlderMessages();
+    }
+    
+    // If user scrolled up (away from bottom), disable auto-scroll
+    if (!isAtBottom && scrollTop < lastScrollTop.value) {
+        isAutoScrollEnabled.value = false;
+    }
+    // If user scrolled to bottom (or very close), enable auto-scroll
+    else if (isAtBottom) {
+        isAutoScrollEnabled.value = true;
+    }
+    
+    lastScrollTop.value = scrollTop;
 }
 
 function showCommandFeedback(message, type = 'info', data = {}) {
@@ -85,6 +164,11 @@ function clearOldMessages() {
 }
 
 onMounted(() => {
+    // Initialize first message ID
+    if (chatMessages.value.length > 0) {
+        firstMessageId.value = chatMessages.value[0].id;
+    }
+    
     // Register Chat Listener
     Echo
         .channel('chat')
@@ -148,12 +232,25 @@ onMounted(() => {
             });
     }
 
-    // Wait 2 seconds before scrolling to bottom
+    // Initial scroll to bottom after a short delay
     setTimeout(() => {
-        scrollToBottom();
+        scrollToBottom(true); // Force scroll on initial load
         clearOldMessages();
-    }, 2000);
+    }, 100);
+    
+    // Add scroll event listener to the message container
+    if (messageContainer.value) {
+        messageContainer.value.addEventListener('scroll', handleScroll);
+    }
 })
+
+onUnmounted(() => {
+    // Clean up scroll event listener
+    if (messageContainer.value) {
+        messageContainer.value.removeEventListener('scroll', handleScroll);
+    }
+})
+
 const currentTime = new Date();
 let chatMessages = ref(props.chatMessages);
 
@@ -175,64 +272,43 @@ function getRoleBadgeText(role) {
            role.name.substring(0, 3).toUpperCase();
 }
 
-function highlightUsername(message) {
-  const currentUser = usePage().props.auth.user.name;
-  const regex = new RegExp(`@${currentUser}\\b`, 'g');
-  return message.replace(regex, `<span class="text-center mx-1 px-1 bg-black">@${currentUser}</span>`);
-}
-
 function processMessageForDisplay(message) {
-  // Check if message contains emote tags (already processed by server)
-  if (message.includes('<emote')) {
-    // Parse emote tags and replace with images
-    let processed = message.replace(/<emote data-name="([^"]+)" data-url="([^"]+)"(?: data-size="([^"]+)")?><\/emote>/g, 
-      (match, name, url, size) => {
-        // Use smaller size (16x16) if size is 'small', otherwise 32x32
-        const sizeClass = size === 'small' ? 'w-4 h-4' : 'w-8 h-8';
-        return `<img src="${url}" alt=":${name}:" title=":${name}:" class="inline-block ${sizeClass} mx-1 align-middle" />`;
-      });
-    
-    // Apply username highlighting
-    processed = highlightUsername(processed);
-    return processed;
-  }
+  // Server already handles HTML escaping and sanitization
+  // We just need to convert emote tags to images and highlight usernames
   
-  // For messages without emotes, process normally
-  let processed = highlightUsername(encodeHtml(message));
-
-  // Apply client-side URL filtering for display (server already sanitized)
-  const allowedDomains = page.props.chat?.config?.allowedDomains || ['eurofurence.org'];
-  const urlPattern = /(?:https?:\/\/|www\.)(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s]*)?/gi;
-
-  processed = processed.replace(urlPattern, (match) => {
-    // Check if URL is from allowed domain
-    for (const domain of allowedDomains) {
-      if (match.includes(domain)) {
-        return match;
-      }
-    }
-    return '[url removed]';
-  });
-
+  // Parse emote tags and replace with images
+  let processed = message.replace(/<emote data-name="([^"]+)" data-url="([^"]+)"(?: data-size="([^"]+)")?><\/emote>/g, 
+    (match, name, url, size) => {
+      // Use smaller size (16x16) if size is 'small', otherwise 32x32
+      const sizeClass = size === 'small' ? 'w-4 h-4' : 'w-8 h-8';
+      return `<img src="${url}" alt=":${name}:" title=":${name}:" class="inline-block ${sizeClass} mx-1 align-middle" />`;
+    });
+  
+  // Apply username highlighting (without encoding since server already did it)
+  const currentUser = usePage().props.auth.user.name;
+  // Escape special regex characters in username
+  const escapedUser = currentUser.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`@${escapedUser}\\b`, 'g');
+  processed = processed.replace(regex, `<span class="text-center mx-1 px-1 bg-black">@${currentUser}</span>`);
+  
   return processed;
 }
+
 
 function isCommand(str) {
     const trimmedStr = str.trim();
     return trimmedStr.startsWith('/') || trimmedStr.startsWith('!');
 }
 
-function encodeHtml(html) {
-    return html.replace(/[\u00A0-\u9999<>\&]/g, i => '&#'+i.charCodeAt(0)+';')
-}
-
 async function sendMessage() {
     if (message.value.length === 0) return;
+    if (isSending.value) return; // Prevent double-sending
     
     const cleanInput = message.value.trim();
     
     // Check if it's a command
     if (cleanInput.startsWith('/')) {
+        isSending.value = true;
         // Handle commands via API
         try {
             const response = await axios.post('/api/command/execute', {
@@ -250,67 +326,88 @@ async function sendMessage() {
         } catch (e) {
             error.value = e.response?.data?.error || 'Command execution failed';
             console.error('Command execution failed:', e);
+        } finally {
+            isSending.value = false;
         }
         return;
     }
     
     // Regular message handling
+    isSending.value = true;
+    const messageToSend = message.value;
+    message.value = ''; // Clear input immediately for better UX
+    
     axios.post(route('message.send'), {
-        message: message.value
+        message: messageToSend
     }).then((response) => {
         error.value = '';
-        const currentTime = new Date();
-        chatMessages.value.push({
-            'id': response.data.message_id || null,
-            'name': usePage().props.auth.user.name,
-            "time": padWithZeros(currentTime.getHours()) + ':' + padWithZeros(currentTime.getMinutes()),
-            "message": message.value,
-            "is_command": false,
-            "role": usePage().props.auth.user.role,
-            "chat_color": usePage().props.auth.user.chat_color
-        })
-        message.value = '';
-        scrollToBottom();
-        clearOldMessages();
+        // Use the server-processed message with proper ID and emote processing
+        if (response.data.message) {
+            chatMessages.value.push(response.data.message);
+            scrollToBottom();
+            clearOldMessages();
+        }
         rateLimit.value = response.data.rateLimit;
     }).catch((e) => {
+        // Restore message on error
+        message.value = messageToSend;
         error.value = e.response?.data?.message
         if (e.response.status === 429) {
             rateLimit.value = e.response.data.rateLimit;
         }
         console.log(e)
+    }).finally(() => {
+        isSending.value = false;
     });
 }
 
 </script>
 
 <template>
-    <div class="flex flex-col bg-primary-950">
+    <div class="flex flex-col bg-primary-950 relative h-full">
         <!-- Title -->
-        <div class="bg-primary-950 py-4 text-white text-center border-b border-primary-800">
+        <div class="bg-primary-950 py-4 text-white text-center border-b border-primary-800 flex-shrink-0">
             <h1 class="uppercase tracking-wider font-semibold">Stream Chat</h1>
         </div>
         <!-- Chat Messages -->
-        <div class="px-3 p-3 text-white flex-1 h-full overflow-auto bg-primary-900/95" ref="messageContainer">
+        <div class="relative flex-1 min-h-0">
+            <!-- Scroll to bottom button -->
+            <transition name="fade">
+                <button v-if="!isAutoScrollEnabled"
+                    @click="scrollToBottom(true); isAutoScrollEnabled = true"
+                    class="absolute bottom-2 left-1/2 transform -translate-x-1/2 z-10 bg-primary-700 hover:bg-primary-600 text-white px-3 py-1.5 rounded-full shadow-lg text-sm flex items-center gap-2 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+                    </svg>
+                    New messages
+                </button>
+            </transition>
+            <div class="px-3 p-3 text-white absolute inset-0 overflow-auto bg-primary-900/95" ref="messageContainer" @scroll="handleScroll">
+            <!-- Loading indicator at the top -->
+            <div v-if="isLoadingOlder" class="text-center py-3 text-primary-400">
+                <svg class="animate-spin h-5 w-5 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <div class="text-xs mt-1">Loading older messages...</div>
+            </div>
+            
+            <!-- No more messages indicator -->
+            <div v-else-if="!hasMoreMessages && chatMessages.length > 0" class="text-center py-2 text-primary-500 text-xs">
+                Beginning of chat history
+            </div>
+            
             <div class="mb-0.5" v-for="message in chatMessages">
                 <!-- System announcements (broadcast messages) -->
-                <div v-if="message.type === 'announcement'" 
-                     :class="[
-                        'rounded-lg m-2 p-3 break-words border-2',
-                        message.priority === 'high' ? 
-                            'bg-gradient-to-r from-yellow-900/50 to-orange-900/50 text-yellow-100 border-yellow-600' :
-                            'bg-gradient-to-r from-blue-900/50 to-purple-900/50 text-blue-100 border-blue-600'
-                     ]">
-                    <div class="flex items-start">
-                        <span class="text-xs text-primary-300 mr-2 font-mono">{{ message.time }}</span>
-                        <div class="flex-1">
-                            <div class="flex items-center gap-2 mb-1">
-                                <span class="inline-flex items-center px-2 py-1 text-xs font-bold bg-yellow-600 text-yellow-100 rounded uppercase tracking-wider">
-                                    📢 ANNOUNCEMENT
-                                </span>
-                            </div>
-                            <div class="text-sm font-medium" v-html="processMessageForDisplay(message.message)"></div>
+                <div v-if="message.type === 'announcement'" class="flex">
+                    <div class="text-xs pr-2 text-primary-400 mt-1 font-mono">{{ message.time }}</div>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="inline-flex items-center px-2 py-1 text-xs font-bold bg-yellow-600 text-yellow-100 rounded uppercase tracking-wider">
+                                ANNOUNCEMENT
+                            </span>
                         </div>
+                        <div class="text-sm text-primary-100" v-html="processMessageForDisplay(message.message)"></div>
                     </div>
                 </div>
                 <!-- Regular user messages -->
@@ -383,9 +480,10 @@ async function sendMessage() {
                     {{ message.message }}
                 </div>
             </div>
+            </div>
         </div>
         <!-- Message Box -->
-        <ChatMessageBox :rate-limit="rateLimit" @sendMessage="sendMessage" :error="error" v-model="message"/>
+        <ChatMessageBox :rate-limit="rateLimit" @sendMessage="sendMessage" :error="error" :is-sending="isSending" v-model="message"/>
     </div>
 </template>
 
@@ -400,6 +498,15 @@ async function sendMessage() {
 /* Force break very long strings without spaces */
 .message-content :deep(*) {
     word-break: break-all;
+}
+
+/* Fade transition for scroll to bottom button */
+.fade-enter-active, .fade-leave-active {
+    transition: opacity 0.3s ease;
+}
+
+.fade-enter-from, .fade-leave-to {
+    opacity: 0;
 }
 
 /* ===== Scrollbar CSS ===== */
@@ -422,5 +529,15 @@ async function sendMessage() {
     background-color: #003532;
     border-radius: 8px;
     border: none;
+}
+
+/* Fade transition for scroll button */
+.fade-enter-active, .fade-leave-active {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fade-enter-from, .fade-leave-to {
+    opacity: 0;
+    transform: translate(-50%, 10px);
 }
 </style>

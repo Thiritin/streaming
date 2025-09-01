@@ -8,7 +8,7 @@ return [
          * Rate Decay is the amount of time in seconds before the rate limit resets.
          * In Slow Mode Rate Decay is the amount of seconds between each message.
          */
-        'maxTries' => 20,
+        'maxTries' => 8,
         'rateDecay' => 30,
         'slowMode' => false,
     ],

@@ -34,6 +34,9 @@ class Kernel extends ConsoleKernel
         
         // Record viewer statistics for live shows every minute
         $schedule->command('statistics:record')->everyMinute();
+        
+        // Check auto mode shows every minute to start/end them based on schedule and source status
+        $schedule->command('shows:check-auto-mode')->everyMinute();
     }
 
     /**

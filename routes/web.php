@@ -52,6 +52,7 @@ Route::middleware(['auth:web', 'ensure.server'])->group(function () {
     Route::get('/show/{show:slug}', [\App\Http\Controllers\StreamController::class, 'show'])->name('show.view');
     Route::get('/show/{show:slug}/external', [\App\Http\Controllers\StreamController::class, 'external'])->name('show.external');
     Route::post('/message/send', [\App\Http\Controllers\MessageController::class, 'send'])->name('message.send');
+    Route::get('/messages/older', [\App\Http\Controllers\MessageController::class, 'loadOlder'])->name('messages.older');
 
     // Emote routes
     Route::get('/emotes', [\App\Http\Controllers\EmoteController::class, 'index'])->name('emotes.index');

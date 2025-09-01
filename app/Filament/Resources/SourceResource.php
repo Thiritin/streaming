@@ -8,6 +8,7 @@ use App\Filament\Resources\SourceResource\RelationManagers;
 use App\Models\Source;
 use Filament\Forms;
 use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
@@ -47,6 +48,17 @@ class SourceResource extends Resource
                             ->required()
                             ->unique(ignoreRecord: true)
                             ->maxLength(255),
+                        Select::make('status')
+                            ->label('Status')
+                            ->options([
+                                SourceStatusEnum::ONLINE->value => 'Online',
+                                SourceStatusEnum::OFFLINE->value => 'Offline',
+                                SourceStatusEnum::ERROR->value => 'Error',
+                            ])
+                            ->default(SourceStatusEnum::OFFLINE->value)
+                            ->required()
+                            ->native(false)
+                            ->helperText('Set the current status of the streaming source'),
                         Textarea::make('description')
                             ->rows(3)
                             ->columnSpanFull(),
@@ -100,10 +112,12 @@ class SourceResource extends Resource
                     ->colors([
                         'success' => SourceStatusEnum::ONLINE->value,
                         'gray' => SourceStatusEnum::OFFLINE->value,
+                        'danger' => SourceStatusEnum::ERROR->value,
                     ])
                     ->icons([
                         'heroicon-o-signal' => SourceStatusEnum::ONLINE->value,
                         'heroicon-o-signal-slash' => SourceStatusEnum::OFFLINE->value,
+                        'heroicon-o-exclamation-triangle' => SourceStatusEnum::ERROR->value,
                     ]),
                 TextColumn::make('name')
                     ->searchable()
@@ -140,10 +154,38 @@ class SourceResource extends Resource
                     ->options([
                         SourceStatusEnum::ONLINE->value => 'Online',
                         SourceStatusEnum::OFFLINE->value => 'Offline',
+                        SourceStatusEnum::ERROR->value => 'Error',
                     ])
                     ->placeholder('All statuses'),
             ])
             ->actions([
+                Tables\Actions\Action::make('updateStatus')
+                    ->label('Update Status')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->form([
+                        Select::make('status')
+                            ->label('New Status')
+                            ->options([
+                                SourceStatusEnum::ONLINE->value => 'Online',
+                                SourceStatusEnum::OFFLINE->value => 'Offline',
+                                SourceStatusEnum::ERROR->value => 'Error',
+                            ])
+                            ->default(fn ($record) => $record->status->value)
+                            ->required()
+                            ->native(false),
+                    ])
+                    ->action(function ($record, array $data) {
+                        $record->update(['status' => $data['status']]);
+                        
+                        // Observer will automatically broadcast the status change event
+                        
+                        Notification::make()
+                            ->title('Status updated')
+                            ->body("Source '{$record->name}' status has been updated to {$data['status']}.")
+                            ->success()
+                            ->send();
+                    }),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     ->before(function ($record) {
@@ -160,6 +202,33 @@ class SourceResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('updateStatus')
+                        ->label('Update Status')
+                        ->icon('heroicon-o-arrow-path')
+                        ->form([
+                            Select::make('status')
+                                ->label('New Status')
+                                ->options([
+                                    SourceStatusEnum::ONLINE->value => 'Online',
+                                    SourceStatusEnum::OFFLINE->value => 'Offline',
+                                    SourceStatusEnum::ERROR->value => 'Error',
+                                ])
+                                ->required()
+                                ->native(false),
+                        ])
+                        ->action(function ($records, array $data) {
+                            $records->each(function ($record) use ($data) {
+                                $record->update(['status' => $data['status']]);
+                                // Observer will automatically broadcast the status change event
+                            });
+                            
+                            Notification::make()
+                                ->title('Status updated')
+                                ->body('The selected sources have been updated.')
+                                ->success()
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                     Tables\Actions\DeleteBulkAction::make()
                         ->before(function ($records) {
                             foreach ($records as $record) {

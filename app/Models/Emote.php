@@ -152,7 +152,7 @@ class Emote extends Model
 
     /**
      * Get the full URL for the emote.
-     * Returns a signed URL for S3 access.
+     * Returns a long-lived signed URL for private S3 access.
      */
     public function getUrlAttribute($value)
     {
@@ -166,9 +166,10 @@ class Emote extends Model
             return null;
         }
 
-        // Return a temporary signed URL (valid for 1 hour)
+        // Return a long-lived signed URL (valid for 7 days)
+        // This is longer than any reasonable cache time and chat session
         try {
-            return Storage::disk('s3')->temporaryUrl($this->s3_key, now()->addHour());
+            return Storage::disk('s3')->temporaryUrl($this->s3_key, now()->addDays(7));
         } catch (\Exception $e) {
             // Fallback to regular URL if temporary URL fails
             return Storage::disk('s3')->url($this->s3_key);

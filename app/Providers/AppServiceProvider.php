@@ -2,7 +2,11 @@
 
 namespace App\Providers;
 
+use App\Models\Show;
+use App\Models\Source;
 use App\Models\User;
+use App\Observers\ShowObserver;
+use App\Observers\SourceObserver;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\ServiceProvider;
@@ -34,5 +38,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         User::observe(\App\Observers\UserObserver::class);
+        Source::observe(SourceObserver::class);
+        Show::observe(ShowObserver::class);
     }
 }

@@ -36,7 +36,6 @@ class ShowSeeder extends Seeder
             'actual_start' => $now->copy()->subDay(),
             'source_id' => $source->id,
             'thumbnail_path' => null,
-            'is_featured' => true,
             'status' => 'live',
         ]);
 
@@ -50,7 +49,6 @@ class ShowSeeder extends Seeder
             'actual_start' => $now->copy()->subDay(),
             'source_id' => $source->id,
             'thumbnail_path' => null,
-            'is_featured' => true,
             'status' => 'live',
         ]);
 
@@ -64,7 +62,6 @@ class ShowSeeder extends Seeder
             'actual_start' => $now->copy()->subHours(2),
             'source_id' => $source->id,
             'thumbnail_path' => null,
-            'is_featured' => false,
             'status' => 'live',
         ]);
 
@@ -108,8 +105,7 @@ class ShowSeeder extends Seeder
                 'scheduled_end' => $eventStartTime->copy()->addHour(),
                 'source_id' => $source->id,
                 'thumbnail_path' => null,
-                'is_featured' => false,
-                'status' => 'scheduled',
+                    'status' => 'scheduled',
             ]);
 
             $eventStartTime->addHour();

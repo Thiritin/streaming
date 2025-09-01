@@ -31,7 +31,6 @@ class ShowFactory extends Factory
             'scheduled_end' => $this->faker->dateTimeBetween('+1 week', '+2 weeks'),
             'actual_start' => null,
             'actual_end' => null,
-            'is_featured' => false,
             'viewer_count' => 0,
             'priority' => 50,
         ];

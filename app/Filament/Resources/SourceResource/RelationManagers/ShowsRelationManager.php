@@ -43,8 +43,6 @@ class ShowsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('viewer_count')
                     ->label('Viewers')
                     ->sortable(),
-                Tables\Columns\ToggleColumn::make('is_featured')
-                    ->label('Featured'),
             ])
             ->filters([
                 //

@@ -39,7 +39,6 @@ class StreamController extends Controller
                     'status' => $show->status,
                     'thumbnail_url' => $show->thumbnail_url,
                     'viewer_count' => $show->viewer_count,
-                    'is_featured' => $show->is_featured,
                     'started_at' => $show->actual_start ?? $show->scheduled_start,
                     'hls_url' => $show->getHlsUrl(),
                 ];
@@ -63,7 +62,6 @@ class StreamController extends Controller
                     'thumbnail_url' => $show->thumbnail_url,
                     'scheduled_start' => $show->scheduled_start,
                     'scheduled_end' => $show->scheduled_end,
-                    'is_featured' => $show->is_featured,
                 ];
             });
 
@@ -80,7 +78,8 @@ class StreamController extends Controller
         $show->load('source');
 
         // Check if user can watch this show
-        if (! $show->canWatch() && ! $show->isLive()) {
+        // Allow access to scheduled, live, and recently ended shows
+        if (! in_array($show->status, ['scheduled', 'live', 'ended', 'cancelled'])) {
             return redirect()->route('shows.grid')
                 ->with('error', 'This show is not available for viewing');
         }
@@ -117,7 +116,8 @@ class StreamController extends Controller
         $show->load('source');
 
         // Check if user can watch this show
-        if (! $show->canWatch() && ! $show->isLive()) {
+        // Allow access to scheduled, live, and recently ended shows
+        if (! in_array($show->status, ['scheduled', 'live', 'ended', 'cancelled'])) {
             return redirect()->route('shows.grid')
                 ->with('error', 'This show is not available for viewing');
         }
@@ -169,9 +169,12 @@ class StreamController extends Controller
             'initialListeners' => $show->viewer_count ?? StreamInfoService::getUserCount(),
             'initialOtherDevice' => false, // This feature has been removed with Client model
             'chatMessages' => array_values(Message::with('user')
-                ->where('is_command', false)
-                ->orWhere(fn ($q) => $q->where('is_command', true)->where('user_id',
-                    $user->id)) // show users own commands
+                ->where(function ($query) use ($user) {
+                    $query->where('is_command', false)
+                          ->orWhere('type', 'announcement')
+                          ->orWhere('type', 'system')
+                          ->orWhere(fn ($q) => $q->where('is_command', true)->where('user_id', $user->id)); // show users own commands
+                })
                 ->orderBy('created_at', 'desc')
                 ->limit(50)
                 ->get()
@@ -180,10 +183,13 @@ class StreamController extends Controller
                     'id' => $message->id,
                     'message' => $message->message,
                     'is_command' => (bool) $message->is_command,
-                    'name' => $message->user->name ?? 'System',
+                    'name' => $message->user->name ?? null,
                     'role' => $message->user?->role,
                     'chat_color' => $message->user?->chat_color,
                     'time' => $message->created_at->format('H:i'),
+                    'type' => $message->type,
+                    'priority' => $message->priority,
+                    'metadata' => $message->metadata,
                 ])->toArray()),
             'rateLimit' => [
                 'maxTries' => \Cache::get('chat.maxTries', static fn () => config('chat.default.maxTries')),

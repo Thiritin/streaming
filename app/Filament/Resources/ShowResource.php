@@ -84,26 +84,22 @@ class ShowResource extends Resource
                         DateTimePicker::make('scheduled_start')
                             ->label('Scheduled Start')
                             ->required()
-                            ->native(false)
                             ->seconds(false)
                             ->timezone('Europe/Berlin'),
                         DateTimePicker::make('scheduled_end')
                             ->label('Scheduled End')
                             ->required()
-                            ->native(false)
                             ->seconds(false)
                             ->timezone('Europe/Berlin')
                             ->after('scheduled_start'),
                         DateTimePicker::make('actual_start')
                             ->label('Actual Start')
-                            ->native(false)
                             ->seconds(false)
                             ->timezone('Europe/Berlin')
                             ->disabled()
                             ->dehydrated(),
                         DateTimePicker::make('actual_end')
                             ->label('Actual End')
-                            ->native(false)
                             ->seconds(false)
                             ->timezone('Europe/Berlin')
                             ->disabled()
@@ -123,9 +119,10 @@ class ShowResource extends Resource
                             ->required()
                             ->disabled(fn (?Show $record) => $record && $record->status === 'live')
                             ->helperText('Use the Go Live/End Stream buttons to manage live status'),
-                        Toggle::make('is_featured')
-                            ->label('Featured Show')
-                            ->helperText('Featured shows appear prominently on the homepage'),
+                        Toggle::make('auto_mode')
+                            ->label('Auto Mode')
+                            ->helperText('When enabled, show will automatically start/end based on source status and scheduled times')
+                            ->hint('Show starts when source goes online after scheduled start, ends when source goes offline after scheduled end'),
                         FileUpload::make('thumbnail_path')
                             ->label('Thumbnail')
                             ->image()
@@ -236,10 +233,17 @@ class ShowResource extends Resource
                     ->numeric()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                ToggleColumn::make('is_featured')
-                    ->label('Featured')
-                    ->onColor('warning')
-                    ->offColor('gray'),
+                BadgeColumn::make('auto_mode')
+                    ->label('Auto')
+                    ->getStateUsing(fn ($record) => $record->auto_mode ? 'Auto' : 'Manual')
+                    ->colors([
+                        'success' => fn ($state) => $state === 'Auto',
+                        'gray' => fn ($state) => $state === 'Manual',
+                    ])
+                    ->icons([
+                        'heroicon-o-cog' => fn ($state) => $state === 'Auto',
+                        'heroicon-o-hand-raised' => fn ($state) => $state === 'Manual',
+                    ]),
                 TextColumn::make('tags')
                     ->badge()
                     ->separator(',')
@@ -257,12 +261,6 @@ class ShowResource extends Resource
                     ->multiple(),
                 Tables\Filters\SelectFilter::make('source')
                     ->relationship('source', 'name'),
-                Tables\Filters\TernaryFilter::make('is_featured')
-                    ->label('Featured')
-                    ->boolean()
-                    ->trueLabel('Featured only')
-                    ->falseLabel('Non-featured only')
-                    ->placeholder('All shows'),
                 Tables\Filters\Filter::make('today')
                     ->query(fn (Builder $query): Builder => $query->today())
                     ->label('Today\'s Shows'),

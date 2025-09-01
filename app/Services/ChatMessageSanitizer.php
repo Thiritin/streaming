@@ -101,10 +101,29 @@ class ChatMessageSanitizer
      */
     protected function breakLongWords(string $message): string
     {
+        // First, protect emote tags from being broken
+        $emotePattern = '/<emote[^>]*><\/emote>/';
+        $emotePlaceholders = [];
+        $placeholderIndex = 0;
+        
+        $message = preg_replace_callback($emotePattern, function ($matches) use (&$emotePlaceholders, &$placeholderIndex) {
+            $placeholder = "[[EMOTE_PROTECT_$placeholderIndex]]";
+            $emotePlaceholders[$placeholder] = $matches[0];
+            $placeholderIndex++;
+            return $placeholder;
+        }, $message);
+
+        // Now break long words
         $words = explode(' ', $message);
         $processedWords = [];
 
         foreach ($words as $word) {
+            // Skip breaking if it's an emote placeholder
+            if (strpos($word, '[[EMOTE_PROTECT_') !== false) {
+                $processedWords[] = $word;
+                continue;
+            }
+            
             // If word is longer than max length, insert zero-width spaces for wrapping
             if (mb_strlen($word) > $this->maxWordLength) {
                 // Insert zero-width space every N characters
@@ -113,7 +132,14 @@ class ChatMessageSanitizer
             $processedWords[] = $word;
         }
 
-        return implode(' ', $processedWords);
+        $message = implode(' ', $processedWords);
+        
+        // Restore emote tags
+        foreach ($emotePlaceholders as $placeholder => $emoteTag) {
+            $message = str_replace($placeholder, $emoteTag, $message);
+        }
+
+        return $message;
     }
 
     /**

@@ -13,7 +13,7 @@
       <div v-if="liveShows.length > 0" class="mb-12">
         <div class="flex items-center mb-4">
           <h2 class="text-2xl font-semibold text-white">Live Now</h2>
-          <span class="ml-3 bg-red-600 text-white px-2 py-1 rounded text-xs font-bold uppercase animate-pulse">
+          <span class="ml-3 bg-red-600 text-white px-2 py-1 rounded text-xs font-bold uppercase">
             {{ liveShows.length }} LIVE
           </span>
         </div>

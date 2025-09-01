@@ -43,7 +43,7 @@ http {
                      max_size=100m inactive=2s use_temp_path=off;
 
     proxy_cache_path /var/cache/nginx/segments levels=1:2 keys_zone=segment_cache:100m
-                     max_size=2g inactive=1h use_temp_path=off
+                     max_size=4g inactive=2m use_temp_path=off
                      loader_files=200 loader_sleep=50ms loader_threshold=300ms;
 
 @if($useInternalNetwork)
@@ -94,7 +94,7 @@ http {
             # Cache auth responses for performance
             proxy_cache auth_cache;
             proxy_cache_key "$remote_addr:$arg_streamkey:$uri";
-            proxy_cache_valid 200 10s;
+            proxy_cache_valid 200 1m;
             proxy_cache_valid 401 403 1s;
         }
 
@@ -104,11 +104,11 @@ http {
             # Proxy to origin Caddy via internal network (HTTPS with internal IP)
             proxy_pass https://origin_internal$request_uri;
             proxy_http_version 1.1;
-            
+
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
             proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
-            
+
             proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -117,11 +117,11 @@ http {
             # Proxy to origin Caddy server (HTTPS)
             proxy_pass https://origin_caddy$request_uri;
             proxy_http_version 1.1;
-            
+
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
             proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
-            
+
             proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -163,11 +163,11 @@ http {
             # Proxy to origin Caddy via internal network (HTTPS with internal IP)
             proxy_pass https://origin_internal$request_uri;
             proxy_http_version 1.1;
-            
+
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
             proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
-            
+
             proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -176,11 +176,11 @@ http {
             # Proxy to origin Caddy server (HTTPS)
             proxy_pass https://origin_caddy$request_uri;
             proxy_http_version 1.1;
-            
+
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
             proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
-            
+
             proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -191,7 +191,7 @@ http {
             proxy_cache segment_cache;
             # Cache key uses URI without query parameters
             proxy_cache_key "$scheme$proxy_host$uri";
-            proxy_cache_valid 200 5m;
+            proxy_cache_valid 200 2m;
             proxy_cache_valid 404 10s;
             proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
             proxy_cache_lock on;
@@ -207,8 +207,8 @@ http {
             add_header X-Cache-Status $upstream_cache_status;
 
             # Cache headers for CDN and browsers
-            expires 5m;
-            add_header Cache-Control "public, max-age=300, immutable";
+            expires 2m;
+            add_header Cache-Control "public, max-age=120, immutable";
             add_header Content-Type "video/mp2t";
             add_header X-Content-Type-Options "nosniff";
         }

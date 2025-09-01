@@ -49,7 +49,7 @@ class EmoteService
         $extension = $file->getClientOriginalExtension();
         $s3Key = 'emotes/'.Str::uuid().'.'.$extension;
 
-        // Save to S3 with private visibility (like thumbnails)
+        // Save to S3 with private visibility
         Storage::disk('s3')->put($s3Key, (string) $image->encode(), [
             'visibility' => 'private',
             'CacheControl' => 'max-age=31536000',
@@ -125,17 +125,17 @@ class EmoteService
      */
     public function getAvailableEmotes(User $user): array
     {
-        return Cache::remember('user_emotes_'.$user->id, 300, function () use ($user) {
-            $emotes = Emote::availableFor($user)
-                ->select('id', 'name', 'url')
-                ->get();
+        // Cache for 6 hours (well within the 7-day signed URL expiration)
+        return Cache::remember('user_emotes_'.$user->id, 21600, function () use ($user) {
+            // Don't select specific columns to ensure accessors work properly
+            $emotes = Emote::availableFor($user)->get();
 
             $indexed = [];
             foreach ($emotes as $emote) {
                 $indexed[$emote->name] = [
                     'id' => $emote->id,
                     'name' => $emote->name,
-                    'url' => $emote->url,
+                    'url' => $emote->url, // This will trigger the URL accessor
                 ];
             }
 
@@ -151,9 +151,15 @@ class EmoteService
         return Cache::remember('global_emotes', 3600, function () {
             return Emote::approved()
                 ->global()
-                ->select('id', 'name', 'url')
                 ->orderBy('usage_count', 'desc')
                 ->get()
+                ->map(function ($emote) {
+                    return [
+                        'id' => $emote->id,
+                        'name' => $emote->name,
+                        'url' => $emote->url, // This will trigger the URL accessor
+                    ];
+                })
                 ->toArray();
         });
     }
