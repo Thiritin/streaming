@@ -76,6 +76,7 @@ transfer_config = TransferConfig(
 processing_files = set()
 file_lock = threading.Lock()
 upload_semaphore = threading.Semaphore(MAX_CONCURRENT_UPLOADS)
+handler = None  # Will be initialized later
 
 # Metrics tracking
 upload_metrics = {
@@ -100,6 +101,10 @@ class DVRFileHandler(FileSystemEventHandler):
     def on_created(self, event):
         """Handle new file creation"""
         if event.is_directory:
+            # New directory created - might contain files soon
+            logger.info(f"New directory created: {event.src_path}")
+            # Schedule a rescan in a few seconds to catch any files
+            threading.Timer(5.0, self.scan_directory, args=(event.src_path,)).start()
             return
         
         if event.src_path.endswith(('.mp4', '.flv')):
@@ -117,6 +122,21 @@ class DVRFileHandler(FileSystemEventHandler):
             with file_lock:
                 if event.src_path in self.pending_files:
                     self.pending_files[event.src_path] = time.time()
+    
+    def scan_directory(self, directory):
+        """Scan a specific directory for recording files"""
+        try:
+            logger.info(f"Scanning directory for recordings: {directory}")
+            for root, dirs, files in os.walk(directory):
+                for file in files:
+                    if file.endswith(('.mp4', '.flv')):
+                        file_path = os.path.join(root, file)
+                        with file_lock:
+                            if file_path not in self.pending_files and file_path not in processing_files:
+                                self.pending_files[file_path] = time.time()
+                                logger.info(f"Found new file in new directory: {file_path}")
+        except Exception as e:
+            logger.error(f"Error scanning directory {directory}: {e}")
     
     def check_pending_files(self):
         """Check for files that haven't been modified recently"""
@@ -218,7 +238,7 @@ def process_file(file_path):
             
             logger.info(f"Successfully processed: {file_path} ({file_size_mb:.1f}MB in {elapsed_time:.1f}s, {upload_speed:.1f}MB/s)")
             
-            except Exception as e:
+        except Exception as e:
             logger.error(f"Error processing file {file_path}: {e}")
             with metrics_lock:
                 upload_metrics['uploads_failed'] += 1
@@ -378,6 +398,48 @@ def scan_existing_files():
                     logger.error(f"Error checking file {file_path}: {e}")
 
 
+def periodic_rescan():
+    """Periodically rescan for files in new directories"""
+    while True:
+        time.sleep(300)  # Rescan every 5 minutes
+        logger.info("Performing periodic rescan for new directories...")
+        
+        try:
+            current_files = set()
+            for root, dirs, files in os.walk(RECORDINGS_PATH):
+                for file in files:
+                    if file.endswith(('.mp4', '.flv')):
+                        file_path = os.path.join(root, file)
+                        current_files.add(file_path)
+                        
+                        # Check if this file is already being tracked
+                        with file_lock:
+                            if (file_path not in handler.pending_files and 
+                                file_path not in processing_files):
+                                # New file found that wasn't tracked
+                                try:
+                                    file_stat = os.stat(file_path)
+                                    file_age = time.time() - file_stat.st_mtime
+                                    
+                                    if file_age > FILE_AGE_SECONDS:
+                                        logger.info(f"Rescan found untracked file: {file_path}")
+                                        processing_files.add(file_path)
+                                        threading.Thread(
+                                            target=process_file,
+                                            args=(file_path,),
+                                            daemon=True
+                                        ).start()
+                                    else:
+                                        handler.pending_files[file_path] = file_stat.st_mtime
+                                        logger.info(f"Rescan found recent untracked file: {file_path}")
+                                except Exception as e:
+                                    logger.error(f"Error checking file during rescan {file_path}: {e}")
+            
+            logger.debug(f"Rescan complete. Found {len(current_files)} total recording files")
+        except Exception as e:
+            logger.error(f"Error during periodic rescan: {e}")
+
+
 def print_metrics():
     """Print upload metrics periodically"""
     while True:
@@ -411,6 +473,10 @@ if __name__ == "__main__":
     # Start metrics reporting thread
     metrics_thread = threading.Thread(target=print_metrics, daemon=True)
     metrics_thread.start()
+    
+    # Start periodic rescan thread to catch files in new directories
+    rescan_thread = threading.Thread(target=periodic_rescan, daemon=True)
+    rescan_thread.start()
     
     # Test S3 connection
     try:
