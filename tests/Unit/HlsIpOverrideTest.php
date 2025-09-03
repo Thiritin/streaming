@@ -51,6 +51,18 @@ class HlsIpOverrideTest extends TestCase
         Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
         Config::set('stream.local_streaming_hostname', 'local-edge.example.com');
         
+        // Create the local override server
+        Server::create([
+            'hostname' => 'local-edge.example.com',
+            'port' => 8080,
+            'type' => ServerTypeEnum::EDGE,
+            'status' => ServerStatusEnum::ACTIVE,
+            'viewer_count' => 0,
+            'max_clients' => 100,
+            'hetzner_id' => 'test-local-hetzner-id',
+            'ip' => '192.168.1.1',
+        ]);
+        
         // Mock HTTP response for the variant playlist
         Http::fake([
             'http://local-edge.example.com:8080/live/test-stream_hd.m3u8' => Http::response(
@@ -81,6 +93,18 @@ class HlsIpOverrideTest extends TestCase
         // Configure IPv6 subnet override
         Config::set('stream.local_streaming_ipv6_subnet', '2001:db8::/64');
         Config::set('stream.local_streaming_hostname', 'local-edge-v6.example.com');
+        
+        // Create the local override server for IPv6
+        Server::create([
+            'hostname' => 'local-edge-v6.example.com',
+            'port' => 8080,
+            'type' => ServerTypeEnum::EDGE,
+            'status' => ServerStatusEnum::ACTIVE,
+            'viewer_count' => 0,
+            'max_clients' => 100,
+            'hetzner_id' => 'test-local-v6-hetzner-id',
+            'ip' => '2001:db8::1',
+        ]);
         
         // Mock HTTP response for the variant playlist
         Http::fake([
@@ -142,6 +166,18 @@ class HlsIpOverrideTest extends TestCase
         Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
         Config::set('stream.local_streaming_hostname', 'local-edge.example.com');
         
+        // Create the local override server
+        Server::create([
+            'hostname' => 'local-edge.example.com',
+            'port' => 8080,
+            'type' => ServerTypeEnum::EDGE,
+            'status' => ServerStatusEnum::ACTIVE,
+            'viewer_count' => 0,
+            'max_clients' => 100,
+            'hetzner_id' => 'test-local-hetzner-id',
+            'ip' => '192.168.1.1',
+        ]);
+        
         // Mock HTTP response for the master playlist
         Http::fake([
             'http://local-edge.example.com:8080/live/test-stream_master.m3u8' => Http::response(
@@ -168,6 +204,18 @@ class HlsIpOverrideTest extends TestCase
         Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
         Config::set('stream.local_streaming_hostname', 'local-edge.example.com');
         
+        // Create the local override server
+        Server::create([
+            'hostname' => 'local-edge.example.com',
+            'port' => 8080,
+            'type' => ServerTypeEnum::EDGE,
+            'status' => ServerStatusEnum::ACTIVE,
+            'viewer_count' => 0,
+            'max_clients' => 100,
+            'hetzner_id' => 'test-local-hetzner-id',
+            'ip' => '192.168.1.1',
+        ]);
+        
         // Test getOrAssignServer with multiple IPs in the subnet
         $testIps = ['192.168.1.1', '192.168.1.100', '192.168.1.254'];
         
@@ -186,6 +234,18 @@ class HlsIpOverrideTest extends TestCase
         Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
         Config::set('stream.local_streaming_hostname', 'local-edge.example.com');
         
+        // Create the local override server (even though we won't use it)
+        Server::create([
+            'hostname' => 'local-edge.example.com',
+            'port' => 8080,
+            'type' => ServerTypeEnum::EDGE,
+            'status' => ServerStatusEnum::ACTIVE,
+            'viewer_count' => 0,
+            'max_clients' => 100,
+            'hetzner_id' => 'test-local-hetzner-id',
+            'ip' => '192.168.1.1',
+        ]);
+        
         // Assign user to default server
         $this->user->update(['server_id' => $this->defaultServer->id]);
         
@@ -202,6 +262,18 @@ class HlsIpOverrideTest extends TestCase
         Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
         Config::set('stream.local_streaming_ipv6_subnet', '2001:db8::/64');
         Config::set('stream.local_streaming_hostname', 'local-edge-dual.example.com');
+        
+        // Create the dual-stack override server
+        Server::create([
+            'hostname' => 'local-edge-dual.example.com',
+            'port' => 8080,
+            'type' => ServerTypeEnum::EDGE,
+            'status' => ServerStatusEnum::ACTIVE,
+            'viewer_count' => 0,
+            'max_clients' => 100,
+            'hetzner_id' => 'test-dual-hetzner-id',
+            'ip' => '192.168.1.1',
+        ]);
         
         // Test IPv4 subnet
         $serverV4 = $this->user->getOrAssignServer('192.168.1.100');
@@ -241,6 +313,18 @@ class HlsIpOverrideTest extends TestCase
         Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
         Config::set('stream.local_streaming_hostname', 'local-edge.example.com');
         
+        // Create the local override server
+        Server::create([
+            'hostname' => 'local-edge.example.com',
+            'port' => 8080,
+            'type' => ServerTypeEnum::EDGE,
+            'status' => ServerStatusEnum::ACTIVE,
+            'viewer_count' => 0,
+            'max_clients' => 100,
+            'hetzner_id' => 'test-local-hetzner-id',
+            'ip' => '192.168.1.1',
+        ]);
+        
         // Mock HTTP response for the variant playlist
         Http::fake([
             'http://local-edge.example.com:8080/live/test-stream_hd.m3u8' => Http::response(
@@ -270,6 +354,18 @@ class HlsIpOverrideTest extends TestCase
         // Configure subnet override
         Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
         Config::set('stream.local_streaming_hostname', 'local-edge.example.com');
+        
+        // Create the local override server
+        Server::create([
+            'hostname' => 'local-edge.example.com',
+            'port' => 8080,
+            'type' => ServerTypeEnum::EDGE,
+            'status' => ServerStatusEnum::ACTIVE,
+            'viewer_count' => 0,
+            'max_clients' => 100,
+            'hetzner_id' => 'test-local-hetzner-id',
+            'ip' => '192.168.1.1',
+        ]);
         
         // Both users should get the same override server for IPs in the subnet
         $server1 = $this->user->getOrAssignServer('192.168.1.100');

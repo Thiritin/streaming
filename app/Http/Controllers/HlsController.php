@@ -62,7 +62,25 @@ class HlsController extends Controller
 
         // Check for IP-based server override
         $server = $this->getServerForRequest($request, $user);
+        
+        if (!$server) {
+            return response('No server available', 503)
+                ->header('Content-Type', 'text/plain');
+        }
+        
         $port = $server->port ?? 8080;
+
+        // Build cache key based on stream, server, and streamkey
+        $cacheKey = "hls_master:{$stream}:{$server->hostname}:{$port}:" . ($streamkey ?? 'auth');
+        
+        // Try to get cached response
+        $cachedResponse = Cache::get($cacheKey);
+        if ($cachedResponse) {
+            return response($cachedResponse['playlist'], 200)
+                ->header('Content-Type', 'application/vnd.apple.mpegurl')
+                ->header('Cache-Control', 'max-age=1')
+                ->header('X-Cache', 'HIT');
+        }
 
         // Use HTTPS for port 443, HTTP for other ports
         if ($port == 443) {
@@ -97,9 +115,13 @@ class HlsController extends Controller
                     $playlist
                 );
 
+                // Cache the successful response for 2 seconds
+                Cache::put($cacheKey, ['playlist' => $playlist], 2);
+
                 return response($playlist, 200)
                     ->header('Content-Type', 'application/vnd.apple.mpegurl')
-                    ->header('Cache-Control', 'max-age=1');
+                    ->header('Cache-Control', 'max-age=1')
+                    ->header('X-Cache', 'MISS');
             }
 
             // Log non-successful HTTP response
@@ -193,6 +215,18 @@ class HlsController extends Controller
         $hostname = $server->hostname;
         $port = $server->port ?? 8080;
 
+        // Build cache key based on variant, server, and streamkey
+        $cacheKey = "hls_variant:{$variant}:{$hostname}:{$port}:" . ($streamkey ?? 'auth');
+        
+        // Try to get cached response
+        $cachedResponse = Cache::get($cacheKey);
+        if ($cachedResponse) {
+            return response($cachedResponse['playlist'], 200)
+                ->header('Content-Type', 'application/vnd.apple.mpegurl')
+                ->header('Cache-Control', 'max-age=1')
+                ->header('X-Cache', 'HIT');
+        }
+
         // Fetch the variant playlist from Edge server
         // Use HTTPS for port 443, HTTP for other ports
         if ($port == 443) {
@@ -231,9 +265,13 @@ class HlsController extends Controller
                     $playlist
                 );
 
+                // Cache the successful response for 2 seconds
+                Cache::put($cacheKey, ['playlist' => $playlist], 2);
+
                 return response($playlist, 200)
                     ->header('Content-Type', 'application/vnd.apple.mpegurl')
-                    ->header('Cache-Control', 'max-age=1');
+                    ->header('Cache-Control', 'max-age=1')
+                    ->header('X-Cache', 'MISS');
             }
 
             // Log non-successful HTTP response
