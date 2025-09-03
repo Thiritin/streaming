@@ -492,7 +492,7 @@ onUnmounted(() => {
                         <ShowEndedStatusPage 
                             :show="activeShow" 
                             :other-live-shows="otherLiveShows"
-                            main-stream-url="/stream" />
+                            main-stream-url="/" />
                     </div>
                     <div v-else-if="activeShow?.status === 'cancelled'">
                         <ShowCancelledStatusPage 

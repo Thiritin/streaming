@@ -249,8 +249,12 @@ class ShowResource extends Resource
                     ->separator(',')
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->defaultSort('scheduled_start', 'desc')
+            ->defaultSort('scheduled_start', 'asc')
             ->filters([
+                Tables\Filters\Filter::make('hide_ended')
+                    ->query(fn (Builder $query): Builder => $query->where('status', '!=', 'ended'))
+                    ->label('Hide Ended Shows')
+                    ->default(),
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
                         'scheduled' => 'Scheduled',

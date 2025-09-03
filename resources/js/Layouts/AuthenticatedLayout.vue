@@ -33,6 +33,9 @@ const showingNavigationDropdown = ref(false);
                 <NavLink :href="route('shows.grid')" :active="route().current('shows.grid')">
                   Webstream
                 </NavLink>
+                <NavLink :href="route('recordings.index')" :active="route().current('recordings.*')">
+                  Recordings
+                </NavLink>
                 <NavLink component="a" v-if="$page.props.auth.can_access_filament"
                          :href="route('filament.admin.pages.dashboard')">
                   Admin
@@ -123,6 +126,9 @@ const showingNavigationDropdown = ref(false);
           <div class="pt-2 pb-3 space-y-1 z-50">
             <ResponsiveNavLink :href="route('shows.grid')" :active="route().current('shows.grid')">
               Stream Online
+            </ResponsiveNavLink>
+            <ResponsiveNavLink :href="route('recordings.index')" :active="route().current('recordings.*')">
+              Recordings
             </ResponsiveNavLink>
             <ResponsiveNavLink component="a" v-if="$page.props.auth.user.is_admin"
                                :href="route('filament.admin.pages.dashboard')">

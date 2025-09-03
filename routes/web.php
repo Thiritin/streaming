@@ -59,6 +59,10 @@ Route::middleware(['auth:web', 'ensure.server'])->group(function () {
     Route::post('/emotes', [\App\Http\Controllers\EmoteController::class, 'store'])->name('emotes.store');
     Route::post('/emotes/{emote}/favorite', [\App\Http\Controllers\EmoteController::class, 'toggleFavorite'])->name('emotes.favorite');
     Route::delete('/emotes/{emote}', [\App\Http\Controllers\EmoteController::class, 'destroy'])->name('emotes.destroy');
+
+    // Recording routes
+    Route::get('/recordings', [\App\Http\Controllers\RecordingController::class, 'index'])->name('recordings.index');
+    Route::get('/recordings/{recording}', [\App\Http\Controllers\RecordingController::class, 'show'])->name('recordings.show');
 });
 
 Broadcast::routes();

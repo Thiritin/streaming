@@ -69,20 +69,20 @@ services:
         restart: unless-stopped
 
     # Origin FFmpeg HLS Transcoder - Creates multi-bitrate HLS from SRS
-    origin-ffmpeg-hls:
-        image: eurofurence/ffmpeg-hls:latest
-        environment:
-            SRS_API_URL: http://localhost:1985/api/v1
-            SRS_RTMP_URL: rtmp://localhost:1935
-            OUTPUT_BASE_DIR: /var/www/hls/live
-            CHECK_INTERVAL: 5
-        volumes:
-            # HLS output directory shared with origin-nginx
-            - hls-content:/var/www/hls
-        network_mode: host
-        restart: unless-stopped
-        depends_on:
-            - origin-srs
+#    origin-ffmpeg-hls:
+ #       image: eurofurence/ffmpeg-hls:latest
+ #       environment:
+ #           SRS_API_URL: http://localhost:1985/api/v1
+ #           SRS_RTMP_URL: rtmp://localhost:1935
+ #           OUTPUT_BASE_DIR: /var/www/hls/live
+ #           CHECK_INTERVAL: 5
+ #       volumes:
+ #           # HLS output directory shared with origin-nginx
+ #           - hls-content:/var/www/hls
+ #       network_mode: host
+ #       restart: unless-stopped
+ #       depends_on:
+ #           - origin-srs
 
     # Origin Nginx - Serves HLS with auth_request authentication
     origin-nginx:
@@ -94,7 +94,6 @@ services:
         network_mode: host
         depends_on:
             - laravel.test
-            - origin-ffmpeg-hls
         healthcheck:
             test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8083/health"]
             interval: 10s
@@ -124,7 +123,7 @@ services:
         image: eurofurence/dvr-uploader:latest
         environment:
             S3_BUCKET: '${DVR_AWS_BUCKET:-ef-streaming-recordings}'
-            S3_REGION: '${DVR_AWS_DEFAULT_REGION:-eu-central-1}'
+            S3_REGION: '${DVRnp_AWS_DEFAULT_REGION:-eu-central-1}'
             S3_ACCESS_KEY: '${DVR_AWS_ACCESS_KEY_ID}'
             S3_SECRET_KEY: '${DVR_AWS_SECRET_ACCESS_KEY}'
             S3_ENDPOINT: '${DVR_AWS_ENDPOINT}'

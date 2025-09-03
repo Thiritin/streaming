@@ -29,6 +29,7 @@ class DatabaseSeeder extends Seeder
                 LocalDevelopmentServersSeeder::class,
                 LocalDevelopmentSourceSeeder::class,
                 ShowSeeder::class,
+                RecordingSeeder::class,
             ]);
         }
     }
