@@ -12,28 +12,32 @@ echo "Converting video to HLS format..."
 echo "Input: $INPUT_FILE"
 echo "Output directory: $OUTPUT_DIR"
 
-# FFmpeg command for VOD HLS conversion using libopenh264
+# FFmpeg command for VOD HLS conversion using libx264
 ffmpeg -i "$INPUT_FILE" \
     -filter_complex \
         "[0:v]split=4[v1][v2][v3][v4]; \
-         [v1]scale=w=640:h=360:force_original_aspect_ratio=decrease[v1out]; \
-         [v2]scale=w=854:h=480:force_original_aspect_ratio=decrease[v2out]; \
-         [v3]scale=w=1280:h=720:force_original_aspect_ratio=decrease[v3out]; \
-         [v4]scale=w=1920:h=1080:force_original_aspect_ratio=decrease[v4out]" \
+         [v1]scale=w=640:h=360:force_original_aspect_ratio=decrease:force_divisible_by=2[v1out]; \
+         [v2]scale=w=854:h=480:force_original_aspect_ratio=decrease:force_divisible_by=2[v2out]; \
+         [v3]scale=w=1280:h=720:force_original_aspect_ratio=decrease:force_divisible_by=2[v3out]; \
+         [v4]scale=w=1920:h=1080:force_original_aspect_ratio=decrease:force_divisible_by=2[v4out]" \
     \
-    -map "[v1out]" -c:v:0 libopenh264 -b:v:0 800k -maxrate:v:0 1000k -bufsize:v:0 1500k \
+    -map "[v1out]" -c:v:0 libx264 -b:v:0 800k -maxrate:v:0 1000k -bufsize:v:0 1500k \
+        -preset fast -profile:v baseline \
         -g 48 -keyint_min 48 -sc_threshold 0 \
         -force_key_frames "expr:gte(t,n_forced*2)" \
     \
-    -map "[v2out]" -c:v:1 libopenh264 -b:v:1 1500k -maxrate:v:1 2000k -bufsize:v:1 3000k \
+    -map "[v2out]" -c:v:1 libx264 -b:v:1 1500k -maxrate:v:1 2000k -bufsize:v:1 3000k \
+        -preset fast -profile:v main \
         -g 48 -keyint_min 48 -sc_threshold 0 \
         -force_key_frames "expr:gte(t,n_forced*2)" \
     \
-    -map "[v3out]" -c:v:2 libopenh264 -b:v:2 3000k -maxrate:v:2 3500k -bufsize:v:2 7000k \
+    -map "[v3out]" -c:v:2 libx264 -b:v:2 3000k -maxrate:v:2 3500k -bufsize:v:2 7000k \
+        -preset fast -profile:v main \
         -g 48 -keyint_min 48 -sc_threshold 0 \
         -force_key_frames "expr:gte(t,n_forced*2)" \
     \
-    -map "[v4out]" -c:v:3 libopenh264 -b:v:3 5000k -maxrate:v:3 5500k -bufsize:v:3 11000k \
+    -map "[v4out]" -c:v:3 libx264 -b:v:3 5000k -maxrate:v:3 5500k -bufsize:v:3 11000k \
+        -preset fast -profile:v high \
         -g 48 -keyint_min 48 -sc_threshold 0 \
         -force_key_frames "expr:gte(t,n_forced*2)" \
     \

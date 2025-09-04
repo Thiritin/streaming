@@ -36,17 +36,30 @@ class RecordingResource extends Resource
                 Forms\Components\TextInput::make('duration')
                     ->numeric()
                     ->suffix('seconds')
-                    ->helperText('Duration in seconds'),
+                    ->helperText('Duration in seconds (will be auto-filled via ffmpeg if left empty)')
+                    ->nullable(),
                 Forms\Components\TextInput::make('m3u8_url')
                     ->label('M3U8 URL')
                     ->required()
                     ->url()
                     ->columnSpanFull()
                     ->helperText('URL to the HLS playlist file'),
-                Forms\Components\TextInput::make('thumbnail_url')
-                    ->label('Thumbnail URL')
-                    ->url()
-                    ->columnSpanFull(),
+                Forms\Components\FileUpload::make('thumbnail_path')
+                    ->label('Thumbnail')
+                    ->image()
+                    ->imageResizeMode('cover')
+                    ->imageResizeTargetWidth(1280)
+                    ->imageResizeTargetHeight(720)
+                    ->disk('s3')
+                    ->directory('recordings/thumbnails')
+                    ->visibility('private')
+                    ->columnSpanFull()
+                    ->helperText('Upload a thumbnail or leave empty to auto-generate from first frame')
+                    ->loadStateFromRelationshipsUsing(static function (Forms\Components\FileUpload $component, ?Recording $record): void {
+                        if ($record && $record->thumbnail_path) {
+                            $component->state($record->thumbnail_path);
+                        }
+                    }),
                 Forms\Components\Toggle::make('is_published')
                     ->label('Published')
                     ->default(true)
@@ -58,6 +71,10 @@ class RecordingResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\ImageColumn::make('thumbnail_url')
+                    ->label('Thumbnail')
+                    ->size(80)
+                    ->height(45),
                 Tables\Columns\TextColumn::make('title')
                     ->searchable()
                     ->sortable(),
@@ -66,13 +83,16 @@ class RecordingResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('duration')
                     ->formatStateUsing(function ($state) {
-                        if (!$state) return '-';
+                        if (! $state) {
+                            return '-';
+                        }
                         $hours = floor($state / 3600);
                         $minutes = floor(($state % 3600) / 60);
                         $seconds = $state % 60;
                         if ($hours > 0) {
                             return sprintf('%d:%02d:%02d', $hours, $minutes, $seconds);
                         }
+
                         return sprintf('%d:%02d', $minutes, $seconds);
                     })
                     ->label('Duration'),

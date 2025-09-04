@@ -96,14 +96,12 @@ class ShowResource extends Resource
                             ->label('Actual Start')
                             ->seconds(false)
                             ->timezone('Europe/Berlin')
-                            ->disabled()
-                            ->dehydrated(),
+                            ->helperText('Set the actual start time when the show went live'),
                         DateTimePicker::make('actual_end')
                             ->label('Actual End')
                             ->seconds(false)
                             ->timezone('Europe/Berlin')
-                            ->disabled()
-                            ->dehydrated(),
+                            ->helperText('Set the actual end time when the show ended'),
                     ])
                     ->columns(2),
 
@@ -123,6 +121,10 @@ class ShowResource extends Resource
                             ->label('Auto Mode')
                             ->helperText('When enabled, show will automatically start/end based on source status and scheduled times')
                             ->hint('Show starts when source goes online after scheduled start, ends when source goes offline after scheduled end'),
+                        Toggle::make('recordable')
+                            ->label('Recordable')
+                            ->helperText('Enable recording for this show')
+                            ->hint('When enabled, this show will be available for recording processing'),
                         FileUpload::make('thumbnail_path')
                             ->label('Thumbnail')
                             ->image()

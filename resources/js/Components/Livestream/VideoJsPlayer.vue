@@ -87,49 +87,56 @@ const getCookie = (name) => {
     return null;
 };
 
-// Load Google Cast SDK
-const loadCastSDK = () => {
-    return new Promise((resolve) => {
-        if (window.chrome && window.chrome.cast) {
-            console.log('Cast SDK already loaded');
-            resolve();
-            return;
-        }
+// Load Chromecast plugin and SDK in correct order
+const loadChromecastDependencies = () => {
+    return new Promise(async (resolve) => {
+        try {
+            // First, import the Chromecast plugin
+            await import('@silvermine/videojs-chromecast/dist/silvermine-videojs-chromecast');
+            console.log('Chromecast plugin loaded successfully');
 
-        const script = document.createElement('script');
-        script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
-        script.onload = () => {
-            console.log('Cast SDK loaded');
-            resolve();
-        };
-        script.onerror = () => {
-            console.error('Failed to load Cast SDK');
-            resolve(); // Continue anyway
-        };
-        document.head.appendChild(script);
+            // Check if the plugin registered correctly
+            if (videojs.getPlugin && videojs.getPlugin('chromecast')) {
+                console.log('Chromecast plugin is registered with Video.js');
+            } else {
+                console.warn('Chromecast plugin did not register properly');
+            }
+
+            // Then load the Cast SDK (must be after plugin)
+            if (!window.chrome || !window.chrome.cast) {
+                const script = document.createElement('script');
+                script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+                script.onload = () => {
+                    console.log('Cast SDK loaded');
+                    // Initialize Cast API when it's available
+                    window['__onGCastApiAvailable'] = function(isAvailable) {
+                        if (isAvailable) {
+                            console.log('Cast API is available');
+                        }
+                    };
+                    resolve();
+                };
+                script.onerror = () => {
+                    console.error('Failed to load Cast SDK');
+                    resolve(); // Continue anyway
+                };
+                document.head.appendChild(script);
+            } else {
+                console.log('Cast SDK already loaded');
+                resolve();
+            }
+        } catch (error) {
+            console.error('Failed to load Chromecast dependencies:', error);
+            resolve(); // Continue without Chromecast
+        }
     });
 };
 
 const initializePlayer = async () => {
     if (!videoPlayer.value) return;
 
-    // Load Cast SDK first
-    await loadCastSDK();
-
-    // Dynamically import Chromecast plugin after videojs is available
-    try {
-        await import('@silvermine/videojs-chromecast/dist/silvermine-videojs-chromecast');
-        console.log('Chromecast plugin loaded successfully');
-
-        // Check if the plugin registered correctly
-        if (videojs.getPlugin && videojs.getPlugin('chromecast')) {
-            console.log('Chromecast plugin is registered with Video.js');
-        } else {
-            console.warn('Chromecast plugin did not register properly');
-        }
-    } catch (error) {
-        console.error('Failed to load Chromecast plugin:', error);
-    }
+    // Load Chromecast dependencies in correct order
+    await loadChromecastDependencies();
 
     // Check for saved volume preferences first
     const savedVolume = getCookie('player_volume');
@@ -211,13 +218,22 @@ const initializePlayer = async () => {
                 }
             }
         },
-        techOrder: ['html5'],
+        techOrder: ['chromecast', 'html5'], // Chromecast must be first in techOrder
         sources: [],
-        // Chromecast plugin options
+        // Chromecast plugin configuration
         plugins: {
             chromecast: {
-                receiverAppID: null, // Uses default receiver if null
-                addButtonToControlBar: true
+                receiverAppID: null, // Uses default receiver
+                addButtonToControlBar: true, // Automatically add button to control bar
+                buttonPositionIndex: 0, // Position in control bar (0 = after play button)
+                requestTitleFn: function(source) {
+                    // Customize the title shown on Chromecast
+                    return 'Live Stream';
+                },
+                requestSubtitleFn: function(source) {
+                    // Customize subtitle shown on Chromecast  
+                    return 'Eurofurence Streaming';
+                }
             }
         }
     };
@@ -382,24 +398,43 @@ const initializePlayer = async () => {
 
         // Check if Chromecast plugin initialized
         if (typeof player.chromecast === 'function') {
-            console.log('Chromecast method is available on player');
-            try {
-                // Initialize chromecast explicitly
-                player.chromecast();
-                console.log('Chromecast plugin initialized on player');
-
-                // Check for Chromecast button
-                const chromecastButton = player.controlBar.getChild('chromecastButton');
+            console.log('Chromecast plugin is available on player');
+            
+            // Check for Chromecast button in control bar
+            setTimeout(() => {
+                const chromecastButton = player.controlBar.getChild('ChromecastButton');
                 if (chromecastButton) {
                     console.log('Chromecast button found in control bar');
+                    // Make button more visible if hidden
+                    chromecastButton.show();
                 } else {
                     console.warn('Chromecast button not found in control bar');
+                    // Try to manually add the button if it's missing
+                    if (videojs.getPlugin('chromecast')) {
+                        console.log('Attempting to manually initialize Chromecast button...');
+                        player.chromecast();
+                    }
                 }
-            } catch (error) {
-                console.error('Error initializing Chromecast:', error);
-            }
+            }, 1000); // Wait for control bar to be fully initialized
+            
+            // Listen for Chromecast events
+            player.on('chromecastConnected', () => {
+                console.log('Connected to Chromecast device');
+            });
+            
+            player.on('chromecastDisconnected', () => {
+                console.log('Disconnected from Chromecast device');
+            });
+            
+            player.on('chromecastDevicesAvailable', () => {
+                console.log('Chromecast devices are available');
+            });
+            
+            player.on('chromecastDevicesUnavailable', () => {
+                console.log('No Chromecast devices available');
+            });
         } else {
-            console.warn('Chromecast method not available on player');
+            console.warn('Chromecast plugin not available on player');
         }
 
         // Set up unmute on first user interaction if player is muted
@@ -845,5 +880,48 @@ defineExpose({
 .video-js .vjs-loading-spinner:before,
 .video-js .vjs-loading-spinner:after {
     border-color: oklch(53.86% 0.096 181.61) transparent transparent; /* primary-500 */
+}
+
+/* Chromecast button styling */
+.video-js .vjs-chromecast-button {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+/* Ensure Chromecast icon is visible */
+.video-js .vjs-chromecast-button .vjs-icon-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.video-js .vjs-chromecast-button .vjs-icon-placeholder:before {
+    font-size: 1.8em;
+}
+
+/* Chromecast button hover state */
+.video-js .vjs-chromecast-button:hover {
+    color: oklch(71.68% 0.127 181.62); /* primary-300 */
+}
+
+/* Chromecast connected state */
+.video-js .vjs-chromecast-button.vjs-chromecast-casting {
+    color: oklch(53.86% 0.096 181.61); /* primary-500 */
+}
+
+/* Chromecast menu styling */
+.video-js .vjs-chromecast-button .vjs-menu {
+    background: oklch(23.56% 0.035 181.16); /* primary-900 */
+    border: 1px solid oklch(32.74% 0.055 181.17); /* primary-800 */
+}
+
+.video-js .vjs-chromecast-button .vjs-menu-item {
+    color: oklch(80.03% 0.142 181.59); /* primary-200 */
+}
+
+.video-js .vjs-chromecast-button .vjs-menu-item:hover {
+    background: oklch(44.24% 0.078 181.52); /* primary-600 */
 }
 </style>

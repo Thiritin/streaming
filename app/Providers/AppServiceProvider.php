@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
+use App\Models\Recording;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\User;
+use App\Observers\RecordingObserver;
 use App\Observers\ShowObserver;
 use App\Observers\SourceObserver;
 use Illuminate\Support\Facades\Http;
@@ -40,5 +42,6 @@ class AppServiceProvider extends ServiceProvider
         User::observe(\App\Observers\UserObserver::class);
         Source::observe(SourceObserver::class);
         Show::observe(ShowObserver::class);
+        Recording::observe(RecordingObserver::class);
     }
 }

@@ -23,6 +23,7 @@ class Show extends Model
         'actual_end',
         'status',
         'auto_mode',
+        'recordable',
         'thumbnail_path',
         'thumbnail_updated_at',
         'thumbnail_capture_error',
@@ -41,6 +42,7 @@ class Show extends Model
         'actual_end' => 'datetime',
         'thumbnail_updated_at' => 'datetime',
         'auto_mode' => 'boolean',
+        'recordable' => 'boolean',
         'tags' => 'array',
         'metadata' => 'array',
     ];
@@ -109,6 +111,14 @@ class Show extends Model
     public function showStatistics()
     {
         return $this->hasMany(ShowStatistic::class);
+    }
+
+    /**
+     * Get the recording for this show.
+     */
+    public function recording()
+    {
+        return $this->hasOne(Recording::class);
     }
 
     /**

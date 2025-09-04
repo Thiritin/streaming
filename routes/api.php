@@ -61,3 +61,12 @@ Route::prefix('srs')->group(function () {
 
 // DVR uploader webhooks
 Route::post('dvr/upload-webhook', [App\Http\Controllers\Api\SrsDvrController::class, 'handleUploadWebhook'])->name('api.dvr.upload-webhook');
+
+// Recording API endpoints for external processing server
+Route::middleware([\App\Http\Middleware\CheckRecordingApiKeyMiddleware::class])->prefix('recording')->group(function () {
+    Route::get('shows', [App\Http\Controllers\Api\RecordingApiController::class, 'shows'])->name('api.recording.shows');
+    Route::post('create', [App\Http\Controllers\Api\RecordingApiController::class, 'create'])->name('api.recording.create');
+});
+
+// Public recording endpoint
+Route::get('recording/{slug}', [App\Http\Controllers\Api\RecordingApiController::class, 'getBySlug'])->name('api.recording.get');
