@@ -46,6 +46,26 @@ class StreamController extends Controller
                 ];
             });
 
+        // Get shows that should have started but haven't (starting soon)
+        $startingSoonShows = Show::with('source')
+            ->scheduled()
+            ->where('scheduled_start', '<=', now())
+            ->orderBy('scheduled_start', 'desc')
+            ->get()
+            ->map(function ($show) {
+                return [
+                    'id' => $show->id,
+                    'title' => $show->title,
+                    'slug' => $show->slug,
+                    'description' => $show->description,
+                    'source' => $show->source ? $show->source->name : null,
+                    'status' => 'starting_soon', // Override status to indicate starting soon
+                    'thumbnail_url' => $show->thumbnail_url,
+                    'scheduled_start' => $show->scheduled_start,
+                    'scheduled_end' => $show->scheduled_end,
+                ];
+            });
+
         // Get upcoming shows (next 24 hours)
         $upcomingShows = Show::with('source')
             ->scheduled()
@@ -69,6 +89,7 @@ class StreamController extends Controller
 
         return Inertia::render('ShowsGrid', [
             'liveShows' => $liveShows,
+            'startingSoonShows' => $startingSoonShows,
             'upcomingShows' => $upcomingShows,
             'currentTime' => now()->toIso8601String(),
         ]);

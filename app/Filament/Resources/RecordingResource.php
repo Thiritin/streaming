@@ -4,11 +4,13 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\RecordingResource\Pages;
 use App\Models\Recording;
+use App\Models\Show;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\Str;
 
 class RecordingResource extends Resource
 {
@@ -24,9 +26,46 @@ class RecordingResource extends Resource
     {
         return $form
             ->schema([
+                Forms\Components\Select::make('show_id')
+                    ->label('Associated Show')
+                    ->options(Show::with('source')->get()->mapWithKeys(function ($show) {
+                        return [$show->id => $show->title . ' (' . $show->source->name . ')']; 
+                    }))
+                    ->searchable()
+                    ->preload()
+                    ->nullable()
+                    ->reactive()
+                    ->afterStateUpdated(function ($state, Forms\Set $set) {
+                        if ($state) {
+                            $show = Show::find($state);
+                            if ($show) {
+                                $set('title', $show->title);
+                                $set('description', $show->description);
+                                if ($show->actual_start) {
+                                    $set('date', $show->actual_start);
+                                }
+                                if ($show->actual_start && $show->actual_end) {
+                                    $duration = $show->actual_start->diffInSeconds($show->actual_end);
+                                    $set('duration', $duration);
+                                }
+                            }
+                        }
+                    })
+                    ->helperText('Select a show to auto-populate fields'),
                 Forms\Components\TextInput::make('title')
                     ->required()
-                    ->maxLength(255),
+                    ->maxLength(255)
+                    ->reactive()
+                    ->afterStateUpdated(function ($state, Forms\Set $set, ?Recording $record) {
+                        if (!$record && filled($state)) {
+                            $set('slug', Str::slug($state));
+                        }
+                    }),
+                Forms\Components\TextInput::make('slug')
+                    ->required()
+                    ->maxLength(255)
+                    ->unique(Recording::class, 'slug', ignoreRecord: true)
+                    ->helperText('URL-friendly version of the title'),
                 Forms\Components\Textarea::make('description')
                     ->rows(3)
                     ->columnSpanFull(),
@@ -78,6 +117,15 @@ class RecordingResource extends Resource
                 Tables\Columns\TextColumn::make('title')
                     ->searchable()
                     ->sortable(),
+                Tables\Columns\TextColumn::make('slug')
+                    ->searchable()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('show.title')
+                    ->label('Show')
+                    ->badge()
+                    ->color('primary')
+                    ->searchable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('date')
                     ->dateTime('M j, Y H:i')
                     ->sortable(),
