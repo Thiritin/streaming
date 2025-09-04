@@ -89,6 +89,18 @@ import 'video.js/dist/video-js.css';
 import 'videojs-contrib-quality-levels';
 import '@silvermine/videojs-chromecast/dist/silvermine-videojs-chromecast.css';
 
+
+/* --- ADD: Native HLS detection for Apple browsers (minimal, additive) --- */
+const __isIOSLike__ =
+  /iP(hone|od|ad)/.test(navigator.platform) ||
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (/Macintosh/.test(navigator.userAgent) && 'ontouchend' in document);
+
+const __isSafari__ = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+const __useNativeHls__ = __isIOSLike__ || __isSafari__;
+/* --- END ADD --- */
+
+
 // Make videojs available globally for plugins
 window.videojs = videojs;
 
@@ -427,7 +439,26 @@ const initializePlayer = async () => {
     };
     
     // Initialize Video.js player
-    player = videojs(videoPlayer.value, options, function() {
+    
+// --- ADD: Prefer native HLS on iOS/Safari without changing original options ---
+try {
+  if (typeof __useNativeHls__ !== 'undefined' && __useNativeHls__) {
+    if (typeof options !== 'undefined' && options) {
+      options.techOrder = ['html5'];
+      if (options.html5 && options.html5.vhs) {
+        options.html5.vhs.overrideNative = false;
+      } else {
+        options.html5 = options.html5 || {};
+        options.html5.vhs = options.html5.vhs || {};
+        options.html5.vhs.overrideNative = false;
+      }
+    }
+  }
+} catch (e) {
+  // no-op
+}
+// --- END ADD ---
+player = videojs(videoPlayer.value, options, function() {
         // Player is ready
         console.log('Video.js player ready');
         
