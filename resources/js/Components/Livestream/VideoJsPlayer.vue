@@ -853,28 +853,58 @@ const initializePlayer = async () => {
         let bandwidthHistory = [];
         const HISTORY_SIZE = 5;
         
-        // Monitor bandwidth updates and smooth them
-        const originalSystemBandwidth = vhs.systemBandwidth;
-        if (originalSystemBandwidth !== undefined) {
-            Object.defineProperty(vhs, 'systemBandwidth', {
-                get: function() {
-                    // Get the actual current bandwidth
-                    const current = this.bandwidth || 4194304;
-                    
-                    // Add to history
+        // Try to smooth bandwidth calculations if the property is configurable
+        try {
+            const descriptor = Object.getOwnPropertyDescriptor(vhs, 'systemBandwidth');
+            
+            // Only attempt to redefine if property is configurable or doesn't exist
+            if (!descriptor || descriptor.configurable) {
+                Object.defineProperty(vhs, 'systemBandwidth', {
+                    get: function() {
+                        // Get the actual current bandwidth
+                        const current = this.bandwidth || 4194304;
+                        
+                        // Add to history
+                        bandwidthHistory.push(current);
+                        if (bandwidthHistory.length > HISTORY_SIZE) {
+                            bandwidthHistory.shift();
+                        }
+                        
+                        // Return average instead of instantaneous value
+                        const avg = bandwidthHistory.reduce((a, b) => a + b, 0) / bandwidthHistory.length;
+                        return Math.round(avg);
+                    },
+                    set: function(value) {
+                        this.bandwidth = value;
+                    },
+                    configurable: true,
+                    enumerable: true
+                });
+            } else {
+                // If we can't redefine, use alternative approach
+                console.log('systemBandwidth is not configurable, using alternative bandwidth smoothing');
+                
+                // Monitor bandwidth through periodic checks
+                setInterval(() => {
+                    const current = vhs.systemBandwidth || vhs.bandwidth || 4194304;
                     bandwidthHistory.push(current);
                     if (bandwidthHistory.length > HISTORY_SIZE) {
                         bandwidthHistory.shift();
                     }
                     
-                    // Return average instead of instantaneous value
+                    // Calculate smoothed bandwidth
                     const avg = bandwidthHistory.reduce((a, b) => a + b, 0) / bandwidthHistory.length;
-                    return Math.round(avg);
-                },
-                set: function(value) {
-                    this.bandwidth = value;
-                }
-            });
+                    const smoothedBandwidth = Math.round(avg);
+                    
+                    // Try to apply smoothed value back if possible
+                    if (vhs.bandwidth !== undefined && typeof vhs.bandwidth === 'number') {
+                        vhs.bandwidth = smoothedBandwidth;
+                    }
+                }, 1000); // Check every second
+            }
+        } catch (error) {
+            console.warn('Could not modify bandwidth smoothing:', error);
+            // Continue without bandwidth smoothing
         }
     }
 
