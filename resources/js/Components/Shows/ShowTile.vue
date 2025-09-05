@@ -60,6 +60,13 @@
         </span>
       </div>
       
+      <!-- Starting Soon Badge -->
+      <div v-else-if="isStartingSoon" class="absolute top-3 left-3">
+        <span class="bg-orange-600 text-white px-3 py-1.5 rounded text-sm font-bold uppercase animate-pulse">
+          STARTING SOON
+        </span>
+      </div>
+      
       <!-- Upcoming Time -->
       <div v-else-if="isUpcoming" class="absolute top-3 left-3">
         <span class="bg-black/70 text-white px-3 py-1.5 rounded text-sm">
@@ -92,8 +99,8 @@
         {{ show.source }}
       </p>
       
-      <!-- Scheduled Time for Upcoming -->
-      <p v-if="isUpcoming" class="text-base text-primary-400 mt-1">
+      <!-- Scheduled Time for Upcoming or Starting Soon -->
+      <p v-if="isUpcoming || isStartingSoon" class="text-base text-primary-400 mt-1">
         {{ formatScheduledTime(show.scheduled_start) }}
       </p>
     </div>
@@ -126,6 +133,7 @@ let hlsInstance = null;
 
 // Computed properties
 const isLive = computed(() => props.show.status === 'live');
+const isStartingSoon = computed(() => props.show.status === 'starting_soon');
 const isUpcoming = computed(() => props.show.status === 'scheduled');
 
 // Get the stream URL for preview
@@ -284,8 +292,8 @@ const formatScheduledTime = (scheduledTime) => {
 
 // Lifecycle
 onMounted(() => {
-  // Update duration/countdown every second for live/upcoming shows
-  if (isLive.value || isUpcoming.value) {
+  // Update duration/countdown every second for live/upcoming/starting soon shows
+  if (isLive.value || isUpcoming.value || isStartingSoon.value) {
     updateInterval = setInterval(() => {
       // Force re-render to update time displays
     }, 1000);

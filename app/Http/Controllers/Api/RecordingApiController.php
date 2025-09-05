@@ -60,42 +60,42 @@ class RecordingApiController extends Controller
         // If show_id is provided, get the show details
         if (!empty($validated['show_id'])) {
             $show = Show::find($validated['show_id']);
-            
+
             // Use show details if not provided
             if (empty($validated['date']) && $show->actual_start) {
                 $validated['date'] = $show->actual_start;
             }
-            
+
             // Calculate duration if not provided
             if (empty($validated['duration']) && $show->actual_start && $show->actual_end) {
                 $validated['duration'] = $show->actual_start->diffInSeconds($show->actual_end);
             }
-            
+
             // Use show description if not provided
             if (empty($validated['description']) && $show->description) {
                 $validated['description'] = $show->description;
             }
         }
-        
+
         // Generate slug if not provided
         if (empty($validated['slug'])) {
             $baseSlug = Str::slug($validated['title']);
             $slug = $baseSlug;
             $count = 1;
-            
+
             while (Recording::where('slug', $slug)->exists()) {
                 $slug = $baseSlug . '-' . $count;
                 $count++;
             }
-            
+
             $validated['slug'] = $slug;
         }
-        
+
         // Default to published
         if (!isset($validated['is_published'])) {
             $validated['is_published'] = true;
         }
-        
+
         // Default date to now if not provided
         if (empty($validated['date'])) {
             $validated['date'] = now();

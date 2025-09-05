@@ -13,7 +13,7 @@ const showingNavigationDropdown = ref(false);
 
 <template>
   <div>
-    <div class="min-h-screen bg-primary-900">
+    <div class="min-h-screen bg-primary-900 flex flex-col">
       <nav class="bg-primary-800 sticky top-0 w-full z-50 shadow-lg">
         <!-- Primary Navigation Menu -->
         <div class="px-6">
@@ -160,9 +160,16 @@ const showingNavigationDropdown = ref(false);
       </nav>
 
       <!-- Page Content -->
-      <main>
+      <main class="flex-1">
         <slot/>
       </main>
+      
+      <!-- Footer -->
+      <footer class="border-t border-primary-700 bg-primary-900 py-6 mt-12">
+        <div class="text-center text-primary-400">
+          Made with <span class="text-red-500">❤</span> by the Eurofurence Video Team
+        </div>
+      </footer>
     </div>
   </div>
 </template>

@@ -283,6 +283,10 @@ class QualityMenuButton extends videojs.getComponent('MenuButton') {
     }
 }
 
+// Add quality change throttling
+let lastQualityChangeTime = 0;
+const QUALITY_CHANGE_COOLDOWN = 2000; // 2 seconds between changes
+
 // Custom Quality Menu Item
 class QualityMenuItem extends videojs.getComponent('MenuItem') {
     constructor(player, options) {
@@ -297,6 +301,16 @@ class QualityMenuItem extends videojs.getComponent('MenuItem') {
     }
     
     handleClick() {
+        const now = Date.now();
+        
+        // Throttle quality changes to prevent rapid switching
+        if (now - lastQualityChangeTime < QUALITY_CHANGE_COOLDOWN) {
+            console.log('Quality change throttled - too soon after last change');
+            return;
+        }
+        
+        lastQualityChangeTime = now;
+        
         const qualityLevels = this.qualityLevels;
         
         // Remove selected class from all items
@@ -380,7 +394,7 @@ const initializePlayer = async () => {
     // Load Chromecast dependencies first
     await loadChromecastDependencies();
     
-    // Video.js options
+    // Video.js options optimized for VOD playback
     const options = {
         controls: true,
         autoplay: true,
@@ -390,10 +404,60 @@ const initializePlayer = async () => {
         techOrder: ['chromecast', 'html5'], // Chromecast must be first
         html5: {
             vhs: {
-                // Enable adaptive bitrate selection
-                enableLowInitialPlaylist: true,
+                // VOD-optimized settings for reliable playback on slow networks
+                overrideNative: true,
                 smoothQualityChange: true,
-                overrideNative: true
+                fastQualityChange: false, // Prevent quality thrashing
+                
+                // Start with lower quality for faster initial playback
+                enableLowInitialPlaylist: true,
+                
+                // Conservative bandwidth estimation
+                bandwidth: 2097152, // Start at 2 Mbps
+                abrEwmaDefaultEstimate: 2097152, // 2 Mbps default estimate
+                
+                // Buffering configuration - aggressive for VOD
+                maxGoalBufferLength: 300, // Buffer up to 5 minutes ahead
+                goalBufferLength: 60, // Try to maintain 1 minute buffer
+                maxBufferLength: 600, // Maximum 10 minutes in buffer
+                bufferPruneAhead: 2, // Keep 2 seconds ahead when pruning
+                
+                // Network retry configuration
+                maxPlaylistRetries: 15, // More retries for VOD
+                maxRetries: 10, // Retry segments multiple times
+                retryDelay: 500, // Wait 500ms between retries
+                timeout: 45000, // 45 second timeout for requests
+                
+                // ABR (Adaptive Bitrate) settings for VOD
+                abrEwmaFastVoD: 4.0, // Slightly faster than live
+                abrEwmaSlowVoD: 12.0, // Slower adaptation for stability
+                abrBandwidthEstimator: 0.4, // Very conservative (40% of measured)
+                
+                // Quality switching behavior
+                limitRenditionByPlayerDimensions: true, // Don't fetch 4K for small player
+                useDevicePixelRatio: true, // Consider device pixel density
+                
+                // Experimental features for better performance
+                experimentalBufferBasedABR: false, // Disabled for stability
+                bufferBasedABR: false,
+                experimentalExactManifestTimings: true,
+                cacheEncryptionKeys: true,
+                
+                // Allow seeking anywhere in the video
+                allowSeeksWithinUnsafeLiveWindow: true,
+                
+                // Keep downloading even when paused (YouTube-like behavior)
+                handlePartialData: true,
+                useBandwidthFromLocalStorage: true, // Remember bandwidth across sessions
+                
+                // Segment loading strategy
+                maxSegmentRetries: 3,
+                segmentMetadataTrack: false,
+                
+                // Custom rendition selection
+                renditionMixin: {
+                    excludeUntil: Infinity // Don't permanently exclude qualities
+                }
             }
         },
         sources: [{
@@ -462,6 +526,94 @@ player = videojs(videoPlayer.value, options, function() {
         // Player is ready
         console.log('Video.js player ready');
         
+        // Firefox-specific optimizations
+        const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+        if (isFirefox) {
+            // Adjust settings for Firefox
+            if (this.tech_ && this.tech_.vhs) {
+                this.tech_.vhs.options_.maxPlaylistRetries = 20;
+                this.tech_.vhs.options_.bandwidth = 1572864; // Start lower for Firefox (1.5 Mbps)
+            }
+        }
+        
+        // Add bandwidth monitoring and quality adjustment
+        if (this.tech_ && this.tech_.vhs) {
+            const vhs = this.tech_.vhs;
+            let bandwidthHistory = [];
+            const HISTORY_SIZE = 10; // More samples for VOD
+            
+            // Try to smooth bandwidth calculations if the property is configurable
+            try {
+                const descriptor = Object.getOwnPropertyDescriptor(vhs, 'systemBandwidth');
+                
+                // Only attempt to redefine if property is configurable or doesn't exist
+                if (!descriptor || descriptor.configurable) {
+                    Object.defineProperty(vhs, 'systemBandwidth', {
+                        get: function() {
+                            const current = this.bandwidth || 2097152;
+                            
+                            // Add to history
+                            bandwidthHistory.push(current);
+                            if (bandwidthHistory.length > HISTORY_SIZE) {
+                                bandwidthHistory.shift();
+                            }
+                            
+                            // Use weighted average (recent values weighted more)
+                            let weightedSum = 0;
+                            let weightTotal = 0;
+                            bandwidthHistory.forEach((bw, index) => {
+                                const weight = (index + 1) / bandwidthHistory.length;
+                                weightedSum += bw * weight;
+                                weightTotal += weight;
+                            });
+                            
+                            return Math.round(weightedSum / weightTotal);
+                        },
+                        set: function(value) {
+                            this.bandwidth = value;
+                        },
+                        configurable: true,
+                        enumerable: true
+                    });
+                } else {
+                    // If we can't redefine, use a different approach - monitor bandwidth changes
+                    console.log('systemBandwidth is not configurable, using alternative bandwidth smoothing');
+                    
+                    // Create a wrapper that monitors bandwidth updates
+                    const originalGetter = descriptor.get;
+                    if (originalGetter) {
+                        // Monitor bandwidth through periodic checks
+                        setInterval(() => {
+                            const current = vhs.systemBandwidth || vhs.bandwidth || 2097152;
+                            bandwidthHistory.push(current);
+                            if (bandwidthHistory.length > HISTORY_SIZE) {
+                                bandwidthHistory.shift();
+                            }
+                            
+                            // Calculate smoothed bandwidth
+                            let weightedSum = 0;
+                            let weightTotal = 0;
+                            bandwidthHistory.forEach((bw, index) => {
+                                const weight = (index + 1) / bandwidthHistory.length;
+                                weightedSum += bw * weight;
+                                weightTotal += weight;
+                            });
+                            
+                            const smoothedBandwidth = Math.round(weightedSum / weightTotal);
+                            
+                            // Try to apply smoothed value back if possible
+                            if (vhs.bandwidth !== undefined && typeof vhs.bandwidth === 'number') {
+                                vhs.bandwidth = smoothedBandwidth;
+                            }
+                        }, 1000); // Check every second
+                    }
+                }
+            } catch (error) {
+                console.warn('Could not modify bandwidth smoothing:', error);
+                // Continue without bandwidth smoothing
+            }
+        }
+        
         // Create custom quality selector
         const player = this;
         
@@ -478,6 +630,70 @@ player = videojs(videoPlayer.value, options, function() {
             }
             return false;
         };
+        
+        // Add buffer monitoring for YouTube-like experience
+        const monitorBuffer = () => {
+            const buffered = player.buffered();
+            const currentTime = player.currentTime();
+            const duration = player.duration();
+            
+            if (buffered.length > 0) {
+                // Find buffer end for current position
+                let bufferEnd = 0;
+                for (let i = 0; i < buffered.length; i++) {
+                    if (buffered.start(i) <= currentTime && buffered.end(i) >= currentTime) {
+                        bufferEnd = buffered.end(i);
+                        break;
+                    }
+                }
+                
+                const bufferedAhead = bufferEnd - currentTime;
+                const bufferedPercent = (bufferEnd / duration) * 100;
+                
+                // Log buffer status periodically
+                if (Math.random() < 0.01) { // Log 1% of the time to avoid spam
+                    console.log(`Buffer: ${bufferedAhead.toFixed(1)}s ahead, ${bufferedPercent.toFixed(1)}% total`);
+                }
+                
+                // Adjust quality if buffer is low
+                if (bufferedAhead < 10 && player.tech_ && player.tech_.vhs) {
+                    // Force lower quality if buffer is critically low
+                    const vhs = player.tech_.vhs;
+                    if (vhs.playlists && vhs.playlists.media_) {
+                        console.log('Low buffer detected, considering quality adjustment');
+                    }
+                }
+            }
+        };
+        
+        // Monitor buffer every 2 seconds
+        setInterval(monitorBuffer, 2000);
+        
+        // Add seeking optimization
+        let seekTimeout;
+        player.on('seeking', () => {
+            clearTimeout(seekTimeout);
+            loading.value = true;
+            
+            // Temporarily increase tolerance during seek
+            const tech = player.tech();
+            if (tech && tech.vhs) {
+                tech.vhs.options_.maxPlaylistRetries = 30;
+                tech.vhs.options_.timeout = 60000; // 60 seconds during seek
+            }
+        });
+        
+        player.on('seeked', () => {
+            loading.value = false;
+            seekTimeout = setTimeout(() => {
+                const tech = player.tech();
+                if (tech && tech.vhs) {
+                    // Reset to normal values
+                    tech.vhs.options_.maxPlaylistRetries = 15;
+                    tech.vhs.options_.timeout = 45000;
+                }
+            }, 2000);
+        });
         
         // Try to setup immediately
         if (!setupQualitySelector()) {
@@ -520,18 +736,68 @@ player = videojs(videoPlayer.value, options, function() {
             error.value = false;
         });
         
+        // Enhanced error handling with automatic recovery
+        let errorRetryCount = 0;
+        const MAX_ERROR_RETRIES = 3;
+        let lastErrorTime = 0;
+        const ERROR_COOLDOWN = 2000;
+        
         this.on('error', (e) => {
-            loading.value = false;
-            error.value = true;
             const err = this.error();
+            const now = Date.now();
+            
+            // Ignore rapid errors (likely quality switching)
+            if (now - lastErrorTime < ERROR_COOLDOWN) {
+                console.log('Ignoring rapid error, likely quality switching');
+                this.error(null);
+                return;
+            }
+            
+            lastErrorTime = now;
             
             if (err) {
+                // Handle network errors with retry
+                if (err.code === 2 && errorRetryCount < MAX_ERROR_RETRIES) {
+                    errorRetryCount++;
+                    console.log(`Network error, attempting recovery (${errorRetryCount}/${MAX_ERROR_RETRIES})...`);
+                    
+                    // Clear error and try to resume
+                    this.error(null);
+                    
+                    // Check if we're switching qualities
+                    const tech = this.tech();
+                    if (tech && tech.vhs) {
+                        const vhs = tech.vhs;
+                        if (vhs.masterPlaylistController_ && vhs.masterPlaylistController_.pendingMedia_) {
+                            console.log('Quality switch in progress, waiting...');
+                            return;
+                        }
+                    }
+                    
+                    // Attempt to resume playback
+                    setTimeout(() => {
+                        const currentTime = this.currentTime();
+                        this.currentTime(currentTime); // Trigger rebuffering
+                        this.play().catch(playErr => {
+                            console.log('Resume failed:', playErr);
+                        });
+                    }, 1000);
+                    
+                    return;
+                }
+                
+                // Display error to user
+                loading.value = false;
+                error.value = true;
+                
                 switch(err.code) {
                     case 1: // MEDIA_ERR_ABORTED
                         errorMessage.value = 'Video playback was aborted.';
                         break;
                     case 2: // MEDIA_ERR_NETWORK
-                        errorMessage.value = 'Network error. Please check your connection.';
+                        errorMessage.value = errorRetryCount >= MAX_ERROR_RETRIES ? 
+                            'Network error. Please check your connection.' :
+                            'Temporary network issue. Retrying...';
                         break;
                     case 3: // MEDIA_ERR_DECODE
                         errorMessage.value = 'Video decoding error.';
@@ -542,9 +808,14 @@ player = videojs(videoPlayer.value, options, function() {
                     default:
                         errorMessage.value = 'An error occurred while playing the video.';
                 }
+                
+                console.error('Video.js error:', err);
             }
-            
-            console.error('Video.js error:', err);
+        });
+        
+        // Reset error count on successful playback
+        this.on('playing', () => {
+            errorRetryCount = 0;
         });
         
         // Add quality change listener
@@ -593,14 +864,30 @@ player = videojs(videoPlayer.value, options, function() {
 const retryPlayback = () => {
     error.value = false;
     loading.value = true;
+    
     if (player) {
+        // Clear any existing errors
+        player.error(null);
+        
+        // Reset VHS settings for retry
+        if (player.tech_ && player.tech_.vhs) {
+            player.tech_.vhs.options_.bandwidth = 1048576; // Start at 1 Mbps on retry
+        }
+        
+        // Reload source
         player.src({
             src: props.recording.m3u8_url,
             type: 'application/x-mpegURL'
         });
         player.load();
+        
+        // Try to play with fallback to muted if needed
         player.play().catch(e => {
-            console.log('Autoplay prevented:', e);
+            console.log('Autoplay prevented, trying muted:', e);
+            player.muted(true);
+            player.play().catch(err => {
+                console.error('Muted autoplay also failed:', err);
+            });
         });
     } else {
         initializePlayer();

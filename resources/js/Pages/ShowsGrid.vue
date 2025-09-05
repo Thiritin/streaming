@@ -18,7 +18,7 @@
           </span>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
           <ShowTile
             v-for="show in liveShows"
             :key="show.id"
@@ -36,6 +36,24 @@
         </div>
       </div>
 
+      <!-- Starting Soon Section -->
+      <div v-if="startingSoonShows.length > 0" class="mb-12">
+        <div class="flex items-center mb-4">
+          <h2 class="text-2xl font-semibold text-white">Starting Soon</h2>
+          <span class="ml-3 bg-orange-600 text-white px-2 py-1 rounded text-xs font-bold uppercase animate-pulse">
+            {{ startingSoonShows.length }} STARTING SOON
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+          <ShowTile
+            v-for="show in startingSoonShows"
+            :key="show.id"
+            :show="show"
+          />
+        </div>
+      </div>
+
       <!-- Upcoming Shows Section -->
       <div v-if="upcomingShows.length > 0">
         <div class="flex items-center mb-4">
@@ -45,7 +63,7 @@
           </span>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
           <ShowTile
             v-for="show in upcomingShows"
             :key="show.id"
@@ -98,6 +116,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  startingSoonShows: {
+    type: Array,
+    default: () => [],
+  },
   upcomingShows: {
     type: Array,
     default: () => [],
@@ -113,6 +135,7 @@ const page = usePage();
 
 // Reactive state
 const liveShows = ref(props.liveShows);
+const startingSoonShows = ref(props.startingSoonShows);
 const upcomingShows = ref(props.upcomingShows);
 
 let refreshInterval;
@@ -129,6 +152,12 @@ onMounted(() => {
           upcomingShows.value.splice(upcomingIndex, 1);
         }
 
+        // Remove from starting soon if exists
+        const startingSoonIndex = startingSoonShows.value.findIndex(s => s.id === e.show.id);
+        if (startingSoonIndex !== -1) {
+          startingSoonShows.value.splice(startingSoonIndex, 1);
+        }
+
         // Add to live shows if not already there
         const liveIndex = liveShows.value.findIndex(s => s.id === e.show.id);
         if (liveIndex === -1) {
@@ -142,6 +171,12 @@ onMounted(() => {
         const liveIndex = liveShows.value.findIndex(s => s.id === e.show.id);
         if (liveIndex !== -1) {
           liveShows.value.splice(liveIndex, 1);
+        }
+
+        // Remove from starting soon if exists
+        const startingSoonIndex = startingSoonShows.value.findIndex(s => s.id === e.show.id);
+        if (startingSoonIndex !== -1) {
+          startingSoonShows.value.splice(startingSoonIndex, 1);
         }
       }
     })

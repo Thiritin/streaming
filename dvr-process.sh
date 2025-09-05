@@ -3,16 +3,33 @@
 # DVR Recording Processing Script
 # This script fetches shows to process, extracts recordings, converts to HLS, and uploads to S3
 
-# Configuration
-API_BASE_URL="${API_BASE_URL:-http://localhost:8000/api}"
+# Get the directory of this script
+SCRIPT_DIR="$(dirname "$0")"
+
+# Load environment variables from .env file if it exists
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    # Export all variables from .env file
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
+    echo "Loaded configuration from .env file"
+elif [ -f ".env" ]; then
+    # Try current directory as fallback
+    set -a
+    source .env
+    set +a
+    echo "Loaded configuration from .env file"
+fi
+
+# Configuration (with defaults if not set in .env)
+API_BASE_URL="${API_BASE_URL:-http://localhost/api}"
 API_KEY="${RECORDING_API_KEY}"
-S3_ALIAS="${S3_ALIAS:-dvr}"  # mc alias for DVR S3 bucket
+S3_ALIAS="${S3_ALIAS:-eventwolf}"  # mc alias for DVR S3 bucket
 S3_BUCKET="${S3_BUCKET:-recording}"
 S3_BASE_PATH="${S3_BASE_PATH:-on-demand}"
 EVENT_SLUG="${EVENT_SLUG:-ef29}"  # Event identifier (e.g., ef29 for Eurofurence 29)
 TEMP_DIR="${TEMP_DIR:-/tmp/dvr-processing}"
 DVR_SOURCE_DIR="${DVR_SOURCE_DIR:-/var/dvr}"  # Directory containing DVR m3u8/ts files
-SCRIPT_DIR="$(dirname "$0")"
 
 # Colors for output
 RED='\033[0;31m'
@@ -51,6 +68,8 @@ check_requirements() {
     
     if [ -z "$API_KEY" ]; then
         error "RECORDING_API_KEY environment variable is not set"
+        error "Please set it in your .env file or export it:"
+        error "  export RECORDING_API_KEY='your-api-key-here'"
         exit 1
     fi
     
@@ -58,59 +77,88 @@ check_requirements() {
         error "dvr-convert.sh not found in script directory"
         exit 1
     fi
+    
+    if [ ! -f "$SCRIPT_DIR/dvr-extract.sh" ]; then
+        error "dvr-extract.sh not found in script directory"
+        exit 1
+    fi
 }
 
 # Fetch shows to process from API
 fetch_shows() {
-    log "Fetching shows to process from API..."
+    # Log to stderr so it doesn't corrupt the output
+    log "Fetching shows to process from API..." >&2
+    log "API URL: $API_BASE_URL/recording/shows" >&2
+    
+    # Add verbose output for debugging
+    if [ "${DEBUG:-0}" = "1" ]; then
+        log "API Key: ${API_KEY:0:10}..." >&2 # Show first 10 chars for debugging
+    fi
     
     local response
-    response=$(curl -s -H "X-Recording-Api-Key: $API_KEY" \
+    local http_code
+    
+    # Use -w to get HTTP status code
+    response=$(curl -s -w "\n__HTTP_CODE__:%{http_code}" \
+                    -H "X-Recording-Api-Key: $API_KEY" \
                     "$API_BASE_URL/recording/shows")
     
-    if [ $? -ne 0 ]; then
-        error "Failed to fetch shows from API"
+    # Extract HTTP code from response
+    http_code=$(echo "$response" | grep "__HTTP_CODE__:" | cut -d: -f2)
+    response=$(echo "$response" | grep -v "__HTTP_CODE__:")
+    
+    if [ "$http_code" != "200" ]; then
+        error "API returned HTTP $http_code"
+        if [ "${DEBUG:-0}" = "1" ]; then
+            error "Response: $response"
+        fi
         return 1
     fi
     
+    # Check if response is valid JSON
+    if ! echo "$response" | jq empty 2>/dev/null; then
+        error "Invalid JSON response from API"
+        if [ "${DEBUG:-0}" = "1" ]; then
+            error "Response: $response"
+        fi
+        return 1
+    fi
+    
+    # Check if response has success flag
+    local success=$(echo "$response" | jq -r '.success // false')
+    if [ "$success" != "true" ]; then
+        local error_msg=$(echo "$response" | jq -r '.message // "Unknown error"')
+        error "API error: $error_msg"
+        return 1
+    fi
+    
+    # Return the data array
     echo "$response" | jq -r '.data[] | @json'
 }
 
-# Extract recording using dvr-extract
+# Extract recording using dvr-extract.sh
 extract_recording() {
     local source="$1"
     local start="$2"
     local end="$3"
     local output_file="$4"
     
-    log "Extracting recording for source: $source from $start to $end"
+    log "Extracting recording for source: $source from $start to $end" >&2
     
-    # Find the DVR directory for this source
-    local dvr_path="$DVR_SOURCE_DIR/$source"
-    if [ ! -d "$dvr_path" ]; then
-        error "DVR directory not found: $dvr_path"
-        return 1
-    fi
+    # Convert ISO8601 to the format expected by the extraction script
+    # The script expects: "YYYY-MM-DD HH:MM:SS" in Europe/Berlin timezone
+    # The input is already in Europe/Berlin timezone (with +02:00 offset)
+    # We need to preserve the local time, not convert it
+    local formatted_start=$(echo "$start" | sed 's/T/ /' | sed 's/+.*//')
+    local formatted_end=$(echo "$end" | sed 's/T/ /' | sed 's/+.*//')
     
-    # Find the m3u8 file
-    local m3u8_file="$dvr_path/index.m3u8"
-    if [ ! -f "$m3u8_file" ]; then
-        error "M3U8 file not found: $m3u8_file"
-        return 1
-    fi
-    
-    # Use dvr-extract to extract the time range
-    # Note: dvr-extract should be available in the system
-    if command -v dvr-extract &> /dev/null; then
-        dvr-extract -i "$m3u8_file" -s "$start" -e "$end" -o "$output_file"
+    # Use the extraction script
+    if [ -f "$SCRIPT_DIR/dvr-extract.sh" ]; then
+        log "Running: $SCRIPT_DIR/dvr-extract.sh '$source' '$formatted_start' '$formatted_end' '$output_file' '$S3_ALIAS'" >&2
+        "$SCRIPT_DIR/dvr-extract.sh" "$source" "$formatted_start" "$formatted_end" "$output_file" "$S3_ALIAS"
     else
-        # Fallback to ffmpeg if dvr-extract is not available
-        warning "dvr-extract not found, using ffmpeg instead"
-        ffmpeg -i "$m3u8_file" \
-               -ss "$(date -d "$start" '+%H:%M:%S')" \
-               -to "$(date -d "$end" '+%H:%M:%S')" \
-               -c copy \
-               "$output_file"
+        error "dvr-extract.sh not found in script directory"
+        return 1
     fi
     
     return $?
@@ -133,16 +181,13 @@ upload_to_s3() {
     local local_dir="$1"
     local s3_path="$2"
     
-    log "Uploading to S3: $s3_path"
+    log "Uploading to S3: $s3_path" >&2
     
     # Use mc mirror to upload
     mc mirror --overwrite "$local_dir/" "$S3_ALIAS/$S3_BUCKET/$s3_path/"
     
     if [ $? -eq 0 ]; then
-        # Get the URL of the master playlist
-        local master_playlist="$(basename "$local_dir")_master.m3u8"
-        local s3_url="https://${S3_BUCKET}.s3.amazonaws.com/${s3_path}/${master_playlist}"
-        echo "$s3_url"
+        log "Upload successful to $S3_ALIAS/$S3_BUCKET/$s3_path/" >&2
         return 0
     else
         error "Failed to upload to S3"
@@ -159,17 +204,29 @@ create_recording() {
     
     log "Creating recording in database..."
     
+    # Create a temporary file for the JSON payload
+    local temp_file=$(mktemp)
+    
+    # Write JSON payload to temp file
+    cat <<EOF > "$temp_file"
+{
+    "show_id": $show_id,
+    "title": "$title",
+    "m3u8_url": "$m3u8_url",
+    "description": "$description"
+}
+EOF
+    
+    # Make API call using the temp file
     local response
     response=$(curl -s -X POST \
                     -H "X-Recording-Api-Key: $API_KEY" \
                     -H "Content-Type: application/json" \
-                    -d "{
-                        \"show_id\": $show_id,
-                        \"title\": \"$title\",
-                        \"m3u8_url\": \"$m3u8_url\",
-                        \"description\": \"$description\"
-                    }" \
+                    -d "@$temp_file" \
                     "$API_BASE_URL/recording/create")
+    
+    # Clean up temp file
+    rm -f "$temp_file"
     
     if [ $? -eq 0 ]; then
         echo "$response" | jq -r '.success'
@@ -184,28 +241,56 @@ create_recording() {
 process_show() {
     local show_json="$1"
     
+    # Validate input
+    if [ -z "$show_json" ] || [ "$show_json" = "null" ]; then
+        error "Invalid show data received"
+        return 1
+    fi
+    
+    log "Processing show JSON: $show_json" >&2
+    
     # Parse show data
-    local show_id=$(echo "$show_json" | jq -r '.show_id')
-    local source=$(echo "$show_json" | jq -r '.source')
-    local show_slug=$(echo "$show_json" | jq -r '.show')
-    local start=$(echo "$show_json" | jq -r '.start')
-    local end=$(echo "$show_json" | jq -r '.end')
-    local title=$(echo "$show_json" | jq -r '.title')
+    local show_id=$(echo "$show_json" | jq -r '.show_id // ""')
+    local source=$(echo "$show_json" | jq -r '.source // ""')
+    local show_slug=$(echo "$show_json" | jq -r '.show // ""')
+    local start=$(echo "$show_json" | jq -r '.start // ""')
+    local end=$(echo "$show_json" | jq -r '.end // ""')
+    local title=$(echo "$show_json" | jq -r '.title // ""')
     local description=$(echo "$show_json" | jq -r '.description // ""')
+    
+    # Validate required fields
+    if [ -z "$show_id" ] || [ -z "$source" ] || [ -z "$start" ] || [ -z "$end" ]; then
+        error "Missing required fields in show data"
+        error "Show data: $show_json"
+        return 1
+    fi
     
     log "Processing show: $title (ID: $show_id)"
     
     # Create temporary directory for this show
     local work_dir="$TEMP_DIR/$show_slug"
+    log "Creating work directory: $work_dir" >&2
     mkdir -p "$work_dir"
     
     # Extract recording
     local extracted_file="$work_dir/extracted.mp4"
+    log "Starting extraction for show $show_id" >&2
+    log "Calling: extract_recording '$source' '$start' '$end' '$extracted_file'" >&2
     if ! extract_recording "$source" "$start" "$end" "$extracted_file"; then
         error "Failed to extract recording for show $show_id"
         rm -rf "$work_dir"
         return 1
     fi
+    
+    # Check if extracted file exists
+    if [ ! -f "$extracted_file" ]; then
+        error "Extracted file does not exist: $extracted_file"
+        rm -rf "$work_dir"
+        return 1
+    fi
+    
+    local extracted_size=$(ls -lh "$extracted_file" 2>/dev/null | awk '{print $5}')
+    log "Extraction complete. File size: $extracted_size" >&2
     
     # Convert to HLS
     local hls_dir="$work_dir/hls"
@@ -218,13 +303,15 @@ process_show() {
     # Upload to S3
     local s3_path="$S3_BASE_PATH/$EVENT_SLUG/$show_slug"
     local m3u8_url
-    m3u8_url=$(upload_to_s3 "$hls_dir" "$s3_path")
     
-    if [ $? -ne 0 ]; then
+    if ! upload_to_s3 "$hls_dir" "$s3_path"; then
         error "Failed to upload recording to S3 for show $show_id"
         rm -rf "$work_dir"
         return 1
     fi
+    
+    # Construct the master playlist URL
+    m3u8_url="https://${S3_BUCKET}.s3.amazonaws.com/${s3_path}/extracted_master.m3u8"
     
     # Create recording in database
     if create_recording "$show_id" "$title" "$m3u8_url" "$description"; then
@@ -250,12 +337,26 @@ main() {
     mkdir -p "$TEMP_DIR"
     
     # Fetch shows to process
+    set +e  # Don't exit on error
     shows=$(fetch_shows)
+    fetch_result=$?
+    set -e  # Re-enable exit on error
+    
+    # Check if fetch_shows failed
+    if [ $fetch_result -ne 0 ]; then
+        error "Failed to fetch shows from API. Check your API key and URL."
+        error "API_BASE_URL: $API_BASE_URL"
+        error "To debug, run: DEBUG=1 $0"
+        exit 1
+    fi
     
     if [ -z "$shows" ]; then
         log "No shows to process"
         exit 0
     fi
+    
+    # Debug: log the shows we got
+    log "Found $(echo "$shows" | wc -l) show(s) to process"
     
     # Process each show
     local total=0
@@ -263,14 +364,27 @@ main() {
     local failed=0
     
     while IFS= read -r show_json; do
-        ((total++))
+        # Skip empty lines
+        if [ -z "$show_json" ] || [ "$show_json" = "null" ]; then
+            continue
+        fi
         
-        show_data=$(echo "$show_json" | jq -r '.')
+        total=$((total + 1))
+        
+        # Always show what we're processing
+        log "Processing show $total" >&2
+        
+        # Parse JSON
+        if ! show_data=$(echo "$show_json" | jq -r '.' 2>/dev/null); then
+            error "Failed to parse JSON: $show_json"
+            failed=$((failed + 1))
+            continue
+        fi
         
         if process_show "$show_data"; then
-            ((successful++))
+            successful=$((successful + 1))
         else
-            ((failed++))
+            failed=$((failed + 1))
         fi
         
         # Add a small delay between processing shows

@@ -31,14 +31,17 @@ class RecordingService
             return;
         }
 
-        // Extract duration if not set
-        if (! $recording->duration) {
+        // Extract duration if not set or if explicitly reprocessing
+        if (! $recording->duration || $recording->force_reprocess) {
             $duration = $this->extractDuration($recording->m3u8_url);
             if ($duration) {
+                // Always set the duration to the extracted value (don't accumulate)
                 $recording->duration = $duration;
                 $recording->save();
-                Log::info("Extracted duration for recording {$recording->id}: {$duration} seconds");
+                Log::info("Set duration for recording {$recording->id}: {$duration} seconds");
             }
+        } else {
+            Log::info("Recording {$recording->id} already has duration: {$recording->duration} seconds, skipping extraction");
         }
 
         // Generate thumbnail if not set
@@ -110,27 +113,34 @@ class RecordingService
             $content = $response->body();
             $lines = explode("\n", $content);
             $totalDuration = 0.0;
+            $segmentCount = 0;
             
             // Check if it's a master playlist
             if (str_contains($content, '#EXT-X-STREAM-INF')) {
                 // This is a master playlist, we need to fetch a variant
-                Log::info('Detected master playlist, fetching first variant');
+                Log::info('Detected master playlist, fetching first variant from: ' . $url);
                 
                 // Find first variant URL
                 $variantUrl = null;
+                $variantCount = 0;
                 foreach ($lines as $i => $line) {
                     if (str_starts_with($line, '#EXT-X-STREAM-INF')) {
-                        // Next non-empty, non-comment line should be the variant URL
-                        for ($j = $i + 1; $j < count($lines); $j++) {
-                            $nextLine = trim($lines[$j]);
-                            if ($nextLine && !str_starts_with($nextLine, '#')) {
-                                $variantUrl = $nextLine;
-                                break;
+                        $variantCount++;
+                        // Only process the first variant
+                        if ($variantCount === 1) {
+                            // Next non-empty, non-comment line should be the variant URL
+                            for ($j = $i + 1; $j < count($lines); $j++) {
+                                $nextLine = trim($lines[$j]);
+                                if ($nextLine && !str_starts_with($nextLine, '#')) {
+                                    $variantUrl = $nextLine;
+                                    break 2; // Break out of both loops
+                                }
                             }
                         }
-                        break;
                     }
                 }
+                
+                Log::info("Master playlist has {$variantCount} variants");
                 
                 if (!$variantUrl) {
                     Log::error('No variant URL found in master playlist');
@@ -143,6 +153,8 @@ class RecordingService
                     $variantUrl = $baseUrl . '/' . $variantUrl;
                 }
                 
+                Log::info('Fetching first variant playlist: ' . $variantUrl);
+                
                 // Recursively fetch the variant playlist
                 return $this->extractDurationFromM3u8($variantUrl);
             }
@@ -154,21 +166,19 @@ class RecordingService
                     // Extract duration from #EXTINF:duration,
                     $matches = [];
                     if (preg_match('/#EXTINF:([0-9.]+)/', $line, $matches)) {
-                        $totalDuration += (float) $matches[1];
+                        $segmentDuration = (float) $matches[1];
+                        $totalDuration += $segmentDuration;
+                        $segmentCount++;
                     }
-                }
-                // Also check for EXT-X-TARGETDURATION as a fallback
-                else if (str_starts_with($line, '#EXT-X-TARGETDURATION:')) {
-                    // This gives us the maximum segment duration, not total
-                    // We'll use segment counting as fallback if needed
                 }
             }
             
             if ($totalDuration > 0) {
-                Log::info("Extracted duration from m3u8: {$totalDuration} seconds");
+                Log::info("Extracted duration from m3u8: {$totalDuration} seconds from {$segmentCount} segments");
                 return (int) round($totalDuration);
             }
             
+            Log::warning("No duration extracted from m3u8 (no EXTINF tags found)");
             return null;
         } catch (\Exception $e) {
             Log::error('Failed to parse m3u8 for duration: ' . $e->getMessage());
