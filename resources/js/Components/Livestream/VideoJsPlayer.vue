@@ -188,34 +188,38 @@ const initializePlayer = async () => {
                 fastQualityChange: false, // Disable fast quality change for smoother transitions
                 handlePartialData: true,
                 useBandwidthFromLocalStorage: true,
-                limitRenditionByPlayerDimensions: true,
+                limitRenditionByPlayerDimensions: false, // Don't limit by dimensions
                 useDevicePixelRatio: true,
-                bandwidth: 5000000, // Start with 5 Mbps - more conservative initial estimate
-                enableLowInitialPlaylist: false, // Start with best quality if bandwidth allows
+                bandwidth: 4194304, // More conservative 4 Mbps initial estimate
+                enableLowInitialPlaylist: true, // Start with lower quality for stability
                 allowSeeksWithinUnsafeLiveWindow: false,
                 customTagParsers: [],
                 customTagMappers: [],
-                experimentalBufferBasedABR: true, // Enable buffer-based ABR for smoother transitions
+                experimentalBufferBasedABR: false, // Disable - can cause switching issues
                 experimentalLLHLS: false,
                 cacheEncryptionKeys: true,
-                maxPlaylistRetries: 3,
-                // ABR algorithm settings for smoother switching
-                abrEwmaFastLive: 3.0, // Faster adaptation for live
-                abrEwmaSlowLive: 9.0,
-                abrEwmaFastVoD: 3.0,
-                abrEwmaSlowVoD: 9.0,
-                abrBandwidthEstimator: 0.6, // Conservative bandwidth estimation
-                abrEwmaDefaultEstimate: 5000000, // 5 Mbps default
-                // Buffer settings for smoother playback
-                bufferBasedABR: true,
+                maxPlaylistRetries: 10, // Increase from 3 for better recovery
+                maxRetries: 8, // Add retry attempts
+                retryDelay: 1000, // Add retry delay
+                // ABR algorithm settings for stability
+                abrEwmaFastLive: 5.0, // Slower adaptation for more stable streaming
+                abrEwmaSlowLive: 15.0, // Much slower adaptation
+                abrEwmaFastVoD: 5.0,
+                abrEwmaSlowVoD: 15.0,
+                abrBandwidthEstimator: 0.5, // More conservative bandwidth estimation
+                abrEwmaDefaultEstimate: 4194304, // 4 Mbps default
+                // Buffer settings for stability
+                bufferBasedABR: false, // Disable buffer-based ABR
                 experimentalExactManifestTimings: true,
-                maxGoalBufferLength: 30, // Keep 30 seconds buffered
-                goalBufferLength: 20, // Try to maintain 10 seconds
-                maxBufferLength: 30,
+                maxGoalBufferLength: 60, // Increase buffer for stability
+                goalBufferLength: 30, // Try to maintain 30 seconds
+                maxBufferLength: 60,
                 bufferPruneAhead: 1,
                 renditionMixin: {
                     excludeUntil: Infinity // Don't exclude renditions permanently
-                }
+                },
+                // Add timeout settings
+                timeout: 45000 // 45 second timeout for requests
             }
         },
         techOrder: ['chromecast', 'html5'], // Chromecast must be first in techOrder
@@ -253,7 +257,50 @@ const initializePlayer = async () => {
     // Create player instance
     player = videojs(videoPlayer.value, options);
 
-    // No need for complex autoplay handling - Video.js handles it with 'muted' option
+    // Firefox-specific error handling
+    const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+
+    if (isFirefox) {
+        let lastErrorTime = 0;
+        const ERROR_COOLDOWN = 2000; // Ignore errors within 2 seconds
+        
+        player.on('error', function(e) {
+            const now = Date.now();
+            const error = player.error();
+            
+            // Check if this is a network error (code 2)
+            if (error && error.code === 2) {
+                // If error happened too soon after last one, ignore it
+                if (now - lastErrorTime < ERROR_COOLDOWN) {
+                    console.log('Ignoring rapid network error (likely NS_BINDING_ABORTED)');
+                    player.error(null); // Clear the error
+                    return;
+                }
+                
+                lastErrorTime = now;
+                
+                // Check if we're switching qualities
+                const tech = player.tech();
+                if (tech && tech.vhs) {
+                    const vhs = tech.vhs;
+                    if (vhs.masterPlaylistController_ && vhs.masterPlaylistController_.pendingMedia_) {
+                        console.log('Quality switch in progress, clearing error');
+                        player.error(null);
+                        return;
+                    }
+                }
+                
+                // For other network errors, attempt recovery
+                console.log('Network error detected, attempting recovery...');
+                setTimeout(() => {
+                    if (player.error()) {
+                        player.error(null);
+                        player.play().catch(err => console.log('Recovery play failed:', err));
+                    }
+                }, 1000);
+            }
+        });
+    }
 
     // Initialize plugins when player is ready
     player.ready(() => {
@@ -470,6 +517,10 @@ const initializePlayer = async () => {
             const MenuItem = videojs.getComponent('MenuItem');
             const qualityLevels = player.qualityLevels();
 
+            // Throttle quality changes to prevent rapid switching
+            let lastQualityChangeTime = 0;
+            const QUALITY_CHANGE_COOLDOWN = 3000; // 3 seconds between changes
+
             class AdaptiveQualityMenuItem extends MenuItem {
                 constructor(player, options) {
                     super(player, options);
@@ -479,6 +530,16 @@ const initializePlayer = async () => {
                 }
 
                 handleClick() {
+                    const now = Date.now();
+                    
+                    // Prevent rapid quality switching
+                    if (now - lastQualityChangeTime < QUALITY_CHANGE_COOLDOWN) {
+                        console.log('Quality change throttled - too soon after last change');
+                        return;
+                    }
+                    
+                    lastQualityChangeTime = now;
+                    
                     const qualityLevels = this.player().qualityLevels();
 
                     if (this.isAuto) {
@@ -683,6 +744,27 @@ const initializePlayer = async () => {
         }
     });
 
+    // Add seek operation handling to prevent aborts
+    let seekTimeout;
+    player.on('seeking', () => {
+        clearTimeout(seekTimeout);
+        
+        // Temporarily increase tolerance during seek
+        const tech = player.tech();
+        if (tech && tech.vhs) {
+            tech.vhs.options_.maxPlaylistRetries = 20;
+        }
+    });
+
+    player.on('seeked', () => {
+        seekTimeout = setTimeout(() => {
+            const tech = player.tech();
+            if (tech && tech.vhs) {
+                tech.vhs.options_.maxPlaylistRetries = 10; // Reset to normal
+            }
+        }, 1000);
+    });
+
     // User activity events for controls visibility
     player.on('useractive', () => {
         emit('useractive');
@@ -761,6 +843,37 @@ const initializePlayer = async () => {
                 rep.on('enabled', () => {
                     console.log(`Representation ${index} enabled: ${rep.height}p @ ${rep.bandwidth} bps`);
                 });
+            });
+        }
+    }
+
+    // Smooth bandwidth calculations to prevent thrashing
+    if (player.tech_ && player.tech_.vhs) {
+        const vhs = player.tech_.vhs;
+        let bandwidthHistory = [];
+        const HISTORY_SIZE = 5;
+        
+        // Monitor bandwidth updates and smooth them
+        const originalSystemBandwidth = vhs.systemBandwidth;
+        if (originalSystemBandwidth !== undefined) {
+            Object.defineProperty(vhs, 'systemBandwidth', {
+                get: function() {
+                    // Get the actual current bandwidth
+                    const current = this.bandwidth || 4194304;
+                    
+                    // Add to history
+                    bandwidthHistory.push(current);
+                    if (bandwidthHistory.length > HISTORY_SIZE) {
+                        bandwidthHistory.shift();
+                    }
+                    
+                    // Return average instead of instantaneous value
+                    const avg = bandwidthHistory.reduce((a, b) => a + b, 0) / bandwidthHistory.length;
+                    return Math.round(avg);
+                },
+                set: function(value) {
+                    this.bandwidth = value;
+                }
             });
         }
     }
