@@ -205,8 +205,14 @@ class RecordingService
         }
 
         try {
-            // Capture thumbnail using ffmpeg (first frame)
-            $result = $this->captureFirstFrame($recording->m3u8_url, $tempPath);
+            // Capture thumbnail from middle of video or at 30 seconds
+            $captureTime = 30; // Default to 30 seconds
+            if ($recording->duration && $recording->duration > 60) {
+                // For longer videos, capture from the middle
+                $captureTime = min($recording->duration / 2, 300); // Max 5 minutes in
+            }
+            
+            $result = $this->captureFrameAtTime($recording->m3u8_url, $tempPath, $captureTime);
 
             if (! $result || ! file_exists($tempPath)) {
                 throw new \Exception('Failed to capture thumbnail');
@@ -256,31 +262,31 @@ class RecordingService
     }
 
     /**
-     * Capture the first frame from a video
+     * Capture a frame at a specific time from a video
      */
-    protected function captureFirstFrame(string $videoUrl, string $outputPath): bool
+    protected function captureFrameAtTime(string $videoUrl, string $outputPath, float $timeInSeconds): bool
     {
-        // Use the URL directly - don't try to get first segment as it may fail
+        // Use the URL directly
         $inputUrl = $videoUrl;
         
         // Build ffmpeg command
-        // -ss 1: Start at 1 second (skip potential black frames)
-        // -t 1: Limit input reading to 1 second for efficiency
+        // -ss: Seek to specific time
         // -i: input stream
-        // -vframes: capture 1 frame
+        // -frames:v: capture 1 frame
         // -vf: scale to desired size
         // -q:v: quality (lower is better, 2-5 is good)
         $command = [
             'ffmpeg',
             '-y', // Overwrite output
-            '-ss', '1', // Start at 1 second to avoid black frames
-            '-t', '1', // Only read 1 second of input
+            '-ss', (string)$timeInSeconds, // Seek to specific time
             '-i', $inputUrl,
-            '-vframes', '1', // Capture 1 frame
+            '-frames:v', '1', // Capture 1 frame
             '-vf', "scale={$this->thumbnailWidth}:{$this->thumbnailHeight}:force_original_aspect_ratio=decrease,pad={$this->thumbnailWidth}:{$this->thumbnailHeight}:(ow-iw)/2:(oh-ih)/2",
             '-q:v', '2', // High quality
             $outputPath,
         ];
+
+        Log::info("Capturing thumbnail at {$timeInSeconds} seconds from: {$inputUrl}");
 
         $result = Process::timeout($this->captureTimeout)->run($command);
 

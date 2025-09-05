@@ -5,8 +5,10 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\RecordingResource\Pages;
 use App\Models\Recording;
 use App\Models\Show;
+use App\Jobs\ProcessRecordingJob;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -160,11 +162,62 @@ class RecordingResource extends Resource
                     ->label('Published'),
             ])
             ->actions([
+                Tables\Actions\Action::make('regenerate_thumbnail')
+                    ->label('Regenerate Thumbnail')
+                    ->icon('heroicon-o-photo')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Regenerate Thumbnail')
+                    ->modalDescription('This will capture a new thumbnail from the video. The old thumbnail will be replaced.')
+                    ->modalSubmitActionLabel('Regenerate')
+                    ->action(function (Recording $record) {
+                        // Clear the current thumbnail path to force regeneration
+                        $record->thumbnail_path = null;
+                        $record->thumbnail_capture_error = null;
+                        $record->save();
+                        
+                        // Dispatch the job to process the recording
+                        ProcessRecordingJob::dispatch($record);
+                        
+                        Notification::make()
+                            ->title('Thumbnail regeneration started')
+                            ->body('The thumbnail is being regenerated in the background. Please refresh the page in a few moments to see the new thumbnail.')
+                            ->success()
+                            ->send();
+                    })
+                    ->visible(fn (Recording $record) => $record->m3u8_url !== null),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('regenerate_thumbnails')
+                        ->label('Regenerate Thumbnails')
+                        ->icon('heroicon-o-photo')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalHeading('Regenerate Thumbnails')
+                        ->modalDescription('This will capture new thumbnails for all selected recordings. The old thumbnails will be replaced.')
+                        ->modalSubmitActionLabel('Regenerate All')
+                        ->action(function ($records) {
+                            $count = 0;
+                            foreach ($records as $record) {
+                                if ($record->m3u8_url) {
+                                    $record->thumbnail_path = null;
+                                    $record->thumbnail_capture_error = null;
+                                    $record->save();
+                                    ProcessRecordingJob::dispatch($record);
+                                    $count++;
+                                }
+                            }
+                            
+                            Notification::make()
+                                ->title('Thumbnails regeneration started')
+                                ->body("Regenerating thumbnails for {$count} recording(s) in the background.")
+                                ->success()
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
