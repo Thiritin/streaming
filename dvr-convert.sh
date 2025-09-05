@@ -4,6 +4,7 @@
 INPUT_FILE="$1"
 OUTPUT_DIR="${2:-./hls_output}"
 FILENAME=$(basename "$INPUT_FILE")
+FILENAME_NO_EXT="${FILENAME%.*}"
 
 # Create output directory if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
@@ -11,6 +12,43 @@ mkdir -p "$OUTPUT_DIR"
 echo "Converting video to HLS format..."
 echo "Input: $INPUT_FILE"
 echo "Output directory: $OUTPUT_DIR"
+
+# Check if HLS files already exist
+MASTER_PLAYLIST="$OUTPUT_DIR/${FILENAME_NO_EXT}_master.m3u8"
+if [ -f "$MASTER_PLAYLIST" ]; then
+    echo "HLS files already exist in $OUTPUT_DIR"
+    echo "Checking if all variant playlists and segments exist..."
+    
+    # Check for all expected playlists
+    ALL_EXISTS=true
+    for variant in 360p 480p 720p 1080p; do
+        if [ ! -f "$OUTPUT_DIR/${FILENAME_NO_EXT}_${variant}.m3u8" ]; then
+            echo "  Missing variant playlist: ${variant}"
+            ALL_EXISTS=false
+            break
+        fi
+        # Check if at least one segment exists for this variant
+        if ! ls "$OUTPUT_DIR/${FILENAME_NO_EXT}_${variant}_segment_"*.ts >/dev/null 2>&1; then
+            echo "  Missing segments for variant: ${variant}"
+            ALL_EXISTS=false
+            break
+        fi
+    done
+    
+    if [ "$ALL_EXISTS" = true ]; then
+        echo "All HLS files exist. Skipping conversion."
+        echo "Master playlist: $MASTER_PLAYLIST"
+        echo ""
+        echo "Variant playlists:"
+        echo "  - 360p:  $OUTPUT_DIR/${FILENAME_NO_EXT}_360p.m3u8"
+        echo "  - 480p:  $OUTPUT_DIR/${FILENAME_NO_EXT}_480p.m3u8"
+        echo "  - 720p:  $OUTPUT_DIR/${FILENAME_NO_EXT}_720p.m3u8"
+        echo "  - 1080p: $OUTPUT_DIR/${FILENAME_NO_EXT}_1080p.m3u8"
+        exit 0
+    else
+        echo "Some HLS files are missing. Proceeding with conversion..."
+    fi
+fi
 
 # FFmpeg command for VOD HLS conversion using libx264
 ffmpeg -i "$INPUT_FILE" \
@@ -51,21 +89,21 @@ ffmpeg -i "$INPUT_FILE" \
     -hls_playlist_type vod \
     -hls_segment_type mpegts \
     -hls_flags independent_segments \
-    -hls_segment_filename "$OUTPUT_DIR/${FILENAME}_%v_segment_%03d.ts" \
-    -master_pl_name "${FILENAME}_master.m3u8" \
+    -hls_segment_filename "$OUTPUT_DIR/${FILENAME_NO_EXT}_%v_segment_%03d.ts" \
+    -master_pl_name "${FILENAME_NO_EXT}_master.m3u8" \
     -var_stream_map "v:0,a:0,name:360p v:1,a:1,name:480p v:2,a:2,name:720p v:3,a:3,name:1080p" \
-    "$OUTPUT_DIR/${FILENAME}_%v.m3u8"
+    "$OUTPUT_DIR/${FILENAME_NO_EXT}_%v.m3u8"
 
 if [ $? -eq 0 ]; then
     echo ""
     echo "HLS conversion complete!"
-    echo "Master playlist: $OUTPUT_DIR/${FILENAME}_master.m3u8"
+    echo "Master playlist: $OUTPUT_DIR/${FILENAME_NO_EXT}_master.m3u8"
     echo ""
     echo "Variant playlists:"
-    echo "  - 360p:  $OUTPUT_DIR/${FILENAME}_360p.m3u8"
-    echo "  - 480p:  $OUTPUT_DIR/${FILENAME}_480p.m3u8"
-    echo "  - 720p:  $OUTPUT_DIR/${FILENAME}_720p.m3u8"
-    echo "  - 1080p: $OUTPUT_DIR/${FILENAME}_1080p.m3u8"
+    echo "  - 360p:  $OUTPUT_DIR/${FILENAME_NO_EXT}_360p.m3u8"
+    echo "  - 480p:  $OUTPUT_DIR/${FILENAME_NO_EXT}_480p.m3u8"
+    echo "  - 720p:  $OUTPUT_DIR/${FILENAME_NO_EXT}_720p.m3u8"
+    echo "  - 1080p: $OUTPUT_DIR/${FILENAME_NO_EXT}_1080p.m3u8"
 else
     echo "Error: Conversion failed!"
     exit 1

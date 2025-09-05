@@ -22,9 +22,9 @@ elif [ -f ".env" ]; then
 fi
 
 # Configuration (with defaults if not set in .env)
-API_BASE_URL="${API_BASE_URL:-http://localhost:8000/api}"
+API_BASE_URL="${API_BASE_URL:-http://localhost/api}"
 API_KEY="${RECORDING_API_KEY}"
-S3_ALIAS="${S3_ALIAS:-dvr}"  # mc alias for DVR S3 bucket
+S3_ALIAS="${S3_ALIAS:-eventwolf}"  # mc alias for DVR S3 bucket
 S3_BUCKET="${S3_BUCKET:-recording}"
 S3_BASE_PATH="${S3_BASE_PATH:-on-demand}"
 EVENT_SLUG="${EVENT_SLUG:-ef29}"  # Event identifier (e.g., ef29 for Eurofurence 29)
@@ -181,16 +181,13 @@ upload_to_s3() {
     local local_dir="$1"
     local s3_path="$2"
     
-    log "Uploading to S3: $s3_path"
+    log "Uploading to S3: $s3_path" >&2
     
     # Use mc mirror to upload
     mc mirror --overwrite "$local_dir/" "$S3_ALIAS/$S3_BUCKET/$s3_path/"
     
     if [ $? -eq 0 ]; then
-        # Get the URL of the master playlist
-        local master_playlist="$(basename "$local_dir")_master.m3u8"
-        local s3_url="https://${S3_BUCKET}.s3.amazonaws.com/${s3_path}/${master_playlist}"
-        echo "$s3_url"
+        log "Upload successful to $S3_ALIAS/$S3_BUCKET/$s3_path/" >&2
         return 0
     else
         error "Failed to upload to S3"
@@ -207,17 +204,29 @@ create_recording() {
     
     log "Creating recording in database..."
     
+    # Create a temporary file for the JSON payload
+    local temp_file=$(mktemp)
+    
+    # Write JSON payload to temp file
+    cat <<EOF > "$temp_file"
+{
+    "show_id": $show_id,
+    "title": "$title",
+    "m3u8_url": "$m3u8_url",
+    "description": "$description"
+}
+EOF
+    
+    # Make API call using the temp file
     local response
     response=$(curl -s -X POST \
                     -H "X-Recording-Api-Key: $API_KEY" \
                     -H "Content-Type: application/json" \
-                    -d "{
-                        \"show_id\": $show_id,
-                        \"title\": \"$title\",
-                        \"m3u8_url\": \"$m3u8_url\",
-                        \"description\": \"$description\"
-                    }" \
+                    -d "@$temp_file" \
                     "$API_BASE_URL/recording/create")
+    
+    # Clean up temp file
+    rm -f "$temp_file"
     
     if [ $? -eq 0 ]; then
         echo "$response" | jq -r '.success'
@@ -294,13 +303,15 @@ process_show() {
     # Upload to S3
     local s3_path="$S3_BASE_PATH/$EVENT_SLUG/$show_slug"
     local m3u8_url
-    m3u8_url=$(upload_to_s3 "$hls_dir" "$s3_path")
     
-    if [ $? -ne 0 ]; then
+    if ! upload_to_s3 "$hls_dir" "$s3_path"; then
         error "Failed to upload recording to S3 for show $show_id"
         rm -rf "$work_dir"
         return 1
     fi
+    
+    # Construct the master playlist URL
+    m3u8_url="https://${S3_BUCKET}.s3.amazonaws.com/${s3_path}/extracted_master.m3u8"
     
     # Create recording in database
     if create_recording "$show_id" "$title" "$m3u8_url" "$description"; then
