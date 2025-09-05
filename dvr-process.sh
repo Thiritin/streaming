@@ -202,7 +202,7 @@ create_recording() {
     local m3u8_url="$3"
     local description="$4"
     
-    log "Creating recording in database..."
+    log "Creating recording in database..." >&2
     
     # Create a temporary file for the JSON payload
     local temp_file=$(mktemp)
@@ -228,11 +228,11 @@ EOF
     # Clean up temp file
     rm -f "$temp_file"
     
-    if [ $? -eq 0 ]; then
-        echo "$response" | jq -r '.success'
+    if echo "$response" | jq -e '.success' > /dev/null 2>&1; then
+        log "Recording created successfully" >&2
         return 0
     else
-        error "Failed to create recording"
+        error "Failed to create recording: $response"
         return 1
     fi
 }
@@ -311,7 +311,7 @@ process_show() {
     fi
     
     # Construct the master playlist URL
-    m3u8_url="https://${S3_BUCKET}.s3.amazonaws.com/${s3_path}/extracted_master.m3u8"
+    m3u8_url="https://s3.eventwolf.de/${S3_BUCKET}/${s3_path}/extracted_master.m3u8"
     
     # Create recording in database
     if create_recording "$show_id" "$title" "$m3u8_url" "$description"; then

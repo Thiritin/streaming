@@ -212,8 +212,8 @@ class RecordingService
                 throw new \Exception('Failed to capture thumbnail');
             }
 
-            // Store to default storage (S3)
-            $uploaded = Storage::putFileAs(
+            // Store to S3
+            $uploaded = Storage::disk('s3')->putFileAs(
                 $this->thumbnailStoragePath,
                 $tempPath,
                 $filename,
@@ -260,15 +260,8 @@ class RecordingService
      */
     protected function captureFirstFrame(string $videoUrl, string $outputPath): bool
     {
-        // For m3u8 files, try to use just the first segment for efficiency
+        // Use the URL directly - don't try to get first segment as it may fail
         $inputUrl = $videoUrl;
-        if (str_ends_with(strtolower($videoUrl), '.m3u8')) {
-            $firstSegment = $this->getFirstSegmentUrl($videoUrl);
-            if ($firstSegment) {
-                Log::info('Using first segment for thumbnail: ' . $firstSegment);
-                $inputUrl = $firstSegment;
-            }
-        }
         
         // Build ffmpeg command
         // -ss 1: Start at 1 second (skip potential black frames)
@@ -375,7 +368,7 @@ class RecordingService
      */
     protected function cleanupOldThumbnails(Recording $recording): void
     {
-        $files = Storage::files($this->thumbnailStoragePath);
+        $files = Storage::disk('s3')->files($this->thumbnailStoragePath);
 
         $recordingThumbnails = array_filter($files, function ($file) use ($recording) {
             return str_contains($file, "recording_{$recording->id}_");
@@ -383,13 +376,13 @@ class RecordingService
 
         // Sort by timestamp (newest first)
         usort($recordingThumbnails, function ($a, $b) {
-            return Storage::lastModified($b) - Storage::lastModified($a);
+            return Storage::disk('s3')->lastModified($b) - Storage::disk('s3')->lastModified($a);
         });
 
         // Keep only the 3 most recent
         $toDelete = array_slice($recordingThumbnails, 3);
         foreach ($toDelete as $file) {
-            Storage::delete($file);
+            Storage::disk('s3')->delete($file);
         }
     }
 
@@ -398,14 +391,14 @@ class RecordingService
      */
     public function deleteRecordingThumbnails(Recording $recording): void
     {
-        $files = Storage::files($this->thumbnailStoragePath);
+        $files = Storage::disk('s3')->files($this->thumbnailStoragePath);
 
         $recordingThumbnails = array_filter($files, function ($file) use ($recording) {
             return str_contains($file, "recording_{$recording->id}_");
         });
 
         foreach ($recordingThumbnails as $file) {
-            Storage::delete($file);
+            Storage::disk('s3')->delete($file);
         }
 
         Log::info("Deleted thumbnails for recording {$recording->id}");
