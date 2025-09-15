@@ -23,3 +23,6 @@ logs/
 **/caddy
 frankenphp
 frankenphp-worker.php
+
+# Logs
+logs
