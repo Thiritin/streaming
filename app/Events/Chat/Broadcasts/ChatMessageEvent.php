@@ -19,7 +19,7 @@ class ChatMessageEvent implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new Channel('chat'),
+            new Channel('chat.source.'.$this->message->source_id),
         ];
     }
 
@@ -35,6 +35,7 @@ class ChatMessageEvent implements ShouldBroadcast
             'type' => $this->message->type,
             'priority' => $this->message->priority,
             'metadata' => $this->message->metadata,
+            'source_id' => $this->message->source_id,
         ];
     }
 

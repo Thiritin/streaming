@@ -18,7 +18,7 @@ class SystemAnnouncementEvent implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new Channel('chat'),
+            new Channel('chat.source.'.$this->message->source_id),
         ];
     }
 
@@ -32,12 +32,13 @@ class SystemAnnouncementEvent implements ShouldBroadcast
             'role' => (object) [
                 'name' => 'System',
                 'slug' => 'system',
-                'chat_color' => '#FFD700'
+                'chat_color' => '#FFD700',
             ],
             'chat_color' => '#FFD700',
             'type' => $this->message->type,
             'priority' => $this->message->priority,
             'metadata' => $this->message->metadata,
+            'source_id' => $this->message->source_id,
         ];
     }
 

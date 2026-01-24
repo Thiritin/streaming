@@ -249,7 +249,9 @@ class StreamController extends Controller
             'initialStatus' => $show->isLive() ? 'online' : \Cache::get('stream.status', static fn () => StreamStatusEnum::OFFLINE->value),
             'initialListeners' => $show->viewer_count ?? StreamInfoService::getUserCount(),
             'initialOtherDevice' => false, // This feature has been removed with Client model
+            'sourceId' => $show->source_id,
             'chatMessages' => array_values(Message::with('user')
+                ->where('source_id', $show->source_id)
                 ->where(function ($query) use ($user) {
                     $query->where('is_command', false)
                         ->orWhere('type', 'announcement')
@@ -271,6 +273,70 @@ class StreamController extends Controller
                     'type' => $message->type,
                     'priority' => $message->priority,
                     'metadata' => $message->metadata,
+                    'source_id' => $message->source_id,
+                ])->toArray()),
+            'rateLimit' => [
+                'maxTries' => \Cache::get('chat.maxTries', static fn () => config('chat.default.maxTries')),
+                'rateDecay' => \Cache::get('chat.rateDecay', static fn () => config('chat.default.rateDecay')),
+                'slowMode' => \Cache::get('chat.slowMode', static fn () => config('chat.default.slowMode')),
+                'secondsLeft' => (! $user->isStaff()) ? RateLimiter::availableIn('send-message:'.$user->id) : 0,
+            ],
+        ]);
+    }
+
+    /**
+     * Pop-out chat window
+     */
+    public function chat(Request $request, Show $show)
+    {
+        /** @var User $user */
+        $user = Auth::user();
+
+        // Load show with source relationship
+        $show->load('source');
+
+        // Check access restrictions
+        if (! $show->canBeAccessedBy($user)) {
+            abort(403, 'You do not have permission to view this chat');
+        }
+
+        // Check if show is in a valid state for chat
+        if (! in_array($show->status, ['scheduled', 'live'])) {
+            abort(404, 'Chat is not available for this show');
+        }
+
+        return Inertia::render('ChatPopout', [
+            'show' => [
+                'id' => $show->id,
+                'title' => $show->title,
+                'slug' => $show->slug,
+                'status' => $show->status,
+            ],
+            'sourceId' => $show->source_id,
+            'chatMessages' => array_values(Message::with('user')
+                ->where('source_id', $show->source_id)
+                ->where(function ($query) use ($user) {
+                    $query->where('is_command', false)
+                        ->orWhere('type', 'announcement')
+                        ->orWhere('type', 'system')
+                        ->orWhere(fn ($q) => $q->where('is_command', true)->where('user_id', $user->id));
+                })
+                ->orderBy('created_at', 'desc')
+                ->limit(50)
+                ->get()
+                ->reverse()
+                ->map(fn (Message $message) => [
+                    'id' => $message->id,
+                    'message' => $message->message,
+                    'is_command' => (bool) $message->is_command,
+                    'name' => $message->user->name ?? null,
+                    'role' => $message->user?->role,
+                    'chat_color' => $message->user?->chat_color,
+                    'time' => $message->created_at->format('H:i'),
+                    'type' => $message->type,
+                    'priority' => $message->priority,
+                    'metadata' => $message->metadata,
+                    'source_id' => $message->source_id,
                 ])->toArray()),
             'rateLimit' => [
                 'maxTries' => \Cache::get('chat.maxTries', static fn () => config('chat.default.maxTries')),

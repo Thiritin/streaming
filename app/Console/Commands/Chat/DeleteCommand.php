@@ -2,17 +2,20 @@
 
 namespace App\Console\Commands\Chat;
 
-use App\Models\User;
-use App\Models\Message;
 use App\Events\Chat\Broadcasts\BroadcastMessageDeletionIdsEvent;
+use App\Models\Message;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class DeleteCommand extends AbstractChatCommand
 {
     protected string $name = 'delete';
+
     protected array $aliases = ['del', 'remove', 'purge'];
+
     protected string $description = 'Delete all messages from a user within a time period';
+
     protected string $signature = '/delete <username> <duration>';
 
     protected array $parameters = [
@@ -30,7 +33,7 @@ class DeleteCommand extends AbstractChatCommand
 
     public function authorize(User $user): bool
     {
-        return $user->hasPermission('chat.moderate') || 
+        return $user->hasPermission('chat.moderate') ||
                $user->hasRole('admin') ||
                $user->hasRole('moderator');
     }
@@ -42,16 +45,18 @@ class DeleteCommand extends AbstractChatCommand
 
         // Find the target user
         $targetUser = User::where('name', $username)->first();
-        
-        if (!$targetUser) {
+
+        if (! $targetUser) {
             $this->feedback($user, "User '{$username}' not found.", 'error');
+
             return;
         }
 
         // Parse duration to get the time range
         $cutoffTime = $this->parseDurationToTime($duration);
-        if (!$cutoffTime) {
+        if (! $cutoffTime) {
             $this->feedback($user, "Invalid duration format. Use formats like '5m', '1h', '1d'.", 'error');
+
             return;
         }
 
@@ -63,28 +68,34 @@ class DeleteCommand extends AbstractChatCommand
 
         if ($messages->isEmpty()) {
             $this->feedback($user, "No messages found from '{$username}' in the last {$duration}.", 'info');
+
             return;
         }
 
-        // Collect message IDs for broadcasting
-        $messageIds = $messages->pluck('id')->toArray();
-        $messageCount = count($messageIds);
+        // Group messages by source_id for broadcasting
+        $messagesBySource = $messages->groupBy('source_id');
+        $messageCount = $messages->count();
 
         // Log the IDs being deleted for debugging
         Log::info('Deleting messages with IDs', [
-            'message_ids' => $messageIds,
+            'message_ids' => $messages->pluck('id')->toArray(),
             'count' => $messageCount,
             'target_user' => $username,
         ]);
 
         // Soft delete all messages
-        Message::whereIn('id', $messageIds)->update([
+        Message::whereIn('id', $messages->pluck('id'))->update([
             'deleted_at' => now(),
             'deleted_by_user_id' => $user->id,
         ]);
 
-        // Broadcast deletion event with message IDs to ALL users (including the moderator)
-        broadcast(new BroadcastMessageDeletionIdsEvent($messageIds));
+        // Broadcast deletion event to each source channel
+        foreach ($messagesBySource as $sourceId => $sourceMessages) {
+            broadcast(new BroadcastMessageDeletionIdsEvent(
+                $sourceMessages->pluck('id')->toArray(),
+                $sourceId
+            ));
+        }
 
         // Calculate human-readable duration
         $durationText = $this->humanizeDuration($duration);
@@ -114,7 +125,7 @@ class DeleteCommand extends AbstractChatCommand
     private function parseDurationToTime(string $duration): ?Carbon
     {
         $matches = [];
-        if (!preg_match('/^(\d+)([smhd])$/i', $duration, $matches)) {
+        if (! preg_match('/^(\d+)([smhd])$/i', $duration, $matches)) {
             return null;
         }
 
@@ -122,8 +133,8 @@ class DeleteCommand extends AbstractChatCommand
         $unit = strtolower($matches[2]);
 
         $now = now();
-        
-        return match($unit) {
+
+        return match ($unit) {
             's' => $now->subSeconds($value),
             'm' => $now->subMinutes($value),
             'h' => $now->subHours($value),
@@ -135,18 +146,18 @@ class DeleteCommand extends AbstractChatCommand
     private function humanizeDuration(string $duration): string
     {
         $matches = [];
-        if (!preg_match('/^(\d+)([smhd])$/i', $duration, $matches)) {
+        if (! preg_match('/^(\d+)([smhd])$/i', $duration, $matches)) {
             return $duration;
         }
 
         $value = (int) $matches[1];
         $unit = strtolower($matches[2]);
 
-        return match($unit) {
-            's' => $value . ' second' . ($value > 1 ? 's' : ''),
-            'm' => $value . ' minute' . ($value > 1 ? 's' : ''),
-            'h' => $value . ' hour' . ($value > 1 ? 's' : ''),
-            'd' => $value . ' day' . ($value > 1 ? 's' : ''),
+        return match ($unit) {
+            's' => $value.' second'.($value > 1 ? 's' : ''),
+            'm' => $value.' minute'.($value > 1 ? 's' : ''),
+            'h' => $value.' hour'.($value > 1 ? 's' : ''),
+            'd' => $value.' day'.($value > 1 ? 's' : ''),
             default => $duration,
         };
     }

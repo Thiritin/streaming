@@ -34,6 +34,14 @@ let props = defineProps({
     },
     rateLimit: {
         type: Object
+    },
+    showHeader: {
+        type: Boolean,
+        default: true
+    },
+    sourceId: {
+        type: [Number, String],
+        required: true
     }
 })
 
@@ -66,7 +74,8 @@ async function loadOlderMessages() {
         // Load older messages via API
         const response = await axios.get('/messages/older', {
             params: {
-                before_id: firstMessageId.value
+                before_id: firstMessageId.value,
+                source_id: props.sourceId
             }
         });
         
@@ -169,9 +178,9 @@ onMounted(() => {
         firstMessageId.value = chatMessages.value[0].id;
     }
     
-    // Register Chat Listener
+    // Register Chat Listener for source-specific channel
     Echo
-        .channel('chat')
+        .channel(`chat.source.${props.sourceId}`)
         .listen('.message', (e) => {
             const currentTime = new Date();
             // Add the message type to the message object if not present
@@ -249,6 +258,9 @@ onUnmounted(() => {
     if (messageContainer.value) {
         messageContainer.value.removeEventListener('scroll', handleScroll);
     }
+
+    // Leave the chat channel
+    Echo.leave(`chat.source.${props.sourceId}`);
 })
 
 const currentTime = new Date();
@@ -312,7 +324,8 @@ async function sendMessage() {
         // Handle commands via API
         try {
             const response = await axios.post('/api/command/execute', {
-                command: cleanInput
+                command: cleanInput,
+                source_id: props.sourceId
             });
             
             // Clear input on success
@@ -338,7 +351,8 @@ async function sendMessage() {
     message.value = ''; // Clear input immediately for better UX
     
     axios.post(route('message.send'), {
-        message: messageToSend
+        message: messageToSend,
+        source_id: props.sourceId
     }).then((response) => {
         error.value = '';
         // Use the server-processed message with proper ID and emote processing
@@ -366,7 +380,7 @@ async function sendMessage() {
 <template>
     <div class="flex flex-col bg-primary-950 relative h-full">
         <!-- Title -->
-        <div class="bg-primary-950 py-4 text-white text-center border-b border-primary-800 flex-shrink-0">
+        <div v-if="showHeader" class="bg-primary-950 py-4 text-white text-center border-b border-primary-800 flex-shrink-0">
             <h1 class="uppercase tracking-wider font-semibold">Stream Chat</h1>
         </div>
         <!-- Chat Messages -->

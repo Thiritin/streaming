@@ -61,6 +61,10 @@ const props = defineProps({
     rateLimit: {
         type: Object,
         required: false
+    },
+    sourceId: {
+        type: [Number, String],
+        required: true
     }
 });
 
@@ -119,6 +123,12 @@ const upcomingShows = computed(() => shows.value.filter(s => s.id !== activeShow
 // Methods
 const isMobile = () => {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
+const openChatPopout = () => {
+    if (!activeShow.value?.slug) return;
+    const url = route('show.chat', activeShow.value.slug);
+    window.open(url, 'chat_popout', 'width=400,height=600,resizable=yes,scrollbars=yes');
 };
 
 const shouldUseLowerResolution = () => {
@@ -607,9 +617,22 @@ onUnmounted(() => {
                 </div>
             </div>
             <!-- Chat - Desktop Only -->
-            <div v-if="showChatBox" class="hidden xl:block w-full xl:w-1/6 xl:min-w-[300px]">
-                <ChatBox :rate-limit="rateLimit" :chat-messages="chatMessages"
-                         class="h-full md:overflow-hidden"></ChatBox>
+            <div v-if="showChatBox" class="hidden xl:flex xl:flex-col w-full xl:w-1/6 xl:min-w-[300px]">
+                <!-- Chat Header with Pop-out Button -->
+                <div class="bg-primary-950 border-b border-primary-800 px-3 py-2 flex items-center justify-between shrink-0">
+                    <span class="text-white font-semibold text-sm">Chat</span>
+                    <button
+                        @click="openChatPopout"
+                        class="p-1.5 text-primary-400 hover:text-white hover:bg-primary-800 rounded transition-colors"
+                        title="Pop out chat"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                        </svg>
+                    </button>
+                </div>
+                <ChatBox :rate-limit="rateLimit" :chat-messages="chatMessages" :show-header="false" :source-id="sourceId"
+                         class="flex-1 overflow-hidden"></ChatBox>
             </div>
         </div>
         
@@ -634,12 +657,25 @@ onUnmounted(() => {
             width="w-full max-w-sm"
         >
             <template #header>
-                <h2 class="text-lg font-semibold text-white">Live Chat</h2>
+                <div class="flex items-center gap-2">
+                    <h2 class="text-lg font-semibold text-white">Live Chat</h2>
+                    <button
+                        @click="openChatPopout"
+                        class="p-1.5 text-primary-400 hover:text-white hover:bg-primary-800 rounded transition-colors"
+                        title="Pop out chat"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                        </svg>
+                    </button>
+                </div>
             </template>
-            <ChatBox 
+            <ChatBox
                 v-if="showChatBox"
-                :rate-limit="rateLimit" 
+                :rate-limit="rateLimit"
                 :chat-messages="chatMessages"
+                :show-header="false"
+                :source-id="sourceId"
                 class="h-full"
             />
         </MobileDrawer>

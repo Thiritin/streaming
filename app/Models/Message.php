@@ -10,15 +10,16 @@ class Message extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'message', 
-        'user_id', 
+        'message',
+        'user_id',
+        'source_id',
         'is_command',
         'type',
         'priority',
         'metadata',
-        'deleted_by_user_id'
+        'deleted_by_user_id',
     ];
-    
+
     protected $casts = [
         'metadata' => 'array',
     ];
@@ -26,5 +27,10 @@ class Message extends Model
     public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function source(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Source::class);
     }
 }

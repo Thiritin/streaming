@@ -10,6 +10,7 @@ class MessageRequest extends FormRequest
     {
         return [
             'message' => ['required', 'string', 'max:500', 'min:1'],
+            'source_id' => ['required', 'integer', 'exists:sources,id'],
         ];
     }
 

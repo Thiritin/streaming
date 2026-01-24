@@ -11,10 +11,26 @@ class DeleteMessagesListener
 
     public function handle(DeleteMessagesEvent $event): void
     {
-        $query = $event->user->messages()->where('is_command', false)->where('created_at', '>', $event->since);
+        $messages = $event->user->messages()
+            ->where('is_command', false)
+            ->where('created_at', '>', $event->since)
+            ->get(['id', 'source_id']);
 
-        broadcast(new BroadcastMessageDeletionIdsEvent($query->pluck('id')->toArray()));
+        // Group messages by source_id for broadcasting
+        $messagesBySource = $messages->groupBy('source_id');
 
-        $query->delete();
+        // Broadcast deletion event to each source channel
+        foreach ($messagesBySource as $sourceId => $sourceMessages) {
+            broadcast(new BroadcastMessageDeletionIdsEvent(
+                $sourceMessages->pluck('id')->toArray(),
+                $sourceId
+            ));
+        }
+
+        // Delete the messages
+        $event->user->messages()
+            ->where('is_command', false)
+            ->where('created_at', '>', $event->since)
+            ->delete();
     }
 }

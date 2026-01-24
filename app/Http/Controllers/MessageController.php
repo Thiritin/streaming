@@ -11,7 +11,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
-use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response as SymphonyResponse;
 
 class MessageController extends Controller
@@ -19,6 +18,7 @@ class MessageController extends Controller
     public function send(MessageRequest $request)
     {
         $message = $request->post('message');
+        $sourceId = $request->post('source_id');
         $user = $request->user();
         $maxTries = Cache::get('chat.maxTries', static fn () => config('chat.default.maxTries'));
         $rateDecay = Cache::get('chat.rateDecay', static fn () => config('chat.default.rateDecay'));
@@ -28,14 +28,14 @@ class MessageController extends Controller
         $activeTimeout = Timeout::where('user_id', $user->id)
             ->where('expires_at', '>', now())
             ->first();
-            
+
         if ($activeTimeout) {
             $remainingTime = now()->diffInSeconds($activeTimeout->expires_at);
             $message = "You are timed out for {$remainingTime} more seconds";
             if ($activeTimeout->reason) {
                 $message .= " (Reason: {$activeTimeout->reason})";
             }
-            
+
             return response([
                 'success' => false,
                 'error' => 'user_timed_out',
@@ -48,7 +48,7 @@ class MessageController extends Controller
             ], SymphonyResponse::HTTP_FORBIDDEN);
         }
 
-        if ($user->cant('chat.ignore.ratelimit') && !$user->isAdmin() && !$user->isModerator()) {
+        if ($user->cant('chat.ignore.ratelimit') && ! $user->isAdmin() && ! $user->isModerator()) {
             if (RateLimiter::tooManyAttempts('send-message:'.$user->id, $maxTries)) {
                 $seconds = RateLimiter::availableIn('send-message:'.$user->id);
 
@@ -80,6 +80,7 @@ class MessageController extends Controller
 
         $messageModel = $user->messages()->create([
             'message' => $message,
+            'source_id' => $sourceId,
             'is_command' => false,
             'type' => 'user',
         ]);
@@ -98,6 +99,7 @@ class MessageController extends Controller
                 'chat_color' => $user->chat_color,
                 'type' => $messageModel->type,
                 'is_command' => false,
+                'source_id' => $messageModel->source_id,
             ],
             'rateLimit' => [
                 'maxTries' => $maxTries,
@@ -108,20 +110,25 @@ class MessageController extends Controller
         ]);
     }
 
-
     public function loadOlder(Request $request)
     {
         $user = $request->user();
         $beforeId = $request->get('before_id');
+        $sourceId = $request->get('source_id');
         $limit = 50;
 
         $query = Message::with('user')
             ->where(function ($query) use ($user) {
                 $query->where('is_command', false)
-                      ->orWhere('type', 'announcement')
-                      ->orWhere('type', 'system')
-                      ->orWhere(fn ($q) => $q->where('is_command', true)->where('user_id', $user->id));
+                    ->orWhere('type', 'announcement')
+                    ->orWhere('type', 'system')
+                    ->orWhere(fn ($q) => $q->where('is_command', true)->where('user_id', $user->id));
             });
+
+        // Filter by source_id if provided
+        if ($sourceId) {
+            $query->where('source_id', $sourceId);
+        }
 
         if ($beforeId) {
             $query->where('id', '<', $beforeId);
@@ -142,6 +149,7 @@ class MessageController extends Controller
                 'type' => $message->type,
                 'priority' => $message->priority,
                 'metadata' => $message->metadata,
+                'source_id' => $message->source_id,
             ])
             ->values();
 

@@ -57,7 +57,7 @@ onUnmounted(() => {
   >
     <div
       v-if="isOpen"
-      class="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+      class="fixed inset-0 bg-black bg-opacity-50 z-40 xl:hidden"
       @click="emit('close')"
     ></div>
   </Transition>
@@ -74,7 +74,7 @@ onUnmounted(() => {
     <div
       v-if="isOpen"
       :class="[
-        'fixed top-0 h-full bg-primary-900 shadow-xl z-50 md:hidden',
+        'fixed top-0 h-full bg-primary-900 shadow-xl z-50 xl:hidden',
         width,
         position === 'right' ? 'right-0' : 'left-0'
       ]"

@@ -47,6 +47,7 @@ Route::middleware(['auth:web'])->group(function () {
     Route::get('/shows', [\App\Http\Controllers\StreamController::class, 'index'])->name('shows.index');
     Route::get('/show/{show:slug}', [\App\Http\Controllers\StreamController::class, 'show'])->name('show.view');
     Route::get('/show/{show:slug}/external', [\App\Http\Controllers\StreamController::class, 'external'])->name('show.external');
+    Route::get('/show/{show:slug}/chat', [\App\Http\Controllers\StreamController::class, 'chat'])->name('show.chat');
     Route::post('/message/send', [\App\Http\Controllers\MessageController::class, 'send'])->name('message.send');
     Route::get('/messages/older', [\App\Http\Controllers\MessageController::class, 'loadOlder'])->name('messages.older');
 
