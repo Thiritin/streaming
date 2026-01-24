@@ -13,6 +13,10 @@ const props = defineProps({
     component: {
         default: Link,
     },
+    prefetch: {
+        type: [Boolean, String],
+        default: false,
+    },
 });
 
 const classes = computed(() =>
@@ -23,7 +27,7 @@ const classes = computed(() =>
 </script>
 
 <template>
-    <component :is="component" :href="href" :class="classes">
+    <component :is="component" :href="href" :class="classes" :prefetch="prefetch">
         <slot />
     </component>
 </template>

@@ -3,9 +3,10 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\RecordingResource\Pages;
-use App\Models\Recording;
-use App\Models\Show;
 use App\Jobs\ProcessRecordingJob;
+use App\Models\Recording;
+use App\Models\Role;
+use App\Models\Show;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -31,7 +32,7 @@ class RecordingResource extends Resource
                 Forms\Components\Select::make('show_id')
                     ->label('Associated Show')
                     ->options(Show::with('source')->get()->mapWithKeys(function ($show) {
-                        return [$show->id => $show->title . ' (' . $show->source->name . ')']; 
+                        return [$show->id => $show->title.' ('.$show->source->name.')'];
                     }))
                     ->searchable()
                     ->preload()
@@ -59,7 +60,7 @@ class RecordingResource extends Resource
                     ->maxLength(255)
                     ->reactive()
                     ->afterStateUpdated(function ($state, Forms\Set $set, ?Recording $record) {
-                        if (!$record && filled($state)) {
+                        if (! $record && filled($state)) {
                             $set('slug', Str::slug($state));
                         }
                     }),
@@ -105,6 +106,13 @@ class RecordingResource extends Resource
                     ->label('Published')
                     ->default(true)
                     ->helperText('Only published recordings will be visible to users'),
+                Forms\Components\CheckboxList::make('required_roles')
+                    ->label('Access Restriction')
+                    ->options(Role::pluck('name', 'slug')->toArray())
+                    ->helperText('Leave empty for public access. Select roles that can access this recording.')
+                    ->hint('Users must have at least one of the selected roles to view')
+                    ->columns(2)
+                    ->columnSpanFull(),
             ]);
     }
 
@@ -152,6 +160,18 @@ class RecordingResource extends Resource
                 Tables\Columns\IconColumn::make('is_published')
                     ->boolean()
                     ->label('Published'),
+                Tables\Columns\BadgeColumn::make('required_roles')
+                    ->label('Access')
+                    ->getStateUsing(fn ($record) => $record->hasAccessRestriction() ? 'Restricted' : 'Public')
+                    ->colors([
+                        'warning' => fn ($state) => $state === 'Restricted',
+                        'success' => fn ($state) => $state === 'Public',
+                    ])
+                    ->icons([
+                        'heroicon-o-lock-closed' => fn ($state) => $state === 'Restricted',
+                        'heroicon-o-globe-alt' => fn ($state) => $state === 'Public',
+                    ])
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -175,10 +195,10 @@ class RecordingResource extends Resource
                         $record->thumbnail_path = null;
                         $record->thumbnail_capture_error = null;
                         $record->save();
-                        
+
                         // Dispatch the job to process the recording
                         ProcessRecordingJob::dispatch($record);
-                        
+
                         Notification::make()
                             ->title('Thumbnail regeneration started')
                             ->body('The thumbnail is being regenerated in the background. Please refresh the page in a few moments to see the new thumbnail.')
@@ -210,7 +230,7 @@ class RecordingResource extends Resource
                                     $count++;
                                 }
                             }
-                            
+
                             Notification::make()
                                 ->title('Thumbnails regeneration started')
                                 ->body("Regenerating thumbnails for {$count} recording(s) in the background.")

@@ -24,6 +24,7 @@ class Recording extends Model
         'thumbnail_capture_error',
         'views',
         'is_published',
+        'required_roles',
     ];
 
     protected $casts = [
@@ -32,6 +33,7 @@ class Recording extends Model
         'views' => 'integer',
         'is_published' => 'boolean',
         'thumbnail_updated_at' => 'datetime',
+        'required_roles' => 'array',
     ];
 
     /**
@@ -46,12 +48,12 @@ class Recording extends Model
         static::creating(function ($recording) {
             if (empty($recording->slug)) {
                 $recording->slug = Str::slug($recording->title);
-                
+
                 // Ensure slug uniqueness
                 $originalSlug = $recording->slug;
                 $count = 1;
                 while (self::where('slug', $recording->slug)->exists()) {
-                    $recording->slug = $originalSlug . '-' . $count;
+                    $recording->slug = $originalSlug.'-'.$count;
                     $count++;
                 }
             }
@@ -103,5 +105,52 @@ class Recording extends Model
         }
 
         return sprintf('%d:%02d', $minutes, $seconds);
+    }
+
+    /**
+     * Check if recording has access restrictions.
+     */
+    public function hasAccessRestriction(): bool
+    {
+        return ! empty($this->required_roles);
+    }
+
+    /**
+     * Check if a user can access this recording.
+     */
+    public function canBeAccessedBy(?User $user): bool
+    {
+        // No restrictions = everyone can access
+        if (! $this->hasAccessRestriction()) {
+            return true;
+        }
+
+        // Must be logged in to access restricted content
+        if (! $user) {
+            return false;
+        }
+
+        // Check if user has any of the required roles
+        return $user->hasAnyRole($this->required_roles);
+    }
+
+    /**
+     * Scope for recordings accessible by a user.
+     */
+    public function scopeAccessibleBy($query, ?User $user)
+    {
+        return $query->where(function ($q) use ($user) {
+            // No restrictions (null or empty array)
+            $q->whereNull('required_roles')
+                ->orWhereJsonLength('required_roles', 0);
+
+            // Or user has one of the required roles
+            if ($user) {
+                $userRoles = $user->roles()->pluck('slug')->toArray();
+                foreach ($userRoles as $role) {
+                    $q->orWhereJsonContains('required_roles', $role);
+                }
+            }
+        });
     }
 }

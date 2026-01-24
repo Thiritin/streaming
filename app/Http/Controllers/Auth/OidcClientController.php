@@ -111,22 +111,25 @@ class OidcClientController extends Controller
 
     /**
      * Fetch attendee packages from EF registration API
+     * This is optional - if the registration system is offline, we silently continue without packages
      */
     private function fetchAttendeePackages(string $userId): array
     {
+        $attsrvUrl = config('services.attsrv.url');
+        if (! $attsrvUrl) {
+            Log::debug('ATTSRV_URL not configured, skipping package fetch');
+
+            return [];
+        }
+
         try {
-            $attsrvUrl = config('services.attsrv.url');
-            if (! $attsrvUrl) {
-                Log::warning('ATTSRV_URL not configured, skipping package fetch');
-
-                return [];
-            }
-
-            // Fetch attendee data from registration API
-            $response = Http::timeout(5)->get($attsrvUrl.'/api/v1/attendees/'.$userId);
+            // Fetch attendee data from registration API with short timeout
+            $response = Http::connectTimeout(3)
+                ->timeout(5)
+                ->get($attsrvUrl.'/api/v1/attendees/'.$userId);
 
             if (! $response->successful()) {
-                Log::warning('Failed to fetch attendee packages', [
+                Log::info('Registration system returned non-success status', [
                     'user_id' => $userId,
                     'status' => $response->status(),
                 ]);
@@ -137,19 +140,36 @@ class OidcClientController extends Controller
             $attendeeData = $response->json();
 
             // Extract packages from the response
-            // The exact structure depends on the EF API response format
             $packages = $attendeeData['packages'] ?? [];
 
-            Log::info('Fetched attendee packages', [
+            Log::debug('Fetched attendee packages', [
                 'user_id' => $userId,
                 'packages' => $packages,
             ]);
 
             return $packages;
-        } catch (\Exception $e) {
-            Log::error('Error fetching attendee packages', [
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            // Registration system is offline/unreachable - this is expected in some environments
+            Log::info('Registration system unreachable, continuing without packages', [
                 'user_id' => $userId,
                 'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        } catch (\Illuminate\Http\Client\RequestException $e) {
+            // Request failed (timeout, etc)
+            Log::info('Registration system request failed, continuing without packages', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        } catch (\Exception $e) {
+            // Any other unexpected error - log but don't fail login
+            Log::warning('Unexpected error fetching attendee packages', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
             ]);
 
             return [];
@@ -174,11 +194,11 @@ class OidcClientController extends Controller
             }
         }
 
-        // Map groups to roles (for other roles like staff, moderator, etc.)
+        // Map groups to roles
+        // Group IDs from identity provider userinfo groups array
         $groupMapping = [
-            'STAFF_GROUP' => 'staff',
-            'MODERATOR_GROUP' => 'moderator',
-            // Add more group mappings as needed
+            'KVJ7GW275683NMZL' => 'admin', // Streaming Admin group
+            '54ZYODX15G2K1M76' => 'staff', // General EF Staff
         ];
 
         foreach ($groups as $group) {

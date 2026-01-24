@@ -20,7 +20,7 @@ class RoleSeeder extends Seeder
                 'description' => 'Full system administrator with all permissions',
                 'chat_color' => '#FF0000', // Red color for admins
                 'priority' => 100, // Highest priority
-                'assigned_at_login' => false,
+                'assigned_at_login' => true, // Synced from identity provider groups
                 'is_visible' => true,
                 'permissions' => [
                     'admin.access',
@@ -59,7 +59,7 @@ class RoleSeeder extends Seeder
                 'description' => 'Chat and user moderator with limited permissions',
                 'chat_color' => '#00FF00', // Green color for moderators
                 'priority' => 50, // High priority but less than admin
-                'assigned_at_login' => false,
+                'assigned_at_login' => true, // Synced from identity provider groups
                 'is_visible' => true,
                 'permissions' => [
                     'filament.access',
@@ -75,6 +75,27 @@ class RoleSeeder extends Seeder
                 'metadata' => [
                     'badge' => 'MOD',
                     'icon' => 'gavel',
+                ],
+            ]
+        );
+
+        // Staff role (general EF staff)
+        Role::updateOrCreate(
+            ['slug' => 'staff'],
+            [
+                'name' => 'Staff',
+                'description' => 'General Eurofurence staff member',
+                'chat_color' => '#3B82F6', // Blue color for staff
+                'priority' => 30,
+                'assigned_at_login' => true, // Synced from identity provider groups
+                'is_visible' => true,
+                'permissions' => [
+                    'chat.send',
+                    'stream.view',
+                ],
+                'metadata' => [
+                    'badge' => 'STAFF',
+                    'icon' => 'badge',
                 ],
             ]
         );

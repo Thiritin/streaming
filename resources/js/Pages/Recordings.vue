@@ -1,12 +1,29 @@
 <template>
     <div>
         <Head title="Recordings" />
-        
+
         <Container class="py-8">
             <!-- Header -->
-            <div class="mb-8">
-                <h1 class="text-3xl font-bold text-white mb-2">Recordings</h1>
-                <p class="text-primary-400">Watch past streams and events</p>
+            <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h1 class="text-3xl font-bold text-white mb-2">Recordings</h1>
+                    <p class="text-primary-400">Watch past streams and events</p>
+                </div>
+
+                <!-- Hosting Sponsor -->
+                <a
+                    href="https://pawhost.de"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center gap-3 px-4 py-2 bg-primary-800/50 hover:bg-primary-800 border border-primary-700/50 rounded-lg transition-all group"
+                >
+                    <span class="text-xs text-primary-500 uppercase tracking-wide">Hosting sponsored by</span>
+                    <img
+                        :src="pawHostLogo"
+                        alt="PawHost"
+                        class="h-6 opacity-80 group-hover:opacity-100 transition-opacity"
+                    />
+                </a>
             </div>
 
             <!-- Search Bar -->
@@ -70,6 +87,7 @@ import Container from '@/Components/Container.vue';
 import RecordingTile from '@/Components/Recordings/RecordingTile.vue';
 import PendingRecordingTile from '@/Components/Recordings/PendingRecordingTile.vue';
 import FaVideoSlashIcon from '@/Components/Icons/FaVideoSlashIcon.vue';
+import pawHostLogo from '../../images/pawhost_white.svg';
 
 // Define layout
 defineOptions({

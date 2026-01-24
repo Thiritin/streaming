@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enum\StreamStatusEnum;
 use App\Models\Message;
+use App\Models\Recording;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\User;
@@ -23,15 +24,16 @@ class StreamController extends Controller
         /** @var User $user */
         $user = Auth::user();
 
-        // Get live shows
+        // Get live shows (filtered by access)
         $liveShows = Show::with('source')
+            ->accessibleBy($user)
             ->where('shows.status', 'live')
             ->leftJoin('sources', 'shows.source_id', '=', 'sources.id')
             ->orderBy('sources.priority', 'desc')
             ->orderBy('shows.viewer_count', 'desc')
             ->select('shows.*')
             ->get()
-            ->map(function ($show) use ($user) {
+            ->map(function ($show) {
                 return [
                     'id' => $show->id,
                     'title' => $show->title,
@@ -43,11 +45,13 @@ class StreamController extends Controller
                     'viewer_count' => $show->viewer_count,
                     'started_at' => $show->actual_start ?? $show->scheduled_start,
                     'hls_url' => $show->getHlsUrl(),
+                    'is_restricted' => $show->hasAccessRestriction(),
                 ];
             });
 
         // Get shows that should have started but haven't (starting soon)
         $startingSoonShows = Show::with('source')
+            ->accessibleBy($user)
             ->scheduled()
             ->where('scheduled_start', '<=', now())
             ->orderBy('scheduled_start', 'desc')
@@ -63,11 +67,13 @@ class StreamController extends Controller
                     'thumbnail_url' => $show->thumbnail_url,
                     'scheduled_start' => $show->scheduled_start,
                     'scheduled_end' => $show->scheduled_end,
+                    'is_restricted' => $show->hasAccessRestriction(),
                 ];
             });
 
         // Get upcoming shows (next 24 hours)
         $upcomingShows = Show::with('source')
+            ->accessibleBy($user)
             ->scheduled()
             ->where('scheduled_start', '>', now())
             ->where('scheduled_start', '<=', now()->addDay())
@@ -84,13 +90,48 @@ class StreamController extends Controller
                     'thumbnail_url' => $show->thumbnail_url,
                     'scheduled_start' => $show->scheduled_start,
                     'scheduled_end' => $show->scheduled_end,
+                    'is_restricted' => $show->hasAccessRestriction(),
                 ];
             });
+
+        // Get popular recordings (prefer latest year, then by views)
+        // First, find the most recent year with recordings
+        $latestYear = Recording::accessibleBy($user)
+            ->where('is_published', true)
+            ->selectRaw('YEAR(date) as year')
+            ->orderBy('year', 'desc')
+            ->first()
+            ?->year;
+
+        $popularRecordings = collect();
+        if ($latestYear) {
+            $popularRecordings = Recording::accessibleBy($user)
+                ->where('is_published', true)
+                ->whereYear('date', $latestYear)
+                ->orderBy('views', 'desc')
+                ->limit(8)
+                ->get()
+                ->map(function ($recording) {
+                    return [
+                        'id' => $recording->id,
+                        'title' => $recording->title,
+                        'slug' => $recording->slug,
+                        'description' => $recording->description,
+                        'date' => $recording->date,
+                        'duration' => $recording->duration,
+                        'formatted_duration' => $recording->formatted_duration,
+                        'thumbnail_url' => $recording->thumbnail_url,
+                        'views' => $recording->views,
+                        'is_restricted' => $recording->hasAccessRestriction(),
+                    ];
+                });
+        }
 
         return Inertia::render('ShowsGrid', [
             'liveShows' => $liveShows,
             'startingSoonShows' => $startingSoonShows,
             'upcomingShows' => $upcomingShows,
+            'popularRecordings' => $popularRecordings,
             'currentTime' => now()->toIso8601String(),
         ]);
     }
@@ -99,6 +140,15 @@ class StreamController extends Controller
     {
         // Load show with source relationship
         $show->load('source');
+
+        /** @var User $user */
+        $user = Auth::user();
+
+        // Check access restrictions
+        if (! $show->canBeAccessedBy($user)) {
+            return redirect()->route('shows.grid')
+                ->with('error', 'You do not have permission to view this show');
+        }
 
         // Check if user can watch this show
         // Allow access to scheduled, live, and recently ended shows
@@ -110,10 +160,10 @@ class StreamController extends Controller
         // Get HLS URL for the show
         $user = Auth::user();
         $hlsUrl = $show->getHlsUrl();
-        
+
         // Add streamkey to the URL if user has one
         if ($user && $user->streamkey) {
-            $hlsUrl .= '?streamkey=' . $user->streamkey;
+            $hlsUrl .= '?streamkey='.$user->streamkey;
         }
 
         return Inertia::render('ExternalStream', [
@@ -138,6 +188,12 @@ class StreamController extends Controller
         // Load show with source relationship
         $show->load('source');
 
+        // Check access restrictions
+        if (! $show->canBeAccessedBy($user)) {
+            return redirect()->route('shows.grid')
+                ->with('error', 'You do not have permission to view this show');
+        }
+
         // Check if user can watch this show
         // Allow access to scheduled, live, and recently ended shows
         if (! in_array($show->status, ['scheduled', 'live', 'ended', 'cancelled'])) {
@@ -145,8 +201,9 @@ class StreamController extends Controller
                 ->with('error', 'This show is not available for viewing');
         }
 
-        // Get all available shows for switching
+        // Get all available shows for switching (filtered by access)
         $availableShows = Show::with('source')
+            ->accessibleBy($user)
             ->where('status', '!=', 'ended')
             ->orderBy('scheduled_start')
             ->get()
@@ -159,6 +216,7 @@ class StreamController extends Controller
                     'status' => $s->status,
                     'scheduled_start' => $s->scheduled_start,
                     'can_watch' => $s->canWatch(),
+                    'is_restricted' => $s->hasAccessRestriction(),
                 ];
             });
 
@@ -194,9 +252,9 @@ class StreamController extends Controller
             'chatMessages' => array_values(Message::with('user')
                 ->where(function ($query) use ($user) {
                     $query->where('is_command', false)
-                          ->orWhere('type', 'announcement')
-                          ->orWhere('type', 'system')
-                          ->orWhere(fn ($q) => $q->where('is_command', true)->where('user_id', $user->id)); // show users own commands
+                        ->orWhere('type', 'announcement')
+                        ->orWhere('type', 'system')
+                        ->orWhere(fn ($q) => $q->where('is_command', true)->where('user_id', $user->id)); // show users own commands
                 })
                 ->orderBy('created_at', 'desc')
                 ->limit(50)

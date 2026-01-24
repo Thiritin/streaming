@@ -9,7 +9,7 @@
         "doctrine/dbal": "^4.3",
         "filament/filament": "^3.3",
         "flowframe/laravel-trend": "^0.4.0",
-        "guzzlehttp/guzzle": "^7.2",
+        "guzzlehttp/guzzle": "^7.9",
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/framework": "^12.0",
         "laravel/horizon": "^5.31",
@@ -21,18 +21,18 @@
         "league/oauth2-client": "^2.7",
         "lkdevelopment/hetzner-cloud-php-sdk": "^2.7",
         "pusher/pusher-php-server": "^7.2",
-        "sentry/sentry-laravel": "^4.11",
+        "sentry/sentry-laravel": "^4.15",
         "tightenco/ziggy": "^2.4"
     },
     "require-dev": {
-        "fakerphp/faker": "^1.9.1",
+        "fakerphp/faker": "^1.24",
         "filament/upgrade": "^3.3",
         "laravel/breeze": "^2.3",
-        "laravel/pint": "^1.0",
-        "laravel/sail": "^1.36",
+        "laravel/pint": "^1.21",
+        "laravel/sail": "^1.43",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.6",
-        "phpunit/phpunit": "^11.0",
+        "phpunit/phpunit": "^11.5",
         "spatie/laravel-ignition": "^2.9"
     },
     "autoload": {

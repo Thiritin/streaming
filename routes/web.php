@@ -42,11 +42,7 @@ Route::prefix('hls')->group(function () {
     Route::get('/{variant}.m3u8', [\App\Http\Controllers\HlsController::class, 'variant'])->name('hls.variant');
 });
 
-Route::middleware(['auth:web', 'ensure.server'])->group(function () {
-    // Provisioning wait page - middleware allows this route even without server
-    Route::get('/provisioning/wait', [\App\Http\Controllers\ProvisioningController::class, 'wait'])->name('provisioning.wait');
-
-    // All other authenticated routes require server assignment
+Route::middleware(['auth:web'])->group(function () {
     Route::get('/', [\App\Http\Controllers\StreamController::class, 'index'])->name('shows.grid');
     Route::get('/shows', [\App\Http\Controllers\StreamController::class, 'index'])->name('shows.index');
     Route::get('/show/{show:slug}', [\App\Http\Controllers\StreamController::class, 'show'])->name('show.view');

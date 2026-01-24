@@ -8,7 +8,6 @@ use App\Events\Chat\DeleteMessagesEvent;
 use App\Events\SourceStatusChangedEvent;
 use App\Events\StreamListenerChangeEvent;
 use App\Events\StreamStatusEvent;
-use App\Events\UserWaitingForProvisioningEvent;
 use App\Listeners\Chat\DeleteMessages\DeleteMessagesListener;
 use App\Listeners\Chat\SlowMode\AnnounceSlowModeDeactivationListener;
 use App\Listeners\Chat\SlowMode\AnnounceSlowModeListener;
@@ -17,7 +16,6 @@ use App\Listeners\Chat\SlowMode\SlowModeEnableListener;
 use App\Listeners\HandleAutoModeShowsListener;
 use App\Listeners\SaveListenerCountListener;
 use App\Listeners\SetCacheStatusListener;
-use App\Listeners\SetUserWaitingForProvisioningListener;
 use App\Listeners\StreamScalingListener;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
@@ -40,9 +38,6 @@ class EventServiceProvider extends ServiceProvider
         ],
         StreamListenerChangeEvent::class => [
             SaveListenerCountListener::class,
-        ],
-        UserWaitingForProvisioningEvent::class => [
-            SetUserWaitingForProvisioningListener::class,
         ],
         SlowModeEnabled::class => [
             SlowModeEnableListener::class,

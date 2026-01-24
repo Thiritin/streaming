@@ -90,3 +90,18 @@
 .page * {
     @apply transition-colors;
 }
+
+/* Theater mode styles */
+body.theater-mode {
+    overflow: hidden;
+}
+
+body.theater-mode nav,
+body.theater-mode header,
+body.theater-mode footer {
+    display: none !important;
+}
+
+body.theater-mode main {
+    padding-top: 0 !important;
+}

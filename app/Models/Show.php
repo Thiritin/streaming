@@ -32,6 +32,7 @@ class Show extends Model
         'priority',
         'tags',
         'metadata',
+        'required_roles',
         'server_id',
     ];
 
@@ -45,6 +46,7 @@ class Show extends Model
         'recordable' => 'boolean',
         'tags' => 'array',
         'metadata' => 'array',
+        'required_roles' => 'array',
     ];
 
     protected static function boot()
@@ -321,13 +323,13 @@ class Show extends Model
         // This ensures proper URL handling for Docker environments
         $thumbnailService = app(\App\Services\ThumbnailService::class);
         $result = $thumbnailService->captureFromHls($this);
-        
-        if (!$result) {
+
+        if (! $result) {
             // Get the error from the model if it was set
             $error = $this->thumbnail_capture_error ?? 'Failed to capture screenshot';
             throw new \Exception($error);
         }
-        
+
         return $result;
     }
 
@@ -396,6 +398,7 @@ class Show extends Model
     public function isWithinScheduledTime()
     {
         $now = now();
+
         // Use lte (less than or equal) and gte (greater than or equal) for inclusive boundaries
         return $this->scheduled_start->lte($now) && $this->scheduled_end->gte($now);
     }
@@ -415,5 +418,52 @@ class Show extends Model
     public function scopeAutoMode($query)
     {
         return $query->where('auto_mode', true);
+    }
+
+    /**
+     * Check if show has access restrictions.
+     */
+    public function hasAccessRestriction(): bool
+    {
+        return ! empty($this->required_roles);
+    }
+
+    /**
+     * Check if a user can access this show.
+     */
+    public function canBeAccessedBy(?User $user): bool
+    {
+        // No restrictions = everyone can access
+        if (! $this->hasAccessRestriction()) {
+            return true;
+        }
+
+        // Must be logged in to access restricted content
+        if (! $user) {
+            return false;
+        }
+
+        // Check if user has any of the required roles
+        return $user->hasAnyRole($this->required_roles);
+    }
+
+    /**
+     * Scope for shows accessible by a user.
+     */
+    public function scopeAccessibleBy($query, ?User $user)
+    {
+        return $query->where(function ($q) use ($user) {
+            // No restrictions (null or empty array)
+            $q->whereNull('required_roles')
+                ->orWhereJsonLength('required_roles', 0);
+
+            // Or user has one of the required roles
+            if ($user) {
+                $userRoles = $user->roles()->pluck('slug')->toArray();
+                foreach ($userRoles as $role) {
+                    $q->orWhereJsonContains('required_roles', $role);
+                }
+            }
+        });
     }
 }

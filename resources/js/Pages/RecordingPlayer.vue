@@ -1,44 +1,48 @@
 <template>
     <div>
         <Head :title="recording.title" />
-        
-        <Container class="py-8">
+
+        <!-- Video Player Container - Full width on mobile -->
+        <div class="sm:px-4 lg:px-8 sm:pt-8">
             <div class="max-w-6xl mx-auto">
-                <!-- Video Player Container -->
-                <div class="relative bg-black rounded-lg overflow-hidden mb-6 shadow-2xl">
+                <div class="relative bg-black sm:rounded-lg overflow-hidden sm:shadow-2xl">
                     <!-- Loading Spinner -->
                     <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-black/80 z-10">
                         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
                     </div>
-                    
+
                     <!-- Error State -->
                     <div v-if="error && !loading" class="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-10">
                         <FaVideoSlashIcon class="w-16 h-16 text-red-500 mb-4" />
                         <p class="text-white text-lg mb-4">{{ errorMessage }}</p>
-                        <button 
+                        <button
                             @click="retryPlayback"
                             class="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg transition-colors"
                         >
                             Retry Playback
                         </button>
                     </div>
-                    
+
                     <!-- Video.js Player -->
                     <div class="video-js-container">
-                        <video 
+                        <video
                             ref="videoPlayer"
                             class="video-js vjs-default-skin vjs-big-play-centered vjs-fluid"
                             :poster="recording.thumbnail_url"
                         ></video>
                     </div>
                 </div>
+            </div>
+        </div>
 
-                <!-- Video Information -->
-                <div class="bg-primary-800 rounded-lg shadow-lg p-6 mb-6">
+        <!-- Video Information - No card on mobile -->
+        <div class="px-4 lg:px-8 py-6">
+            <div class="max-w-6xl mx-auto">
+                <div class="sm:bg-primary-800 sm:rounded-lg sm:shadow-lg sm:p-6 mb-6">
                     <h1 class="text-2xl font-bold text-white mb-4">
                         {{ recording.title }}
                     </h1>
-                    
+
                     <div class="flex flex-wrap items-center gap-4 text-sm mb-4">
                         <span class="flex items-center text-primary-400">
                             <FaCalendarIcon class="w-4 h-4 mr-1" />
@@ -53,24 +57,39 @@
                             {{ formatDuration(recording.duration) }}
                         </span>
                     </div>
-                    
+
                     <p v-if="recording.description" class="text-primary-300 whitespace-pre-wrap leading-relaxed">
                         {{ recording.description }}
                     </p>
                 </div>
 
                 <!-- Navigation -->
-                <div class="flex justify-between items-center">
-                    <Link 
-                        :href="route('recordings.index')" 
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <Link
+                        :href="route('recordings.index')"
                         class="inline-flex items-center text-primary-400 hover:text-primary-200 transition-colors"
                     >
                         <FaArrowLeftIcon class="w-5 h-5 mr-2" />
                         Back to Recordings
                     </Link>
+
+                    <!-- Hosting Sponsor -->
+                    <a
+                        href="https://pawhost.de"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="flex items-center gap-4 px-6 py-3 bg-primary-800/50 hover:bg-primary-800 border border-primary-700/50 rounded-xl transition-all group"
+                    >
+                        <span class="text-sm text-primary-400 uppercase tracking-wide font-medium">Hosting sponsored by</span>
+                        <img
+                            :src="pawHostLogo"
+                            alt="PawHost"
+                            class="h-10 opacity-80 group-hover:opacity-100 transition-opacity"
+                        />
+                    </a>
                 </div>
             </div>
-        </Container>
+        </div>
     </div>
 </template>
 
@@ -78,12 +97,12 @@
 import { Head, Link } from '@inertiajs/vue3';
 import { onMounted, onUnmounted, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import Container from '@/Components/Container.vue';
 import FaVideoSlashIcon from '@/Components/Icons/FaVideoSlashIcon.vue';
 import FaEyeIcon from '@/Components/Icons/FaEyeIcon.vue';
 import FaCalendarIcon from '@/Components/Icons/FaCalendarIcon.vue';
 import FaClockIcon from '@/Components/Icons/FaClockIcon.vue';
 import FaArrowLeftIcon from '@/Components/Icons/FaArrowLeftIcon.vue';
+import pawHostLogo from '../../images/pawhost_white.svg';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
 import 'videojs-contrib-quality-levels';

@@ -76,9 +76,38 @@ const provisioning = ref(props.initialProvisioning);
 const streamPlayer = ref(null);
 const isChatDrawerOpen = ref(false);
 const isReconnecting = ref(false);
+const isTheaterMode = ref(false);
 let hlsCheckInterval = null;
 let hlsCheckAttempts = 0;
 const maxHlsCheckAttempts = 15; // 30 seconds total (15 * 2 seconds)
+
+// Theater mode functions
+const toggleTheaterMode = () => {
+    isTheaterMode.value = !isTheaterMode.value;
+    localStorage.setItem('theaterMode', isTheaterMode.value ? 'true' : 'false');
+
+    // Toggle body class for hiding navbar
+    if (isTheaterMode.value) {
+        document.body.classList.add('theater-mode');
+    } else {
+        document.body.classList.remove('theater-mode');
+    }
+};
+
+const handleKeydown = (e) => {
+    if (e.key === 'Escape' && isTheaterMode.value) {
+        toggleTheaterMode();
+    }
+};
+
+// Load theater mode preference from localStorage
+const loadTheaterModePreference = () => {
+    const saved = localStorage.getItem('theaterMode');
+    if (saved === 'true') {
+        isTheaterMode.value = true;
+        document.body.classList.add('theater-mode');
+    }
+};
 
 // Computed properties
 const showChatBox = computed(() => status.value !== 'offline' && activeShow.value?.status === 'live');
@@ -183,7 +212,10 @@ const stopHlsChecker = () => {
 
 // Lifecycle
 onMounted(() => {
-    
+    // Load theater mode preference and add keyboard listener
+    loadTheaterModePreference();
+    window.addEventListener('keydown', handleKeydown);
+
     // Subscribe to source status updates if we have a source
     if (activeShow.value?.source_id) {
         Echo.channel(`source.${activeShow.value.source_id}`)
@@ -371,7 +403,11 @@ onMounted(() => {
 // Cleanup on unmount
 onUnmounted(() => {
     stopHlsChecker();
-    
+
+    // Clean up theater mode
+    window.removeEventListener('keydown', handleKeydown);
+    document.body.classList.remove('theater-mode');
+
     // Leave the source channel
     if (activeShow.value?.source_id) {
         Echo.leave(`source.${activeShow.value.source_id}`);
@@ -394,7 +430,10 @@ onUnmounted(() => {
             <title>{{ showTitle }} - Stream</title>
         </Head>
 
-        <div class="flex flex-col xl:flex-row xl:h-[calc(100vh-3rem)] xl:overflow-hidden">
+        <div
+            class="flex flex-col xl:flex-row xl:overflow-hidden transition-all duration-300"
+            :class="isTheaterMode ? 'fixed inset-0 z-50 bg-primary-950' : 'xl:h-[calc(100vh-3rem)]'"
+        >
             <!-- Livestream -->
             <div class="w-full flex-1 flex flex-col">
                 <!-- Back to Shows Bar - Fixed at top -->
@@ -448,13 +487,29 @@ onUnmounted(() => {
                         <StreamPlayer ref="streamPlayer"
                                       :hls-url="hlsUrl"
                                       :show-info="activeShow"
-                                      class="z-10 relative w-full bg-black mx-auto max-h-[60vh] sm:max-h-[70vh] md:max-h-[80vh] lg:max-h-[calc(100vh-12vh)]"></StreamPlayer>
+                                      class="z-10 relative w-full bg-black mx-auto"
+                                      :class="isTheaterMode ? 'max-h-[calc(100vh-6rem)]' : 'max-h-[60vh] sm:max-h-[70vh] md:max-h-[80vh] lg:max-h-[calc(100vh-12vh)]'"></StreamPlayer>
 
                         <!-- Player Controls Bar -->
                     <div class="player-controls-bar bg-primary-900 border-t border-primary-800 px-4 py-2">
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-2 text-sm text-primary-400">
                                 <span>{{ listeners }} viewers</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <!-- Theater Mode Toggle -->
+                                <button
+                                    @click="toggleTheaterMode"
+                                    class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 text-sm rounded transition-colors"
+                                    :class="isTheaterMode ? 'bg-primary-500 text-white' : 'bg-primary-800 text-primary-300 hover:bg-primary-700 hover:text-white'"
+                                    :title="isTheaterMode ? 'Exit Theater Mode (Esc)' : 'Theater Mode'"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path v-if="!isTheaterMode" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+                                        <path v-else stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 9h4.5M15 9V4.5M15 9l5.5-5.5M15 15h4.5M15 15v4.5m0-4.5l5.5 5.5"/>
+                                    </svg>
+                                    <span class="hidden md:inline">{{ isTheaterMode ? 'Exit' : 'Theater' }}</span>
+                                </button>
                             </div>
                         </div>
                     </div>

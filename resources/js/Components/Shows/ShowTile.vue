@@ -1,15 +1,15 @@
 <template>
-  <div 
+  <div
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave"
     class="show-tile-wrapper"
   >
-    <Link 
+    <Link
       :href="route('show.view', show.slug)"
-      class="show-tile group relative block overflow-hidden rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+      class="group block"
     >
       <!-- Thumbnail Container -->
-      <div class="aspect-video relative bg-primary-900 overflow-hidden">
+      <div class="relative aspect-video rounded-xl overflow-hidden bg-primary-800 ring-1 ring-white/5 group-hover:ring-2 group-hover:ring-primary-500/60 group-hover:shadow-lg group-hover:shadow-primary-500/20 transition-all duration-300">
         <!-- Video Preview (only for live shows) -->
         <Transition
           enter-active-class="transition-all duration-700 ease-out"
@@ -28,7 +28,7 @@
             @error="handleVideoError"
           />
         </Transition>
-        
+
         <!-- Thumbnail Image -->
         <Transition
           enter-active-class="transition-all duration-500 ease-out"
@@ -38,73 +38,81 @@
           leave-from-class="opacity-100 blur-0"
           leave-to-class="opacity-0 blur-lg"
         >
-          <img 
+          <img
             v-if="currentThumbnail && !showVideoPreview"
             :src="currentThumbnail"
             :alt="show.title"
-            class="w-full h-full object-cover absolute inset-0"
+            class="w-full h-full object-cover absolute inset-0 transition-transform duration-500 group-hover:scale-105"
             @error="handleImageError"
           />
         </Transition>
-        
+
         <!-- Placeholder when no thumbnail -->
-        <div v-if="!currentThumbnail && !showVideoPreview" class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-800 to-primary-900">
-          <FaVideoIcon class="w-20 h-20 text-white" />
+        <div v-if="!currentThumbnail && !showVideoPreview" class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-700 to-primary-900">
+          <FaVideoIcon class="w-16 h-16 text-primary-500" />
         </div>
-      
-      <!-- Live Badge -->
-      <div v-if="isLive" class="absolute top-3 left-3">
-        <span class="bg-red-600 text-white px-3 py-1.5 rounded text-sm font-bold uppercase flex items-center">
-          <span class="live-dot"></span>
-          LIVE
-        </span>
+
+        <!-- Top badges row -->
+        <div class="absolute top-2 left-2 z-20">
+          <!-- Live Badge -->
+          <span v-if="isLive" class="live-badge">
+            LIVE
+          </span>
+
+          <!-- Starting Soon Badge -->
+          <span v-else-if="isStartingSoon" class="starting-soon-badge">
+            STARTING SOON
+          </span>
+
+          <!-- Upcoming Time -->
+          <span v-else-if="isUpcoming" class="time-badge">
+            {{ formatTimeUntil(show.scheduled_start) }}
+          </span>
+        </div>
+
+        <!-- Bottom left: Viewer count -->
+        <div v-if="isLive && show.viewer_count" class="absolute bottom-2 left-2 z-20">
+          <span class="viewer-badge">
+            <FaUsersIcon class="w-3 h-3" />
+            {{ formatViewerCount(show.viewer_count) }}
+          </span>
+        </div>
+
+        <!-- Bottom right: Duration -->
+        <div v-if="isLive && show.started_at" class="absolute bottom-2 right-2 z-20">
+          <span class="duration-badge">
+            {{ formatDuration(show.started_at) }}
+          </span>
+        </div>
+
+        <!-- Hover Overlay with play icon -->
+        <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10" />
+        <div class="absolute inset-0 flex items-center justify-center z-10">
+          <div class="w-14 h-14 rounded-full bg-primary-500/90 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-300 shadow-lg shadow-primary-500/30">
+            <FaPlayIcon class="w-6 h-6 text-white ml-0.5" />
+          </div>
+        </div>
       </div>
-      
-      <!-- Starting Soon Badge -->
-      <div v-else-if="isStartingSoon" class="absolute top-3 left-3">
-        <span class="bg-orange-600 text-white px-3 py-1.5 rounded text-sm font-bold uppercase animate-pulse">
-          STARTING SOON
-        </span>
+
+      <!-- Content -->
+      <div class="mt-3">
+        <!-- Title -->
+        <h3 class="font-semibold text-white text-sm leading-tight line-clamp-2 group-hover:text-primary-300 transition-colors">
+          {{ show.title }}
+        </h3>
+
+        <!-- Source/Channel -->
+        <p v-if="show.source" class="text-primary-400 text-sm mt-0.5 truncate">
+          {{ show.source }}
+        </p>
+
+        <!-- Scheduled Time for Upcoming or Starting Soon -->
+        <p v-if="isUpcoming || isStartingSoon" class="text-primary-500 text-xs mt-1 flex items-center gap-1">
+          <FaClockIcon class="w-3 h-3" />
+          {{ formatScheduledTime(show.scheduled_start) }}
+        </p>
       </div>
-      
-      <!-- Upcoming Time -->
-      <div v-else-if="isUpcoming" class="absolute top-3 left-3">
-        <span class="bg-black/70 text-white px-3 py-1.5 rounded text-sm">
-          {{ formatTimeUntil(show.scheduled_start) }}
-        </span>
-      </div>
-      
-      <!-- Duration/Time Overlay -->
-      <div class="absolute bottom-2 right-2">
-        <span v-if="isLive && show.started_at" class="bg-black/70 text-white px-2 py-1 rounded text-xs">
-          {{ formatDuration(show.started_at) }}
-        </span>
-      </div>
-      
-      <!-- Hover Overlay -->
-      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-300 flex items-center justify-center">
-        <FaPlayIcon class="text-white w-16 h-16 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-      </div>
-    </div>
-    
-    <!-- Content -->
-    <div class="p-4 bg-primary-800">
-      <!-- Title -->
-      <h3 class="font-semibold text-lg text-white truncate group-hover:text-primary-300 transition-colors">
-        {{ show.title }}
-      </h3>
-      
-      <!-- Source -->
-      <p v-if="show.source" class="text-base text-primary-400 truncate">
-        {{ show.source }}
-      </p>
-      
-      <!-- Scheduled Time for Upcoming or Starting Soon -->
-      <p v-if="isUpcoming || isStartingSoon" class="text-base text-primary-400 mt-1">
-        {{ formatScheduledTime(show.scheduled_start) }}
-      </p>
-    </div>
-  </Link>
+    </Link>
   </div>
 </template>
 
@@ -113,6 +121,8 @@ import { Link } from '@inertiajs/vue3';
 import { ref, computed, onMounted, onUnmounted, nextTick, Transition } from 'vue';
 import FaVideoIcon from '../Icons/FaVideoIcon.vue';
 import FaPlayIcon from '../Icons/FaPlayIcon.vue';
+import FaClockIcon from '../Icons/FaClockIcon.vue';
+import FaUsersIcon from '../Icons/FaUsersIcon.vue';
 import Hls from 'hls.js';
 
 // Props
@@ -124,7 +134,7 @@ const props = defineProps({
 });
 
 // Reactive state
-const currentThumbnail = ref(props.show.thumbnail_url); // Using accessor that returns signed URL
+const currentThumbnail = ref(props.show.thumbnail_url);
 const showVideoPreview = ref(false);
 const videoPreview = ref(null);
 let updateInterval = null;
@@ -139,7 +149,6 @@ const isUpcoming = computed(() => props.show.status === 'scheduled');
 // Get the stream URL for preview
 const streamUrl = computed(() => {
   if (!props.show.hls_url) return null;
-  // Use master playlist which will adapt quality based on bandwidth
   return props.show.hls_url;
 });
 
@@ -149,41 +158,36 @@ const handleImageError = () => {
 };
 
 const handleVideoError = () => {
-  // If video fails to load, hide the preview
   showVideoPreview.value = false;
 };
 
 const handleMouseEnter = () => {
-  // Only show video preview for live shows
   if (!isLive.value || !streamUrl.value) return;
-  
-  // Add a small delay to prevent loading on quick hovers
+
   hoverTimeout = setTimeout(() => {
     showVideoPreview.value = true;
-    // Wait for next tick to ensure video element is rendered
     nextTick(() => {
       if (videoPreview.value && streamUrl.value) {
-        // Initialize HLS.js
         if (Hls.isSupported()) {
           hlsInstance = new Hls({
             enableWorker: true,
             lowLatencyMode: false,
             backBufferLength: 60,
-            maxBufferSize: 30 * 1000 * 1000, // 30MB
-            maxBufferLength: 10, // seconds
-            startLevel: 0, // Start with lowest quality for faster loading
+            maxBufferSize: 30 * 1000 * 1000,
+            maxBufferLength: 10,
+            startLevel: 0,
           });
-          
+
           hlsInstance.loadSource(streamUrl.value);
           hlsInstance.attachMedia(videoPreview.value);
-          
+
           hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
             videoPreview.value.play().catch((error) => {
               console.log('Video autoplay failed:', error);
               showVideoPreview.value = false;
             });
           });
-          
+
           hlsInstance.on(Hls.Events.ERROR, (event, data) => {
             if (data.fatal) {
               console.log('HLS fatal error:', data);
@@ -191,7 +195,6 @@ const handleMouseEnter = () => {
             }
           });
         } else if (videoPreview.value.canPlayType('application/vnd.apple.mpegurl')) {
-          // Native HLS support (Safari)
           videoPreview.value.src = streamUrl.value;
           videoPreview.value.play().catch((error) => {
             console.log('Video autoplay failed:', error);
@@ -200,23 +203,20 @@ const handleMouseEnter = () => {
         }
       }
     });
-  }, 300); // 300ms delay
+  }, 300);
 };
 
 const handleMouseLeave = () => {
-  // Clear the hover timeout if mouse leaves before delay
   if (hoverTimeout) {
     clearTimeout(hoverTimeout);
     hoverTimeout = null;
   }
-  
-  // Clean up HLS instance
+
   if (hlsInstance) {
     hlsInstance.destroy();
     hlsInstance = null;
   }
-  
-  // Stop and hide video preview
+
   if (videoPreview.value) {
     videoPreview.value.pause();
     videoPreview.value.src = '';
@@ -224,42 +224,53 @@ const handleMouseLeave = () => {
   showVideoPreview.value = false;
 };
 
+const formatViewerCount = (count) => {
+  if (count >= 1000000) {
+    return (count / 1000000).toFixed(1) + 'M';
+  }
+  if (count >= 1000) {
+    return (count / 1000).toFixed(1) + 'K';
+  }
+  return count?.toString() || '0';
+};
+
 const formatDuration = (startTime) => {
   const start = new Date(startTime);
   const now = new Date();
   const diff = Math.floor((now - start) / 1000);
-  
+
   const hours = Math.floor(diff / 3600);
   const minutes = Math.floor((diff % 3600) / 60);
-  
+  const seconds = diff % 60;
+
   if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:00`;
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   }
-  return `${minutes}:${(diff % 60).toString().padStart(2, '0')}`;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
 const formatTimeUntil = (scheduledTime) => {
   const scheduled = new Date(scheduledTime);
   const now = new Date();
   const diff = Math.floor((scheduled - now) / 1000);
-  
+
   if (diff <= 0) {
     return 'Starting soon';
   }
-  
+
   const hours = Math.floor(diff / 3600);
   const minutes = Math.floor((diff % 3600) / 60);
-  
+
   if (hours > 24) {
     const days = Math.floor(hours / 24);
-    return `in ${days} day${days > 1 ? 's' : ''}`;
+    return `in ${days}d`;
   }
-  
+
   if (hours > 0) {
     return `in ${hours}h ${minutes}m`;
   }
-  
-  return `in ${minutes} min`;
+
+  return `in ${minutes}m`;
 };
 
 const formatScheduledTime = (scheduledTime) => {
@@ -267,19 +278,19 @@ const formatScheduledTime = (scheduledTime) => {
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  
-  const timeStr = date.toLocaleTimeString('en-US', { 
-    hour: '2-digit', 
+
+  const timeStr = date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
     minute: '2-digit',
-    hour12: false 
+    hour12: false
   });
-  
+
   if (date.toDateString() === today.toDateString()) {
     return `Today at ${timeStr}`;
   } else if (date.toDateString() === tomorrow.toDateString()) {
     return `Tomorrow at ${timeStr}`;
   } else {
-    return date.toLocaleDateString('en-US', { 
+    return date.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
@@ -292,14 +303,12 @@ const formatScheduledTime = (scheduledTime) => {
 
 // Lifecycle
 onMounted(() => {
-  // Update duration/countdown every second for live/upcoming/starting soon shows
   if (isLive.value || isUpcoming.value || isStartingSoon.value) {
     updateInterval = setInterval(() => {
       // Force re-render to update time displays
     }, 1000);
   }
-  
-  // Listen for thumbnail updates via WebSocket
+
   Echo.channel(`show.${props.show.id}`)
     .listen('.thumbnail.updated', (e) => {
       if (e.thumbnail_url) {
@@ -323,20 +332,33 @@ onUnmounted(() => {
 </script>
 
 <style>
-.live-dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  background-color: white;
-  border-radius: 9999px;
-  margin-right: 0.25rem;
-  animation: blink 1.5s ease-in-out infinite;
+@reference "../../css/app.css";
+
+.live-badge {
+  @apply bg-red-600 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide;
 }
 
-.show-tile {
-  background-color: rgb(0 59 50); /* primary-700 */
+.starting-soon-badge {
+  @apply bg-orange-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide;
+  animation: pulse 2s ease-in-out infinite;
 }
 
-.show-tile:hover {
-  background-color: rgb(0 80 75); /* primary-600 */
+.time-badge {
+  @apply bg-black/70 backdrop-blur-sm text-white px-2 py-0.5 rounded text-[10px] font-medium;
+}
+
+.viewer-badge {
+  @apply inline-flex items-center gap-1 bg-black/70 backdrop-blur-sm text-white px-2 py-0.5 rounded text-[10px] font-medium;
+}
+
+.duration-badge {
+  @apply bg-black/80 text-white px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 </style>

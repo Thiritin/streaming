@@ -1,65 +1,63 @@
 <template>
-  <Link 
+  <Link
     :href="route('recordings.show', recording.id)"
-    class="recording-tile group relative block overflow-hidden rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+    class="group block"
   >
     <!-- Thumbnail Container -->
-    <div class="aspect-video relative bg-primary-900 overflow-hidden">
+    <div class="aspect-video relative bg-primary-900 rounded-xl overflow-hidden ring-1 ring-white/5 group-hover:ring-2 group-hover:ring-primary-500/60 group-hover:shadow-lg group-hover:shadow-primary-500/20 transition-all duration-300">
       <!-- Thumbnail Image -->
       <Transition
         enter-active-class="transition-all duration-500 ease-out"
         enter-from-class="opacity-0 blur-md"
         enter-to-class="opacity-100 blur-0"
       >
-        <img 
+        <img
           v-if="recording.thumbnail_url"
           :src="recording.thumbnail_url"
           :alt="recording.title"
-          class="w-full h-full object-cover absolute inset-0"
+          class="w-full h-full object-cover absolute inset-0 transition-transform duration-500 group-hover:scale-105"
           @error="handleImageError"
         />
       </Transition>
-      
+
       <!-- Placeholder when no thumbnail -->
       <div v-if="!recording.thumbnail_url || thumbnailError" class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-800 to-primary-900">
-        <FaVideoIcon class="w-20 h-20 text-white opacity-50" />
+        <FaVideoIcon class="w-16 h-16 text-primary-500" />
       </div>
-      
-      <!-- Duration Overlay -->
-      <div v-if="recording.duration" class="absolute bottom-2 right-2">
-        <span class="bg-black/70 text-white px-2 py-1 rounded text-xs font-medium">
-          {{ formatDuration(recording.duration) }}
-        </span>
-      </div>
-      
-      <!-- View Count Overlay -->
-      <div v-if="recording.views > 0" class="absolute top-3 left-3">
-        <span class="bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center">
-          <FaEyeIcon class="w-3 h-3 mr-1" />
+
+      <!-- Bottom left: View Count -->
+      <div v-if="recording.views > 0" class="absolute bottom-2 left-2 z-20">
+        <span class="bg-black/70 backdrop-blur-sm text-white px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1">
+          <FaEyeIcon class="w-3 h-3" />
           {{ formatViews(recording.views) }}
         </span>
       </div>
-      
+
+      <!-- Bottom right: Duration -->
+      <div v-if="recording.duration" class="absolute bottom-2 right-2 z-20">
+        <span class="bg-black/80 text-white px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums">
+          {{ formatDuration(recording.duration) }}
+        </span>
+      </div>
+
       <!-- Hover Overlay -->
-      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-300 flex items-center justify-center">
-        <FaPlayIcon class="text-white w-16 h-16 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+      <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10" />
+      <div class="absolute inset-0 flex items-center justify-center z-10">
+        <div class="w-14 h-14 rounded-full bg-primary-500/90 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-300 shadow-lg shadow-primary-500/30">
+          <FaPlayIcon class="w-6 h-6 text-white ml-0.5" />
+        </div>
       </div>
     </div>
-    
+
     <!-- Content -->
-    <div class="p-4 bg-primary-800">
+    <div class="mt-3">
       <!-- Title -->
-      <h3 class="font-semibold text-lg text-white truncate group-hover:text-primary-300 transition-colors">
+      <h3 class="font-semibold text-white text-sm leading-tight line-clamp-2 group-hover:text-primary-300 transition-colors">
         {{ recording.title }}
       </h3>
-      
-      <!-- Description -->
-      <p v-if="recording.description" class="text-base text-primary-400 mt-1 line-clamp-2">
-        {{ recording.description }}
-      </p>
-      
-      <!-- Date -->
-      <p class="text-base text-primary-500 mt-2">
+
+      <!-- Date and views inline -->
+      <p class="text-primary-500 text-sm mt-1">
         {{ formatDate(recording.date) }}
       </p>
     </div>
@@ -139,14 +137,8 @@ const formatViews = (views) => {
 };
 </script>
 
-<style scoped>
-.recording-tile {
-  background-color: rgb(0 59 50); /* primary-700 */
-}
-
-.recording-tile:hover {
-  background-color: rgb(0 80 75); /* primary-600 */
-}
+<style>
+@reference "../../../css/app.css";
 
 .line-clamp-2 {
   display: -webkit-box;

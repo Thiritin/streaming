@@ -4,10 +4,12 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ShowResource\Pages;
 use App\Filament\Resources\ShowResource\RelationManagers;
+use App\Models\Role;
 use App\Models\Server;
 use App\Models\Show;
 use App\Models\Source;
 use Filament\Forms;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\KeyValue;
@@ -26,7 +28,6 @@ use Filament\Tables\Actions\Action;
 use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
@@ -125,6 +126,13 @@ class ShowResource extends Resource
                             ->label('Recordable')
                             ->helperText('Enable recording for this show')
                             ->hint('When enabled, this show will be available for recording processing'),
+                        CheckboxList::make('required_roles')
+                            ->label('Access Restriction')
+                            ->options(Role::pluck('name', 'slug')->toArray())
+                            ->helperText('Leave empty for public access. Select roles that can access this show.')
+                            ->hint('Users must have at least one of the selected roles to view')
+                            ->columns(2)
+                            ->columnSpanFull(),
                         FileUpload::make('thumbnail_path')
                             ->label('Thumbnail')
                             ->image()
@@ -246,6 +254,18 @@ class ShowResource extends Resource
                         'heroicon-o-cog' => fn ($state) => $state === 'Auto',
                         'heroicon-o-hand-raised' => fn ($state) => $state === 'Manual',
                     ]),
+                BadgeColumn::make('required_roles')
+                    ->label('Access')
+                    ->getStateUsing(fn ($record) => $record->hasAccessRestriction() ? 'Restricted' : 'Public')
+                    ->colors([
+                        'warning' => fn ($state) => $state === 'Restricted',
+                        'success' => fn ($state) => $state === 'Public',
+                    ])
+                    ->icons([
+                        'heroicon-o-lock-closed' => fn ($state) => $state === 'Restricted',
+                        'heroicon-o-globe-alt' => fn ($state) => $state === 'Public',
+                    ])
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('tags')
                     ->badge()
                     ->separator(',')
