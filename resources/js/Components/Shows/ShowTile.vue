@@ -332,7 +332,7 @@ onUnmounted(() => {
 </script>
 
 <style>
-@reference "../../css/app.css";
+@reference "../../../css/app.css";
 
 .live-badge {
   @apply bg-red-600 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide;
