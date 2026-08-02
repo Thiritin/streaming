@@ -163,8 +163,20 @@ start_ffmpeg() {
     # inert regardless: the glob was inside the quotes, so they only ever tried to
     # remove a file literally named `${stream}_*.ts`.)
 
-    # Generate a unique timestamp prefix for this session
+    # Session id, used to keep one FFmpeg run's segments distinct from the next.
+    #
+    # Clock-derived so it stays readable, but `date +%s` only has second resolution:
+    # two starts inside the same second reuse the prefix, and the new session then
+    # writes ${stream}_hd_<same>_000000.ts straight over the previous session's
+    # segments. A fast crash-restart loop through check_streams (5s interval) can
+    # reach that, and the result is silent archive loss rather than a visible error.
+    #
+    # Bump until the prefix is unused. Previous sessions' segments are still on disk
+    # until the orphan reaper takes them, which is exactly what makes this check work.
     local timestamp_prefix=$(date +%s)
+    while compgen -G "$output_dir/${stream}_*_${timestamp_prefix}_*.ts" >/dev/null; do
+        timestamp_prefix=$((timestamp_prefix + 1))
+    done
     
     # The ladder itself: either three real encodes, or the same bitstream copied
     # into three renditions. Everything after this point is identical, so the

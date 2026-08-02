@@ -107,6 +107,17 @@ mtime, because it is one `stat` per rendition instead of a scan of thousands of 
 
 Bump `%05d` to `%06d`: 99999 segments is 55 hours, which a con-long stream reaches.
 
+**Session id collisions.** `timestamp_prefix=$(date +%s)` has one-second resolution, so
+two FFmpeg starts inside the same second produce the same prefix and the second session
+writes `${stream}_hd_<same>_000000.ts` directly over the first session's segments. The 30s
+startup grace keeps the watchdog off this path, but a fast crash-restart loop through
+`check_streams` (5s interval) reaches it, and the failure is silent archive loss rather
+than an error. `start_ffmpeg` now bumps the prefix while any segment already carries it.
+The check works precisely because the orphan reaper leaves old sessions' segments on disk.
+
+This matters beyond the transcoder: the segment filename is the archive's primary key, so
+a collision corrupts S3 objects and index entries alike.
+
 One more lifecycle bug surfaced while testing the watchdog. FFmpeg was launched as
 `ffmpeg ... 2>&1 | sed "s/^/[FFmpeg $stream] /" &`, and for a backgrounded pipeline `$!`
 is the PID of the *last* stage. Every stored PID was sed's, so `stop_ffmpeg` killed the
@@ -132,8 +143,9 @@ describe all three.
   "hour": "2026-08-02T16:00:00Z",
   "renditions": ["sd", "hd", "fhd"],
   "segments": [
-    {"n": 0, "name": "mainstage_%v_1754156625_00042.ts", "pdt": "2026-08-02T16:00:00.000Z",
-     "dur": 2.0, "session": "1754156625", "discontinuity": false},
+    {"seq": 28800, "n": 42, "name": "mainstage_%v_1754156625_000042.ts",
+     "pdt": "2026-08-02T16:00:00.000Z", "dur": 2.0,
+     "session": "1754156625", "discontinuity": false},
     ...
   ]
 }
@@ -144,6 +156,52 @@ reconnect sets `discontinuity: true` on the first segment of the new session, wh
 what later gets turned back into `#EXT-X-DISCONTINUITY` in generated playlists.
 
 The in-progress hour is re-uploaded once a minute; the hour is finalised when it rolls over.
+
+#### Three fields, three jobs
+
+The temptation is to order the archive by `pdt`, since it is the field that means
+something to a human. Do not. Each field has exactly one job:
+
+| Field | Job | Clock-dependent |
+|---|---|---|
+| `seq` | **Ordering.** Indexer-assigned, global per source, monotonic, never reused | No |
+| `session` + `n` | Provenance and dedupe key | Only via `session` |
+| `pdt` | Display, and selecting cut points | Yes |
+
+`seq` is assigned by the indexer at the moment it first observes a segment. Observation
+order follows playlist order, which is inherently monotonic, so `seq` needs no clock and
+cannot go backwards. A clock jump then costs cut *accuracy* and can never corrupt archive
+*order*.
+
+Some detail behind that, because the naive version of this rule is wrong:
+
+- Within a session, `n` is FFmpeg's own counter (`-start_number 0`, +1 per segment) and
+  involves no clock at all.
+- `session` is `date +%s`, so it *is* clock-derived. "Order by session and n" therefore
+  does not avoid the clock across session boundaries, which is why `seq` exists.
+- PDT is more robust than it first appears: FFmpeg's HLS muxer anchors wall clock once at
+  session start and then accumulates `EXTINF`, rather than re-reading the clock per
+  segment. A mid-stream NTP correction does not corrupt it. Observed in the dev stack,
+  consecutive PDTs were exactly 2.000s apart (`22:37:17.805` then `22:37:19.805`); clock
+  sampling would show jitter.
+- The flip side: PDT tracks the *encoder's* timeline from that one anchor, not real time,
+  so it can drift from wall clock over a long session. Drift resets on every reconnect,
+  which makes a con-long stream that never reconnects the worst case. **Unmeasured.**
+  Worth measuring against a con-length run before trusting PDT for cut points; if drift is
+  material, the indexer can re-anchor by stamping its own observation time periodically
+  and interpolating.
+
+#### Guard the identical-boundaries assumption
+
+One index entry describing all three renditions relies on FFmpeg cutting them at the same
+instants. That holds because of `-force_key_frames "expr:gte(t,n_forced*2)"` on a shared
+input, but if it ever stops holding — `ABR_MODE=copy` with a publisher whose GOP does not
+match `hls_time`, say — the index silently mislabels two renditions out of three, and
+nothing downstream would notice.
+
+So the indexer asserts it rather than assuming it: periodically compare segment count and
+PDT across the three playlists, and log loudly on divergence. Cheap, and it converts a
+silent correctness bug into a visible one.
 
 ### 3. S3 layout
 
