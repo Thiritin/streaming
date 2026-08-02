@@ -9,7 +9,7 @@
 #
 # Start with: ./scripts/dev-stack.sh up
 
-name: ef-streaming-dev
+name: streaming-dev
 
 services:
   # ------------------------------------------------------------- app bridge
@@ -45,6 +45,14 @@ services:
       SRS_RTMP_URL: rtmp://origin-srs:1935
       OUTPUT_BASE_DIR: /var/www/hls/live
       CHECK_INTERVAL: "5"
+      # copy is the local default: the ladder is remuxed rather than encoded, so
+      # a laptop can hold several channels at once. Set DEV_ABR_MODE=transcode
+      # when you are actually working on the ladder itself.
+      ABR_MODE: ${DEV_ABR_MODE:-copy}
+      # Production runs a 60 minute rewind window (1800 segments). That is ~5GB of
+      # disk per source, which is not something a laptop wants, so dev defaults to
+      # 5 minutes. Raise it when you are actually working on the DVR window itself.
+      DVR_WINDOW_SEGMENTS: ${DEV_DVR_WINDOW_SEGMENTS:-150}
     volumes:
       - hls:/var/www/hls
     depends_on:
@@ -74,8 +82,15 @@ services:
     restart: unless-stopped
 
   # ------------------------------------------------------------------- edge
+  # Built rather than pulled: the image adds the njs module and hls-auth.js, so
+  # playback tokens are verified locally here exactly as they are in production.
   edge-nginx:
-    image: nginx:1.27-alpine
+    build: ./docker/edge-nginx
+    environment:
+      HLS_VIEWER_SECRET: ${HLS_VIEWER_SECRET:-}
+      HLS_EMBED_SECRET: ${HLS_EMBED_SECRET:-}
+      HLS_TOKEN_LEEWAY: ${HLS_TOKEN_LEEWAY:-60}
+      STREAM_SYSTEM_STREAMKEY: ${STREAM_SYSTEM_STREAMKEY:-}
     volumes:
       - ./docker/dev/edge-nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -110,13 +125,17 @@ services:
     volumes:
       - s3-data:/buckets
     ports:
-      - "7070:7070"
+      # Host side only. 7070 is AnyDesk's default listener, which silently wins the
+      # bind and takes the whole stack down with it, so the host port is both moved
+      # and overridable. Inside the compose network this is still :7070, which is
+      # why S3_ENDPOINT below does not change.
+      - "${DEV_S3_PORT:-7075}:7070"
     restart: unless-stopped
 
   s3-init:
     image: alpine:3
     # versitygw's posix backend treats top-level directories as buckets.
-    command: sh -c "mkdir -p /buckets/${AWS_BUCKET:-ef-streaming} && echo 'bucket ready'"
+    command: sh -c "mkdir -p /buckets/${AWS_BUCKET:-streaming} && echo 'bucket ready'"
     volumes:
       - s3-data:/buckets
     depends_on:
@@ -127,7 +146,7 @@ services:
   dvr-uploader:
     build: ./docker/dvr-uploader
     environment:
-      S3_BUCKET: ${AWS_BUCKET:-ef-streaming}
+      S3_BUCKET: ${AWS_BUCKET:-streaming}
       S3_REGION: ${AWS_DEFAULT_REGION:-eu-central-1}
       S3_ACCESS_KEY: ${DEV_S3_KEY:-devkey}
       S3_SECRET_KEY: ${DEV_S3_SECRET:-devsecret123}
@@ -154,8 +173,15 @@ services:
       CHANNELS: ${DEV_PUBLISH_CHANNELS:-}
       SIZE: ${DEV_PUBLISH_SIZE:-1280x720}
       FPS: ${DEV_PUBLISH_FPS:-30}
+      # loop encodes one short clip per channel and then pushes it with -c copy,
+      # so the publishers stop costing CPU once the clips are cached in the
+      # volume below. Set DEV_PUBLISH_MODE=live for a moving on-screen clock.
+      MODE: ${DEV_PUBLISH_MODE:-loop}
+      CLIP_SECONDS: ${DEV_PUBLISH_CLIP_SECONDS:-20}
+      CLIP_DIR: /clips
     volumes:
       - ./docker/dev/publish.sh:/publish.sh:ro
+      - publisher-clips:/clips
     depends_on:
       - origin-srs
     restart: unless-stopped
@@ -165,3 +191,4 @@ volumes:
   dvr:
   s3-data:
   caddy-logs:
+  publisher-clips:

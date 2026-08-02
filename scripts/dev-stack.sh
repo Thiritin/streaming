@@ -23,8 +23,21 @@ require_docker() {
   fi
 }
 
+# Cap how many channels the publishers start. Every extra channel is another
+# ffmpeg, another ladder and another set of segments on disk.
+LIMIT="${DEV_PUBLISH_LIMIT:-0}"
+
 stream_keys() {
-  php artisan dev:stream-keys 2>/dev/null | tail -n 1
+  php artisan dev:stream-keys --limit="$LIMIT" 2>/dev/null | tail -n 1
+}
+
+# The edge verifies playback tokens locally with these; without them every
+# tokenised request answers 403 and nothing plays.
+check_token_secrets() {
+  if [[ -z "${HLS_VIEWER_SECRET:-}" ]] && ! grep -qE '^HLS_VIEWER_SECRET=.+' .env 2>/dev/null; then
+    echo "Warning: HLS_VIEWER_SECRET is empty in .env. The edge will reject every" >&2
+    echo "         playback token. Generate one with: openssl rand -hex 32" >&2
+  fi
 }
 
 start_publishers() {
@@ -45,7 +58,10 @@ start_publishers() {
 case "${1:-up}" in
   up)
     require_docker
-    $COMPOSE up -d origin-srs hls-transcoder origin-nginx origin-caddy edge-nginx edge-caddy s3 s3-init dvr-uploader
+    check_token_secrets
+    # --build so edits to the transcoder script or the edge's njs bundle take
+    # effect; both are baked into their images rather than mounted.
+    $COMPOSE up -d --build origin-srs hls-transcoder origin-nginx origin-caddy edge-nginx edge-caddy s3 s3-init dvr-uploader
     start_publishers
 
     cat <<'EOF'
@@ -56,11 +72,17 @@ Stack is up.
   SRS API        http://localhost:1985/api/v1/streams
   Origin         http://localhost:8070/live/<slug>.m3u8
   Edge           http://localhost:8085/live/<slug>.m3u8
-  S3 (versitygw) http://localhost:7070
+  S3 (versitygw) http://localhost:${DEV_S3_PORT:-7075}
 
 The app keeps serving HLS through its own /hls routes, which proxy to the edge
 server row on localhost:8085. Keep DEV_STREAMS unset or false in .env so the
 app uses this stack rather than the standalone file loops.
+
+Playback tokens are verified on the edge by njs, same as production. Watch
+rejections with: ./scripts/dev-stack.sh logs edge-nginx
+
+CPU: publishers loop a cached clip and the ladder is remuxed, not encoded.
+Set DEV_PUBLISH_MODE=live or DEV_ABR_MODE=transcode to get the real thing back.
 
 EOF
     ;;

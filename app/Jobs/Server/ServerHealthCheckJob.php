@@ -2,9 +2,9 @@
 
 namespace App\Jobs\Server;
 
-use App\Models\Server;
-use App\Enum\ServerTypeEnum;
 use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
+use App\Models\Server;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -34,8 +34,8 @@ class ServerHealthCheckJob implements ShouldQueue
         foreach ($edgeServers as $server) {
             try {
                 $healthy = $server->performHealthCheck();
-                
-                if (!$healthy) {
+
+                if (! $healthy) {
                     Log::warning('Server health check failed', [
                         'server_id' => $server->id,
                         'hostname' => $server->hostname,

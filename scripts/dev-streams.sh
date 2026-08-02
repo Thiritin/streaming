@@ -23,7 +23,7 @@ FPS=30
 
 # slug|channel label|ffmpeg video source
 CHANNELS=(
-  "prime|EF Prime|testsrc2=size=${SIZE}:rate=${FPS}"
+  "prime|Prime|testsrc2=size=${SIZE}:rate=${FPS}"
   "dance-stage|Dance Stage|life=size=${SIZE}:rate=${FPS}:mold=10:ratio=0.1:death_color=#39ff14:life_color=#00b3a4"
   "panel-room|Panel Room|smptehdbars=size=${SIZE}:rate=${FPS}"
   "art-track|Art Track|mandelbrot=size=${SIZE}:rate=${FPS}:maxiter=180"

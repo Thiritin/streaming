@@ -45,6 +45,13 @@ class RouteServiceProvider extends ServiceProvider
                 ->prefix('manage')
                 ->name('manage.')
                 ->group(base_path('routes/manage.php'));
+
+            // Developer account switcher. Deliberately unauthenticated, so it only
+            // exists at all when running locally.
+            if ($this->app->isLocal()) {
+                Route::middleware(['web', \App\Http\Middleware\LocalOnly::class])
+                    ->group(base_path('routes/local.php'));
+            }
         });
     }
 }

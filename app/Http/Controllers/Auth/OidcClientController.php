@@ -93,7 +93,7 @@ class OidcClientController extends Controller
         ]);
         $user = $user->fresh();
 
-        // Fetch attendee packages from EF registration API
+        // Fetch attendee packages from the registration API
         $packages = $this->fetchAttendeePackages($userid);
 
         // Sync roles from registration system (groups and packages)
@@ -196,7 +196,7 @@ class OidcClientController extends Controller
     }
 
     /**
-     * Fetch attendee packages from EF registration API
+     * Fetch attendee packages from the registration API
      * This is optional - if the registration system is offline, we silently continue without packages
      */
     private function fetchAttendeePackages(string $userId): array
@@ -280,12 +280,10 @@ class OidcClientController extends Controller
             }
         }
 
-        // Map groups to roles
-        // Group IDs from identity provider userinfo groups array
-        $groupMapping = [
-            'KVJ7GW275683NMZL' => 'admin', // Streaming Admin group
-            '54ZYODX15G2K1M76' => 'staff', // General EF Staff
-        ];
+        // Map groups to roles. The group IDs in the userinfo "groups" array are
+        // issued by the installation's own identity provider, so the mapping is
+        // configuration rather than something this class can know.
+        $groupMapping = config('services.oidc.group_role_map', []);
 
         foreach ($groups as $group) {
             if (isset($groupMapping[$group])) {

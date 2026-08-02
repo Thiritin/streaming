@@ -22,7 +22,7 @@ return new class extends Migration
             $table->integer('views')->default(0);
             $table->boolean('is_published')->default(true);
             $table->timestamps();
-            
+
             $table->index(['is_published', 'date']);
         });
     }

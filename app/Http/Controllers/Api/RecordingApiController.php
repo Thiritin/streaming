@@ -37,7 +37,7 @@ class RecordingApiController extends Controller
         return response()->json([
             'success' => true,
             'data' => $shows,
-            'count' => $shows->count()
+            'count' => $shows->count(),
         ]);
     }
 
@@ -58,7 +58,7 @@ class RecordingApiController extends Controller
         ]);
 
         // If show_id is provided, get the show details
-        if (!empty($validated['show_id'])) {
+        if (! empty($validated['show_id'])) {
             $show = Show::find($validated['show_id']);
 
             // Use show details if not provided
@@ -84,7 +84,7 @@ class RecordingApiController extends Controller
             $count = 1;
 
             while (Recording::where('slug', $slug)->exists()) {
-                $slug = $baseSlug . '-' . $count;
+                $slug = $baseSlug.'-'.$count;
                 $count++;
             }
 
@@ -92,7 +92,7 @@ class RecordingApiController extends Controller
         }
 
         // Default to published
-        if (!isset($validated['is_published'])) {
+        if (! isset($validated['is_published'])) {
             $validated['is_published'] = true;
         }
 
@@ -107,7 +107,7 @@ class RecordingApiController extends Controller
         return response()->json([
             'success' => true,
             'data' => $recording,
-            'message' => 'Recording created successfully'
+            'message' => 'Recording created successfully',
         ], 201);
     }
 
@@ -122,7 +122,7 @@ class RecordingApiController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $recording
+            'data' => $recording,
         ]);
     }
 }

@@ -1,11 +1,21 @@
 <script setup>
-import EfPlayer from "@/Components/Player/EfPlayer.vue";
+import VideoPlayer from "@/Components/Player/VideoPlayer.vue";
 import StreamStatsOverlay from "@/Components/Livestream/StreamStatsOverlay.vue";
 import { ref } from 'vue';
 
 const props = defineProps({
     hlsUrl: String,
-    showInfo: Object
+    showInfo: Object,
+    /**
+     * The transcoder publishes a 60 minute sliding window (1800 segments at
+     * hls_time 2), so live playback is seekable and the player should show a
+     * scrubber rather than a fixed LIVE indicator. Pass 'live' to force the
+     * non-seekable behaviour for a source that does not keep a window.
+     */
+    liveStreamType: {
+        type: String,
+        default: 'live:dvr',
+    },
 })
 
 const showUnmutePrompt = ref(false);
@@ -16,7 +26,7 @@ const handleError = (error) => {
     console.error('Player error:', error);
 };
 
-// EfPlayer emits this after unmuted autoplay was blocked and it fell back to
+// VideoPlayer emits this after unmuted autoplay was blocked and it fell back to
 // muted playback, so the viewer has audio one click away.
 const handleAutoplayBlocked = () => {
     showUnmutePrompt.value = true;
@@ -43,11 +53,12 @@ defineExpose({
 
 <template>
     <div class="stream-player-container" v-if="hlsUrl">
-        <EfPlayer
+        <VideoPlayer
             ref="playerRef"
             :src="hlsUrl"
             :title="showInfo?.title || ''"
             :is-live="true"
+            :live-stream-type="liveStreamType"
             :autoplay="true"
             @error="handleError"
             @autoplay-blocked="handleAutoplayBlocked"
@@ -92,7 +103,7 @@ defineExpose({
     font-size: 18px;
 }
 
-:deep(.ef-player) {
+:deep(.video-player) {
     width: 100%;
     height: 100%;
 }

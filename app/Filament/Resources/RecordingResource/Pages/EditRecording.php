@@ -25,21 +25,21 @@ class EditRecording extends EditRecord
                 ->modalSubmitActionLabel('Regenerate')
                 ->action(function () {
                     $record = $this->record;
-                    
+
                     // Clear the current thumbnail path to force regeneration
                     $record->thumbnail_path = null;
                     $record->thumbnail_capture_error = null;
                     $record->save();
-                    
+
                     // Dispatch the job to process the recording
                     ProcessRecordingJob::dispatch($record);
-                    
+
                     Notification::make()
                         ->title('Thumbnail regeneration started')
                         ->body('The thumbnail is being regenerated in the background. The page will refresh automatically.')
                         ->success()
                         ->send();
-                    
+
                     // Redirect to refresh the page after a delay
                     $this->redirect($this->getResource()::getUrl('edit', ['record' => $record]));
                 })

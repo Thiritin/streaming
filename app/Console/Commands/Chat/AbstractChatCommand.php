@@ -5,6 +5,7 @@ namespace App\Console\Commands\Chat;
 use App\Contracts\CommandInterface;
 use App\Events\CommandFeedbackEvent;
 use App\Models\User;
+use App\Support\Chat\Broadcast;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -16,6 +17,11 @@ abstract class AbstractChatCommand implements CommandInterface
     protected string $rawInput;
 
     /**
+     * The source (stream) the command was issued from, when known.
+     */
+    protected ?int $sourceId = null;
+
+    /**
      * Parsed parameters from the command.
      */
     protected array $parsedParameters = [];
@@ -24,9 +30,13 @@ abstract class AbstractChatCommand implements CommandInterface
      * Command properties that can be overridden.
      */
     protected string $name = '';
+
     protected string $signature = '';
+
     protected string $description = '';
+
     protected array $aliases = [];
+
     protected array $parameters = [];
 
     /**
@@ -35,6 +45,17 @@ abstract class AbstractChatCommand implements CommandInterface
     public function setRawInput(string $input): self
     {
         $this->rawInput = $input;
+
+        return $this;
+    }
+
+    /**
+     * Set the source the command was issued from.
+     */
+    public function setSourceId(?int $sourceId): self
+    {
+        $this->sourceId = $sourceId;
+
         return $this;
     }
 
@@ -54,11 +75,12 @@ abstract class AbstractChatCommand implements CommandInterface
         if ($this->name) {
             return $this->name;
         }
-        
+
         // Extract from signature if not set
         $signature = $this->signature();
         $parts = explode(' ', $signature);
         $name = $parts[0] ?? '';
+
         return trim($name, '/!');
     }
 
@@ -89,12 +111,13 @@ abstract class AbstractChatCommand implements CommandInterface
             if (isset($config['required']) && $config['required']) {
                 $rules[$key] = 'required';
                 if (isset($config['type'])) {
-                    $rules[$key] .= '|' . $config['type'];
+                    $rules[$key] .= '|'.$config['type'];
                 }
             } elseif (isset($config['type'])) {
-                $rules[$key] = 'nullable|' . $config['type'];
+                $rules[$key] = 'nullable|'.$config['type'];
             }
         }
+
         return $rules;
     }
 
@@ -120,7 +143,7 @@ abstract class AbstractChatCommand implements CommandInterface
     public function authorize(User $user): bool
     {
         $permission = $this->permission();
-        
+
         if ($permission === null) {
             return true;
         }
@@ -133,22 +156,22 @@ abstract class AbstractChatCommand implements CommandInterface
      */
     protected function parseParameters(): array
     {
-        if (!empty($this->parsedParameters)) {
+        if (! empty($this->parsedParameters)) {
             return $this->parsedParameters;
         }
 
         // Remove command name from input
         $input = trim($this->rawInput);
         $commandName = $this->name();
-        
+
         // Check if input starts with command name or any alias
         $allNames = array_merge([$commandName], $this->aliases());
         foreach ($allNames as $name) {
-            if (Str::startsWith($input, '/' . $name)) {
-                $input = Str::after($input, '/' . $name);
+            if (Str::startsWith($input, '/'.$name)) {
+                $input = Str::after($input, '/'.$name);
                 break;
-            } elseif (Str::startsWith($input, '!' . $name)) {
-                $input = Str::after($input, '!' . $name);
+            } elseif (Str::startsWith($input, '!'.$name)) {
+                $input = Str::after($input, '!'.$name);
                 break;
             }
         }
@@ -157,7 +180,7 @@ abstract class AbstractChatCommand implements CommandInterface
 
         // Parse quoted strings and regular arguments
         preg_match_all('/"([^"]+)"|\'([^\']+)\'|(\S+)/', $input, $matches);
-        
+
         $parameters = [];
         foreach ($matches[0] as $match) {
             // Remove quotes if present
@@ -167,7 +190,7 @@ abstract class AbstractChatCommand implements CommandInterface
 
         // Map parameters to signature
         $this->parsedParameters = $this->mapToSignature($parameters);
-        
+
         return $this->parsedParameters;
     }
 
@@ -177,16 +200,16 @@ abstract class AbstractChatCommand implements CommandInterface
     protected function mapToSignature(array $rawParams): array
     {
         $signature = $this->signature();
-        
+
         // Extract parameter names from signature - support both {} and <> brackets
         preg_match_all('/[{<]([^}>]+)[}>]/', $signature, $matches);
         $paramNames = $matches[1] ?? [];
-        
+
         $mapped = [];
         foreach ($paramNames as $index => $name) {
             // Remove optional indicator
             $cleanName = str_replace('?', '', $name);
-            
+
             // Check if parameter has default value
             if (str_contains($cleanName, '=')) {
                 [$cleanName, $default] = explode('=', $cleanName, 2);
@@ -201,7 +224,7 @@ abstract class AbstractChatCommand implements CommandInterface
                 }
             }
         }
-        
+
         return $mapped;
     }
 
@@ -225,7 +248,7 @@ abstract class AbstractChatCommand implements CommandInterface
 
         // Validate parameters
         $validator = $this->validateParameters($this->parsedParameters);
-        
+
         if ($validator->fails()) {
             $errors = $validator->errors()->all();
             $this->feedback($user, implode("\n", $errors), 'error');
@@ -233,7 +256,7 @@ abstract class AbstractChatCommand implements CommandInterface
         }
 
         // Check authorization
-        if (!$this->authorize($user)) {
+        if (! $this->authorize($user)) {
             $this->feedback($user, 'You do not have permission to use this command.', 'error');
             throw new \Illuminate\Auth\Access\AuthorizationException('You do not have permission to use this command.');
         }
@@ -252,26 +275,17 @@ abstract class AbstractChatCommand implements CommandInterface
      */
     public function feedback(User $user, string $message, string $type = 'info', array $data = []): void
     {
-        broadcast(new CommandFeedbackEvent($user, $message, $type, $data))
-            ->toOthers();
-        
-        // Also send to the user themselves on their private channel
-        broadcast(new CommandFeedbackEvent($user, $message, $type, $data))
-            ->via('private-command-feedback.' . $user->id);
+        // Goes to the recipient's own private channel, so `toOthers()` would drop it
+        // for the very user it is meant for.
+        Broadcast::send(new CommandFeedbackEvent($user, $message, $type, $data));
     }
 
     /**
-     * Broadcast a system message to all users.
+     * Broadcast an inline notice into the chat the command came from.
      */
     protected function broadcastSystemMessage(string $message, string $type = 'info'): void
     {
-        broadcast(new \App\Events\SystemMessageEvent([
-            'id' => uniqid('system_'),
-            'type' => 'system',
-            'content' => $message,
-            'timestamp' => now()->toIso8601String(),
-            'system_type' => $type,
-        ]))->toOthers();
+        Broadcast::send(new \App\Events\Chat\Broadcasts\ChatNoticeEvent($message, $this->sourceId, $type));
     }
 
     /**

@@ -30,7 +30,7 @@ class LocalDevelopmentSourceSeeder extends Seeder
                 'slug' => 'prime',
             ],
             [
-                'name' => 'EF Prime',
+                'name' => 'Prime',
                 'description' => 'The main channel: ceremonies, the parade and the big stage shows.',
                 'priority' => 100,
                 'stream_key' => 'dev_prime_'.Str::random(16),

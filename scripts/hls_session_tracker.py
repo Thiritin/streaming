@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HLS Session Tracker for EF Streaming
+HLS Session Tracker
 Tracks HLS session activity from NGINX logs and reports to Laravel backend
 """
 

@@ -28,7 +28,7 @@ class TestDockerUrls extends Command
     {
         $this->info('🐳 Testing Docker URL Configuration');
         $this->newLine();
-        
+
         // Display environment info
         $this->table(
             ['Setting', 'Value'],
@@ -42,9 +42,9 @@ class TestDockerUrls extends Command
                 ['Regular HLS Port', env('HLS_EDGE_PORT')],
             ]
         );
-        
+
         $this->newLine();
-        
+
         // Get a source to test with
         $sourceId = $this->argument('source');
         if ($sourceId) {
@@ -54,52 +54,53 @@ class TestDockerUrls extends Command
         } else {
             $source = Source::first();
         }
-        
-        if (!$source) {
+
+        if (! $source) {
             $this->error('No source found. Please create a source first.');
+
             return 1;
         }
-        
+
         $this->info("Testing with source: {$source->name} (slug: {$source->slug})");
         $this->newLine();
-        
+
         // Test regular URL
         $this->info('📡 Regular HLS URL (for browser access):');
         $regularUrl = $source->getHlsUrl();
         $this->line("  Master: {$regularUrl}");
-        
+
         $this->newLine();
-        
+
         // Test internal URLs
         $this->info('🔧 Internal HLS URLs (for Docker container access):');
         $internalUrls = $source->getInternalHlsUrls();
         foreach ($internalUrls as $quality => $url) {
             $this->line("  {$quality}: {$url}");
         }
-        
+
         $this->newLine();
-        
+
         // Check Docker detection
         $isDocker = $source->isRunningInDocker();
         $this->info('🔍 Docker Detection:');
-        $this->line('  Running in Docker: ' . ($isDocker ? 'Yes' : 'No'));
-        $this->line('  /.dockerenv exists: ' . (file_exists('/.dockerenv') ? 'Yes' : 'No'));
-        $this->line('  /proc/1/cgroup check: ' . 
-            ((file_exists('/proc/1/cgroup') && 
+        $this->line('  Running in Docker: '.($isDocker ? 'Yes' : 'No'));
+        $this->line('  /.dockerenv exists: '.(file_exists('/.dockerenv') ? 'Yes' : 'No'));
+        $this->line('  /proc/1/cgroup check: '.
+            ((file_exists('/proc/1/cgroup') &&
               str_contains(file_get_contents('/proc/1/cgroup'), 'docker')) ? 'Yes' : 'No'));
-        
+
         $this->newLine();
-        
+
         // Show what ThumbnailService would use
         $this->info('📸 ThumbnailService would use:');
-        $streamUrl = app()->runningInConsole() 
+        $streamUrl = app()->runningInConsole()
             ? ($source->getInternalHlsUrls()['stream'] ?? $source->getHlsUrl())
             : $source->getHlsUrl();
         $this->line("  URL: {$streamUrl}");
-        
+
         $this->newLine();
         $this->info('✅ Test complete!');
-        
+
         return 0;
     }
 }

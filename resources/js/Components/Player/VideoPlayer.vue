@@ -51,7 +51,7 @@ const props = defineProps({
      */
     storageKey: {
         type: String,
-        default: 'ef-player',
+        default: 'video-player',
     },
 });
 
@@ -71,6 +71,17 @@ const player = ref(null);
 const streamType = computed(() => (props.isLive ? props.liveStreamType : 'on-demand'));
 
 /**
+ * How much already-played video hls.js keeps buffered behind the playhead.
+ *
+ * Plain live is never seekable, so 30s is all the recovery margin it needs. With a
+ * DVR window, or on-demand, rewinding is the point: anything evicted has to be
+ * fetched again, so a small scrub backwards costs a round trip at 30s. 90s covers
+ * the common "what did they just say" rewind without holding the whole hour of the
+ * window in memory, which is what `-1` would do.
+ */
+const backBufferLength = computed(() => (streamType.value === 'live' ? 30 : 90));
+
+/**
  * hls.js is a direct dependency, so load it from the bundle. Vidstack otherwise
  * pulls it from jsdelivr at runtime, which breaks on locked-down venue networks.
  */
@@ -81,7 +92,7 @@ const onProviderChange = (event) => {
     provider.library = () => import('hls.js');
     provider.config = {
         lowLatencyMode: false,
-        backBufferLength: 30,
+        backBufferLength: backBufferLength.value,
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
         liveSyncDurationCount: 3,
@@ -143,7 +154,7 @@ defineExpose({
 </script>
 
 <template>
-    <div class="ef-player">
+    <div class="video-player">
         <media-player
             ref="player"
             :src="src"
@@ -176,20 +187,32 @@ defineExpose({
 <style>
 /*
  * Vidstack renders the layout into light DOM after mount, so scoped styles do
- * not reach it. Confine overrides with the .ef-player wrapper instead.
+ * not reach it. Confine overrides with the .video-player wrapper instead.
  */
-.ef-player,
-.ef-player media-player {
+.video-player,
+.video-player media-player {
     width: 100%;
     height: 100%;
 }
 
-.ef-player .vds-video-layout {
+/*
+ * These three are read by [data-media-player][data-layout='video'], i.e. the
+ * media-player element itself, so they have to be set here and not on the
+ * .vds-video-layout child: custom properties only inherit downward.
+ *
+ * The stock theme rounds the player to 6px and draws a translucent white
+ * hairline. The player sits full-bleed in a black container, so square it off.
+ */
+.video-player media-player {
+    --video-border-radius: 0;
+    --video-bg: var(--surface-0);
+    --video-border: 1px solid var(--hairline);
+}
+
+.video-player .vds-video-layout {
     --video-brand: var(--color-primary-400);
     --video-controls-color: var(--fg-1);
     --video-focus-ring-color: var(--color-primary-300);
-    --video-bg: var(--surface-0);
-    --video-border: 1px solid var(--hairline);
     --video-font-family: inherit;
 
     --media-brand: var(--color-primary-400);
@@ -258,12 +281,12 @@ defineExpose({
 }
 
 /* No matching CSS var for the control-bar scrim, so target the class. */
-.ef-player .vds-video-layout .vds-controls {
+.video-player .vds-video-layout .vds-controls {
     background: linear-gradient(to top, color-mix(in oklch, var(--surface-0) 92%, transparent), transparent 90%);
 }
 
 /* Live badge reads as live rather than as a neutral chip when at the edge. */
-.ef-player .vds-live-button[data-edge] {
+.video-player .vds-live-button[data-edge] {
     color: var(--state-live);
 }
 </style>

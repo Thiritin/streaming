@@ -8,14 +8,114 @@ SRS_RTMP_URL="${SRS_RTMP_URL:-rtmp://localhost:1935}"
 OUTPUT_BASE_DIR="${OUTPUT_BASE_DIR:-/var/www/html/hls/live}"
 CHECK_INTERVAL="${CHECK_INTERVAL:-5}"
 
+# The live rewind window. hls_time is 2s, so 1800 segments is 60 minutes of seekable
+# playlist. hls_delete_threshold keeps a further margin of segments on disk after they
+# fall out of the playlist; that margin is the grace the S3 uploader gets to copy a
+# segment before it disappears. See docs/dvr-archive-plan.md.
+DVR_WINDOW_SEGMENTS="${DVR_WINDOW_SEGMENTS:-1800}"
+HLS_DELETE_THRESHOLD="${HLS_DELETE_THRESHOLD:-60}"
+
+# A publisher reconnect starts a new FFmpeg session under a new timestamp prefix, and
+# FFmpeg only ever deletes segments it wrote itself, so the previous session's files
+# are left behind. This reaper clears them. Retention is derived from the window plus
+# a margin, so it can never reach a segment the current playlist still references.
+# Set to 0 to disable, which is what the S3 uploader wants once it owns deletion.
+ORPHAN_RETENTION_MINUTES="${ORPHAN_RETENTION_MINUTES:-$(( (DVR_WINDOW_SEGMENTS + HLS_DELETE_THRESHOLD) * 2 / 60 + 5 ))}"
+REAP_INTERVAL_SECONDS="${REAP_INTERVAL_SECONDS:-300}"
+
+# FFmpeg can sit alive while producing nothing, which the PID check in check_streams
+# cannot see. Playlists are rewritten on every completed segment, so their mtime is
+# the liveness signal. Zero disables the watchdog.
+SEGMENT_STALL_SECONDS="${SEGMENT_STALL_SECONDS:-15}"
+STARTUP_GRACE_SECONDS="${STARTUP_GRACE_SECONDS:-30}"
+
+# transcode: the real ABR ladder (480p/720p/1080p), three x264 encodes per stream.
+# copy:      remux only. The publisher's bitstream is written to all three
+#            renditions unchanged, so the master playlist, the variant names and
+#            the segment layout are identical to production while the CPU cost
+#            is roughly zero. Quality switching in the player is a no-op picture
+#            wise; everything around it still behaves the same.
+ABR_MODE="${ABR_MODE:-transcode}"
+
 # Associative array to track running FFmpeg processes
 declare -A FFMPEG_PIDS
 declare -A STREAM_APPS
+declare -A FFMPEG_STARTED
+
+# Rewrite the master playlist so the three copy-mode renditions look distinct.
+#
+# In copy mode every rendition carries the same bitstream, so FFmpeg writes the
+# same BANDWIDTH and RESOLUTION for all three. Players treat indistinguishable
+# levels as a single quality: hls.js collapses them and the quality menu
+# disappears, which makes the picker impossible to work on locally.
+#
+# Substituting the production ladder's numbers restores a three-rung menu that
+# behaves like the real thing. The picture genuinely does not change when you
+# switch - only the advertised metadata differs. CODECS is left as FFmpeg wrote
+# it, since that part is accurate.
+#
+# Only ever called for ABR_MODE=copy.
+rewrite_copy_mode_master() {
+    local master=$1
+
+    [[ -f "$master" ]] || return 1
+
+    awk '
+        /^#EXT-X-STREAM-INF:/ { stream_inf = $0; next }
+        stream_inf != "" && /^[^#]/ {
+            bandwidth = "4500000"; resolution = "1280x720"
+            if ($0 ~ /_sd\.m3u8/)  { bandwidth = "1500000"; resolution = "854x480"   }
+            if ($0 ~ /_hd\.m3u8/)  { bandwidth = "3500000"; resolution = "1280x720"  }
+            if ($0 ~ /_fhd\.m3u8/) { bandwidth = "6000000"; resolution = "1920x1080" }
+
+            sub(/BANDWIDTH=[0-9]+/, "BANDWIDTH=" bandwidth, stream_inf)
+            sub(/RESOLUTION=[0-9]+x[0-9]+/, "RESOLUTION=" resolution, stream_inf)
+
+            print stream_inf
+            stream_inf = ""
+        }
+        { if (stream_inf == "") print }
+    ' "$master" > "${master}.tmp" || return 1
+
+    # Rename so a player never reads a half-written master.
+    mv "${master}.tmp" "$master"
+}
+
+# FFmpeg writes the master once at startup, so wait for it to appear and then
+# patch it. Runs in the background so it never delays stream startup.
+watch_copy_mode_master() {
+    local master=$1
+    local pid=$2
+    local waited=0
+
+    while [[ ! -f "$master" ]] && kill -0 "$pid" 2>/dev/null && [ $waited -lt 30 ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    kill -0 "$pid" 2>/dev/null || return 0
+
+    if rewrite_copy_mode_master "$master"; then
+        echo "[$(date)] Advertised a distinct ladder in $(basename "$master") (copy mode)"
+    fi
+
+    # Cheap guard in case FFmpeg rewrites the master mid-session, e.g. on a
+    # discontinuity. Costs one grep per interval for as long as the stream runs.
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep "$CHECK_INTERVAL"
+        if [[ -f "$master" ]] && ! grep -q 'BANDWIDTH=1500000' "$master" 2>/dev/null; then
+            rewrite_copy_mode_master "$master"
+        fi
+    done
+}
 
 echo "Starting Dynamic FFmpeg HLS Manager"
 echo "SRS API: $SRS_API_URL"
 echo "Output directory: $OUTPUT_BASE_DIR"
 echo "Check interval: ${CHECK_INTERVAL}s"
+echo "DVR window: ${DVR_WINDOW_SEGMENTS} segments (+${HLS_DELETE_THRESHOLD} retained)"
+echo "Orphan retention: ${ORPHAN_RETENTION_MINUTES}m"
+echo "Stall watchdog: ${SEGMENT_STALL_SECONDS}s (grace ${STARTUP_GRACE_SECONDS}s)"
 
 # Function to start FFmpeg for a stream
 start_ffmpeg() {
@@ -53,53 +153,91 @@ start_ffmpeg() {
     # Create output directory
     local output_dir="$OUTPUT_BASE_DIR"
     mkdir -p "$output_dir"
-    
-    # Clean up old segments and playlists for this stream
-    echo "[$(date)] Cleaning up old HLS files for $stream"
-    rm -f "$output_dir/${stream}_*.ts" 2>/dev/null
-    rm -f "$output_dir/${stream}_*.m3u8" 2>/dev/null
-    rm -f "$output_dir/${stream}.m3u8" 2>/dev/null
-    
+
+    # No cleanup here on purpose. Segments from a previous session are the archive
+    # until the S3 uploader has them, so they are left for the orphan reaper to age
+    # out rather than deleted on sight. The playlists are overwritten by FFmpeg
+    # anyway, since the filenames do not carry the session prefix.
+    #
+    # (The three `rm -f "$output_dir/${stream}_*.ts"` lines that used to sit here were
+    # inert regardless: the glob was inside the quotes, so they only ever tried to
+    # remove a file literally named `${stream}_*.ts`.)
+
     # Generate a unique timestamp prefix for this session
     local timestamp_prefix=$(date +%s)
     
-    # Start FFmpeg with filter_complex for synchronized multi-bitrate HLS
+    # The ladder itself: either three real encodes, or the same bitstream copied
+    # into three renditions. Everything after this point is identical, so the
+    # output layout does not depend on the mode.
+    local ladder_args=()
+
+    if [[ "$ABR_MODE" == "copy" ]]; then
+        echo "[$(date)] ABR_MODE=copy - remuxing $stream_key without transcoding"
+
+        # Segment boundaries land on the publisher's keyframes, so the incoming
+        # GOP must already match hls_time (the dev publisher sends a 2s GOP).
+        ladder_args=(
+            -map 0:v -map 0:a
+            -map 0:v -map 0:a
+            -map 0:v -map 0:a
+            -c copy
+            -avoid_negative_ts make_zero -fflags +genpts
+        )
+    else
+        ladder_args=(
+            -filter_complex
+                "[0:v]split=3[v1][v2][v3]; \
+                 [v1]scale=w=854:h=480[v1out]; \
+                 [v2]scale=w=1280:h=720[v2out]; \
+                 [v3]scale=w=1920:h=1080[v3out]"
+            -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 3000k
+                -preset:v:0 veryfast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0
+                -force_key_frames "expr:gte(t,n_forced*2)"
+            -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 8000k
+                -preset:v:1 veryfast -profile:v:1 main -g 60 -keyint_min 60 -sc_threshold 0
+                -force_key_frames "expr:gte(t,n_forced*2)"
+            -map "[v3out]" -c:v:2 libx264 -b:v:2 6000k -maxrate:v:2 6500k -bufsize:v:2 13000k
+                -preset:v:2 faster -profile:v:2 main -g 60 -keyint_min 60 -sc_threshold 0
+                -force_key_frames "expr:gte(t,n_forced*2)"
+            -map 0:a -c:a:0 aac -b:a:0 128k -ac 2 -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0"
+            -map 0:a -c:a:1 aac -b:a:1 160k -ac 2 -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0"
+            -map 0:a -c:a:2 aac -b:a:2 192k -ac 2 -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0"
+            -avoid_negative_ts make_zero -fflags +genpts
+        )
+    fi
+
+    # Start FFmpeg for synchronized multi-bitrate HLS
     ffmpeg -f flv -i "$SRS_RTMP_URL/$app/$stream" \
-        -filter_complex \
-            "[0:v]split=3[v1][v2][v3]; \
-             [v1]scale=w=854:h=480[v1out]; \
-             [v2]scale=w=1280:h=720[v2out]; \
-             [v3]scale=w=1920:h=1080[v3out]" \
-        -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 3000k \
-            -preset:v:0 veryfast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0 \
-            -force_key_frames "expr:gte(t,n_forced*2)" \
-        -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 8000k \
-            -preset:v:1 veryfast -profile:v:1 main -g 60 -keyint_min 60 -sc_threshold 0 \
-            -force_key_frames "expr:gte(t,n_forced*2)" \
-        -map "[v3out]" -c:v:2 libx264 -b:v:2 6000k -maxrate:v:2 6500k -bufsize:v:2 13000k \
-            -preset:v:2 faster -profile:v:2 main -g 60 -keyint_min 60 -sc_threshold 0 \
-            -force_key_frames "expr:gte(t,n_forced*2)" \
-        -map 0:a -c:a:0 aac -b:a:0 128k -ac 2 -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0" \
-        -map 0:a -c:a:1 aac -b:a:1 160k -ac 2 -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0" \
-        -map 0:a -c:a:2 aac -b:a:2 192k -ac 2 -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0" \
-        -avoid_negative_ts make_zero -fflags +genpts \
+        "${ladder_args[@]}" \
         -f hls \
         -hls_time 2 \
-        -hls_list_size 60 \
-        -hls_delete_threshold 60 \
+        -hls_list_size "$DVR_WINDOW_SEGMENTS" \
+        -hls_delete_threshold "$HLS_DELETE_THRESHOLD" \
         -hls_flags independent_segments+delete_segments+program_date_time+discont_start \
         -hls_segment_type mpegts \
         -start_number 0 \
-        -hls_segment_filename "$output_dir/${stream}_%v_${timestamp_prefix}_%05d.ts" \
+        -hls_segment_filename "$output_dir/${stream}_%v_${timestamp_prefix}_%06d.ts" \
         -master_pl_name "${stream}_master.m3u8" \
         -var_stream_map "v:0,a:0,name:sd v:1,a:1,name:hd v:2,a:2,name:fhd" \
         "$output_dir/${stream}_%v.m3u8" \
-        2>&1 | sed "s/^/[FFmpeg $stream] /" &
-    
+        > >(sed "s/^/[FFmpeg $stream] /") 2>&1 &
+
+    # Process substitution rather than `| sed`, because for a backgrounded pipeline
+    # `$!` is the PID of the *last* stage. It used to be sed's, so stop_ffmpeg killed
+    # the log prefixer and left FFmpeg encoding forever; only the pgrep fallback above
+    # ever cleaned those up, and then only if the same stream came back. This way $!
+    # is FFmpeg itself and the sed exits on its own when FFmpeg closes the pipe.
     local pid=$!
     FFMPEG_PIDS[$stream_key]=$pid
     STREAM_APPS[$stream_key]="$app"
-    
+    FFMPEG_STARTED[$stream_key]=$(date +%s)
+
+    # Copy mode advertises one indistinguishable rendition three times, which
+    # hides the quality menu. Patch the master once FFmpeg has written it.
+    if [[ "$ABR_MODE" == "copy" ]]; then
+        watch_copy_mode_master "$output_dir/${stream}_master.m3u8" "$pid" &
+    fi
+
     echo "[$(date)] Started FFmpeg for $stream_key with PID $pid"
 }
 
@@ -128,15 +266,92 @@ stop_ffmpeg() {
             fi
         fi
         
-        # Clean up HLS files
+        # Retire the playlists so a player gets a 404 rather than a frozen window.
+        #
+        # Deliberately not `rm -f "$OUTPUT_BASE_DIR/${stream}"*` as before: that glob
+        # took the segments with it, and the segments are the archive until the S3
+        # uploader has confirmed copies. The orphan reaper ages them out instead.
         local stream="${stream_key#*/}"
-        rm -f "$OUTPUT_BASE_DIR/${stream}"*
-        
+        rm -f "$OUTPUT_BASE_DIR/${stream}_"*.m3u8 "$OUTPUT_BASE_DIR/${stream}.m3u8" 2>/dev/null
+
         unset FFMPEG_PIDS[$stream_key]
         unset STREAM_APPS[$stream_key]
-        
+        unset FFMPEG_STARTED[$stream_key]
+
         echo "[$(date)] Stopped FFmpeg for $stream_key"
     fi
+}
+
+# Newest mtime across a stream's playlists, as an age in seconds. -1 when none exist.
+#
+# The master playlist is written once and then left alone, so the variant playlists
+# are what actually move; taking the maximum lets them dominate.
+playlist_age() {
+    local stream=$1
+    local newest=0
+    local mtime
+
+    for playlist in "$OUTPUT_BASE_DIR/${stream}_"*.m3u8; do
+        [[ -f "$playlist" ]] || continue
+        mtime=$(stat -c %Y "$playlist" 2>/dev/null) || continue
+        [[ "$mtime" -gt "$newest" ]] && newest=$mtime
+    done
+
+    if [[ "$newest" -eq 0 ]]; then
+        echo -1
+        return
+    fi
+
+    echo $(( $(date +%s) - newest ))
+}
+
+# FFmpeg can hold its PID while its input has gone away, which check_streams cannot
+# detect because it only compares PIDs against the SRS stream list. Restart a stream
+# whose playlists have stopped advancing while SRS still reports it as publishing.
+check_stalled() {
+    local stream_key=$1
+    local stream="${stream_key#*/}"
+    # Captured before stop_ffmpeg, which unsets it.
+    local app="${STREAM_APPS[$stream_key]}"
+
+    [[ "$SEGMENT_STALL_SECONDS" -gt 0 ]] || return 0
+    [[ -n "$app" ]] || return 0
+
+    local started="${FFMPEG_STARTED[$stream_key]:-0}"
+    if [[ $(( $(date +%s) - started )) -lt "$STARTUP_GRACE_SECONDS" ]]; then
+        return 0
+    fi
+
+    local age
+    age=$(playlist_age "$stream")
+
+    if [[ "$age" -lt 0 ]]; then
+        echo "[$(date)] $stream_key wrote no playlist within ${STARTUP_GRACE_SECONDS}s, restarting FFmpeg"
+        stop_ffmpeg "$stream_key"
+        start_ffmpeg "$app" "$stream"
+        return
+    fi
+
+    if [[ "$age" -gt "$SEGMENT_STALL_SECONDS" ]]; then
+        echo "[$(date)] $stream_key stalled: no playlist update for ${age}s, restarting FFmpeg"
+        stop_ffmpeg "$stream_key"
+        start_ffmpeg "$app" "$stream"
+    fi
+}
+
+# Segments left behind by a previous FFmpeg session, which FFmpeg itself will never
+# delete. Retention sits above the playlist window, so a segment the current playlist
+# still references can never be caught here.
+reap_orphan_segments() {
+    [[ "$ORPHAN_RETENTION_MINUTES" -gt 0 ]] || return 0
+
+    local orphans
+    orphans=$(find "$OUTPUT_BASE_DIR" -maxdepth 1 -name '*.ts' -mmin +"$ORPHAN_RETENTION_MINUTES" | wc -l)
+
+    [[ "$orphans" -gt 0 ]] || return 0
+
+    find "$OUTPUT_BASE_DIR" -maxdepth 1 -name '*.ts' -mmin +"$ORPHAN_RETENTION_MINUTES" -delete
+    echo "[$(date)] Reaped $orphans orphaned segment(s) older than ${ORPHAN_RETENTION_MINUTES}m"
 }
 
 # Function to check SRS API for active streams
@@ -177,6 +392,9 @@ check_streams() {
                 # Skip if already processing or if it's a quality variant from old setup
                 if [[ ! "$stream" =~ _(fhd|hd|sd|ld)$ ]]; then
                     start_ffmpeg "$app" "$stream"
+                    # No-op for a process that was just started; the startup grace
+                    # covers it.
+                    check_stalled "$stream_key"
                 fi
             fi
         fi
@@ -221,6 +439,8 @@ echo "[$(date)] Starting monitoring loop..."
 SIGNAL_FILE="/tmp/check_streams"
 touch "$SIGNAL_FILE"
 
+last_reap=$(date +%s)
+
 # Monitor both timer and signal file
 while true; do
     # Check streams immediately if signal file was modified
@@ -236,6 +456,12 @@ while true; do
     
     # Regular interval check
     check_streams
-    
+
+    now=$(date +%s)
+    if [[ $(( now - last_reap )) -ge "$REAP_INTERVAL_SECONDS" ]]; then
+        reap_orphan_segments
+        last_reap=$now
+    fi
+
     sleep "$CHECK_INTERVAL"
 done

@@ -15,7 +15,7 @@ return new class extends Migration
             $table->string('type')->default('user')->after('message');
             $table->string('priority')->nullable()->after('type');
             $table->json('metadata')->nullable()->after('priority');
-            
+
             $table->index('type');
         });
     }

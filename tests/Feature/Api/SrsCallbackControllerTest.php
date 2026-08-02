@@ -16,8 +16,11 @@ class SrsCallbackControllerTest extends TestCase
     use RefreshDatabase;
 
     private Source $source;
+
     private Server $originServer;
+
     private Server $edgeServer;
+
     private Show $show;
 
     protected function setUp(): void
@@ -76,7 +79,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/live',
-            'param' => '?secret=' . $this->source->stream_key,
+            'param' => '?secret='.$this->source->stream_key,
         ]);
 
         $response->assertStatus(200)
@@ -129,7 +132,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'non-existent-stream',
             'tcUrl' => 'rtmp://localhost/live',
-            'param' => '?secret=' . $this->source->stream_key,
+            'param' => '?secret='.$this->source->stream_key,
         ]);
 
         $response->assertStatus(403)
@@ -161,7 +164,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
-            'param' => '?shared_secret=' . $this->edgeServer->shared_secret,
+            'param' => '?shared_secret='.$this->edgeServer->shared_secret,
         ]);
 
         $response->assertStatus(200)
@@ -210,7 +213,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
-            'param' => '?shared_secret=' . $this->edgeServer->shared_secret,
+            'param' => '?shared_secret='.$this->edgeServer->shared_secret,
         ]);
 
         $response->assertStatus(403)
@@ -226,7 +229,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
-            'param' => '?shared_secret=' . $this->edgeServer->shared_secret . '&secret=' . $this->source->stream_key,
+            'param' => '?shared_secret='.$this->edgeServer->shared_secret.'&secret='.$this->source->stream_key,
         ]);
 
         // Should authenticate as server, not source
@@ -258,7 +261,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/live',
-            'param' => '?secret=' . $this->source->stream_key,
+            'param' => '?secret='.$this->source->stream_key,
         ]);
 
         $response->assertStatus(200)
@@ -272,7 +275,7 @@ class SrsCallbackControllerTest extends TestCase
         $this->show->refresh();
         $this->assertEquals('live', $this->show->status);
     }
-    
+
     /**
      * Test unpublish webhook sets source to OFFLINE when no live show
      */
@@ -290,7 +293,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/live',
-            'param' => '?secret=' . $this->source->stream_key,
+            'param' => '?secret='.$this->source->stream_key,
         ]);
 
         $response->assertStatus(200)
@@ -387,7 +390,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/live',
-            'param' => '?secret=' . $this->source->stream_key,
+            'param' => '?secret='.$this->source->stream_key,
         ]);
 
         $response->assertStatus(200);
@@ -399,7 +402,7 @@ class SrsCallbackControllerTest extends TestCase
         // Shows should maintain their original status (not modified by webhook)
         $this->show->refresh();
         $show2->refresh();
-        
+
         $this->assertEquals('scheduled', $this->show->status); // Remains scheduled
         $this->assertEquals('live', $show2->status); // Remains live
     }
@@ -445,7 +448,7 @@ class SrsCallbackControllerTest extends TestCase
         // Shows should maintain their status (not modified by webhook)
         $this->show->refresh();
         $show2->refresh();
-        
+
         $this->assertEquals('live', $this->show->status); // Remains live
         $this->assertEquals('live', $show2->status); // Remains live
     }
@@ -459,7 +462,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/live',
-            'param' => '?secret=' . $this->source->stream_key,
+            'param' => '?secret='.$this->source->stream_key,
         ]);
 
         $response->assertStatus(200);
@@ -469,9 +472,9 @@ class SrsCallbackControllerTest extends TestCase
         $this->assertArrayHasKey('client', $data);
         $this->assertArrayHasKey('signature', $data['client']);
         $this->assertEquals(32, strlen($data['client']['signature']));
-        
+
         // Verify signature matches expected format
-        $expectedSignature = md5($this->source->id . ':' . $this->source->stream_key);
+        $expectedSignature = md5($this->source->id.':'.$this->source->stream_key);
         $this->assertEquals($expectedSignature, $data['client']['signature']);
     }
 
@@ -484,7 +487,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
-            'param' => '?shared_secret=' . $this->edgeServer->shared_secret,
+            'param' => '?shared_secret='.$this->edgeServer->shared_secret,
         ]);
 
         $response->assertStatus(200);
@@ -494,9 +497,9 @@ class SrsCallbackControllerTest extends TestCase
         $this->assertArrayHasKey('server', $data);
         $this->assertArrayHasKey('signature', $data['server']);
         $this->assertEquals(32, strlen($data['server']['signature']));
-        
+
         // Verify signature matches expected format
-        $expectedSignature = md5($this->edgeServer->id . ':' . $this->edgeServer->shared_secret);
+        $expectedSignature = md5($this->edgeServer->id.':'.$this->edgeServer->shared_secret);
         $this->assertEquals($expectedSignature, $data['server']['signature']);
     }
 
@@ -542,13 +545,13 @@ class SrsCallbackControllerTest extends TestCase
     {
         // Simulate multiple simultaneous auth requests
         $responses = [];
-        
+
         for ($i = 0; $i < 3; $i++) {
             $responses[] = $this->postJson('/api/srs/auth', [
                 'app' => 'live',
                 'stream' => 'test-source',
                 'tcUrl' => 'rtmp://localhost/live',
-                'param' => '?secret=' . $this->source->stream_key,
+                'param' => '?secret='.$this->source->stream_key,
             ]);
         }
 
@@ -572,7 +575,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => '',
             'tcUrl' => 'rtmp://localhost/live',
-            'param' => '?secret=' . $this->source->stream_key,
+            'param' => '?secret='.$this->source->stream_key,
         ]);
 
         $response->assertStatus(403)
@@ -604,7 +607,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'non-existent-stream',
             'tcUrl' => 'rtmp://origin.server/live',
-            'param' => '?shared_secret=' . $this->edgeServer->shared_secret,
+            'param' => '?shared_secret='.$this->edgeServer->shared_secret,
         ]);
 
         // Server auth should succeed even if source doesn't exist
@@ -630,7 +633,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/live',
-            'param' => '?secret=' . $this->source->stream_key,
+            'param' => '?secret='.$this->source->stream_key,
         ]);
         $response->assertStatus(200);
 
@@ -658,7 +661,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/live',
-            'param' => '?secret=' . $this->source->stream_key,
+            'param' => '?secret='.$this->source->stream_key,
         ]);
         $response->assertStatus(200);
 

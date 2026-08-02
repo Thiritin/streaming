@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
  *
  * Two rules the old seed broke, and the planner made obvious:
  *
- *  1. No two shows on the same source may overlap. A 24/7 "EF Prime" block spanning eight
+ *  1. No two shows on the same source may overlap. A 24/7 "Prime" block spanning eight
  *     days sat under every other show on the same lane, so every block was a clash and
  *     dragging was meaningless.
  *  2. More than one lane. Multi-track planning needs multiple sources to plan across.

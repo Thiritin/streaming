@@ -63,6 +63,7 @@ class EnsureAttendeeHasTicketMiddleware
         // Always assign Digital Pass role to authenticated users without tickets
         // This ensures they can still chat and view streams
         Auth::user()->assignRole('Digital Pass');
+
         return $next($request);
     }
 }

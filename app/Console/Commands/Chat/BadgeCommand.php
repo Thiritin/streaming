@@ -2,16 +2,19 @@
 
 namespace App\Console\Commands\Chat;
 
-use App\Models\User;
-use App\Models\Role;
 use App\Events\UserRoleUpdatedEvent;
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Support\Facades\Log;
 
 class BadgeCommand extends AbstractChatCommand
 {
     protected string $name = 'badge';
+
     protected array $aliases = [];
+
     protected string $description = 'Grant or revoke role-based badges for users';
+
     protected string $signature = '/badge <action> <username> <role>';
 
     protected array $parameters = [
@@ -43,7 +46,7 @@ class BadgeCommand extends AbstractChatCommand
 
     public function authorize(User $user): bool
     {
-        return $user->hasPermission('role.assign') || 
+        return $user->hasPermission('role.assign') ||
                $user->hasRole('admin');
     }
 
@@ -54,22 +57,25 @@ class BadgeCommand extends AbstractChatCommand
         $roleSlug = strtolower($parameters['role']);
 
         // Validate action
-        if (!in_array($action, ['grant', 'revoke'])) {
+        if (! in_array($action, ['grant', 'revoke'])) {
             $this->feedback($user, "Invalid action. Use 'grant' or 'revoke'.", 'error');
+
             return;
         }
 
         // Find role
         $role = Role::where('slug', $roleSlug)->first();
-        if (!$role) {
+        if (! $role) {
             $this->feedback($user, "Role '{$roleSlug}' not found.", 'error');
+
             return;
         }
 
         // Find target user
         $targetUser = User::where('name', $username)->first();
-        if (!$targetUser) {
+        if (! $targetUser) {
             $this->feedback($user, "User '{$username}' not found.", 'error');
+
             return;
         }
 
@@ -85,14 +91,16 @@ class BadgeCommand extends AbstractChatCommand
         // Check if user already has the role
         if ($targetUser->hasRole($role->slug)) {
             $this->feedback($grantor, "User already has the {$role->name} role.", 'warning');
+
             return;
         }
 
         // Attach role to user
         $targetUser->roles()->attach($role->id);
 
-        // Clear user's role cache
+        // Clear cached role/badge data used by chat
         \Cache::forget("user_roles_{$targetUser->id}");
+        \App\Services\Chat\MessagePresenter::forgetAuthor($targetUser->id);
 
         // Broadcast update (using existing UserRoleUpdatedEvent if it exists)
         if (class_exists('App\Events\UserRoleUpdatedEvent')) {
@@ -114,16 +122,18 @@ class BadgeCommand extends AbstractChatCommand
     private function revokeRole(User $revoker, User $targetUser, Role $role): void
     {
         // Check if user has the role
-        if (!$targetUser->hasRole($role->slug)) {
+        if (! $targetUser->hasRole($role->slug)) {
             $this->feedback($revoker, "User does not have the {$role->name} role.", 'warning');
+
             return;
         }
 
         // Detach role from user
         $targetUser->roles()->detach($role->id);
 
-        // Clear user's role cache
+        // Clear cached role/badge data used by chat
         \Cache::forget("user_roles_{$targetUser->id}");
+        \App\Services\Chat\MessagePresenter::forgetAuthor($targetUser->id);
 
         // Broadcast update (using existing UserRoleUpdatedEvent if it exists)
         if (class_exists('App\Events\UserRoleUpdatedEvent')) {

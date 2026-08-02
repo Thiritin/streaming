@@ -17,11 +17,14 @@ return [
     ],
 
     /*
-     * Links to these domains stay clickable in chat, everything else is stripped.
+     * Links to these domains stay clickable in chat, everything else is
+     * stripped. Comma separated in CHAT_ALLOWED_DOMAINS; empty by default, so a
+     * fresh install strips every link until an operator opts domains in.
      */
-    'allowed_domains' => [
-        'eurofurence.org',
-    ],
+    'allowed_domains' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('CHAT_ALLOWED_DOMAINS', ''))
+    ))),
 
     /*
      * How many messages the client keeps in memory / the backlog endpoints return.

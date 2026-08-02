@@ -50,7 +50,7 @@ class CaptureThumbnailJob implements ShouldQueue
             if ($thumbnailPath) {
                 // Refresh the show to get updated thumbnail_path
                 $this->show->refresh();
-                
+
                 // Broadcast the update (event will use accessor for signed URL)
                 broadcast(new ShowThumbnailUpdated($this->show));
 

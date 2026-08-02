@@ -40,7 +40,7 @@ class ThumbnailService
         $systemStreamkey = config('stream.system_streamkey') ?: env('STREAM_KEY');
         if ($systemStreamkey) {
             $separator = str_contains($streamUrl, '?') ? '&' : '?';
-            $streamUrl .= $separator . 'streamkey=' . $systemStreamkey;
+            $streamUrl .= $separator.'streamkey='.$systemStreamkey;
         }
 
         Log::info("Capturing thumbnail for show {$show->id} from URL: {$streamUrl}");
@@ -71,7 +71,7 @@ class ThumbnailService
                 ['visibility' => 'private']
             );
 
-            if (!$uploaded) {
+            if (! $uploaded) {
                 throw new \Exception('Failed to upload thumbnail to S3');
             }
 
@@ -202,8 +202,8 @@ class ThumbnailService
     public function uploadThumbnail(Show $show, string $localPath): ?string
     {
         try {
-            if (!file_exists($localPath)) {
-                throw new \Exception('File does not exist: ' . $localPath);
+            if (! file_exists($localPath)) {
+                throw new \Exception('File does not exist: '.$localPath);
             }
 
             // Generate filename
@@ -218,7 +218,7 @@ class ThumbnailService
                 ['visibility' => 'private']
             );
 
-            if (!$uploaded) {
+            if (! $uploaded) {
                 throw new \Exception('Failed to upload to S3');
             }
 
@@ -237,7 +237,7 @@ class ThumbnailService
             return $s3Path;
 
         } catch (\Exception $e) {
-            Log::error("Failed to upload thumbnail for show {$show->id}: " . $e->getMessage());
+            Log::error("Failed to upload thumbnail for show {$show->id}: ".$e->getMessage());
 
             $show->update([
                 'thumbnail_capture_error' => $e->getMessage(),

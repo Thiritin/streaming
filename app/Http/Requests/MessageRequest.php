@@ -9,8 +9,9 @@ class MessageRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'message' => ['required', 'string', 'max:500', 'min:1'],
+            'message' => ['required', 'string', 'min:1', 'max:'.config('chat.default.maxMessageLength', 500)],
             'source_id' => ['required', 'integer', 'exists:sources,id'],
+            'reply_to_id' => ['nullable', 'integer', 'exists:messages,id'],
         ];
     }
 

@@ -20,7 +20,7 @@ Baseline recorded before any change: `php artisan test tests/Feature/Filament/Ad
 
 An operator watching a live event needs three things at a glance: is the stream up, is there enough edge capacity, and which shows are live right now. Everything else is CRUD that must not get in the way. So: high information density, a status strip that never scrolls away, numbers in tabular figures, colour reserved for state (never decoration).
 
-Neutral by construction. No Eurofurence wordmark, artwork or copy in the chrome. Brand name and logo come from `BrandingService` at runtime, same as the public site, so a different convention rebrands it without touching components.
+Neutral by construction. No convention wordmark, artwork or copy in the chrome. Brand name and logo come from `BrandingService` at runtime, same as the public site, so a different convention rebrands it without touching components.
 
 ### 1.2 Layout skeleton
 

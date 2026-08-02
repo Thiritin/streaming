@@ -2,8 +2,8 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -18,7 +18,7 @@ return new class extends Migration
                 $table->dropIndex('role_user_expires_at_index');
             });
         }
-        
+
         Schema::table('role_user', function (Blueprint $table) {
             // Drop the columns we don't need if they exist
             $columnsToDelete = [];
@@ -31,13 +31,13 @@ return new class extends Migration
             if (Schema::hasColumn('role_user', 'assigned_by')) {
                 $columnsToDelete[] = 'assigned_by';
             }
-            
-            if (!empty($columnsToDelete)) {
+
+            if (! empty($columnsToDelete)) {
                 $table->dropColumn($columnsToDelete);
             }
         });
 
-        if (!Schema::hasColumn('role_user', 'assigned_by_user_id')) {
+        if (! Schema::hasColumn('role_user', 'assigned_by_user_id')) {
             Schema::table('role_user', function (Blueprint $table) {
                 // Add assigned_by_user_id as a foreign key
                 $table->foreignId('assigned_by_user_id')->nullable()->after('user_id')->constrained('users')->nullOnDelete();

@@ -71,6 +71,9 @@ class HandleInertiaRequests extends Middleware
         }
 
         return array_merge(parent::share($request), [
+            'flash' => [
+                'status' => fn () => $request->session()->get('status'),
+            ],
             'branding' => app(BrandingService::class)->forFrontend(),
             'auth' => [
                 'user' => $user ? array_merge(

@@ -206,9 +206,14 @@ const onBan = (message) => act(() => chat.moderation.ban(message.user.id))
                 <button
                     v-if="chat.canModerate.value"
                     type="button"
-                    title="Mod tools"
-                    class="rounded p-1.5 text-primary-400 hover:bg-primary-800 hover:text-primary-100"
-                    @click="showModTools = true"
+                    :title="showModTools ? 'Close mod tools' : 'Mod tools'"
+                    class="rounded p-1.5 transition-colors"
+                    :class="
+                        showModTools
+                            ? 'bg-primary-800 text-primary-100'
+                            : 'text-primary-400 hover:bg-primary-800 hover:text-primary-100'
+                    "
+                    @click="showModTools = !showModTools"
                 >
                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path
@@ -279,6 +284,51 @@ const onBan = (message) => act(() => chat.moderation.ban(message.user.id))
                     {{ unread > 0 ? `${unread} new message${unread === 1 ? '' : 's'}` : 'Jump to latest' }}
                 </button>
             </transition>
+
+            <!-- Mod tools: overlays the top of the chat log, messages stay visible below -->
+            <transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="-translate-y-full opacity-0"
+                leave-active-class="transition duration-150 ease-in"
+                leave-to-class="-translate-y-full opacity-0"
+            >
+                <div v-if="showModTools" class="absolute inset-x-0 top-0 z-30">
+                    <ModToolsPanel
+                        :settings="chat.settings.value"
+                        :moderation="chat.moderation"
+                        :can-ban="!!chat.permissions.value.ban"
+                        :can-announce="!!chat.permissions.value.announce"
+                        @close="showModTools = false"
+                        @result="({ message, level }) => chat.notice(message, level)"
+                    />
+                </div>
+            </transition>
+
+            <!-- User card: same top overlay, stacked above the mod tools -->
+            <transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="-translate-y-full opacity-0"
+                leave-active-class="transition duration-150 ease-in"
+                leave-to-class="-translate-y-full opacity-0"
+            >
+                <div v-if="userCard" class="absolute inset-x-0 top-0 z-40">
+                    <UserCard
+                        :card="userCard"
+                        :loading="loadingCard"
+                        :can-ban="!!chat.permissions.value.ban"
+                        @close="userCard = null"
+                        @mention="mention"
+                        @timeout="
+                            ({ userId, seconds, reason }) =>
+                                act(() => chat.moderation.timeout(userId, seconds, reason), { closeCard: true })
+                        "
+                        @untimeout="({ userId }) => act(() => chat.moderation.untimeout(userId), { closeCard: true })"
+                        @ban="({ userId, reason }) => act(() => chat.moderation.ban(userId, reason), { closeCard: true })"
+                        @unban="({ userId }) => act(() => chat.moderation.unban(userId), { closeCard: true })"
+                        @purge="({ userId }) => act(() => chat.moderation.purge(userId), { closeCard: true })"
+                    />
+                </div>
+            </transition>
         </div>
 
         <ChatInput
@@ -295,37 +345,5 @@ const onBan = (message) => act(() => chat.moderation.ban(message.user.id))
             @cancel-reply="replyTo = null"
         />
 
-        <!-- Mod tools drawer -->
-        <transition
-            enter-active-class="transition duration-200"
-            enter-from-class="translate-x-full"
-            leave-active-class="transition duration-200"
-            leave-to-class="translate-x-full"
-        >
-            <div v-if="showModTools" class="absolute inset-0 z-40 border-l border-primary-800">
-                <ModToolsPanel
-                    :settings="chat.settings.value"
-                    :moderation="chat.moderation"
-                    :can-ban="!!chat.permissions.value.ban"
-                    :can-announce="!!chat.permissions.value.announce"
-                    @close="showModTools = false"
-                    @result="({ message, level }) => chat.notice(message, level)"
-                />
-            </div>
-        </transition>
-
-        <UserCard
-            v-if="userCard"
-            :card="userCard"
-            :loading="loadingCard"
-            :can-ban="!!chat.permissions.value.ban"
-            @close="userCard = null"
-            @mention="mention"
-            @timeout="({ userId, seconds, reason }) => act(() => chat.moderation.timeout(userId, seconds, reason), { closeCard: true })"
-            @untimeout="({ userId }) => act(() => chat.moderation.untimeout(userId), { closeCard: true })"
-            @ban="({ userId, reason }) => act(() => chat.moderation.ban(userId, reason), { closeCard: true })"
-            @unban="({ userId }) => act(() => chat.moderation.unban(userId), { closeCard: true })"
-            @purge="({ userId }) => act(() => chat.moderation.purge(userId), { closeCard: true })"
-        />
     </div>
 </template>

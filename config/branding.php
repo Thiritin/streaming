@@ -17,33 +17,42 @@ return [
     |
     */
 
-    'convention_name' => env('BRANDING_CONVENTION_NAME', 'Eurofurence'),
+    'convention_name' => env('BRANDING_CONVENTION_NAME', env('APP_NAME', 'Streaming')),
 
-    'site_name' => env('BRANDING_SITE_NAME', 'Eurofurence Streaming'),
+    'site_name' => env('BRANDING_SITE_NAME', env('APP_NAME', 'Streaming')),
 
-    // Shown above the login headline. Keep it short.
-    'login_eyebrow' => env('BRANDING_LOGIN_EYEBROW', 'Eurofurence'),
+    // Shown above the login headline. Keep it short. Empty by default: an
+    // installation that has not set one gets no placeholder convention name.
+    'login_eyebrow' => env('BRANDING_LOGIN_EYEBROW'),
 
     'login_headline' => env('BRANDING_LOGIN_HEADLINE', 'Livestream'),
 
     'login_tagline' => env('BRANDING_LOGIN_TAGLINE', 'Open to everyone'),
 
-    'login_body' => env('BRANDING_LOGIN_BODY', 'All you need is a free Eurofurence Identity account to view live streams and recordings. No ticket and no membership required.'),
+    'login_body' => env('BRANDING_LOGIN_BODY', 'Sign in to watch the live streams and recordings.'),
 
     'login_button_label' => env('BRANDING_LOGIN_BUTTON_LABEL', 'Sign in'),
 
     // Name of the OIDC provider, used in the sign-in and register wording.
-    'identity_name' => env('BRANDING_IDENTITY_NAME', 'Eurofurence Identity'),
+    'identity_name' => env('BRANDING_IDENTITY_NAME', 'identity'),
 
-    'identity_register_url' => env('BRANDING_IDENTITY_REGISTER_URL', 'https://identity.eurofurence.org/auth/register'),
+    /*
+     | Identity provider endpoints. Both are installation specific, so they stay
+     | empty here: the login screen hides the register link when there is no
+     | URL, and logout falls back to the local session teardown.
+     */
+    'identity_register_url' => env('BRANDING_IDENTITY_REGISTER_URL'),
 
-    'identity_logout_url' => env('BRANDING_IDENTITY_LOGOUT_URL', 'https://identity.eurofurence.org/oauth2/sessions/logout'),
+    'identity_logout_url' => env('BRANDING_IDENTITY_LOGOUT_URL'),
 
-    'support_url' => env('BRANDING_SUPPORT_URL', 'https://help.eurofurence.org/contact/'),
+    /*
+     | Footer links. Each one is dropped from the footer when left empty.
+     */
+    'support_url' => env('BRANDING_SUPPORT_URL'),
 
-    'imprint_url' => env('BRANDING_IMPRINT_URL', 'https://help.eurofurence.org/legal/imprint'),
+    'imprint_url' => env('BRANDING_IMPRINT_URL'),
 
-    'privacy_url' => env('BRANDING_PRIVACY_URL', 'https://help.eurofurence.org/legal/privacy'),
+    'privacy_url' => env('BRANDING_PRIVACY_URL'),
 
     /*
      | Path on the public disk to a logo image. When empty the built-in logo

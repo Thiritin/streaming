@@ -24,8 +24,8 @@ class ScheduleTest extends TestCase
         $this->user = User::factory()->create();
 
         $this->primary = Source::create([
-            'name' => 'EF Prime',
-            'slug' => 'ef-prime',
+            'name' => 'Prime',
+            'slug' => 'prime',
             'priority' => 100,
         ]);
     }
@@ -47,9 +47,9 @@ class ScheduleTest extends TestCase
         $response->assertInertia(fn (AssertableInertia $page) => $page
             ->component('Schedule')
             ->has('days', 1)
-            ->where('days.0.channels.0.name', 'EF Prime')
+            ->where('days.0.channels.0.name', 'Prime')
             ->where('days.0.channels.0.shows.0.title', 'Opening Ceremony')
-            ->where('primaryChannel', 'EF Prime')
+            ->where('primaryChannel', 'Prime')
         );
     }
 
@@ -89,7 +89,7 @@ class ScheduleTest extends TestCase
             ->component('ShowsGrid')
             ->where('featured.title', 'Main Stage Show')
             ->where('featured.is_primary_channel', true)
-            ->where('primaryChannel', 'EF Prime')
+            ->where('primaryChannel', 'Prime')
         );
     }
 

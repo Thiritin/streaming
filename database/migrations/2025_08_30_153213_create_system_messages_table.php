@@ -19,7 +19,7 @@ return new class extends Migration
             $table->string('priority')->default('normal');
             $table->json('metadata')->nullable();
             $table->timestamps();
-            
+
             $table->index(['type', 'created_at']);
             $table->index('priority');
         });

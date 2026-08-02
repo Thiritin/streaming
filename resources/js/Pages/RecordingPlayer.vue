@@ -23,7 +23,7 @@
                         </button>
                     </div>
 
-                    <EfPlayer
+                    <VideoPlayer
                         :key="playerKey"
                         :src="recording.m3u8_url"
                         :title="recording.title"
@@ -99,7 +99,7 @@
 import { Head, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import EfPlayer from '@/Components/Player/EfPlayer.vue';
+import VideoPlayer from '@/Components/Player/VideoPlayer.vue';
 import FaVideoSlashIcon from '@/Components/Icons/FaVideoSlashIcon.vue';
 import FaEyeIcon from '@/Components/Icons/FaEyeIcon.vue';
 import FaCalendarIcon from '@/Components/Icons/FaCalendarIcon.vue';
@@ -122,7 +122,7 @@ const loading = ref(true);
 const error = ref(false);
 const errorMessage = ref('');
 
-// Bumping this remounts EfPlayer, which is the cleanest way to rebuild the
+// Bumping this remounts VideoPlayer, which is the cleanest way to rebuild the
 // provider and start the load from scratch.
 const playerKey = ref(0);
 

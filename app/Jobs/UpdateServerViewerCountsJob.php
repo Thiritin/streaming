@@ -3,8 +3,6 @@
 namespace App\Jobs;
 
 use App\Models\Server;
-use App\Models\User;
-use App\Models\SourceUser;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -37,7 +35,7 @@ class UpdateServerViewerCountsJob implements ShouldQueue
                 'viewer_count' => $count,
                 'last_heartbeat' => now(),
             ]);
-            
+
             Log::debug('Updated server viewer count', [
                 'server_id' => $serverId,
                 'viewer_count' => $count,
@@ -56,7 +54,7 @@ class UpdateServerViewerCountsJob implements ShouldQueue
         // Log summary
         $totalViewers = $viewerCounts->sum();
         $activeServers = $viewerCounts->count();
-        
+
         Log::info('Server viewer counts updated', [
             'total_viewers' => $totalViewers,
             'active_servers' => $activeServers,

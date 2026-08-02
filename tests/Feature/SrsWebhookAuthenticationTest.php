@@ -13,7 +13,9 @@ class SrsWebhookAuthenticationTest extends TestCase
     use RefreshDatabase;
 
     private User $userWithStreamkey;
+
     private User $userWithoutStreamkey;
+
     private Server $server;
 
     protected function setUp(): void
@@ -72,7 +74,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://localhost/live',
             'pageUrl' => '',
-            'param' => '?secret=' . $this->userWithStreamkey->streamkey,
+            'param' => '?secret='.$this->userWithStreamkey->streamkey,
         ]);
 
         $response->assertStatus(200)
@@ -137,7 +139,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://localhost/live',
             'pageUrl' => '',
-            'param' => '?secret=' . $userWithoutServer->streamkey,
+            'param' => '?secret='.$userWithoutServer->streamkey,
         ]);
 
         $response->assertStatus(403)
@@ -154,7 +156,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'streamkey' => 'test_streamkey_no_permission',
             'server_id' => $this->server->id,
         ]);
-        
+
         // Assign user role (which doesn't have stream.publish permission)
         $userRole = Role::where('slug', 'user')->first();
         $userWithoutPermission->assignRole($userRole);
@@ -164,7 +166,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://localhost/live',
             'pageUrl' => '',
-            'param' => '?secret=' . $userWithoutPermission->streamkey,
+            'param' => '?secret='.$userWithoutPermission->streamkey,
         ]);
 
         $response->assertStatus(403)
@@ -181,7 +183,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://origin.server/live',
             'pageUrl' => '',
-            'param' => '?shared_secret=' . $this->server->shared_secret,
+            'param' => '?shared_secret='.$this->server->shared_secret,
         ]);
 
         $response->assertStatus(200)
@@ -224,7 +226,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://localhost/live',
             'pageUrl' => '',
-            'param' => '?secret=' . $this->userWithStreamkey->streamkey,
+            'param' => '?secret='.$this->userWithStreamkey->streamkey,
         ]);
 
         $response->assertStatus(200)
@@ -242,7 +244,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://origin.server/live',
             'pageUrl' => '',
-            'param' => '?shared_secret=' . $this->server->shared_secret . '&secret=some_streamkey',
+            'param' => '?shared_secret='.$this->server->shared_secret.'&secret=some_streamkey',
         ]);
 
         // Should authenticate as server, not user
@@ -284,7 +286,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://localhost/live',
             'pageUrl' => '',
-            'param' => '?streamkey=' . $this->userWithStreamkey->streamkey,
+            'param' => '?streamkey='.$this->userWithStreamkey->streamkey,
         ]);
 
         $response->assertStatus(200)
@@ -301,7 +303,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://localhost/live',
             'pageUrl' => '',
-            'param' => '?secret=' . $this->userWithStreamkey->streamkey,
+            'param' => '?secret='.$this->userWithStreamkey->streamkey,
         ]);
 
         $response->assertStatus(200)

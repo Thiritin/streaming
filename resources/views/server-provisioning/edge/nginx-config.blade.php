@@ -40,9 +40,12 @@ http {
     gzip_vary on;
     gzip_proxied any;
     gzip_comp_level 6;
+    {{-- An 1800-entry DVR playlist is ~179KB raw and ~10KB gzipped, so compressing
+         m3u8 is worth real bandwidth. video/mp2t is deliberately absent: MPEG-TS is
+         already compressed, so gzipping segments burns CPU for no size gain. --}}
     gzip_types text/plain text/css text/xml text/javascript
                application/json application/javascript application/xml+rss
-               application/vnd.apple.mpegurl video/mp2t;
+               application/vnd.apple.mpegurl;
 
     # Rate limiting
     limit_req_zone $binary_remote_addr zone=viewer_limit:10m rate=30r/s;
@@ -116,7 +119,14 @@ http {
             # Pass streamkey as header for authentication
             proxy_set_header X-Stream-Key $arg_streamkey;
 
-            # Cache auth responses for performance
+            # Cache auth responses for performance.
+            #
+            # Laravel answers with 'Cache-Control: no-cache, private', which nginx
+            # obeys by default - so without this the cache never stored anything and
+            # every single segment and playlist request went through to PHP.
+            # Ignoring those headers is what makes proxy_cache_valid below real.
+            # Cost: a revoked streamkey stays usable for up to the cache lifetime.
+            proxy_ignore_headers Cache-Control Expires Set-Cookie;
             proxy_cache auth_cache;
             proxy_cache_key "$remote_addr:$arg_streamkey:$uri";
             proxy_cache_valid 200 1m;
@@ -136,9 +146,9 @@ http {
 
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
-            proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_ssl_name {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
 
-            proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_set_header Host {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header Connection "";
@@ -149,9 +159,9 @@ http {
 
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
-            proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_ssl_name {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
 
-            proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_set_header Host {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header Connection "";
@@ -195,9 +205,9 @@ http {
 
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
-            proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_ssl_name {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
 
-            proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_set_header Host {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header Connection "";
@@ -208,9 +218,9 @@ http {
 
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
-            proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_ssl_name {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
 
-            proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_set_header Host {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header Connection "";

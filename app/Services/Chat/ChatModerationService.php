@@ -11,6 +11,7 @@ use App\Models\ChatModerationLog;
 use App\Models\Message;
 use App\Models\Timeout;
 use App\Models\User;
+use App\Support\Chat\Broadcast;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Carbon;
 
@@ -43,11 +44,12 @@ class ChatModerationService
 
         $this->log('timeout', $moderator, $target, $sourceId, $reason, ['seconds' => $seconds]);
 
-        broadcast(new ChatUserStateEvent($target, 'timed_out', $reason, $seconds, $sourceId));
-        broadcast(new ChatNoticeEvent(
+        Broadcast::send(new ChatUserStateEvent($target, 'timed_out', $reason, $seconds, $sourceId));
+        Broadcast::send(new ChatNoticeEvent(
             "{$target->name} was timed out for ".$this->humanizeSeconds($seconds).($reason ? " ({$reason})" : ''),
             $sourceId,
             'warning',
+            modsOnly: true,
         ));
 
         return $timeout;
@@ -61,8 +63,8 @@ class ChatModerationService
 
         $this->log('untimeout', $moderator, $target, $sourceId);
 
-        broadcast(new ChatUserStateEvent($target, 'cleared', null, null, $sourceId));
-        broadcast(new ChatNoticeEvent("{$target->name}'s timeout was removed", $sourceId, 'info'));
+        Broadcast::send(new ChatUserStateEvent($target, 'cleared', null, null, $sourceId));
+        Broadcast::send(new ChatNoticeEvent("{$target->name}'s timeout was removed", $sourceId, 'info', modsOnly: true));
     }
 
     /**
@@ -87,17 +89,18 @@ class ChatModerationService
 
         $this->log('ban', $moderator, $target, $sourceId, $reason, ['expires_at' => $expiresAt?->toIso8601String()]);
 
-        broadcast(new ChatUserStateEvent(
+        Broadcast::send(new ChatUserStateEvent(
             $target,
             'banned',
             $reason,
             $expiresAt ? (int) now()->diffInSeconds($expiresAt) : null,
             $sourceId,
         ));
-        broadcast(new ChatNoticeEvent(
+        Broadcast::send(new ChatNoticeEvent(
             "{$target->name} was banned from chat".($reason ? " ({$reason})" : ''),
             $sourceId,
             'error',
+            modsOnly: true,
         ));
 
         return $ban;
@@ -113,8 +116,8 @@ class ChatModerationService
 
         $this->log('unban', $moderator, $target, $sourceId);
 
-        broadcast(new ChatUserStateEvent($target, 'cleared', null, null, $sourceId));
-        broadcast(new ChatNoticeEvent("{$target->name} was unbanned", $sourceId, 'info'));
+        Broadcast::send(new ChatUserStateEvent($target, 'cleared', null, null, $sourceId));
+        Broadcast::send(new ChatNoticeEvent("{$target->name} was unbanned", $sourceId, 'info', modsOnly: true));
     }
 
     /**
@@ -133,7 +136,7 @@ class ChatModerationService
             'message_id' => $message->id,
         ]);
 
-        broadcast(new ChatMessagesDeletedEvent(
+        Broadcast::send(new ChatMessagesDeletedEvent(
             [$message->id],
             $message->source_id,
             $message->user?->name,
@@ -177,7 +180,7 @@ class ChatModerationService
         ]);
 
         foreach ($messages->groupBy('source_id') as $groupSourceId => $group) {
-            broadcast(new ChatMessagesDeletedEvent(
+            Broadcast::send(new ChatMessagesDeletedEvent(
                 $group->pluck('id')->all(),
                 $groupSourceId !== null ? (int) $groupSourceId : null,
                 $target->name,
@@ -218,8 +221,8 @@ class ChatModerationService
 
         $this->log('clear_chat', $moderator, null, $sourceId, null, ['count' => $ids->count()]);
 
-        broadcast(new ChatMessagesDeletedEvent($ids->all(), $sourceId, null, $moderator->name));
-        broadcast(new ChatNoticeEvent('Chat was cleared by a moderator', $sourceId, 'warning'));
+        Broadcast::send(new ChatMessagesDeletedEvent($ids->all(), $sourceId, null, $moderator->name));
+        Broadcast::send(new ChatNoticeEvent('Chat was cleared by a moderator', $sourceId, 'warning'));
 
         return $ids->count();
     }
@@ -248,7 +251,7 @@ class ChatModerationService
 
         $this->log('announce', $moderator, null, $sourceId, null, ['message_id' => $message->id]);
 
-        broadcast(new ChatMessageEvent($message));
+        Broadcast::send(new ChatMessageEvent($message));
 
         return $message;
     }
@@ -269,7 +272,7 @@ class ChatModerationService
 
         $this->log('settings', $moderator, null, $sourceId, null, $changes);
 
-        broadcast(new ChatNoticeEvent($this->describeSettings($settings), $sourceId, 'info'));
+        Broadcast::send(new ChatNoticeEvent($this->describeSettings($settings), $sourceId, 'info'));
 
         return $settings;
     }

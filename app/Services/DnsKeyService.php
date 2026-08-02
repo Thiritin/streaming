@@ -39,7 +39,7 @@ class DnsKeyService
         $disk = Storage::disk('local');
 
         // Ensure temp directory exists
-        if (!$disk->exists('temp')) {
+        if (! $disk->exists('temp')) {
             $disk->makeDirectory('temp');
         }
 
@@ -53,9 +53,9 @@ class DnsKeyService
 
         // Write the key file and force local filesystem
         $written = $disk->put($relativePath, $keyContent);
-        
-        if (!$written) {
-            throw new \Exception("Failed to write DNS key file to local storage");
+
+        if (! $written) {
+            throw new \Exception('Failed to write DNS key file to local storage');
         }
 
         // Get the absolute path
@@ -63,13 +63,13 @@ class DnsKeyService
 
         // Double check the file exists and is readable
         clearstatcache(true, $this->keyFilePath);
-        
-        if (!file_exists($this->keyFilePath)) {
+
+        if (! file_exists($this->keyFilePath)) {
             throw new \Exception("DNS key file does not exist after writing: {$this->keyFilePath}");
         }
 
         // Set proper permissions (600 - read/write for owner only)
-        if (!@chmod($this->keyFilePath, 0600)) {
+        if (! @chmod($this->keyFilePath, 0600)) {
             throw new \Exception("Failed to set permissions on DNS key file: {$this->keyFilePath}");
         }
 

@@ -62,6 +62,14 @@ return [
         'hls_port' => env('DOCKER_HLS_PORT', 80),
     ],
 
+    // Container images baked into the generated provisioning scripts. Built
+    // from docker/ in this repo; set the full reference including the registry
+    // namespace an operator publishes them under.
+    'images' => [
+        'ffmpeg_hls' => env('STREAM_IMAGE_FFMPEG_HLS', 'ffmpeg-hls:latest'),
+        'dvr_uploader' => env('STREAM_IMAGE_DVR_UPLOADER', 'dvr-uploader:latest'),
+    ],
+
     // System streamkey for internal operations (thumbnails, monitoring, etc.)
     'system_streamkey' => env('STREAM_SYSTEM_STREAMKEY', ''),
 

@@ -27,8 +27,10 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
-            ->brandName('EF Streaming Admin')
-            ->favicon(asset('favicon.ico'))
+            // Resolved lazily: the panel is registered during boot, before the
+            // branding table is guaranteed to exist on a fresh install.
+            ->brandName(fn () => app(\App\Services\BrandingService::class)->get('site_name').' Admin')
+            ->favicon(asset('favicon.svg'))
             ->colors([
                 'primary' => Color::Purple,
                 'gray' => Color::Slate,

@@ -18,7 +18,7 @@ return new class extends Migration
             $table->datetime('expires_at');
             $table->text('reason')->nullable();
             $table->timestamps();
-            
+
             $table->index(['user_id', 'expires_at']);
         });
     }

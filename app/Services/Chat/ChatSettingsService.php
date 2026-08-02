@@ -4,6 +4,7 @@ namespace App\Services\Chat;
 
 use App\Events\Chat\Broadcasts\ChatSettingsUpdatedEvent;
 use App\Models\ChatSetting;
+use App\Support\Chat\Broadcast;
 
 /**
  * Per-source chat modes (slow mode, emote only, sponsors only) with a global fallback.
@@ -70,7 +71,7 @@ class ChatSettingsService
 
         $settings = $this->all($sourceId);
 
-        broadcast(new ChatSettingsUpdatedEvent($settings, $sourceId));
+        Broadcast::send(new ChatSettingsUpdatedEvent($settings, $sourceId));
 
         return $settings;
     }

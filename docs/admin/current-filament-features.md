@@ -13,7 +13,7 @@ Source of truth: `app/Filament/**`, `app/Providers/Filament/AdminPanelProvider.p
 | Path | `/admin`, default panel |
 | Auth | Filament's own `->login()` screen at `/admin/login` (separate from the app's OIDC login at `/login`) |
 | Gate | `User::canAccessPanel()` — `hasPermission('filament.access') || isStaff()` (`app/Models/User.php:378`) |
-| Brand | Hardcoded `EF Streaming Admin`, `favicon.ico` |
+| Brand | Brand name from `BrandingService`, `favicon.svg` |
 | Theme | primary = Purple, gray = Slate, sidebar collapsible on desktop, `maxContentWidth('100%')` |
 | Nav groups | Streaming, Infrastructure, User Management, Chat (+ an undeclared `Content` group used by RecordingResource) |
 | Dashboard | Filament default `Dashboard` page + `AccountWidget` + `FilamentInfoWidget` + all auto-discovered widgets |
@@ -125,7 +125,7 @@ Row actions: Edit; **Install Script** (links to custom page); **Deprovision** (c
 - **Enable Autoscaler** / **Disable Autoscaler** — mutually exclusive by `AutoscalerService::isAutoscalerEnabled()`, green / red
 - **Provision Cloud Server** — modal with a type select (`Origin (ccx43 - High Performance)` / `Edge (cpx21 - Standard)`); refuses a second origin if one is active or provisioning (danger toast); otherwise creates a `provisioning` server row (hostname `pending`, port 443, random secret, max_clients 1000 origin / 100 edge) and dispatches `CreateVirtualMachineJob`.
 
-Custom page — `ViewInstallScript` (`/admin/servers/{record}/install-script`): title `Install Script - Server #{id} ({type})`. Generates the install script and cloud-init via `ServerProvisioningService`, then regex-extracts embedded configs into tabs: docker-compose, SRS conf, nginx (origin or edge), Caddyfile, plus FFmpeg placeholders for origin. Tab state in `activeTab`. Header actions: **Copy Install Script** (toast; copy done in JS), **Download Script** (`streamDownload` as `ef-streaming-install-{id}.sh`), **Regenerate Scripts** (confirm; backfills `shared_secret` if missing).
+Custom page — `ViewInstallScript` (`/admin/servers/{record}/install-script`): title `Install Script - Server #{id} ({type})`. Generates the install script and cloud-init via `ServerProvisioningService`, then regex-extracts embedded configs into tabs: docker-compose, SRS conf, nginx (origin or edge), Caddyfile, plus FFmpeg placeholders for origin. Tab state in `activeTab`. Header actions: **Copy Install Script** (toast; copy done in JS), **Download Script** (`streamDownload` as `install-{id}.sh`), **Regenerate Scripts** (confirm; backfills `shared_secret` if missing).
 
 Relation manager — `UserRelationManager` (`user`): columns `sub`, `name`. **Declared in the file but not returned by `getRelations()`, so it is dead code today.**
 
@@ -240,7 +240,7 @@ Actions: **Save changes** (writes each `EDITABLE` key via `BrandingSetting::setV
 |---|---|---|---|
 | `ServerActive` | stats cards | 10s | One card per edge-server status: `Edge Server {status}` = count (grouped query) |
 | `Capacity` | stats cards | 10s | Max clients (sum `max_clients` over active edge), Booting Capacity (same over provisioning edge), Waiting Users (`users.server_id IS NULL`) |
-| `ViewCountChart` | line chart | none | 7 hardcoded 2023 EF dates as series (Sat–Fri), hourly average of `ViewCount.count` via `Flowframe\Trend`, x-axis = 24 fixed hour labels |
+| `ViewCountChart` | line chart | none | the last 7 days as series, hourly average of `ViewCount.count` via `Flowframe\Trend`, x-axis = 24 fixed hour labels |
 
 `ViewCountChart` is stale — the dates are hardcoded to September 2023. The rebuild should make the range dynamic (per-event or last-N-days); flag it as a deliberate behaviour change rather than parity.
 

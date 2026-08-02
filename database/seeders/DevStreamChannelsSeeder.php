@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
 class DevStreamChannelsSeeder extends Seeder
 {
     private const CHANNELS = [
-        ['slug' => 'prime', 'name' => 'EF Prime', 'priority' => 100, 'description' => 'The main channel: ceremonies, the parade and the big stage shows.'],
+        ['slug' => 'prime', 'name' => 'Prime', 'priority' => 100, 'description' => 'The main channel: ceremonies, the parade and the big stage shows.'],
         ['slug' => 'dance-stage', 'name' => 'Dance Stage', 'priority' => 60, 'description' => 'Dance competition, DJ sets and everything after dark.'],
         ['slug' => 'panel-room', 'name' => 'Panel Room', 'priority' => 40, 'description' => 'Talks, workshops and Q&A sessions.'],
         ['slug' => 'art-track', 'name' => 'Art Track', 'priority' => 20, 'description' => 'Art show walkthroughs, live drawing and the auction.'],
@@ -55,7 +55,7 @@ class DevStreamChannelsSeeder extends Seeder
 
         // Live now: the primary channel plus two others, so the hero has a
         // featured show and the grid has company.
-        $this->show($prime, 'EF Prime', 'Your 24/7 EF TV Channel showing the prime shows and fun content from other conventions.', $now->copy()->subDay(), $now->copy()->addDays(7), 'live', 2148);
+        $this->show($prime, 'Prime', 'Your 24/7 channel showing the prime shows and fun content from other conventions.', $now->copy()->subDay(), $now->copy()->addDays(7), 'live', 2148);
         $this->show($prime, 'Opening Ceremony', 'Guest of honour introductions, the charity reveal and the first look at this year\'s theme.', $now->copy()->addMinutes(36), $now->copy()->addMinutes(96), 'scheduled');
         $this->show($panels, 'Fursuit Care Panel', 'Washing, drying, repairs, and how to survive a hot con day in full suit.', $now->copy()->subMinutes(26), $now->copy()->addMinutes(34), 'live', 312);
         $this->show($art, 'Art Show Walkthrough', 'A slow walk past every piece in the art show, with commentary from the artists.', $now->copy()->subMinutes(41), $now->copy()->addMinutes(19), 'live', 96);

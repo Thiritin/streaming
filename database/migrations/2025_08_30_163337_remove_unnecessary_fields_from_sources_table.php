@@ -19,7 +19,7 @@ return new class extends Migration
         } catch (\Exception $e) {
             // Index doesn't exist, continue
         }
-        
+
         Schema::table('sources', function (Blueprint $table) {
             // Drop columns if they exist
             $columnsToDrop = [];
@@ -28,8 +28,8 @@ return new class extends Migration
                     $columnsToDrop[] = $column;
                 }
             }
-            
-            if (!empty($columnsToDrop)) {
+
+            if (! empty($columnsToDrop)) {
                 $table->dropColumn($columnsToDrop);
             }
         });

@@ -28,7 +28,7 @@ return new class extends Migration
             $table->foreignId('revoked_by_user_id')->nullable()->constrained('users')->onDelete('set null');
             $table->timestamp('revoked_at')->nullable();
             $table->timestamps();
-            
+
             $table->index(['user_id', 'badge_type']);
         });
     }

@@ -46,7 +46,7 @@ class ServerInstallScriptController extends Controller
 
         return response()->streamDownload(
             fn () => print ($script),
-            "ef-streaming-install-{$server->id}.sh",
+            "install-{$server->id}.sh",
             ['Content-Type' => 'text/x-shellscript'],
         );
     }
@@ -80,7 +80,7 @@ class ServerInstallScriptController extends Controller
                 'key' => 'install',
                 'label' => 'Install script',
                 'language' => 'bash',
-                'filename' => "ef-streaming-install-{$server->id}.sh",
+                'filename' => "install-{$server->id}.sh",
                 'content' => $provisioning->generateInstallScript($server),
             ],
             [

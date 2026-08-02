@@ -45,8 +45,8 @@ class ShowDnsDetails extends Command
         $this->info('   Contents:');
         $this->line(file_get_contents($keyFile));
 
-        // Show example nsupdate command for creating test222.stream.eurofurence.org
-        $hostname = 'test222.stream.eurofurence.org';
+        // Show an example nsupdate command against the configured zone
+        $hostname = trim('test222.'.config('dns.zone'), '.');
         $testIp = '127.0.0.1';
 
         $this->info("\n3. Example nsupdate Command (for creating $hostname):");

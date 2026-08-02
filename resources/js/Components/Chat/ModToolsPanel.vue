@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { humanizeSeconds } from '@/composables/useChat'
 
 const props = defineProps({
     settings: { type: Object, required: true },
@@ -12,6 +13,7 @@ const emit = defineEmits(['close', 'result'])
 
 const slowPresets = [0, 3, 10, 30, 60, 120]
 const announcement = ref('')
+const composing = ref(false)
 const active = ref({ timeouts: [], bans: [] })
 const busy = ref(false)
 const confirmingClear = ref(false)
@@ -67,6 +69,7 @@ async function sendAnnouncement() {
 
     await guard(() => props.moderation.announce(announcement.value.trim()))
     announcement.value = ''
+    composing.value = false
 }
 
 async function lift(entry, type) {
@@ -78,30 +81,37 @@ onMounted(refresh)
 </script>
 
 <template>
-    <div class="flex h-full flex-col bg-primary-950">
-        <div class="flex items-center justify-between border-b border-primary-800 px-3 py-2">
-            <h2 class="text-sm font-semibold uppercase tracking-wider text-primary-100">Mod tools</h2>
+    <div class="border-b border-primary-700 bg-primary-950/98 shadow-xl backdrop-blur-sm">
+        <div class="flex items-center justify-between px-3 py-2">
+            <div class="flex items-center gap-1.5 text-primary-100">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6l7-3z" />
+                </svg>
+                <h2 class="text-xs font-semibold uppercase tracking-wider">Mod tools</h2>
+            </div>
             <button
                 type="button"
                 class="rounded p-1 text-primary-400 hover:bg-primary-800 hover:text-primary-100"
+                title="Close"
                 @click="emit('close')"
             >
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18" />
                 </svg>
             </button>
         </div>
 
-        <div class="flex-1 space-y-5 overflow-y-auto px-3 py-3">
+        <div class="max-h-[19rem] space-y-3 overflow-y-auto overscroll-contain px-3 pb-3">
+            <!-- Slow mode -->
             <section>
-                <h3 class="mb-2 text-[10px] uppercase tracking-widest text-primary-500">Slow mode</h3>
-                <div class="grid grid-cols-6 gap-1">
+                <div class="mb-1 text-[10px] uppercase tracking-widest text-primary-500">Slow mode</div>
+                <div class="flex gap-1">
                     <button
                         v-for="seconds in slowPresets"
                         :key="seconds"
                         type="button"
                         :disabled="busy"
-                        class="rounded-md border py-1.5 text-xs transition-colors disabled:opacity-50"
+                        class="flex-1 rounded border py-1 text-[11px] transition-colors disabled:opacity-50"
                         :class="
                             settings.slow_mode_seconds === seconds
                                 ? 'border-primary-400 bg-primary-400/20 text-primary-100'
@@ -114,89 +124,120 @@ onMounted(refresh)
                 </div>
             </section>
 
+            <!-- Modes + actions -->
             <section>
-                <h3 class="mb-2 text-[10px] uppercase tracking-widest text-primary-500">Chat modes</h3>
-                <div class="space-y-1.5">
+                <div class="mb-1 text-[10px] uppercase tracking-widest text-primary-500">Chat modes</div>
+                <div class="flex flex-wrap gap-1">
                     <button
                         type="button"
                         :disabled="busy"
-                        class="flex w-full items-center justify-between rounded-md border border-primary-700 px-3 py-2 text-xs text-primary-200 hover:bg-primary-800 disabled:opacity-50"
+                        class="rounded border px-2 py-1 text-[11px] transition-colors disabled:opacity-50"
+                        :class="
+                            settings.emote_only
+                                ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300'
+                                : 'border-primary-700 text-primary-300 hover:bg-primary-800'
+                        "
                         @click="toggle('emote_only')"
                     >
-                        <span>Emote-only chat</span>
-                        <span :class="settings.emote_only ? 'text-emerald-300' : 'text-primary-500'">
-                            {{ settings.emote_only ? 'On' : 'Off' }}
-                        </span>
+                        Emote-only
                     </button>
                     <button
                         type="button"
                         :disabled="busy"
-                        class="flex w-full items-center justify-between rounded-md border border-primary-700 px-3 py-2 text-xs text-primary-200 hover:bg-primary-800 disabled:opacity-50"
+                        class="rounded border px-2 py-1 text-[11px] transition-colors disabled:opacity-50"
+                        :class="
+                            settings.sponsors_only
+                                ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300'
+                                : 'border-primary-700 text-primary-300 hover:bg-primary-800'
+                        "
                         @click="toggle('sponsors_only')"
                     >
-                        <span>Sponsors-only chat</span>
-                        <span :class="settings.sponsors_only ? 'text-emerald-300' : 'text-primary-500'">
-                            {{ settings.sponsors_only ? 'On' : 'Off' }}
-                        </span>
+                        Sponsors-only
+                    </button>
+                    <button
+                        v-if="canAnnounce"
+                        type="button"
+                        class="rounded border px-2 py-1 text-[11px] transition-colors"
+                        :class="
+                            composing
+                                ? 'border-primary-400 bg-primary-400/20 text-primary-100'
+                                : 'border-primary-700 text-primary-300 hover:bg-primary-800'
+                        "
+                        @click="composing = !composing"
+                    >
+                        Announce
+                    </button>
+                    <button
+                        type="button"
+                        :disabled="busy"
+                        class="rounded border border-red-800 px-2 py-1 text-[11px] text-red-300 transition-colors hover:bg-red-900/40 disabled:opacity-50"
+                        @click="clearChat"
+                        @blur="confirmingClear = false"
+                    >
+                        {{ confirmingClear ? 'Confirm clear?' : 'Clear chat' }}
                     </button>
                 </div>
             </section>
 
-            <section v-if="canAnnounce">
-                <h3 class="mb-2 text-[10px] uppercase tracking-widest text-primary-500">Announcement</h3>
+            <!-- Announcement composer -->
+            <section v-if="canAnnounce && composing">
                 <textarea
                     v-model="announcement"
                     rows="2"
                     maxlength="500"
+                    autofocus
                     placeholder="Pinned to the top of everyone's chat"
-                    class="w-full resize-none rounded-md border border-primary-800 bg-primary-900 px-3 py-2 text-sm text-primary-100 placeholder:text-primary-600 focus:border-primary-500 focus:outline-none"
+                    class="w-full resize-none rounded-md border border-primary-800 bg-primary-900 px-2 py-1.5 text-xs text-primary-100 placeholder:text-primary-600 focus:border-primary-500 focus:outline-none"
+                    @keydown.enter.exact.prevent="sendAnnouncement"
+                    @keydown.esc="composing = false"
                 />
                 <button
                     type="button"
                     :disabled="busy || !announcement.trim()"
-                    class="mt-1.5 w-full rounded-md bg-primary-600 py-2 text-xs font-medium text-white hover:bg-primary-500 disabled:opacity-50"
+                    class="mt-1 w-full rounded-md bg-primary-600 py-1.5 text-[11px] font-medium text-white hover:bg-primary-500 disabled:opacity-50"
                     @click="sendAnnouncement"
                 >
                     Send announcement
                 </button>
             </section>
 
+            <!-- Active punishments -->
             <section>
-                <h3 class="mb-2 text-[10px] uppercase tracking-widest text-primary-500">Danger zone</h3>
-                <button
-                    type="button"
-                    :disabled="busy"
-                    class="w-full rounded-md border border-red-800 py-2 text-xs text-red-300 hover:bg-red-900/40 disabled:opacity-50"
-                    @click="clearChat"
-                    @blur="confirmingClear = false"
-                >
-                    {{ confirmingClear ? 'Click again to clear every message' : 'Clear chat' }}
-                </button>
-            </section>
-
-            <section>
-                <div class="mb-2 flex items-center justify-between">
-                    <h3 class="text-[10px] uppercase tracking-widest text-primary-500">Active punishments</h3>
+                <div class="mb-1 flex items-center justify-between">
+                    <span class="text-[10px] uppercase tracking-widest text-primary-500">
+                        Active
+                        <template v-if="active.timeouts.length || active.bans.length">
+                            ({{ active.timeouts.length + active.bans.length }})
+                        </template>
+                    </span>
                     <button type="button" class="text-[10px] text-primary-400 hover:text-primary-200" @click="refresh">
                         Refresh
                     </button>
                 </div>
 
-                <div v-if="!active.timeouts.length && !active.bans.length" class="text-xs text-primary-500">
+                <p v-if="!active.timeouts.length && !active.bans.length" class="text-[11px] text-primary-600">
                     Nobody is timed out or banned.
-                </div>
+                </p>
 
-                <div v-for="entry in active.timeouts" :key="`t-${entry.user_id}`" class="flex items-center justify-between py-1 text-xs">
+                <div
+                    v-for="entry in active.timeouts"
+                    :key="`t-${entry.user_id}`"
+                    class="flex items-center justify-between gap-2 py-0.5 text-[11px]"
+                >
                     <span class="truncate text-primary-200">
                         {{ entry.name }}
-                        <span class="text-primary-500">· {{ entry.seconds_remaining }}s left</span>
+                        <span class="text-primary-500">· {{ humanizeSeconds(entry.seconds_remaining) }} left</span>
                     </span>
-                    <button type="button" class="text-primary-400 hover:text-primary-100" @click="lift(entry, 'timeout')">
+                    <button type="button" class="shrink-0 text-primary-400 hover:text-primary-100" @click="lift(entry, 'timeout')">
                         Lift
                     </button>
                 </div>
 
-                <div v-for="entry in active.bans" :key="`b-${entry.user_id}`" class="flex items-center justify-between py-1 text-xs">
+                <div
+                    v-for="entry in active.bans"
+                    :key="`b-${entry.user_id}`"
+                    class="flex items-center justify-between gap-2 py-0.5 text-[11px]"
+                >
                     <span class="truncate text-red-300">
                         {{ entry.name }}
                         <span class="text-primary-500">· {{ entry.permanent ? 'permanent' : 'temporary' }}</span>
@@ -204,7 +245,7 @@ onMounted(refresh)
                     <button
                         v-if="canBan"
                         type="button"
-                        class="text-primary-400 hover:text-primary-100"
+                        class="shrink-0 text-primary-400 hover:text-primary-100"
                         @click="lift(entry, 'ban')"
                     >
                         Unban

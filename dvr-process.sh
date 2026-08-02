@@ -27,7 +27,7 @@ API_KEY="${RECORDING_API_KEY}"
 S3_ALIAS="${S3_ALIAS:-eventwolf}"  # mc alias for DVR S3 bucket
 S3_BUCKET="${S3_BUCKET:-recording}"
 S3_BASE_PATH="${S3_BASE_PATH:-on-demand}"
-EVENT_SLUG="${EVENT_SLUG:-ef29}"  # Event identifier (e.g., ef29 for Eurofurence 29)
+EVENT_SLUG="${EVENT_SLUG:-event}"  # Event identifier, set per convention/year
 TEMP_DIR="${TEMP_DIR:-/tmp/dvr-processing}"
 DVR_SOURCE_DIR="${DVR_SOURCE_DIR:-/var/dvr}"  # Directory containing DVR m3u8/ts files
 

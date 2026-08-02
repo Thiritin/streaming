@@ -21,13 +21,21 @@ services:
 
   # Origin FFmpeg HLS Transcoder
   origin-ffmpeg-hls:
-    image: eurofurence/ffmpeg-hls:latest
+    image: {{ config('stream.images.ffmpeg_hls') }}
     container_name: origin-ffmpeg-hls
     environment:
       SRS_API_URL: http://origin-srs:1985/api/v1
       SRS_RTMP_URL: rtmp://origin-srs:1935
       OUTPUT_BASE_DIR: /var/www/hls/live
       CHECK_INTERVAL: 5
+      # 1800 segments at hls_time 2 is the 60 minute live rewind window; the extra
+      # 60 retained segments are the grace the S3 uploader gets before a segment is
+      # deleted. See docs/dvr-archive-plan.md.
+      DVR_WINDOW_SEGMENTS: 1800
+      HLS_DELETE_THRESHOLD: 60
+      # Restart FFmpeg if it stops advancing its playlists while SRS still reports
+      # the stream as publishing.
+      SEGMENT_STALL_SECONDS: 15
     volumes:
       - hls-content:/var/www/hls
     restart: unless-stopped
@@ -71,10 +79,10 @@ services:
   
   # DVR S3 Uploader Service
   dvr-uploader:
-    image: eurofurence/dvr-uploader:latest
+    image: {{ config('stream.images.dvr_uploader') }}
     container_name: dvr-uploader
     environment:
-      S3_BUCKET: ${DVR_AWS_BUCKET:-ef-streaming-recordings}
+      S3_BUCKET: ${DVR_AWS_BUCKET:-streaming-recordings}
       S3_REGION: ${DVR_AWS_DEFAULT_REGION:-eu-central-1}
       S3_ACCESS_KEY: ${DVR_AWS_ACCESS_KEY_ID}
       S3_SECRET_KEY: ${DVR_AWS_SECRET_ACCESS_KEY}

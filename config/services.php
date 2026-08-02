@@ -35,6 +35,18 @@ return [
         'url' => env('OIDC_URL'),
         'client_id' => env('OIDC_CLIENT_ID'),
         'secret' => env('OIDC_SECRET'),
+
+        /*
+         | Maps identity-provider group IDs from the userinfo "groups" claim onto
+         | role slugs. The IDs are issued by whichever provider an installation
+         | runs, so they come from the environment as "group:role" pairs, e.g.
+         | OIDC_GROUP_ROLE_MAP="KVJ...=admin,54Z...=staff".
+         */
+        'group_role_map' => collect(explode(',', (string) env('OIDC_GROUP_ROLE_MAP', '')))
+            ->map(fn ($pair) => array_map('trim', explode('=', $pair, 2)))
+            ->filter(fn ($pair) => count($pair) === 2 && $pair[0] !== '' && $pair[1] !== '')
+            ->mapWithKeys(fn ($pair) => [$pair[0] => $pair[1]])
+            ->all(),
     ],
 
     'stream' => [

@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Laravel-based streaming system for Eurofurence (and other conventions) that manages live video streaming infrastructure. It includes server provisioning, client management, real-time chat, and auto-scaling capabilities.
+This is a Laravel-based streaming system for conventions that manages live video streaming infrastructure. It includes server provisioning, client management, real-time chat, and auto-scaling capabilities.
+
+Nothing convention-specific is hardcoded. Names, copy, links, logo, login background and accent colour resolve through `App\Services\BrandingService`, backed by the `branding_settings` table with neutral fallbacks in `config/branding.php`. Never reintroduce a convention name, domain, or logo as a literal or a config default.
 
 ## Core Architecture
 

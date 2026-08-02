@@ -38,31 +38,31 @@ class AutoModeEndToEndTest extends TestCase
 
         // Step 2: Time passes, we reach scheduled start time but source is still offline
         $this->travel(10)->minutes();
-        
+
         // Run the scheduled command
         $this->artisan('shows:check-auto-mode')->assertExitCode(0);
-        
+
         $show->refresh();
         $this->assertEquals('scheduled', $show->status); // Still scheduled because source is offline
 
         // Step 3: Source goes online (simulating OBS starting to stream)
         $source->status = SourceStatusEnum::ONLINE;
         $source->save();
-        
+
         // Broadcast the event (this would normally happen via SRS callback or admin panel)
         event(new SourceStatusChangedEvent($source, SourceStatusEnum::OFFLINE->value));
-        
+
         $show->refresh();
         $this->assertEquals('live', $show->status); // Show auto-started via event listener
         $this->assertNotNull($show->actual_start);
 
         // Step 4: Source has connection issues during the show (within scheduled time)
         $this->travel(30)->minutes();
-        
+
         $source->status = SourceStatusEnum::ERROR;
         $source->save();
         event(new SourceStatusChangedEvent($source, SourceStatusEnum::ONLINE->value));
-        
+
         $show->refresh();
         $this->assertEquals('live', $show->status); // Show remains live during scheduled time
 
@@ -70,25 +70,25 @@ class AutoModeEndToEndTest extends TestCase
         $source->status = SourceStatusEnum::ONLINE;
         $source->save();
         event(new SourceStatusChangedEvent($source, SourceStatusEnum::ERROR->value));
-        
+
         $show->refresh();
         $this->assertEquals('live', $show->status); // Show still live
 
         // Step 6: Time passes, we're now past the scheduled end time
         $this->travel(2)->hours();
-        
+
         // Run the scheduled command (show should end at scheduled time even if source is online)
         $this->artisan('shows:check-auto-mode')->assertExitCode(0);
-        
+
         $show->refresh();
         $this->assertEquals('ended', $show->status); // Show auto-ended at scheduled time
         $this->assertNotNull($show->actual_end);
-        
+
         // Verify that source going offline after show already ended doesn't cause issues
         $source->status = SourceStatusEnum::OFFLINE;
         $source->save();
         event(new SourceStatusChangedEvent($source, SourceStatusEnum::ONLINE->value));
-        
+
         $show->refresh();
         $this->assertEquals('ended', $show->status); // Show remains ended
     }
@@ -118,12 +118,12 @@ class AutoModeEndToEndTest extends TestCase
 
         // Time passes to scheduled start
         $this->travel(6)->minutes();
-        
+
         // Run the scheduled command
         $this->artisan('shows:check-auto-mode')
             ->expectsOutput("Starting auto mode show: {$show->title}")
             ->assertExitCode(0);
-        
+
         $show->refresh();
         $this->assertEquals('live', $show->status);
         $this->assertNotNull($show->actual_start);
@@ -150,13 +150,13 @@ class AutoModeEndToEndTest extends TestCase
         $source->status = SourceStatusEnum::ONLINE;
         $source->save();
         event(new SourceStatusChangedEvent($source, SourceStatusEnum::OFFLINE->value));
-        
+
         $show->refresh();
         $this->assertEquals('scheduled', $show->status); // Remains scheduled
 
         // Run scheduled command
         $this->artisan('shows:check-auto-mode')->assertExitCode(0);
-        
+
         $show->refresh();
         $this->assertEquals('scheduled', $show->status); // Still scheduled
 
@@ -166,12 +166,12 @@ class AutoModeEndToEndTest extends TestCase
 
         // Time passes beyond scheduled end
         $this->travel(3)->hours();
-        
+
         // Source goes offline
         $source->status = SourceStatusEnum::OFFLINE;
         $source->save();
         event(new SourceStatusChangedEvent($source, SourceStatusEnum::ONLINE->value));
-        
+
         $show->refresh();
         $this->assertEquals('live', $show->status); // Still live, not auto-ended
 
@@ -221,7 +221,7 @@ class AutoModeEndToEndTest extends TestCase
 
         // Time passes, morning show ends
         $this->travel(40)->minutes();
-        
+
         $source->status = SourceStatusEnum::OFFLINE;
         $source->save();
         event(new SourceStatusChangedEvent($source, SourceStatusEnum::ONLINE->value));
@@ -231,7 +231,7 @@ class AutoModeEndToEndTest extends TestCase
 
         // Time passes to evening show
         $this->travel(3)->hours();
-        
+
         // Source comes back online
         $source->status = SourceStatusEnum::ONLINE;
         $source->save();
@@ -266,15 +266,15 @@ class AutoModeEndToEndTest extends TestCase
 
         // Time passes to just after scheduled end
         $this->travel(6)->minutes();
-        
+
         // Run the scheduled command
         $this->artisan('shows:check-auto-mode')
             ->expectsOutput("Ending auto mode show: {$show->title}")
             ->assertExitCode(0);
-        
+
         $show->refresh();
         $source->refresh();
-        
+
         // Show should be ended even though source is still online
         $this->assertEquals('ended', $show->status);
         $this->assertNotNull($show->actual_end);

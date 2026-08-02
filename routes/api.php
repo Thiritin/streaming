@@ -19,7 +19,7 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 });
 
 // Command API endpoints
-Route::middleware(['web','auth','throttle:60,60'])->prefix('command')->group(function () {
+Route::middleware(['web', 'auth', 'throttle:60,60'])->prefix('command')->group(function () {
     Route::post('/execute', [App\Http\Controllers\Api\CommandController::class, 'execute'])->name('api.command.execute');
     Route::get('/suggestions', [App\Http\Controllers\Api\CommandController::class, 'suggestions'])->name('api.command.suggestions');
     Route::get('/list', [App\Http\Controllers\Api\CommandController::class, 'list'])->name('api.command.list');

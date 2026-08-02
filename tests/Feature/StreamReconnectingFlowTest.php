@@ -35,7 +35,7 @@ class StreamReconnectingFlowTest extends TestCase
         // User visits the show page
         $user = User::factory()->create();
         $response = $this->actingAs($user)->get(route('show.view', $show->slug));
-        
+
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
             ->component('ShowPlayer')
@@ -52,7 +52,7 @@ class StreamReconnectingFlowTest extends TestCase
 
         // Verify the event is dispatched
         Event::assertDispatched(SourceStatusChangedEvent::class, function ($event) use ($source) {
-            return $event->source->id === $source->id && 
+            return $event->source->id === $source->id &&
                    $event->status === 'online';
         });
     }
@@ -77,7 +77,7 @@ class StreamReconnectingFlowTest extends TestCase
         // User visits the show page
         $user = User::factory()->create();
         $response = $this->actingAs($user)->get(route('show.view', $show->slug));
-        
+
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
             ->component('ShowPlayer')
@@ -94,7 +94,7 @@ class StreamReconnectingFlowTest extends TestCase
 
         // Verify the event is dispatched
         Event::assertDispatched(SourceStatusChangedEvent::class, function ($event) use ($source) {
-            return $event->source->id === $source->id && 
+            return $event->source->id === $source->id &&
                    $event->status === 'online';
         });
     }
@@ -117,7 +117,7 @@ class StreamReconnectingFlowTest extends TestCase
         // User visits the show page
         $user = User::factory()->create();
         $response = $this->actingAs($user)->get(route('show.view', $show->slug));
-        
+
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
             ->component('ShowPlayer')
@@ -154,7 +154,7 @@ class StreamReconnectingFlowTest extends TestCase
 
         // Verify the event is dispatched but with error status
         Event::assertDispatched(SourceStatusChangedEvent::class, function ($event) use ($source) {
-            return $event->source->id === $source->id && 
+            return $event->source->id === $source->id &&
                    $event->status === 'error';
         });
     }

@@ -248,9 +248,11 @@ class AdminPanelTest extends TestCase
      */
     public function test_brand_name_is_displayed(): void
     {
+        \App\Models\BrandingSetting::setValue('site_name', 'Test Stream');
+
         $response = $this->actingAs($this->adminUser)->get('/admin');
 
         $response->assertSuccessful();
-        $response->assertSee('EF Streaming Admin');
+        $response->assertSee('Test Stream Admin');
     }
 }

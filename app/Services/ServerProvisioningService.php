@@ -54,9 +54,9 @@ packages:
 runcmd:
   - curl -fsSL '{$serverUrl}/api/server/scripts/install?shared_secret={$sharedSecret}' -o /opt/install.sh
   - chmod +x /opt/install.sh
-  - /opt/install.sh > /var/log/ef-streaming-install.log 2>&1
+  - /opt/install.sh > /var/log/streaming-install.log 2>&1
 
-final_message: "EF Streaming server setup completed after \$UPTIME seconds"
+final_message: "Streaming server setup completed after \$UPTIME seconds"
 YAML;
 
         return $cloudInit;
@@ -114,9 +114,11 @@ YAML;
             $nginxUpstream = 'http://'.$nginxUpstreamHost.':'.$nginxUpstreamPort;
         }
 
-        // For edge server, we need to connect to origin
-        // Use a sensible default if no origin server is found
-        $originHost = $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org';
+        // For edge server, we need to connect to origin. With no origin on
+        // record, fall back to origin.<dns zone> so the config is still valid.
+        $originHost = $originServer
+            ? $originServer->hostname
+            : trim('origin.'.config('dns.zone'), '.');
         // For nginx upstream block - just hostname:port, no protocol
         $originUpstream = $originHost.':443';
 

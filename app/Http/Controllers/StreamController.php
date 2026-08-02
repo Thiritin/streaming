@@ -219,7 +219,7 @@ class StreamController extends Controller
     /**
      * Resolve the featured show for the stage hero.
      *
-     * The primary channel (highest source priority, e.g. EF Prime) always owns the
+     * The primary channel (highest source priority, e.g. Prime) always owns the
      * hero: live if it is on air, otherwise its next scheduled show. Only when that
      * channel has nothing at all do we fall back to the busiest live show.
      */

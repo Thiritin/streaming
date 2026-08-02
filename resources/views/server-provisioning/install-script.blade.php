@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# EF Streaming {{ ucfirst($server->type->value) }} Server Installation Script
+# Streaming {{ ucfirst($server->type->value) }} Server Installation Script
 # Generated: {{ now()->format('Y-m-d H:i:s') }}
 # Server ID: {{ $server->id }}
 # Hostname: {{ $server->hostname }}
@@ -8,7 +8,7 @@
 set -e
 
 echo "================================================"
-echo "EF Streaming Server Installation"
+echo "Streaming Server Installation"
 echo "Server Type: {{ $server->type->value }}"
 echo "Generated: {{ now()->format('Y-m-d H:i:s') }}"
 echo "================================================"
@@ -37,8 +37,8 @@ else
 fi
 
 # Create working directory
-mkdir -p /opt/ef-streaming
-cd /opt/ef-streaming
+mkdir -p /opt/streaming
+cd /opt/streaming
 
 # Create environment file
 cat > .env <<EOF
@@ -204,6 +204,6 @@ echo "================================================"
 systemctl enable docker
 
 # Setup heartbeat cron job (every minute)
-(crontab -l 2>/dev/null; echo "* * * * * /opt/ef-streaming/heartbeat.sh") | crontab -
+(crontab -l 2>/dev/null; echo "* * * * * /opt/streaming/heartbeat.sh") | crontab -
 
 exit 0

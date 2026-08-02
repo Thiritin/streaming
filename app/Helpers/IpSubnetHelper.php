@@ -6,10 +6,9 @@ class IpSubnetHelper
 {
     /**
      * Check if an IP address is within a subnet
-     * 
-     * @param string $ip The IP address to check
-     * @param string $subnet The subnet in CIDR notation (e.g., 192.168.1.0/24 or 2001:db8::/64)
-     * @return bool
+     *
+     * @param  string  $ip  The IP address to check
+     * @param  string  $subnet  The subnet in CIDR notation (e.g., 192.168.1.0/24 or 2001:db8::/64)
      */
     public static function isIpInSubnet(string $ip, string $subnet): bool
     {
@@ -18,7 +17,7 @@ class IpSubnetHelper
         }
 
         // Check if subnet contains a slash for CIDR notation
-        if (!str_contains($subnet, '/')) {
+        if (! str_contains($subnet, '/')) {
             return false;
         }
 
@@ -47,8 +46,8 @@ class IpSubnetHelper
     private static function isIpv4InSubnet(string $ip, string $subnetAddress, int $prefixLength): bool
     {
         // Validate IP addresses
-        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || 
-            !filter_var($subnetAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ||
+            ! filter_var($subnetAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
             return false;
         }
 
@@ -74,8 +73,8 @@ class IpSubnetHelper
     private static function isIpv6InSubnet(string $ip, string $subnetAddress, int $prefixLength): bool
     {
         // Validate IP addresses
-        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) || 
-            !filter_var($subnetAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) ||
+            ! filter_var($subnetAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
             return false;
         }
 
@@ -108,7 +107,7 @@ class IpSubnetHelper
             $mask = 0xFF << (8 - $bitsRemaining);
             $ipByte = ord($ipBinary[$bytesToCompare]);
             $subnetByte = ord($subnetBinary[$bytesToCompare]);
-            
+
             if (($ipByte & $mask) !== ($subnetByte & $mask)) {
                 return false;
             }

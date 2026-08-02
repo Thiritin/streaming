@@ -273,7 +273,25 @@ async function verify(r) {
     try {
         const reply = await r.subrequest(LEGACY_AUTH_LOCATION, { args: target.query });
 
-        r.return(reply.status >= 200 && reply.status < 300 ? 204 : 403);
+        if (reply.status >= 200 && reply.status < 300) {
+            r.return(204);
+
+            return;
+        }
+
+        // The app answers 404 when it thinks the stream is unknown or offline.
+        // That is not an authorisation decision, so let the origin answer it -
+        // it will 404 too if the segment really is gone. Reporting 403 here made
+        // a stream restart look like an auth failure, and players treat a 403 as
+        // fatal where they will retry around a 404.
+        if (reply.status === 404) {
+            r.return(204);
+
+            return;
+        }
+
+        r.error('hls-auth: legacy auth returned ' + reply.status + ' for ' + slug);
+        r.return(403);
     } catch (e) {
         r.error('hls-auth: legacy auth subrequest failed: ' + e.message);
         r.return(403);

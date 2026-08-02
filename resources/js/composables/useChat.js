@@ -11,6 +11,44 @@ import { usePage } from '@inertiajs/vue3'
 const subscriptions = new Map()
 
 /**
+ * A message safe to show a chatter.
+ *
+ * Only 4xx bodies carry text meant for the end user. A 5xx body is a server
+ * exception (stack-adjacent strings, connection errors, driver noise) and must
+ * never be rendered in chat, so those collapse to the caller's fallback.
+ */
+/**
+ * A duration in words. Mirrors ChatModerationService::humanizeSeconds so the
+ * moderator's notice and the target's own notice read the same way.
+ */
+export function humanizeSeconds(seconds) {
+    const plural = (value, unit) => `${value} ${unit}${value === 1 ? '' : 's'}`
+
+    if (seconds < 60) return plural(seconds, 'second')
+    if (seconds < 3600) return plural(Math.floor(seconds / 60), 'minute')
+    if (seconds < 86400) return plural(Math.floor(seconds / 3600), 'hour')
+
+    return plural(Math.floor(seconds / 86400), 'day')
+}
+
+export function friendlyError(e, fallback) {
+    const status = e?.response?.status
+
+    if (!status) return 'You appear to be offline.'
+    if (status >= 500) return fallback
+    if (status === 419) return 'Your session expired. Reload the page.'
+    if (status === 401 || status === 403) {
+        const data = e.response?.data ?? {}
+
+        return data.message || data.error || 'You are not allowed to do that.'
+    }
+
+    const data = e.response?.data ?? {}
+
+    return data.message || data.error || fallback
+}
+
+/**
  * Live chat state for one source: history, realtime updates, sending and moderation.
  *
  * Reverb is the source of truth for everything that arrives after page load; the
@@ -108,7 +146,7 @@ export function useChat({ sourceId, initialMessages = [], initialSettings = {}, 
         } catch (e) {
             const data = e.response?.data ?? {}
 
-            error.value = data.message || 'Message could not be sent.'
+            error.value = friendlyError(e, 'Message could not be sent.')
 
             if (data.limits) limits.value = data.limits
             if (data.timeout) selfTimeout.value = { seconds_remaining: data.timeout.remaining_seconds, reason: data.timeout.reason }
@@ -133,7 +171,7 @@ export function useChat({ sourceId, initialMessages = [], initialSettings = {}, 
 
             return true
         } catch (e) {
-            error.value = e.response?.data?.error || 'Command failed.'
+            error.value = friendlyError(e, 'Command failed.')
 
             return false
         } finally {
@@ -238,7 +276,9 @@ export function useChat({ sourceId, initialMessages = [], initialSettings = {}, 
                 const removed = event.ids.filter((id) => seen.has(id))
                 removeLocally(event.ids)
 
-                if (removed.length > 0 && event.target_name) {
+                // The deletion itself has to reach everyone so the messages disappear,
+                // but only moderators are told whose messages they were.
+                if (canModerate.value && removed.length > 0 && event.target_name) {
                     notice(
                         `${removed.length} message${removed.length === 1 ? '' : 's'} from ${event.target_name} removed by a moderator`,
                         'warning',
@@ -256,13 +296,17 @@ export function useChat({ sourceId, initialMessages = [], initialSettings = {}, 
                 }
             })
 
+        if (canModerate.value) {
+            join('private', `chat.source.${sourceId}.mods`).listen('.notice', (event) => push(event))
+        }
+
         if (me.value) {
             join('private', `user.${me.value.id}`)
                 .listen('.chat.state', (event) => {
                     if (event.state === 'timed_out') {
                         selfTimeout.value = { seconds_remaining: event.seconds_remaining, reason: event.reason }
                         notice(
-                            `You were timed out for ${event.seconds_remaining}s${event.reason ? ` (${event.reason})` : ''}`,
+                            `You were timed out for ${humanizeSeconds(event.seconds_remaining)}${event.reason ? ` (${event.reason})` : ''}`,
                             'error',
                         )
                     } else if (event.state === 'banned') {

@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
+use App\Helpers\IpSubnetHelper;
 use Filament\Models\Contracts\FilamentUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -12,7 +13,6 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
-use App\Helpers\IpSubnetHelper;
 
 class User extends Authenticatable implements FilamentUser
 {
@@ -51,7 +51,6 @@ class User extends Authenticatable implements FilamentUser
         return $this->belongsTo(Server::class);
     }
 
-
     public function getOrAssignServer($clientIp = null)
     {
         // Check for subnet-based override first
@@ -65,7 +64,7 @@ class User extends Authenticatable implements FilamentUser
                 ($localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet))
             )) {
                 // Create a virtual server object with the override hostname
-                $server = new Server();
+                $server = new Server;
                 $server->hostname = $localHostname;
                 $server->port = 8080;
 
@@ -146,7 +145,7 @@ class User extends Authenticatable implements FilamentUser
 
         // If no servers have capacity, still try to get the least loaded one
         // This ensures users can still connect in emergency situations
-        if (!$server) {
+        if (! $server) {
             $server = $query->orderBy('viewer_count', 'asc')->first();
 
             if ($server) {

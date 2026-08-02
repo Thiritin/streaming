@@ -547,7 +547,7 @@ class ServersTest extends TestCase
             ->get(route('manage.servers.install-script.download', $server));
 
         $response->assertSuccessful();
-        $response->assertDownload("ef-streaming-install-{$server->id}.sh");
+        $response->assertDownload("install-{$server->id}.sh");
     }
 
     public function test_regenerating_backfills_a_missing_shared_secret(): void

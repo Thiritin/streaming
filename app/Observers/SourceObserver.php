@@ -22,11 +22,11 @@ class SourceObserver
     {
         // Store the original status value for comparison after update
         $originalStatus = $source->getOriginal('status');
-        
+
         if ($originalStatus instanceof \App\Enum\SourceStatusEnum) {
             $originalStatus = $originalStatus->value;
         }
-        
+
         self::$previousStatuses[$source->id] = $originalStatus;
     }
 
@@ -40,7 +40,7 @@ class SourceObserver
         if ($source->wasChanged('status')) {
             // Get the previous status from our static storage
             $previousStatus = self::$previousStatuses[$source->id] ?? null;
-            
+
             if ($previousStatus === null) {
                 // Fallback to getOriginal if for some reason we don't have it stored
                 $previousStatus = $source->getOriginal('status');
@@ -48,7 +48,7 @@ class SourceObserver
                     $previousStatus = $previousStatus->value;
                 }
             }
-            
+
             Log::info('Source status changed via Observer', [
                 'source_id' => $source->id,
                 'source_name' => $source->name,
@@ -56,10 +56,10 @@ class SourceObserver
                 'new_status' => $source->status->value,
                 'changed_via' => 'admin_panel',
             ]);
-            
+
             // Broadcast the status change event
             broadcast(new SourceStatusChangedEvent($source, $previousStatus));
-            
+
             // Clean up the static storage
             unset(self::$previousStatuses[$source->id]);
         }

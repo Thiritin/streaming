@@ -27,29 +27,30 @@ class RecordShowStatistics extends Command
      */
     public function handle()
     {
-        $service = new ShowStatisticsService();
-        
+        $service = new ShowStatisticsService;
+
         $liveShows = Show::live()->get();
-        
+
         if ($liveShows->isEmpty()) {
             $this->info('No live shows to record statistics for.');
+
             return Command::SUCCESS;
         }
-        
+
         foreach ($liveShows as $show) {
             try {
                 // First refresh the viewer count from source_users table
                 $show->updateViewerCount();
-                
+
                 // Then record statistics
                 $service->recordStatistics($show);
-                
+
                 $this->info("Recorded statistics for show: {$show->title} (Viewers: {$show->viewer_count})");
             } catch (\Exception $e) {
                 $this->error("Failed to record statistics for show {$show->title}: {$e->getMessage()}");
             }
         }
-        
+
         return Command::SUCCESS;
     }
 }

@@ -18,7 +18,7 @@ return new class extends Migration
             $table->integer('unique_viewers')->default(0);
             $table->timestamp('recorded_at');
             $table->timestamps();
-            
+
             $table->index(['show_id', 'recorded_at']);
         });
     }

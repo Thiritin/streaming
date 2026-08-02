@@ -79,12 +79,12 @@ class RoleSeeder extends Seeder
             ]
         );
 
-        // Staff role (general EF staff)
+        // Staff role (general convention staff)
         Role::updateOrCreate(
             ['slug' => 'staff'],
             [
                 'name' => 'Staff',
-                'description' => 'General Eurofurence staff member',
+                'description' => 'General convention staff member',
                 'chat_color' => '#3B82F6', // Blue color for staff
                 'priority' => 30,
                 'assigned_at_login' => true, // Synced from identity provider groups

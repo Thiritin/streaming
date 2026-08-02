@@ -28,3 +28,6 @@ frankenphp-worker.php
 logs
 # Local dev stream loops (scripts/dev-streams.sh)
 /public/dev-streams
+
+# Generated per-server install script (contains a live shared secret)
+/install.sh

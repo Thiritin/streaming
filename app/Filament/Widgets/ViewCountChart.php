@@ -20,21 +20,21 @@ class ViewCountChart extends LineChartWidget
 
     protected function getData(): array
     {
-        $days = [
-            '02-09-2023' => 'Saturday',
-            '03-09-2023' => 'Sunday',
-            '04-09-2023' => 'Monday',
-            '05-09-2023' => 'Tuesday',
-            '06-09-2023' => 'Wednesday',
-            '07-09-2023' => 'Thursday',
-            '08-09-2023' => 'Friday',
-        ];
+        // The last seven days, rather than one convention's fixed dates, so the
+        // chart stays meaningful for any installation and any year.
+        $days = [];
+
+        for ($offset = 6; $offset >= 0; $offset--) {
+            $day = \Illuminate\Support\Carbon::today()->subDays($offset);
+            $days[] = ['date' => $day, 'label' => $day->format('D d M')];
+        }
+
         $datalist = [];
-        foreach ($days as $k => $v) {
+        foreach ($days as ['date' => $date, 'label' => $v]) {
             $model = Trend::model(ViewCount::class)
                 ->between(
-                    start: \Illuminate\Support\Carbon::parse($k),
-                    end: \Illuminate\Support\Carbon::parse($k)->endOfDay(),
+                    start: $date->copy()->startOfDay(),
+                    end: $date->copy()->endOfDay(),
                 )
                 ->perHour()
                 ->average('count');

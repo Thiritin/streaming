@@ -1,5 +1,5 @@
 [Unit]
-Description=HLS Session Tracker for EF Streaming
+Description=HLS Session Tracker
 After=network.target nginx.service
 Wants=nginx.service
 

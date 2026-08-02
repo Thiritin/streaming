@@ -2,17 +2,9 @@
 
 namespace App\Providers;
 
-use App\Events\Chat\Commands\SlowModeDisabled;
-use App\Events\Chat\Commands\SlowModeEnabled;
-use App\Events\Chat\DeleteMessagesEvent;
 use App\Events\SourceStatusChangedEvent;
 use App\Events\StreamListenerChangeEvent;
 use App\Events\StreamStatusEvent;
-use App\Listeners\Chat\DeleteMessages\DeleteMessagesListener;
-use App\Listeners\Chat\SlowMode\AnnounceSlowModeDeactivationListener;
-use App\Listeners\Chat\SlowMode\AnnounceSlowModeListener;
-use App\Listeners\Chat\SlowMode\SlowModeDisableListener;
-use App\Listeners\Chat\SlowMode\SlowModeEnableListener;
 use App\Listeners\HandleAutoModeShowsListener;
 use App\Listeners\SaveListenerCountListener;
 use App\Listeners\SetCacheStatusListener;
@@ -38,17 +30,6 @@ class EventServiceProvider extends ServiceProvider
         ],
         StreamListenerChangeEvent::class => [
             SaveListenerCountListener::class,
-        ],
-        SlowModeEnabled::class => [
-            SlowModeEnableListener::class,
-            AnnounceSlowModeListener::class,
-        ],
-        SlowModeDisabled::class => [
-            SlowModeDisableListener::class,
-            AnnounceSlowModeDeactivationListener::class,
-        ],
-        DeleteMessagesEvent::class => [
-            DeleteMessagesListener::class,
         ],
         SourceStatusChangedEvent::class => [
             HandleAutoModeShowsListener::class,

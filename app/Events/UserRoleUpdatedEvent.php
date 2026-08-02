@@ -13,6 +13,7 @@ class UserRoleUpdatedEvent implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public int $userId;
+
     public array $roles;
 
     /**

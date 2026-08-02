@@ -20,7 +20,7 @@ return new class extends Migration
                     // Index might not exist
                 }
             });
-            
+
             Schema::table('roles', function (Blueprint $table) {
                 $table->dropColumn('is_staff');
             });

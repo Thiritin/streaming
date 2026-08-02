@@ -4,4 +4,4 @@
 # Monitors SRS for active streams and manages FFmpeg transcoding processes
 
 echo "FFmpeg stream manager script placeholder"
-# The actual implementation is in the eurofurence/ffmpeg-hls:latest Docker image
+# The actual implementation is in the FFmpeg HLS Docker image

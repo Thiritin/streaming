@@ -27,7 +27,7 @@ logging.basicConfig(
 logger = logging.getLogger('dvr-uploader')
 
 # Configuration from environment variables
-S3_BUCKET = os.environ.get('S3_BUCKET', 'ef-streaming-recordings')
+S3_BUCKET = os.environ.get('S3_BUCKET', 'streaming-recordings')
 S3_REGION = os.environ.get('S3_REGION', 'eu-central-1')
 S3_ACCESS_KEY = os.environ.get('S3_ACCESS_KEY')
 S3_SECRET_KEY = os.environ.get('S3_SECRET_KEY')
