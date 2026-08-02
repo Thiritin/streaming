@@ -299,12 +299,20 @@ untouched.
 
 ### 7. Player: live rewind
 
-`VideoPlayer.vue` already carries `liveStreamType: 'live:dvr'` and `seekToLive()`. What
-changes is upstream: with `hls_list_size 1800` the live playlist itself exposes a 60
-minute seekable window, so `live:dvr` becomes correct rather than aspirational.
+**Done.** `resources/js/Components/Player/VideoPlayer.vue` (renamed from `EfPlayer.vue`
+during branding neutralisation) already supported `liveStreamType: 'live:dvr'` and
+`seekToLive()`, but nothing ever passed `live:dvr`, so the seek bar never appeared and the
+window would have stayed invisible no matter how large it was. `StreamPlayer.vue` now
+defaults the prop to `'live:dvr'` and forwards it, leaving `'live'` available per-caller
+for a source that keeps no window.
 
-`backBufferLength: 30` needs raising (or setting to `-1`) or seeking backwards inside
-the window immediately refetches. `liveSyncDurationCount: 3` stays.
+`backBufferLength` is now derived from stream type: 30s for plain live, 90s for `live:dvr`
+and on-demand. `-1` was rejected because it would hold the whole hour in memory; 90s
+covers a short "what did they just say" rewind without a refetch.
+`liveSyncDurationCount: 3` stays.
+
+`StageHero.vue` and `ShowTile.vue` build their own hls.js instances for muted preview
+tiles and were deliberately left at their small buffers.
 
 Client-side parse cost is worth watching: hls.js re-parses the full 1800-entry playlist
 on every 2s refresh. Fine on desktop, measurable on weak devices, so check the VRChat
@@ -323,9 +331,13 @@ here.
 (`docker/edge-nginx/nginx.conf:43`, the `edge/nginx-config.blade.php` mirror, and
 `docker/origin-nginx/nginx.conf:30`), so nothing is needed here.
 
-Unrelated but adjacent: `video/mp2t` is also in those `gzip_types` lists. MPEG-TS is
-already compressed, so with `gzip_proxied any` the edge is spending level-6 gzip CPU on
-every video segment for no size gain. Worth removing, separately from this work.
+`video/mp2t` was also in those `gzip_types` lists. MPEG-TS is already compressed, so with
+`gzip_proxied any` the edge was spending level-6 gzip CPU on every video segment for no
+size gain. **Removed** from all five configs (`docker/edge-nginx`, `docker/origin-nginx`,
+`docker/dev/edge-nginx.conf`, `docker/dev/origin-nginx.conf`, and the edge provisioning
+blade). Verified against the running stack: the playlist comes back
+`Content-Encoding: gzip`, the segment comes back with a plain `Content-Length` and no
+encoding.
 
 The 2s `proxy_cache_valid` plus `proxy_cache_lock` already means origin sees one playlist
 fetch per 2s regardless of viewer count; only edge egress scales.
@@ -397,7 +409,8 @@ rest is headroom for upload lag and for an S3 outage that stalls the reaper.
    end to end.
 5. Edge: `/archive/` and `/recordings/` locations behind the playback token; gzip m3u8.
 6. Manage UI: index, then the trim editor.
-7. Player: `backBufferLength`, DVR scrubber affordances.
+7. **Done.** Player: `live:dvr` wired through `StreamPlayer.vue`, stream-type-aware
+   `backBufferLength`.
 8. Retire `DvrExtractorService`, `dvr-extract.sh`, `dvr-process.sh`, `ExtractDvrSegments`,
    and the SRS `dvr` block.
 
