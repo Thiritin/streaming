@@ -120,6 +120,8 @@ final class Settings
             'helper' => $field['helper'] ?? null,
             'purpose' => $field['purpose'] ?? null,
             'full' => $field['full'] ?? false,
+            // Colour fields may offer a swatch row; hex => label, in order.
+            'presets' => $this->presets($field),
             'required' => in_array('required', $field['rules'] ?? [], true),
             'value' => $value,
             'default' => $default,
@@ -129,6 +131,27 @@ final class Settings
                 ? $this->assetUrl($value)
                 : null,
         ];
+    }
+
+    /**
+     * Preset swatches as a list, so the order survives the trip to the frontend.
+     *
+     * @param  array<string, mixed>  $field
+     * @return array<int, array{hex: string, label: string}>|null
+     */
+    private function presets(array $field): ?array
+    {
+        if (empty($field['presets'])) {
+            return null;
+        }
+
+        $presets = [];
+
+        foreach ($field['presets'] as $hex => $label) {
+            $presets[] = ['hex' => $hex, 'label' => $label];
+        }
+
+        return $presets;
     }
 
     /**

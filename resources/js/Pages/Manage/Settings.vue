@@ -48,6 +48,10 @@ const resetAll = () => {
 };
 
 const accept = (type) => (type === 'video' ? 'video/mp4,video/webm' : 'image/*');
+
+/** Hex comparison is case-insensitive; the picker writes lowercase, presets are stored as authored. */
+const isSelectedPreset = (field, preset) =>
+  (form.values[field.key] ?? '').toLowerCase() === preset.hex.toLowerCase();
 </script>
 
 <template>
@@ -100,28 +104,49 @@ const accept = (type) => (type === 'video' ? 'video/mp4,video/webm' : 'image/*')
               :helper="field.helper"
               :error="form.errors[`values.${field.key}`]"
             >
-              <div class="flex items-center gap-2">
-                <input
-                  v-model="form.values[field.key]"
-                  type="color"
-                  class="size-8 shrink-0 cursor-pointer rounded border border-hairline bg-surface-2"
-                  :aria-label="`${field.label} swatch`"
-                />
-                <input
-                  v-model="form.values[field.key]"
-                  type="text"
-                  placeholder="#000000"
-                  class="h-8 w-32 rounded border border-hairline bg-surface-2 px-2 font-mono text-[13px] text-fg-1 outline-none transition-colors focus:border-state-live/50"
-                  :aria-label="field.label"
-                />
-                <button
-                  v-if="!isDefault(field)"
-                  type="button"
-                  class="text-[11px] text-fg-3 underline-offset-2 hover:text-fg-1 hover:underline"
-                  @click="useDefault(field)"
-                >
-                  Use the default
-                </button>
+              <div class="flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                  <input
+                    v-model="form.values[field.key]"
+                    type="color"
+                    class="size-8 shrink-0 cursor-pointer rounded border border-hairline bg-surface-2"
+                    :aria-label="`${field.label} swatch`"
+                  />
+                  <input
+                    v-model="form.values[field.key]"
+                    type="text"
+                    placeholder="#000000"
+                    class="h-8 w-32 rounded border border-hairline bg-surface-2 px-2 font-mono text-[13px] text-fg-1 outline-none transition-colors focus:border-state-live/50"
+                    :aria-label="field.label"
+                  />
+                  <button
+                    v-if="!isDefault(field)"
+                    type="button"
+                    class="text-[11px] text-fg-3 underline-offset-2 hover:text-fg-1 hover:underline"
+                    @click="useDefault(field)"
+                  >
+                    Use the default
+                  </button>
+                </div>
+
+                <!-- Known-good bases. The ramp is derived from whatever lands in
+                     the field, so a preset is just a shortcut to a hex. -->
+                <div v-if="field.presets" class="flex flex-wrap gap-1.5">
+                  <button
+                    v-for="preset in field.presets"
+                    :key="preset.hex"
+                    type="button"
+                    class="size-6 rounded-full border transition-transform hover:scale-110"
+                    :class="isSelectedPreset(field, preset)
+                      ? 'border-fg-1 ring-2 ring-fg-1/30'
+                      : 'border-hairline'"
+                    :style="{ backgroundColor: preset.hex }"
+                    :title="`${preset.label} (${preset.hex})`"
+                    :aria-label="preset.label"
+                    :aria-pressed="isSelectedPreset(field, preset)"
+                    @click="form.values[field.key] = preset.hex"
+                  />
+                </div>
               </div>
             </FormField>
 

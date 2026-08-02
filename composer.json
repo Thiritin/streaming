@@ -7,7 +7,6 @@
     "require": {
         "php": "^8.2",
         "doctrine/dbal": "^4.3",
-        "filament/filament": "^3.3",
         "flowframe/laravel-trend": "^0.4.0",
         "guzzlehttp/guzzle": "^7.9",
         "inertiajs/inertia-laravel": "^2.0",
@@ -26,7 +25,6 @@
     },
     "require-dev": {
         "fakerphp/faker": "^1.24",
-        "filament/upgrade": "^3.3",
         "laravel/breeze": "^2.3",
         "laravel/pint": "^1.21",
         "mockery/mockery": "^1.6",
@@ -52,8 +50,7 @@
             "@php artisan package:discover --ansi"
         ],
         "post-update-cmd": [
-            "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
-            "@php artisan filament:upgrade"
+            "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
         ],
         "post-root-package-install": [
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""

@@ -13,7 +13,7 @@ Nothing convention-specific is hardcoded. Names, copy, links, logo, login backgr
 ### Tech Stack
 - **Backend**: Laravel 12 with PHP 8.2+
 - **Frontend**: Vue 3 with Inertia.js 2
-- **Admin Panel**: Filament 3
+- **Admin Panel**: Inertia + Vue at `/manage` (no Filament)
 - **Real-time**: Pusher/Soketi for WebSockets
 - **Streaming**: SRS (Simple Realtime Server) for RTMP/FLV streaming
 - **Queue**: Laravel Horizon with Redis (production); database queue driver locally
@@ -140,11 +140,19 @@ Critical background jobs for server management:
 
 ## Admin Interface
 
-Filament admin panel at `/admin` provides:
-- Server management and monitoring
-- Client connection tracking
-- User management with role-based permissions
-- Real-time capacity and performance widgets
+The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is a 301 into `/manage`.
+
+`/manage` covers:
+- Dashboard: capacity, server health, alerts, live viewers, the next few hours of programme
+- Sources, Shows, the Show planner and Stream Control
+- Servers, including the generated install script
+- Users, Roles, Emotes and Recordings
+- Settings: branding, login copy, accent colour and footer links
+
+Tables, filters, row/bulk actions and toasts are declared server-side with the
+`App\Support\Manage` toolkit (`Table`, `Column`, `Filter`, `Action`, `Status`, `Toast`) and
+rendered by the shared components in `resources/js/Components/Manage`. Access runs through
+the `access-manage` gate plus a policy per model.
 
 ## Important Development Rules
 

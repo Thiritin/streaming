@@ -122,8 +122,9 @@ return [
                     'key' => 'primary_color',
                     'label' => 'Accent colour',
                     'type' => 'color',
-                    'helper' => 'A full 50-950 ramp is derived from it. Empty keeps the built-in palette.',
+                    'helper' => 'Pick a preset or set any hex. A full 50-950 ramp is derived from it; empty keeps the built-in palette.',
                     'rules' => ['nullable', 'string', 'regex:/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/'],
+                    'presets' => \App\Support\ColorPresets::PRESETS,
                 ],
                 [
                     'key' => 'logo_path',

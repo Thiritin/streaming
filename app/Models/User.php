@@ -6,7 +6,6 @@ namespace App\Models;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Helpers\IpSubnetHelper;
-use Filament\Models\Contracts\FilamentUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -14,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
@@ -369,14 +368,6 @@ class User extends Authenticatable implements FilamentUser
         }
 
         return false;
-    }
-
-    /**
-     * Check if user can access Filament panel.
-     */
-    public function canAccessPanel(\Filament\Panel $panel): bool
-    {
-        return $this->hasPermission('filament.access') || $this->isStaff();
     }
 
     /**

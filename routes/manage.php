@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Manage\DashboardController;
+use App\Http\Controllers\Manage\EmoteController;
+use App\Http\Controllers\Manage\RecordingController;
+use App\Http\Controllers\Manage\RoleController;
 use App\Http\Controllers\Manage\ServerController;
 use App\Http\Controllers\Manage\ServerInstallScriptController;
 use App\Http\Controllers\Manage\ServerProvisionController;
@@ -9,8 +12,10 @@ use App\Http\Controllers\Manage\ShowController;
 use App\Http\Controllers\Manage\ShowPlannerController;
 use App\Http\Controllers\Manage\ShowStatisticsController;
 use App\Http\Controllers\Manage\SourceController;
+use App\Http\Controllers\Manage\StreamController;
 use App\Http\Controllers\Manage\TableColumnController;
 use App\Http\Controllers\Manage\UploadController;
+use App\Http\Controllers\Manage\UserController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -92,6 +97,52 @@ Route::post('servers', [ServerController::class, 'store'])->name('servers.store'
 Route::get('servers/{server}', [ServerController::class, 'edit'])->name('servers.edit');
 Route::put('servers/{server}', [ServerController::class, 'update'])->name('servers.update');
 Route::delete('servers/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
+
+/*
+ * Global stream state. The status is an enum in the URL rather than a posted
+ * field, so each button is its own endpoint and nothing has to be validated.
+ */
+Route::get('stream', [StreamController::class, 'show'])->name('stream');
+Route::post('stream/{status}', [StreamController::class, 'update'])->name('stream.update');
+
+/*
+ * Users arrive through OIDC, so there is no create route: an operator can change
+ * the edge assignment and the attached roles, nothing else.
+ */
+Route::get('users', [UserController::class, 'index'])->name('users.index');
+Route::get('users/{user}', [UserController::class, 'edit'])->name('users.edit');
+Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
+Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+
+Route::post('roles/seed', [RoleController::class, 'seedDefaults'])->name('roles.seed');
+Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
+Route::get('roles/create', [RoleController::class, 'create'])->name('roles.create');
+Route::post('roles', [RoleController::class, 'store'])->name('roles.store');
+Route::get('roles/{role}', [RoleController::class, 'edit'])->name('roles.edit');
+Route::put('roles/{role}', [RoleController::class, 'update'])->name('roles.update');
+Route::delete('roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
+
+Route::post('emotes/bulk/approve', [EmoteController::class, 'bulkApprove'])->name('emotes.bulk.approve');
+Route::delete('emotes/bulk', [EmoteController::class, 'bulkDestroy'])->name('emotes.bulk.destroy');
+Route::post('emotes/{emote}/approve', [EmoteController::class, 'approve'])->name('emotes.approve');
+Route::get('emotes', [EmoteController::class, 'index'])->name('emotes.index');
+Route::get('emotes/create', [EmoteController::class, 'create'])->name('emotes.create');
+Route::post('emotes', [EmoteController::class, 'store'])->name('emotes.store');
+Route::get('emotes/{emote}', [EmoteController::class, 'edit'])->name('emotes.edit');
+Route::put('emotes/{emote}', [EmoteController::class, 'update'])->name('emotes.update');
+Route::delete('emotes/{emote}', [EmoteController::class, 'destroy'])->name('emotes.destroy');
+
+Route::post('recordings/bulk/thumbnail', [RecordingController::class, 'bulkRegenerateThumbnails'])
+    ->name('recordings.bulk.thumbnail');
+Route::delete('recordings/bulk', [RecordingController::class, 'bulkDestroy'])->name('recordings.bulk.destroy');
+Route::post('recordings/{recording}/thumbnail', [RecordingController::class, 'regenerateThumbnail'])
+    ->name('recordings.thumbnail');
+Route::get('recordings', [RecordingController::class, 'index'])->name('recordings.index');
+Route::get('recordings/create', [RecordingController::class, 'create'])->name('recordings.create');
+Route::post('recordings', [RecordingController::class, 'store'])->name('recordings.store');
+Route::get('recordings/{recording}', [RecordingController::class, 'edit'])->name('recordings.edit');
+Route::put('recordings/{recording}', [RecordingController::class, 'update'])->name('recordings.update');
+Route::delete('recordings/{recording}', [RecordingController::class, 'destroy'])->name('recordings.destroy');
 
 /*
  * System settings: identity, login copy, colours, links. Generated from

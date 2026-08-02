@@ -2,13 +2,20 @@
 
 namespace App\Providers;
 
+use App\Models\Emote;
+use App\Models\Recording;
+use App\Models\Role;
 use App\Models\Server;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\User;
+use App\Policies\EmotePolicy;
+use App\Policies\RecordingPolicy;
+use App\Policies\RolePolicy;
 use App\Policies\ServerPolicy;
 use App\Policies\ShowPolicy;
 use App\Policies\SourcePolicy;
+use App\Policies\UserPolicy;
 use Illuminate\Auth\SessionGuard;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Auth;
@@ -22,9 +29,13 @@ class AuthServiceProvider extends ServiceProvider
      * @var array<class-string, class-string>
      */
     protected $policies = [
+        Emote::class => EmotePolicy::class,
+        Recording::class => RecordingPolicy::class,
+        Role::class => RolePolicy::class,
         Server::class => ServerPolicy::class,
         Show::class => ShowPolicy::class,
         Source::class => SourcePolicy::class,
+        User::class => UserPolicy::class,
     ];
 
     /**
