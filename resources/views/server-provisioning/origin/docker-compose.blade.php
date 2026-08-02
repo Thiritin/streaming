@@ -91,8 +91,6 @@ services:
       DELETE_AFTER_UPLOAD: 'true'
       WEBHOOK_URL: '{{ $serverUrl }}/api/dvr/upload-webhook'
       FILE_AGE_SECONDS: '30'
-      UPLOAD_DELAY_SECONDS: '5'
-      MAX_UPLOAD_RATE_MBPS: '3'
     volumes:
       - dvr-recordings:/dvr/recordings
     restart: unless-stopped

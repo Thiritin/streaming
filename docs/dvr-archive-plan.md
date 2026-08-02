@@ -127,33 +127,52 @@ that ended for good leaked its encoder. Replaced with process substitution
 (`> >(sed ...) 2>&1 &`), which makes `$!` FFmpeg's own PID and lets the sed exit when the
 pipe closes.
 
-### 2. Indexer sidecar
+### 2. Indexing (part of the uploader, not a separate process)
 
-A small process (can live in the uploader container) tails each rendition playlist and
-maintains a per-hour index. ffmpeg writes `EXT-X-PROGRAM-DATE-TIME` before *every*
-segment, not once as an anchor (verified against real output in the dev stack), so the
-indexer reads each segment's PDT directly and never has to accumulate `EXTINF` to derive
-it. Segment boundaries are also identical across renditions, so one index entry can
-describe all three.
+**Not a sidecar.** The uploader has to parse the rendition playlists anyway, because its
+completion rule is "a segment is done once it appears in the playlist and is not the last
+entry". That parse already yields filename, `EXTINF`, PDT and discontinuity position.
+Indexing is a few lines on data already in hand. A separate process would duplicate the
+parse, need its own view of the volume, and introduce a failure mode where the uploader
+and the indexer disagree about what they saw.
 
-```json
-// archive/<source>/20260802/16/index.json
-{
-  "source": "mainstage",
-  "hour": "2026-08-02T16:00:00Z",
-  "renditions": ["sd", "hd", "fhd"],
-  "segments": [
-    {"seq": 28800, "n": 42, "name": "mainstage_%v_1754156625_000042.ts",
-     "pdt": "2026-08-02T16:00:00.000Z", "dur": 2.0,
-     "session": "1754156625", "discontinuity": false},
-    ...
-  ]
-}
+**The index is the playlist, persisted.** The live playlist holds the only record of when
+a segment happened, and it forgets each entry after 60 minutes. Nothing more exotic than
+that is going on, so the stored form is simply an HLS playlist per source per hour:
+
+```
+archive/{source}/{YYYYMMDD}/{HH}/index.m3u8
 ```
 
-`%v` is substituted per rendition, so one entry describes all three. A publisher
-reconnect sets `discontinuity: true` on the first segment of the new session, which is
-what later gets turned back into `#EXT-X-DISCONTINUITY` in generated playlists.
+```
+#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-TARGETDURATION:2
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-ARCHIVE-SESSION:1754156625
+#EXT-X-ARCHIVE-SEQ:28800
+#EXTINF:2.000000,
+#EXT-X-PROGRAM-DATE-TIME:2026-08-02T16:00:00.000+0000
+mainstage_%v_1754156625_000042.ts
+```
+
+No JSON, no bespoke schema, no format conversion. Generating a cut becomes: concatenate
+the hour files spanning the range, drop the entries outside it, prepend a header, append
+`ENDLIST`. The stored form is already the target form, and the admin editor parses HLS
+regardless. `#EXT-X-DISCONTINUITY` is carried through verbatim rather than round-tripped
+through a boolean.
+
+`ARCHIVE-SEQ` and `ARCHIVE-SESSION` are custom tags. RFC 8216 requires clients to ignore
+unrecognised `#EXT-X-` tags, so these travel harmlessly even if a playlist is served to a
+player by accident.
+
+`%v` is substituted per rendition. Segment boundaries are identical across `sd`/`hd`/`fhd`
+(shared input, `-force_key_frames "expr:gte(t,n_forced*2)"`), so one entry describes all
+three and the index stays a third of the size.
+
+FFmpeg writes `EXT-X-PROGRAM-DATE-TIME` before *every* segment rather than once as an
+anchor (verified against real output in the dev stack), so PDT is read directly and never
+derived by accumulating `EXTINF`.
 
 The in-progress hour is re-uploaded once a minute; the hour is finalised when it rolls over.
 
@@ -447,11 +466,13 @@ rest is headroom for upload lag and for an S3 outage that stalls the reaper.
 | Failure | Handling |
 |---|---|
 | S3 unreachable | Segments accumulate on disk; reaper blocks on `verified_at`; disk watchdog alerts and degrades the window before anything unverified is dropped |
-| Publisher reconnect | New session dir, `discont_start`, indexer records `discontinuity: true`, generated playlists emit `EXT-X-DISCONTINUITY` |
-| ffmpeg wedged but alive | Segment freshness watchdog kills and restarts |
-| ffmpeg restart | Per-session dirs, so no collision and no wipe of unuploaded segments |
+| Publisher reconnect | `discont_start`, indexer records the discontinuity, generated playlists emit `EXT-X-DISCONTINUITY` |
+| ffmpeg wedged but alive | Playlist freshness watchdog restarts it |
+| ffmpeg restart | Session prefix in every filename, collision-checked at start; `stop_ffmpeg` no longer wipes segments |
+| Two restarts in one second | `start_ffmpeg` bumps the session prefix while it is already in use |
 | Uploader crash | sqlite manifest plus prefix re-listing on boot; uploads are idempotent by key |
-| Segment counter wrap | `%06d` plus per-session dirs |
+| Indexer gap | Index is rebuilt from the live playlist, which holds 60 minutes of history, so an outage shorter than the window loses nothing |
+| Segment counter wrap | `%06d` (55h at 2s) plus a fresh session prefix on every restart |
 | Origin disk full | Watchdog degrades the DVR window, then alerts loudly; never deletes unverified |
 | Bad cut | Non-destructive; re-cut from the retained archive |
 
@@ -461,8 +482,10 @@ rest is headroom for upload lag and for an S3 outage that stalls the reaper.
    `%06d`, scoped `stop_ffmpeg` cleanup, orphan reaper, stall watchdog, and the `$!`
    process-substitution fix. Compose knobs in `docker-compose.dev.yml` (5 min window
    locally) and the origin provisioning blade (60 min). Ships the 60 minute rewind alone.
-2. Indexer sidecar writing `index.json`.
-3. Uploader rewrite: `.ts` support, playlist-based completion, manifest, verified reaper.
+2. Measure PDT drift (see *Prerequisite* below). Cheap, and it decides whether `pdt` can
+   be the cut-selection field at all.
+3. Uploader rewrite, indexing included: mount `hls-content`, `.ts` support, playlist-based
+   completion, manifest, verified reaper, upload throttle, hour-playlist index.
 4. `ArchivePlaylistService` plus schema migration; generate VOD playlists for one show
    end to end.
 5. Edge: `/archive/` and `/recordings/` locations behind the playback token; gzip m3u8.
@@ -475,18 +498,49 @@ rest is headroom for upload lag and for an S3 outage that stalls the reaper.
 Keep the SRS MP4 DVR running as a cold backup through the next event. It costs disk and
 nothing else, and it is the fallback if the segment archive misses something.
 
+### Prerequisite: measure PDT drift
+
+Every cut point is a PDT, and PDT tracks the encoder's timeline from a single anchor taken
+at session start, not real time. Over a session that runs for days without a reconnect,
+that can drift from wall clock by an unknown amount.
+
+Leave a dev stream running, then compare each segment's PDT against the observation time
+the indexer stamps on it. Drift is the slope. If it is seconds per day, ignore it. If it
+is minutes, the indexer must re-anchor periodically and `ArchivePlaylistService` must
+select by observation time rather than raw PDT.
+
+Doing this before the uploader work means the index carries the right ordering field from
+the first byte written, rather than needing a migration over a con's worth of archive.
+
+## Decisions
+
+1. **Indexing lives in the uploader**, not a separate process, because the uploader must
+   parse the playlists anyway for its completion rule.
+2. **The index is an HLS playlist per source per hour**, not JSON. One format instead of
+   three, and the stored form is already the form a cut needs.
+3. **Ordering is `#EXT-X-ARCHIVE-SEQ`**, assigned by the uploader on first observation.
+   Never `pdt`, never `session`, both of which are clock-derived.
+4. **Archive all three renditions by default**, via a per-source `archive_renditions`
+   setting. ~620 GB for a 5-day stream, and ABR survives into the archive. Drop the
+   always-on source to `hd` only (~190 GB) if the storage bill turns out to matter; the
+   setting exists so that is a config change, not a redesign.
+5. **One bucket, two prefixes** on the existing `dvr` disk. `archive/` is bulk and
+   expiring, `recordings/` is small and permanent, and prefix-scoped lifecycle rules
+   express that without a second set of credentials to manage.
+6. **Retention: raw segments live 30 days past publication of the recording that covers
+   them.** After that the archive is repacked with `-c copy` into 10-30s segments, which
+   cuts object count 5-15x losslessly. Repacking only ever happens after a cut is locked,
+   so re-cutting at full 2s granularity stays possible for a month.
+
 ## Open questions
 
-1. **Archive all three renditions, or `hd` only, for the con-long stream?** All three is
-   ~620 GB for 5 days and preserves ABR in the archive. `hd` only is ~190 GB but the
-   archive plays at one quality. Suggest a per-source `archive_renditions` setting,
-   defaulting to all three, set to `hd` for the always-on stream if the bill matters.
-2. **Archive retention.** How long do raw segments live after a recording is published?
-   Once a cut is final, the archive can be repacked with `-c copy` into longer segments
-   (10-30s), which cuts object count by 5-15x losslessly. Worth doing, but only after the
-   cut is locked.
-3. **Who owns the indexer process?** Simplest is a second thread in the uploader
-   container, since both need the same view of the segment directory.
-4. **`recordings` bucket vs `archive` prefix.** Both currently land on the `dvr` disk.
-   Different lifecycle rules (archive is bulk and short-lived, recordings are small and
-   permanent) might justify separate buckets.
+1. **Upload throttling.** `UPLOAD_DELAY_SECONDS` and `MAX_UPLOAD_RATE_MBPS` were set in
+   the origin compose but never read by `uploader.py`; they have been removed rather than
+   left as decoration. The intent behind them was real, though: the origin uploads
+   ~1.44 MB/s per source continuously while also feeding the edge. Either implement a real
+   cap (wrap the read side of the upload in a token bucket, which `upload_fileobj` accepts
+   directly) or decide explicitly that the origin's link can carry both. Needs a number
+   from the production link budget.
+2. **PDT drift magnitude.** Unmeasured; see *Prerequisite* above. Everything else is
+   designed to survive whatever the answer is, but the answer decides whether
+   `ArchivePlaylistService` selects on `pdt` or on observation time.
