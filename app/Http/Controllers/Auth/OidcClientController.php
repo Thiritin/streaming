@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Role;
 use App\Models\User;
 use App\Services\BrandingService;
 use App\Services\Hydra\Client;
@@ -263,48 +264,60 @@ class OidcClientController extends Controller
     }
 
     /**
-     * Map registration system groups and packages to role slugs
+     * Collect the external identifiers this sign-in grants.
+     *
+     * Nothing is translated to a role here. A role claims an identifier by
+     * putting it in its `external_id`, so which role a group ID or a package
+     * maps to is a question for the roles table, editable in /manage, rather
+     * than something wired into this class.
+     *
+     * @param  array<int, string>  $groups  Group IDs from the userinfo claim.
+     * @param  array<int, string>  $packages  Package names from the registration system.
+     * @return array<int, string>
      */
     private function mapGroupsAndPackagesToRoles(array $groups, array $packages): array
     {
-        $roles = [];
+        // Group IDs are already the identifier, so they pass through untouched.
+        $identifiers = array_values($groups);
 
-        // Check packages for sponsor/supersponsor
+        /*
+         * Packages are not. A package reads like "day-supersponsor-2026", so a
+         * role claims one by declaring the part it recognises. Longest first, or
+         * the sponsor role would swallow every supersponsor package.
+         */
+        $claimed = Role::loginAssigned()
+            ->pluck('external_id')
+            ->filter()
+            ->sortByDesc(fn (string $id) => strlen($id))
+            ->values();
+
         foreach ($packages as $package) {
-            $packageName = strtolower($package);
+            $package = strtolower((string) $package);
 
-            if (str_contains($packageName, 'supersponsor')) {
-                $roles[] = 'supersponsor';
-            } elseif (str_contains($packageName, 'sponsor')) {
-                $roles[] = 'sponsor';
+            foreach ($claimed as $identifier) {
+                if (str_contains($package, strtolower($identifier))) {
+                    $identifiers[] = $identifier;
+
+                    // One role per package: the longest match already won.
+                    break;
+                }
             }
         }
 
-        // Map groups to roles. The group IDs in the userinfo "groups" array are
-        // issued by the installation's own identity provider, so the mapping is
-        // configuration rather than something this class can know.
-        $groupMapping = config('services.oidc.group_role_map', []);
+        /*
+         * Everyone who got this far signed in successfully, so a role that
+         * declares itself the baseline gets handed out unconditionally.
+         */
+        $identifiers[] = 'attendee';
 
-        foreach ($groups as $group) {
-            if (isset($groupMapping[$group])) {
-                $roles[] = $groupMapping[$group];
-            }
-        }
+        $identifiers = array_values(array_unique($identifiers));
 
-        // Add attendee role as base role if not already included
-        if (! in_array('attendee', $roles)) {
-            $roles[] = 'attendee';
-        }
-
-        // Remove duplicates
-        $roles = array_unique($roles);
-
-        Log::info('Mapped roles for user', [
+        Log::info('Mapped external identifiers for user', [
             'groups' => $groups,
             'packages' => $packages,
-            'roles' => $roles,
+            'identifiers' => $identifiers,
         ]);
 
-        return $roles;
+        return $identifiers;
     }
 }

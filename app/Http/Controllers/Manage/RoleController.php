@@ -49,18 +49,22 @@ class RoleController extends Controller
             ->columns([
                 Column::text('name', 'Name')->searchable()->sortable(),
                 Column::copyable('slug', 'Slug')->searchable()->sortable(),
+                Column::copyable('external_id', 'External ID')->searchable()->fallback('—'),
                 Column::color('chat_color', 'Chat colour'),
                 Column::number('priority', 'Priority')->sortable(),
-                Column::badge('assigned_at_login', 'Login sync'),
+                Column::badge('sync', 'Login sync'),
                 Column::badge('is_visible', 'Chat badge'),
                 Column::number('users_count', 'Users')->sortable('users_count'),
                 Column::datetime('created_at', 'Created')->sortable()->toggleable(hiddenByDefault: true),
             ])
             ->filters([
-                Filter::ternary('assigned_at_login', 'Login assignment')
+                Filter::ternary('synced', 'Login assignment')
                     ->trueLabel('Login-synced only')
                     ->falseLabel('Manually assigned only')
-                    ->placeholder('All roles'),
+                    ->placeholder('All roles')
+                    ->apply(fn ($query, $value) => $value === '1'
+                        ? $query->loginAssigned()
+                        : $query->manuallyAssigned()),
                 Filter::ternary('is_visible', 'Chat visibility')
                     ->trueLabel('Visible only')
                     ->falseLabel('Hidden only')
@@ -87,11 +91,11 @@ class RoleController extends Controller
             'defaults' => [
                 'name' => '',
                 'slug' => '',
+                'external_id' => '',
                 'description' => '',
                 'chat_color' => '#808080',
                 'priority' => 0,
                 'is_visible' => true,
-                'assigned_at_login' => true,
                 'permissions' => [],
             ],
         ]);
@@ -105,7 +109,7 @@ class RoleController extends Controller
 
         Toast::flashSuccess('Role created', "'{$role->name}' is ready to assign.");
 
-        return to_route('manage.roles.edit', $role);
+        return to_route('manage.roles.index');
     }
 
     public function edit(Role $role): Response
@@ -117,11 +121,11 @@ class RoleController extends Controller
                 'id' => $role->id,
                 'name' => $role->name,
                 'slug' => $role->slug,
+                'external_id' => $role->external_id,
                 'description' => $role->description,
                 'chat_color' => $role->chat_color,
                 'priority' => $role->priority,
                 'is_visible' => (bool) $role->is_visible,
-                'assigned_at_login' => (bool) $role->assigned_at_login,
                 'permissions' => $role->permissions ?? [],
                 'users_count' => $role->users()->count(),
             ],
@@ -151,7 +155,7 @@ class RoleController extends Controller
 
         Toast::flashSuccess('Role updated');
 
-        return back();
+        return to_route('manage.roles.index');
     }
 
     public function destroy(Role $role): RedirectResponse
@@ -204,9 +208,10 @@ class RoleController extends Controller
             'slug' => $role->slug,
             'chat_color' => $role->chat_color,
             'priority' => $role->priority,
-            'assigned_at_login' => $role->assigned_at_login
+            'external_id' => $role->external_id,
+            'sync' => $role->external_id
                 ? Status::make('Auto-synced', Status::OK)
-                : Status::make('Manual', Status::WARN),
+                : Status::make('Manual', Status::IDLE),
             'is_visible' => $role->is_visible
                 ? Status::make('Shown', Status::OK)
                 : Status::make('Hidden', Status::IDLE),
@@ -283,6 +288,10 @@ class RoleController extends Controller
     }
 
     /**
+     * Only the tiers whose identifier is predictable get one; admin and
+     * moderator map to a group ID this installation has to supply, so they start
+     * manual and someone fills the identifier in.
+     *
      * @return array<int, array<string, mixed>>
      */
     private function defaultRoles(): array
@@ -294,7 +303,6 @@ class RoleController extends Controller
                 'description' => 'Full system administrator',
                 'chat_color' => '#FF0000',
                 'priority' => 100,
-                'assigned_at_login' => false,
                 'is_visible' => true,
                 'permissions' => ['admin.access', 'stream.manage', 'user.manage', 'chat.moderate'],
             ],
@@ -304,37 +312,36 @@ class RoleController extends Controller
                 'description' => 'Chat and stream moderator',
                 'chat_color' => '#00FF00',
                 'priority' => 90,
-                'assigned_at_login' => false,
                 'is_visible' => true,
                 'permissions' => ['chat.moderate', 'chat.delete', 'chat.timeout', 'chat.slowmode'],
             ],
             [
                 'name' => 'Super Sponsor',
                 'slug' => 'super-sponsor',
+                'external_id' => 'supersponsor',
                 'description' => 'Super sponsor with a special chat colour',
                 'chat_color' => '#FFD700',
                 'priority' => 50,
-                'assigned_at_login' => true,
                 'is_visible' => true,
                 'permissions' => [],
             ],
             [
                 'name' => 'Sponsor',
                 'slug' => 'sponsor',
+                'external_id' => 'sponsor',
                 'description' => 'Sponsor with a chat colour',
                 'chat_color' => '#C0C0C0',
                 'priority' => 40,
-                'assigned_at_login' => true,
                 'is_visible' => true,
                 'permissions' => [],
             ],
             [
                 'name' => 'Attendee',
                 'slug' => 'attendee',
+                'external_id' => 'attendee',
                 'description' => 'Regular attendee',
                 'chat_color' => '#808080',
                 'priority' => 10,
-                'assigned_at_login' => true,
                 'is_visible' => false,
                 'permissions' => [],
             ],

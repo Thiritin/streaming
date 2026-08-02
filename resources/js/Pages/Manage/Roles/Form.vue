@@ -25,21 +25,21 @@ const form = useForm(
     ? {
         name: props.role.name,
         slug: props.role.slug,
+        external_id: props.role.external_id ?? '',
         description: props.role.description ?? '',
         chat_color: props.role.chat_color ?? '#808080',
         priority: props.role.priority,
         is_visible: props.role.is_visible,
-        assigned_at_login: props.role.assigned_at_login,
         permissions: [...props.role.permissions],
       }
     : {
         name: '',
         slug: '',
+        external_id: '',
         description: '',
         chat_color: '#808080',
         priority: 0,
         is_visible: true,
-        assigned_at_login: true,
         permissions: [],
         ...props.defaults,
       },
@@ -150,14 +150,24 @@ const submit = () => {
           />
         </FormSection>
 
-        <FormSection title="Permissions" :columns="1">
+        <FormSection
+          title="Identity provider"
+          description="Fill the identifier in and this role is granted and revoked automatically at every sign-in. Leave it empty and the role is only ever assigned by hand."
+          :columns="1"
+        >
           <FormField
-            v-model="form.assigned_at_login"
-            label="Sync from the identity provider at login"
-            type="checkbox"
-            :error="form.errors.assigned_at_login"
-            helper="On, the role is rewritten from the provider at every sign-in. Off, it sticks until someone changes it here."
+            v-model="form.external_id"
+            label="External ID"
+            mono
+            :error="form.errors.external_id"
+            :helper="form.external_id
+              ? 'Synced at login. A member who loses this at the provider loses the role on their next sign-in.'
+              : 'Empty: login never touches this role.'"
+            placeholder="Group ID from the provider, or a registration package name"
           />
+        </FormSection>
+
+        <FormSection title="Permissions" :columns="1">
           <FormField label="Granted permissions" :error="form.errors.permissions">
             <CheckboxList
               v-model="form.permissions"

@@ -29,11 +29,12 @@ class RolesTest extends TestCase
         return array_merge([
             'name' => 'Sponsor',
             'slug' => 'sponsor',
+            'external_id' => null,
             'description' => 'Paid supporter',
             'chat_color' => '#C0C0C0',
             'priority' => 40,
             'is_visible' => true,
-            'assigned_at_login' => true,
+            'external_id' => null,
             'permissions' => [],
         ], $overrides);
     }
@@ -108,6 +109,75 @@ class RolesTest extends TestCase
             ->assertRedirect();
 
         $this->assertSame($before, Role::count());
+    }
+
+    public function test_two_roles_cannot_claim_the_same_external_id(): void
+    {
+        Role::create($this->payload(['external_id' => 'GROUP-1']));
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.roles.store'), $this->payload([
+                'name' => 'Other',
+                'slug' => 'other',
+                'external_id' => 'GROUP-1',
+            ]))
+            ->assertSessionHasErrors('external_id');
+    }
+
+    public function test_an_empty_external_id_is_stored_as_null_so_many_roles_can_be_manual(): void
+    {
+        $this->actingAs($this->admin)
+            ->post(route('manage.roles.store'), $this->payload(['external_id' => '']))
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.roles.store'), $this->payload([
+                'name' => 'Second',
+                'slug' => 'second',
+                'external_id' => '',
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $this->assertNull(Role::where('slug', 'sponsor')->firstOrFail()->external_id);
+        $this->assertNull(Role::where('slug', 'second')->firstOrFail()->external_id);
+    }
+
+    public function test_saving_returns_to_the_list(): void
+    {
+        $role = Role::create($this->payload());
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.roles.update', $role), $this->payload())
+            ->assertRedirect(route('manage.roles.index'));
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.roles.store'), $this->payload(['name' => 'Other', 'slug' => 'other']))
+            ->assertRedirect(route('manage.roles.index'));
+    }
+
+    public function test_login_sync_only_touches_roles_carrying_an_external_id(): void
+    {
+        $synced = Role::create($this->payload(['external_id' => 'GROUP-STAFF']));
+        $manual = Role::create($this->payload([
+            'name' => 'Manual',
+            'slug' => 'manual',
+            'external_id' => null,
+        ]));
+
+        $user = User::factory()->create();
+        $user->roles()->attach([$synced->id, $manual->id]);
+
+        // Signs in without that group: the synced role goes, the manual one stays.
+        $user->syncRolesFromLogin([]);
+
+        $slugs = $user->fresh()->roles->pluck('slug');
+        $this->assertFalse($slugs->contains('sponsor'));
+        $this->assertTrue($slugs->contains('manual'));
+
+        // Signs in with it again and it comes back.
+        $user->syncRolesFromLogin(['GROUP-STAFF']);
+
+        $this->assertTrue($user->fresh()->roles->pluck('slug')->contains('sponsor'));
     }
 
     public function test_a_moderator_cannot_write_roles(): void

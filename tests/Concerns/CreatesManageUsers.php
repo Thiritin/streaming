@@ -27,7 +27,6 @@ trait CreatesManageUsers
             'description' => 'Admin role for testing',
             'permissions' => ['admin.access', 'filament.access', 'stream.manage', 'user.manage', 'chat.moderate'],
             'priority' => 100,
-            'is_staff' => true,
         ]);
 
         $moderatorRole = Role::create([
@@ -36,7 +35,6 @@ trait CreatesManageUsers
             'description' => 'Moderator role for testing',
             'permissions' => ['filament.access', 'chat.moderate'],
             'priority' => 90,
-            'is_staff' => true,
         ]);
 
         $this->admin = User::factory()->create();

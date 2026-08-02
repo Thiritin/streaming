@@ -319,31 +319,32 @@ class User extends Authenticatable
     }
 
     /**
-     * Sync roles from login (registration system).
+     * Rewrite the roles the identity provider owns from what it just told us.
+     *
+     * Ownership is decided by the role, not by this call: a role carrying an
+     * `external_id` is the provider's to give and take away, and a role without
+     * one is never touched here, however it was assigned.
+     *
+     * @param  array<int, string>  $externalIds  Group IDs and package names from the provider.
      */
-    public function syncRolesFromLogin(array $rolesSlugs): void
+    public function syncRolesFromLogin(array $externalIds): void
     {
-        // Log current roles before sync
         \Log::info('Before sync - User '.$this->id.' roles: ', $this->roles()->pluck('slug')->toArray());
-        \Log::info('Syncing roles from login: ', $rolesSlugs);
+        \Log::info('Syncing roles from login: ', $externalIds);
 
-        // Get IDs of roles that should be detached (only those with assigned_at_login = true)
+        // Drop every provider-owned role first, so one that is no longer granted
+        // actually goes away rather than lingering from a previous login.
         $roleIdsToDetach = $this->roles()
-            ->where('assigned_at_login', true)
+            ->loginAssigned()
             ->pluck('roles.id')
             ->toArray();
 
-        \Log::info('Roles to detach (IDs): ', $roleIdsToDetach);
-
-        // Detach only those specific roles
         if (! empty($roleIdsToDetach)) {
             $this->roles()->detach($roleIdsToDetach);
-            \Log::info('Detached roles with assigned_at_login=true');
         }
 
-        // Add new roles from login
-        $roles = Role::whereIn('slug', $rolesSlugs)
-            ->where('assigned_at_login', true)
+        $roles = Role::loginAssigned()
+            ->whereIn('external_id', $externalIds)
             ->get();
 
         \Log::info('Adding roles: ', $roles->pluck('slug')->toArray());
@@ -352,7 +353,6 @@ class User extends Authenticatable
             $role->assignTo($this, null);
         }
 
-        // Log final roles after sync
         \Log::info('After sync - User '.$this->id.' roles: ', $this->roles()->pluck('slug')->toArray());
     }
 
