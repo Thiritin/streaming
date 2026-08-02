@@ -64,7 +64,9 @@ case "${1:-up}" in
     $COMPOSE up -d --build origin-srs hls-transcoder origin-nginx origin-caddy edge-nginx edge-caddy s3 s3-init dvr-uploader
     start_publishers
 
-    cat <<'EOF'
+    # Unquoted delimiter so the S3 port expands. Nothing else in this block uses
+    # `$` or backticks; keep it that way or the substitution will bite.
+    cat <<EOF
 
 Stack is up.
 
