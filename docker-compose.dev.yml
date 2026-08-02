@@ -162,6 +162,34 @@ services:
       - app-bridge
     restart: unless-stopped
 
+  # --------------------------------------------------------- segment archive
+  # Mirrors the transcoder's HLS segments to S3 and maintains the per-hour index
+  # playlists that recordings are later cut from. Separate container from
+  # dvr-uploader on purpose: that one still handles the SRS MP4 DVR as a cold
+  # backup, and the two watch different volumes.
+  archive-uploader:
+    build: ./docker/dvr-uploader
+    command: ["python", "-u", "archive_uploader.py"]
+    environment:
+      S3_BUCKET: ${AWS_BUCKET:-streaming}
+      S3_REGION: ${AWS_DEFAULT_REGION:-eu-central-1}
+      S3_ACCESS_KEY: ${DEV_S3_KEY:-devkey}
+      S3_SECRET_KEY: ${DEV_S3_SECRET:-devsecret123}
+      S3_ENDPOINT: http://s3:7070
+      HLS_PATH: /var/www/hls/live
+      # Matches DVR_WINDOW_SEGMENTS on the transcoder (150 segments x 2s = 5 min).
+      # The reaper must never delete inside the window the player can still seek to.
+      DVR_WINDOW_SECONDS: ${DEV_DVR_WINDOW_SECONDS:-300}
+      REAP_INTERVAL: "30"
+      INDEX_UPLOAD_INTERVAL: "20"
+    volumes:
+      - hls:/var/www/hls
+      - archive-state:/var/lib/dvr-archive
+    depends_on:
+      - s3
+      - hls-transcoder
+    restart: unless-stopped
+
   # -------------------------------------------------------- fake broadcasters
   # Stands in for OBS: one ffmpeg per channel, pushing a distinct animated
   # pattern into the ingress app with the channel's stream key.
@@ -189,6 +217,7 @@ services:
 volumes:
   hls:
   dvr:
+  archive-state:
   s3-data:
   caddy-logs:
   publisher-clips:

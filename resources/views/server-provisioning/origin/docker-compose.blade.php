@@ -99,6 +99,38 @@ services:
     networks:
       - streaming
 
+  # HLS Segment Archive Uploader
+  #
+  # Mirrors the transcoder's segments to S3 and maintains the per-hour index
+  # playlists that recordings are cut from. Separate container from dvr-uploader
+  # above, which keeps handling the SRS MP4 DVR as a cold backup: the two watch
+  # different volumes and share only the image. See docs/dvr-archive-plan.md.
+  archive-uploader:
+    image: {{ config('stream.images.dvr_uploader') }}
+    container_name: archive-uploader
+    command: ["python", "-u", "archive_uploader.py"]
+    environment:
+      S3_BUCKET: ${DVR_AWS_BUCKET:-streaming-recordings}
+      S3_REGION: ${DVR_AWS_DEFAULT_REGION:-eu-central-1}
+      S3_ACCESS_KEY: ${DVR_AWS_ACCESS_KEY_ID}
+      S3_SECRET_KEY: ${DVR_AWS_SECRET_ACCESS_KEY}
+      S3_ENDPOINT: ${DVR_AWS_ENDPOINT}
+      HLS_PATH: /var/www/hls/live
+      # Must match DVR_WINDOW_SEGMENTS on origin-ffmpeg-hls (1800 x 2s). The reaper
+      # never deletes inside the window a viewer can still seek back into.
+      DVR_WINDOW_SECONDS: '3600'
+      # 0 is unlimited. The origin uploads ~1.4 MB/s per source continuously while
+      # also feeding the edge, so set a real cap once the link budget is known.
+      MAX_UPLOAD_RATE_MBPS: '0'
+    volumes:
+      - hls-content:/var/www/hls
+      - archive-state:/var/lib/dvr-archive
+    restart: unless-stopped
+    depends_on:
+      - origin-ffmpeg-hls
+    networks:
+      - streaming
+
 networks:
   streaming:
     driver: bridge
@@ -106,5 +138,6 @@ networks:
 volumes:
   hls-content:
   dvr-recordings:
+  archive-state:
   caddy-data:
   caddy-config:
