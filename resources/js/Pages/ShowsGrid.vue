@@ -1,401 +1,245 @@
 <template>
   <div class="min-h-screen">
-    <Head title="Live Streams" />
+    <Head title="Browse" />
 
-    <!-- Hero Section - Featured Live Stream -->
-    <div v-if="liveShows.length > 0" class="relative">
-      <div class="absolute inset-0 bg-gradient-to-b from-primary-900/50 via-primary-900/80 to-primary-900 z-10" />
-      <div
-        class="absolute inset-0 bg-cover bg-center blur-sm opacity-30"
-        :style="{ backgroundImage: liveShows[0]?.thumbnail_url ? `url(${liveShows[0].thumbnail_url})` : 'none' }"
-      />
+    <!-- Featured channel: the primary channel owns this slot, live or not -->
+    <StageHero v-if="featured" :show="featured" :chat="featuredChat" />
 
-      <div class="relative z-20 px-4 sm:px-6 lg:px-8 pt-6 pb-8">
-        <div class="max-w-5xl mx-auto">
-          <!-- Featured Stream Preview -->
-          <Link
-            :href="route('show.view', liveShows[0].slug)"
-            class="block group"
-          >
-            <div class="relative aspect-video rounded-xl overflow-hidden bg-primary-800 shadow-2xl ring-1 ring-white/10">
-              <img
-                v-if="liveShows[0]?.thumbnail_url"
-                :src="liveShows[0].thumbnail_url"
-                :alt="liveShows[0].title"
-                class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-              />
-              <div v-else class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-700 to-primary-900">
-                <FaVideoIcon class="w-24 h-24 text-primary-500" />
-              </div>
-
-              <!-- Live Badge -->
-              <div class="absolute top-4 left-4 flex items-center gap-2">
-                <span class="live-badge">
-                  LIVE
-                </span>
-                <span v-if="liveShows[0]?.viewer_count" class="viewer-badge">
-                  <FaUsersIcon class="w-3.5 h-3.5" />
-                  {{ formatViewerCount(liveShows[0].viewer_count) }}
-                </span>
-              </div>
-
-              <!-- Play overlay -->
-              <div class="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300">
-                <div class="w-20 h-20 rounded-full bg-primary-500/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-75 group-hover:scale-100 transition-all duration-300">
-                  <FaPlayIcon class="w-8 h-8 text-white ml-1" />
-                </div>
-              </div>
-
-              <!-- Duration -->
-              <div v-if="liveShows[0]?.started_at" class="absolute bottom-4 right-4">
-                <span class="bg-black/80 text-white px-2 py-1 rounded text-sm font-medium">
-                  {{ formatDuration(liveShows[0].started_at) }}
-                </span>
-              </div>
-            </div>
-          </Link>
-
-          <!-- Featured Stream Info - Below video -->
-          <div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 class="text-xl lg:text-2xl font-bold text-white leading-tight">
-                {{ liveShows[0]?.title }}
-              </h1>
-              <p v-if="liveShows[0]?.source" class="text-primary-400 mt-1">
-                {{ liveShows[0].source }}
-              </p>
-            </div>
-            <Link
-              :href="route('show.view', liveShows[0].slug)"
-              class="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary-500 hover:bg-primary-400 text-white font-semibold rounded-lg transition-all duration-200 hover:shadow-lg hover:shadow-primary-500/25 shrink-0"
-            >
-              <FaPlayIcon class="w-4 h-4" />
-              Watch Now
-            </Link>
-          </div>
-        </div>
+    <!-- Nothing on any channel and nothing scheduled -->
+    <div v-else class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-16 pb-10">
+      <div class="max-w-2xl space-y-3">
+        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-primary-300">
+          {{ primaryChannel || 'Stage' }} &middot; off air
+        </p>
+        <h1 class="text-3xl sm:text-4xl font-bold text-white tracking-tight">Nothing on air right now</h1>
+        <p class="text-primary-300">
+          The archive is open below, and the programme guide has everything that is coming up.
+        </p>
+        <Link :href="route('schedule.index')" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary-500 hover:bg-primary-400 text-white text-sm font-semibold transition-colors">
+          <FaCalendarIcon class="w-4 h-4" />
+          Full schedule
+        </Link>
       </div>
     </div>
 
-    <!-- Main Content -->
-    <div class="px-4 sm:px-6 lg:px-8 py-8 space-y-10">
+    <!-- Filters: these replace the old stacked section headings, so a quiet day
+         still reads as one deliberate grid instead of three empty sections. -->
+    <div class="sticky top-14 z-30 bg-primary-900 border-b border-primary-800/50">
+      <div
+        role="tablist"
+        aria-label="Filter shows"
+        class="mx-auto max-w-page flex gap-2 overflow-x-auto px-4 sm:px-6 lg:px-8 py-3 scrollbar-none"
+      >
+        <button
+          v-for="filter in filters"
+          :key="filter.key"
+          type="button"
+          role="tab"
+          :aria-selected="activeFilter === filter.key"
+          class="filter-chip"
+          :class="{ 'filter-chip-active': activeFilter === filter.key }"
+          @click="activeFilter = filter.key"
+        >
+          <span v-if="filter.key === 'live'" class="w-1.5 h-1.5 rounded-full bg-red-500" aria-hidden="true" />
+          {{ filter.label }}
+          <span v-if="filter.count" class="tabular-nums opacity-60">{{ filter.count }}</span>
+        </button>
+      </div>
+    </div>
 
-        <!-- Live Now Section (other live streams) -->
-        <section v-if="liveShows.length > 1">
-          <div class="flex items-center justify-between mb-5">
-            <div class="flex items-center gap-3">
-              <div class="w-1 h-6 bg-red-500 rounded-full" />
-              <h2 class="text-xl font-bold text-white">Live</h2>
-            </div>
-          </div>
+    <!-- One grid for everything: live, upcoming and the archive -->
+    <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 py-6">
+      <div v-if="visibleItems.length" class="stream-grid">
+        <template v-for="item in visibleItems" :key="`${item.kind}-${item.id}`">
+          <RecordingTile v-if="item.kind === 'archive'" :recording="item.data" />
+          <ShowTile v-else :show="item.data" />
+        </template>
+      </div>
 
-          <div class="stream-grid">
-            <ShowTile
-              v-for="show in liveShows.slice(1)"
-              :key="show.id"
-              :show="show"
-            />
-          </div>
-        </section>
+      <p v-else class="py-16 text-center text-primary-400">
+        Nothing here right now.
+      </p>
 
-        <!-- Popular Recordings - Always show when available -->
-        <section v-if="popularRecordings.length > 0">
-          <div class="flex items-center justify-between mb-5">
-            <div class="flex items-center gap-3">
-              <div class="w-1 h-6 bg-primary-500 rounded-full" />
-              <h2 class="text-xl font-bold text-white">Popular Recordings</h2>
-              <span class="hidden sm:inline-flex px-2.5 py-1 bg-primary-500/20 text-primary-400 text-xs font-semibold rounded-full">
-                Most viewed
-              </span>
-            </div>
-            <Link
-              :href="route('recordings.index')"
-              class="text-sm text-primary-400 hover:text-primary-300 transition-colors"
-            >
-              View all →
-            </Link>
-          </div>
-
-          <div class="stream-grid">
-            <RecordingTile
-              v-for="recording in popularRecordings"
-              :key="recording.id"
-              :recording="recording"
-            />
-          </div>
-        </section>
-
-        <!-- Starting Soon Section -->
-        <section v-if="startingSoonShows.length > 0">
-          <div class="flex items-center justify-between mb-5">
-            <div class="flex items-center gap-3">
-              <div class="w-1 h-6 bg-orange-500 rounded-full" />
-              <h2 class="text-xl font-bold text-white">Starting Soon</h2>
-              <span class="px-2.5 py-1 bg-orange-500/20 text-orange-400 text-xs font-semibold rounded-full">
-                {{ startingSoonShows.length }} upcoming
-              </span>
-            </div>
-          </div>
-
-          <div class="stream-grid">
-            <ShowTile
-              v-for="show in startingSoonShows"
-              :key="show.id"
-              :show="show"
-            />
-          </div>
-        </section>
-
-        <!-- Upcoming Shows Section -->
-        <section v-if="upcomingShows.length > 0">
-          <div class="flex items-center justify-between mb-5">
-            <div class="flex items-center gap-3">
-              <div class="w-1 h-6 bg-primary-500 rounded-full" />
-              <h2 class="text-xl font-bold text-white">Upcoming Shows</h2>
-              <span class="px-2.5 py-1 bg-primary-500/20 text-primary-400 text-xs font-semibold rounded-full">
-                Next 24 hours
-              </span>
-            </div>
-          </div>
-
-          <div class="stream-grid">
-            <ShowTile
-              v-for="show in upcomingShows"
-              :key="show.id"
-              :show="show"
-            />
-          </div>
-        </section>
-
-        <!-- Empty State -->
-        <section v-if="liveShows.length === 0 && startingSoonShows.length === 0 && upcomingShows.length === 0 && popularRecordings.length === 0" class="py-16">
-          <div class="text-center max-w-md mx-auto">
-            <div class="w-20 h-20 mx-auto mb-6 rounded-full bg-primary-800/50 flex items-center justify-center">
-              <FaClockIcon class="w-10 h-10 text-primary-500" />
-            </div>
-            <h2 class="text-2xl font-bold text-white mb-3">No Shows Scheduled</h2>
-            <p class="text-primary-400">Check back later for upcoming streams and events.</p>
-          </div>
-        </section>
-
+      <div v-if="showArchiveLink" class="mt-8 flex justify-center">
+        <Link
+          :href="route('recordings.index')"
+          class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-primary-700 hover:border-primary-500 text-sm font-medium text-primary-200 transition-colors"
+        >
+          Browse all {{ archiveTotal }} archive shows
+        </Link>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { Head, Link, usePage } from '@inertiajs/vue3';
-import { ref, onMounted, onUnmounted } from 'vue';
+import { Head, Link } from '@inertiajs/vue3';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import StageHero from '@/Components/Shows/StageHero.vue';
 import ShowTile from '@/Components/Shows/ShowTile.vue';
 import RecordingTile from '@/Components/Recordings/RecordingTile.vue';
-import FaVideoSlashIcon from '@/Components/Icons/FaVideoSlashIcon.vue';
-import FaVideoIcon from '@/Components/Icons/FaVideoIcon.vue';
-import FaPlayIcon from '@/Components/Icons/FaPlayIcon.vue';
-import FaClockIcon from '@/Components/Icons/FaClockIcon.vue';
-import FaUsersIcon from '@/Components/Icons/FaUsersIcon.vue';
+import FaCalendarIcon from '@/Components/Icons/FaCalendarIcon.vue';
 
-// Define layout
 defineOptions({
-  layout: AuthenticatedLayout
+  layout: AuthenticatedLayout,
 });
 
-// Props
 const props = defineProps({
-  liveShows: {
-    type: Array,
-    default: () => [],
-  },
-  startingSoonShows: {
-    type: Array,
-    default: () => [],
-  },
-  upcomingShows: {
-    type: Array,
-    default: () => [],
-  },
-  popularRecordings: {
-    type: Array,
-    default: () => [],
-  },
-  currentTime: {
-    type: String,
-    required: false,
-  },
+  liveShows: { type: Array, default: () => [] },
+  startingSoonShows: { type: Array, default: () => [] },
+  upcomingShows: { type: Array, default: () => [] },
+  archiveRecordings: { type: Array, default: () => [] },
+  archiveTotal: { type: Number, default: 0 },
+  featured: { type: Object, default: null },
+  featuredChat: { type: Object, default: () => ({ source_id: null, messages: [] }) },
+  primaryChannel: { type: String, default: null },
+  channels: { type: Array, default: () => [] },
+  currentTime: { type: String, required: false },
 });
 
-// Page props for auth info
-const page = usePage();
+const liveShows = ref([...props.liveShows]);
+const startingSoonShows = ref([...props.startingSoonShows]);
+const upcomingShows = ref([...props.upcomingShows]);
+const featured = ref(props.featured ? { ...props.featured } : null);
 
-// Reactive state
-const liveShows = ref(props.liveShows);
-const startingSoonShows = ref(props.startingSoonShows);
-const upcomingShows = ref(props.upcomingShows);
-const popularRecordings = ref(props.popularRecordings);
+const activeFilter = ref('all');
 
-let refreshInterval;
+// The featured show already has the hero, so it is not repeated in the grid.
+const gridLiveShows = computed(() =>
+  liveShows.value.filter((show) => show.id !== featured.value?.id)
+);
 
-// Format viewer count (1000 -> 1K, etc.)
-const formatViewerCount = (count) => {
-  if (count >= 1000000) {
-    return (count / 1000000).toFixed(1) + 'M';
+const items = computed(() => [
+  ...gridLiveShows.value.map((show) => ({ kind: 'live', id: show.id, channel: show.source, data: show })),
+  ...startingSoonShows.value.map((show) => ({ kind: 'soon', id: show.id, channel: show.source, data: show })),
+  ...upcomingShows.value.map((show) => ({ kind: 'upcoming', id: show.id, channel: show.source, data: show })),
+  ...props.archiveRecordings.map((recording) => ({ kind: 'archive', id: recording.id, channel: null, data: recording })),
+]);
+
+const countOf = (kind) => items.value.filter((item) => item.kind === kind).length;
+
+const filters = computed(() => {
+  const base = [
+    { key: 'all', label: 'All' },
+    { key: 'live', label: 'Live', count: countOf('live') + (featured.value?.status === 'live' ? 1 : 0) },
+    { key: 'soon', label: 'Starting soon', count: countOf('soon') },
+    { key: 'upcoming', label: 'Upcoming', count: countOf('upcoming') },
+    { key: 'archive', label: 'Archive', count: props.archiveTotal || countOf('archive') },
+  ].filter((filter) => filter.key === 'all' || filter.count > 0);
+
+  const channelFilters = props.channels
+    .filter((channel) => channel)
+    .map((channel) => ({ key: `channel:${channel}`, label: channel }));
+
+  return [...base, ...channelFilters];
+});
+
+const visibleItems = computed(() => {
+  if (activeFilter.value === 'all') return items.value;
+
+  if (activeFilter.value.startsWith('channel:')) {
+    const channel = activeFilter.value.slice('channel:'.length);
+    return items.value.filter((item) => item.channel === channel);
   }
-  if (count >= 1000) {
-    return (count / 1000).toFixed(1) + 'K';
-  }
-  return count?.toString() || '0';
-};
 
-// Format duration
-const formatDuration = (startTime) => {
-  const start = new Date(startTime);
-  const now = new Date();
-  const diff = Math.floor((now - start) / 1000);
+  return items.value.filter((item) => item.kind === activeFilter.value);
+});
 
-  const hours = Math.floor(diff / 3600);
-  const minutes = Math.floor((diff % 3600) / 60);
-  const seconds = diff % 60;
+const showArchiveLink = computed(() =>
+  props.archiveTotal > props.archiveRecordings.length
+  && ['all', 'archive'].includes(activeFilter.value)
+);
 
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  }
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-};
-
+// Echo keeps the page current; there is deliberately no periodic page reload,
+// which used to interrupt anyone leaving the browse page open.
 onMounted(() => {
-  // Listen for show status updates
   Echo.channel('shows')
     .listen('.show.status.changed', (e) => {
-      // Handle show going live
       if (e.status === 'live') {
-        // Remove from upcoming if exists
-        const upcomingIndex = upcomingShows.value.findIndex(s => s.id === e.show.id);
-        if (upcomingIndex !== -1) {
-          upcomingShows.value.splice(upcomingIndex, 1);
-        }
+        removeById(upcomingShows, e.show.id);
+        removeById(startingSoonShows, e.show.id);
 
-        // Remove from starting soon if exists
-        const startingSoonIndex = startingSoonShows.value.findIndex(s => s.id === e.show.id);
-        if (startingSoonIndex !== -1) {
-          startingSoonShows.value.splice(startingSoonIndex, 1);
-        }
-
-        // Add to live shows if not already there
-        const liveIndex = liveShows.value.findIndex(s => s.id === e.show.id);
-        if (liveIndex === -1) {
+        if (!liveShows.value.some((show) => show.id === e.show.id)) {
           liveShows.value.unshift(e.show);
         }
       }
 
-      // Handle show ending
       if (e.status === 'ended') {
-        // Remove from live shows
-        const liveIndex = liveShows.value.findIndex(s => s.id === e.show.id);
-        if (liveIndex !== -1) {
-          liveShows.value.splice(liveIndex, 1);
-        }
-
-        // Remove from starting soon if exists
-        const startingSoonIndex = startingSoonShows.value.findIndex(s => s.id === e.show.id);
-        if (startingSoonIndex !== -1) {
-          startingSoonShows.value.splice(startingSoonIndex, 1);
-        }
+        removeById(liveShows, e.show.id);
+        removeById(startingSoonShows, e.show.id);
       }
     })
     .listen('.show.viewer.count', (e) => {
-      // Update viewer count for live shows
-      const show = liveShows.value.find(s => s.id === e.show_id);
+      const show = liveShows.value.find((s) => s.id === e.show_id);
       if (show) {
         show.viewer_count = e.viewer_count;
       }
+      if (featured.value?.id === e.show_id) {
+        featured.value.viewer_count = e.viewer_count;
+      }
     })
     .listen('.thumbnail.updated', (e) => {
-      // Update thumbnail for any show
-      const liveShow = liveShows.value.find(s => s.id === e.show_id);
-      if (liveShow) {
-        liveShow.thumbnail_url = e.thumbnail_url;
-      }
+      [liveShows, startingSoonShows, upcomingShows].forEach((list) => {
+        const show = list.value.find((s) => s.id === e.show_id);
+        if (show) {
+          show.thumbnail_url = e.thumbnail_url;
+        }
+      });
 
-      const upcomingShow = upcomingShows.value.find(s => s.id === e.show_id);
-      if (upcomingShow) {
-        upcomingShow.thumbnail_url = e.thumbnail_url;
+      if (featured.value?.id === e.show_id) {
+        featured.value.thumbnail_url = e.thumbnail_url;
       }
     });
-
-  // Auto-refresh page every 5 minutes to get fresh data
-  refreshInterval = setInterval(() => {
-    window.location.reload();
-  }, 5 * 60 * 1000);
 });
 
-onUnmounted(() => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
+const removeById = (list, id) => {
+  const index = list.value.findIndex((show) => show.id === id);
+  if (index !== -1) {
+    list.value.splice(index, 1);
   }
+};
+
+onUnmounted(() => {
   Echo.leave('shows');
 });
 </script>
 
-<style>
+<style scoped>
 @reference "../../css/app.css";
 
 .stream-grid {
   display: grid;
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 1.25rem 1rem;
 }
 
-@media (min-width: 640px) {
-  .stream-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.filter-chip {
+  @apply inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-primary-700/70 px-3.5 py-1.5 text-sm font-medium text-primary-200 transition-colors;
 }
 
-@media (min-width: 768px) {
-  .stream-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+/* :not() keeps hover from repainting the selected chip white-on-white. */
+.filter-chip:hover:not(.filter-chip-active) {
+  @apply border-primary-500 text-white;
 }
 
-@media (min-width: 1280px) {
-  .stream-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+.filter-chip-active {
+  @apply bg-white text-primary-950 border-white font-semibold;
 }
 
-@media (min-width: 1536px) {
-  .stream-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
+.filter-chip:focus-visible {
+  @apply outline-none ring-2 ring-primary-400 ring-offset-2 ring-offset-primary-900;
 }
 
-.live-badge {
-  @apply inline-flex items-center gap-1.5 bg-red-600 text-white px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wide;
+.scrollbar-none {
+  scrollbar-width: none;
 }
 
-.live-dot {
-  @apply w-2 h-2 bg-white rounded-full;
-  animation: blink 1.5s ease-in-out infinite;
-}
-
-.viewer-badge {
-  @apply inline-flex items-center gap-1.5 bg-black/70 backdrop-blur-sm text-white px-2.5 py-1 rounded text-xs font-medium;
-}
-
-.live-counter {
-  @apply px-2.5 py-1 bg-red-500/20 text-red-400 text-xs font-semibold rounded-full;
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 .stream-grid > * {
-  animation: fadeIn 0.4s ease-out forwards;
-  opacity: 0;
+  animation: fadeIn 0.35s ease-out forwards;
 }
-
-.stream-grid > *:nth-child(1) { animation-delay: 0.05s; }
-.stream-grid > *:nth-child(2) { animation-delay: 0.1s; }
-.stream-grid > *:nth-child(3) { animation-delay: 0.15s; }
-.stream-grid > *:nth-child(4) { animation-delay: 0.2s; }
-.stream-grid > *:nth-child(5) { animation-delay: 0.25s; }
-.stream-grid > *:nth-child(6) { animation-delay: 0.3s; }
-.stream-grid > *:nth-child(7) { animation-delay: 0.35s; }
-.stream-grid > *:nth-child(8) { animation-delay: 0.4s; }
 </style>

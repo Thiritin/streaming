@@ -1,0 +1,13 @@
+- generic [ref=f7e3]:
+  - generic [ref=f7e4]: "[plugin:vite:vue] Element is missing end tag."
+  - generic [ref=f7e5]: /Users/martin/Projects/Eurofurence/ef-streaming/resources/js/Layouts/AuthenticatedLayout.vue:22:7
+  - generic [ref=f7e6]: "20 | <div class=\"min-h-screen bg-primary-900 flex flex-col\"> 21 | <!-- Top Navigation Bar --> 22 | <nav class=\"bg-primary-950/80 backdrop-blur-md sticky top-0 w-full z-50 border-b border-primary-800/50\"> | ^ 23 | <div class=\"mx-auto max-w-page px-4 lg:px-6\"> 24 | <!-- Three tracks rather than justify-between: the middle one is what keeps the"
+  - generic [ref=f7e7]: at createCompilerError (/Users/martin/Projects/Eurofurence/ef-streaming/node_modules/@vue/compiler-core/dist/compiler-core.cjs.js:1378:17) at emitError (/Users/martin/Projects/Eurofurence/ef-streaming/node_modules/@vue/compiler-core/dist/compiler-core.cjs.js:3014:5) at Object.onclosetag (/Users/martin/Projects/Eurofurence/ef-streaming/node_modules/@vue/compiler-core/dist/compiler-core.cjs.js:2381:13) at Tokenizer.stateInClosingTagName (/Users/martin/Projects/Eurofurence/ef-streaming/node_modules/@vue/compiler-core/dist/compiler-core.cjs.js:799:16) at Tokenizer.parse (/Users/martin/Projects/Eurofurence/ef-streaming/node_modules/@vue/compiler-core/dist/compiler-core.cjs.js:1157:16) at Object.baseParse (/Users/martin/Projects/Eurofurence/ef-streaming/node_modules/@vue/compiler-core/dist/compiler-core.cjs.js:3053:13) at Object.parse (/Users/martin/Projects/Eurofurence/ef-streaming/node_modules/@vue/compiler-dom/dist/compiler-dom.cjs.js:910:23) at Object.parse$1 [as parse] (/Users/martin/Projects/Eurofurence/ef-streaming/node_modules/@vue/compiler-sfc/dist/compiler-sfc.cjs.js:1824:24) at createDescriptor (file:///Users/martin/Projects/Eurofurence/ef-streaming/node_modules/@vitejs/plugin-vue/dist/index.mjs:71:43) at handleHotUpdate (file:///Users/martin/Projects/Eurofurence/ef-streaming/node_modules/@vitejs/plugin-vue/dist/index.mjs:2198:26
+  - generic [ref=f7e8]:
+    - text: Click outside, press Esc key, or fix the code to dismiss.You can also disable this overlay by setting
+    - code [ref=f7e9]: server.hmr.overlay
+    - text: to
+    - code [ref=f7e10]: "false"
+    - text: in
+    - code [ref=f7e11]: vite.config.js
+    - text: .

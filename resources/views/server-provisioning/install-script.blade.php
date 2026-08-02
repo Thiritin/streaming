@@ -112,13 +112,37 @@ curl -H "X-Shared-Secret: {{ $sharedSecret }}" \
     echo "Failed to download Caddyfile"
     exit 1
 }
+
+# The edge nginx image is built here because it needs the njs module, which
+# verifies playback tokens on this host instead of calling back into Laravel.
+#
+# -f and "Accept: application/json" matter: a bad shared secret otherwise
+# renders as a 302 to the login page, and the HTML would be saved as the config.
+echo "Downloading edge nginx Dockerfile..."
+curl -fsS -H "X-Shared-Secret: {{ $sharedSecret }}" \
+     -H "Accept: application/json" \
+     -o Dockerfile.edge-nginx \
+     "${CONFIG_URL}/dockerfile-edge" || {
+    echo "Failed to download Dockerfile.edge-nginx"
+    exit 1
+}
+
+echo "Downloading playback token verifier..."
+curl -fsS -H "X-Shared-Secret: {{ $sharedSecret }}" \
+     -H "Accept: application/json" \
+     -o hls-auth.js \
+     "${CONFIG_URL}/hls-auth-js" || {
+    echo "Failed to download hls-auth.js"
+    exit 1
+}
 @endif
 
 echo "All configuration files downloaded successfully!"
 
 # Start services
+# --build so a changed edge nginx Dockerfile or njs module is actually picked up.
 echo "Starting Docker services..."
-docker compose up -d
+docker compose up -d --build
 
 # Wait for services to be ready
 echo "Waiting for services to start..."

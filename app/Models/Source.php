@@ -58,9 +58,10 @@ class Source extends Model
         });
 
         static::updating(function ($source) {
-            // Update slug if name changes
-            if ($source->isDirty('name') && !$source->isDirty('slug')) {
-                $source->slug = Str::slug($source->name);
+            // The slug is the RTMP ingress path and the HLS route key, so it is
+            // immutable after creation. Renaming a source must not move it.
+            if ($source->isDirty('slug')) {
+                $source->slug = $source->getOriginal('slug');
             }
             // Stream key should remain separate from slug for security
             // Only regenerate if explicitly cleared
@@ -142,13 +143,20 @@ class Source extends Model
     /**
      * Get the base RTMP server URL for OBS configuration.
      * Returns URL in format: rtmp://server:port/ingress
+     *
+     * Null when no origin server is active: there is no address to push to yet. This used
+     * to read ->hostname off null and take the whole page down with it, which is exactly
+     * the moment - origin down - when an operator most needs the page.
      */
-    public function getRtmpServerUrl()
+    public function getRtmpServerUrl(): ?string
     {
-        // Get the active origin server
         $originServer = \App\Models\Server::where('type', \App\Enum\ServerTypeEnum::ORIGIN)
             ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
             ->first();
+
+        if (! $originServer) {
+            return null;
+        }
 
         return "rtmp://{$originServer->hostname}:1935/ingress";
     }
@@ -176,6 +184,11 @@ class Source extends Model
      */
     public function getHlsUrl()
     {
+        // Local dev loops bypass the edge proxy entirely; see config/stream.php.
+        if (config('stream.dev_streams')) {
+            return asset("dev-streams/{$this->slug}/index.m3u8");
+        }
+
         return route('hls.master', ['stream' => $this->slug]);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\BrandingService;
 use App\Services\ChatMessageSanitizer;
 use App\Services\CommandRegistry;
 use Illuminate\Http\Request;
@@ -34,7 +35,8 @@ class HandleInertiaRequests extends Middleware
         $user = $request->user();
         $chatCommands = [];
         $chatConfig = [];
-        $emotes = [];
+        $emotes = ['map' => (object) [], 'list' => []];
+        $chatPermissions = [];
 
         if ($user) {
             // Use new CommandRegistry for commands
@@ -55,24 +57,32 @@ class HandleInertiaRequests extends Middleware
             $chatConfig = [
                 'maxMessageLength' => $sanitizer->getMaxLength(),
                 'allowedDomains' => $sanitizer->getAllowedDomains(),
+                'bufferSize' => (int) config('chat.history.buffer', 300),
             ];
 
-            // Get emotes available for user
-            $emoteService = app(\App\Services\EmoteService::class);
-            $emotes = [
-                'available' => $emoteService->getAvailableEmotes($user),
-                'global' => $emoteService->getGlobalEmotes(),
-                'favorites' => $emoteService->getUserFavorites($user),
-            ];
+            $emotes = app(\App\Services\EmoteService::class)->clientPayload($user);
 
+            $chatPermissions = [
+                'moderate' => $user->canModerateChat(),
+                'ban' => $user->canBanFromChat(),
+                'announce' => $user->canModerateChat() || $user->hasPermission('chat.broadcast'),
+                'bypass_limits' => $user->canModerateChat() || $user->hasPermission('chat.ignore.ratelimit'),
+            ];
         }
 
         return array_merge(parent::share($request), [
+            'branding' => app(BrandingService::class)->forFrontend(),
             'auth' => [
                 'user' => $user ? array_merge(
                     $user->only('id', 'name', 'role'),
-                    ['is_staff' => $user->isStaff()]
+                    [
+                        'is_staff' => $user->isStaff(),
+                        'chat_color' => $user->chat_color,
+                        'badges' => $user->chatBadges(),
+                    ]
                 ) : null,
+                'can_access_manage' => $user ? \Illuminate\Support\Facades\Gate::forUser($user)->allows('access-manage') : false,
+                // Kept until /admin is removed; see docs/admin/rebuild-plan.md part 5.
                 'can_access_filament' => $user?->can('filament.access'),
                 'has_server_assignment' => $user ? ($user->server_id && $user->streamkey ? true : false) : false,
             ],
@@ -80,6 +90,7 @@ class HandleInertiaRequests extends Middleware
                 'commands' => $chatCommands,
                 'config' => $chatConfig,
                 'emotes' => $emotes,
+                'permissions' => $chatPermissions,
             ],
         ]);
     }

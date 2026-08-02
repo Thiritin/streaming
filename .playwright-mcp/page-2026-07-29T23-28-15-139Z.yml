@@ -1,0 +1,52 @@
+- generic [ref=f5e4]:
+  - navigation [ref=f5e5]:
+    - generic [ref=f5e7]:
+      - generic [ref=f5e8]:
+        - link [ref=f5e9] [cursor=pointer]:
+          - /url: https://streaming.test/
+        - generic [ref=f5e15]:
+          - link "Browse" [ref=f5e16] [cursor=pointer]:
+            - /url: https://streaming.test/
+          - link "Schedule" [ref=f5e20] [cursor=pointer]:
+            - /url: https://streaming.test/schedule
+          - link "Archive" [ref=f5e24] [cursor=pointer]:
+            - /url: https://streaming.test/archive
+      - button "T" [ref=f5e31]
+  - main [ref=f5e36]:
+    - generic [ref=f5e37]:
+      - generic [ref=f5e38]:
+        - generic [ref=f5e39]:
+          - paragraph [ref=f5e40]: Programme guide
+          - heading "What's on, channel by channel" [level=1] [ref=f5e41]
+          - paragraph [ref=f5e42]: Every channel on one time axis. Blocks in colour are on air now, outlined blocks are still to come.
+        - generic [ref=f5e43]:
+          - button "Wed 29 Jul" [active] [ref=f5e44]
+          - button "Today Thu 30 Jul" [ref=f5e45]:
+            - text: Today
+            - generic [ref=f5e46]: Thu 30 Jul
+      - generic [ref=f5e47]:
+        - generic [ref=f5e49]:
+          - generic [ref=f5e50]:
+            - generic [ref=f5e51]: Channel
+            - generic [ref=f5e116]: 21:00
+            - generic [ref=f5e118]: 22:00
+            - generic [ref=f5e120]: 23:00
+            - generic [ref=f5e122]: 00:00
+          - generic [ref=f5e64]:
+            - generic [ref=f5e65]:
+              - generic [ref=f5e66]: Test Stream
+              - generic [ref=f5e67]: Main channel
+            - link "Pop Quiz Hour 21:32–00:32 · live" [ref=f5e132] [cursor=pointer]:
+              - /url: https://streaming.test/show/pop-quiz-hour
+              - generic [ref=f5e133]: Pop Quiz Hour
+              - generic [ref=f5e134]: 21:32–00:32 · live
+        - generic [ref=f5e95]:
+          - generic [ref=f5e96]: On air
+          - generic [ref=f5e98]: Starting soon
+          - generic [ref=f5e100]: Scheduled
+          - generic [ref=f5e102]: Ended
+          - generic [ref=f5e104]: Empty row space means the channel is dark.
+  - contentinfo [ref=f5e105]:
+    - generic [ref=f5e107]:
+      - generic [ref=f5e108]: Eurofurence Streaming
+      - generic [ref=f5e115]: Made with ♥ by the Video Team

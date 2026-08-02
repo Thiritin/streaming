@@ -1,0 +1,303 @@
+- generic [ref=f116e4]:
+  - navigation [ref=f116e5]:
+    - generic [ref=f116e7]:
+      - link [ref=f116e9] [cursor=pointer]:
+        - /url: https://streaming.test/
+      - generic [ref=f116e15]:
+        - link "Browse" [ref=f116e16] [cursor=pointer]:
+          - /url: https://streaming.test/
+        - link "Schedule" [ref=f116e20] [cursor=pointer]:
+          - /url: https://streaming.test/schedule
+        - link "Archive" [ref=f116e24] [cursor=pointer]:
+          - /url: https://streaming.test/archive
+        - link "Admin" [ref=f116e28] [cursor=pointer]:
+          - /url: https://streaming.test/manage
+      - button "T" [ref=f116e36]
+  - main [ref=f116e41]:
+    - generic [ref=f116e42]:
+      - generic [ref=f116e46]:
+        - generic [ref=f116e48]:
+          - generic [ref=f116e49]:
+            - generic [ref=f116e50]: EF Prime
+            - paragraph [ref=f116e55]: Connecting
+          - generic [ref=f116e56]:
+            - generic [ref=f116e57]: Live
+            - generic [ref=f116e59]: 2.1K watching
+          - generic [ref=f116e60]: 27:08:57
+          - link "Open full player" [ref=f116e63] [cursor=pointer]:
+            - /url: https://streaming.test/show/ef-prime
+        - generic [ref=f116e66]:
+          - heading "EF Prime" [level=1] [ref=f116e67]
+          - paragraph [ref=f116e68]: Your 24/7 EF TV Channel showing the prime shows and fun content from other conventions.
+      - tablist "Filter shows" [ref=f116e70]:
+        - tab "All" [selected] [ref=f116e71]
+        - tab "Live 4" [ref=f116e72]:
+          - text: Live
+          - generic [ref=f116e74]: "4"
+        - tab "Starting soon 3" [ref=f116e75]:
+          - text: Starting soon
+          - generic [ref=f116e76]: "3"
+        - tab "Upcoming 8" [ref=f116e77]:
+          - text: Upcoming
+          - generic [ref=f116e78]: "8"
+        - tab "Archive 10" [ref=f116e79]:
+          - text: Archive
+          - generic [ref=f116e80]: "10"
+        - tab "EF Prime" [ref=f116e81]
+        - tab "Panel Room" [ref=f116e82]
+        - tab "Art Track" [ref=f116e83]
+        - tab "Dance Stage" [ref=f116e84]
+      - generic [ref=f116e86]:
+        - link "EF Prime LIVE 5:08:57 Pop Quiz Hour EF Prime live 5:08:57" [ref=f116e88] [cursor=pointer]:
+          - /url: https://streaming.test/show/pop-quiz-hour
+          - generic [ref=f116e89]:
+            - generic [ref=f116e90]: EF Prime
+            - generic [ref=f116e93]: LIVE
+            - generic [ref=f116e94]: 5:08:57
+          - generic [ref=f116e100]:
+            - heading "Pop Quiz Hour" [level=3] [ref=f116e101]
+            - paragraph [ref=f116e102]:
+              - generic [ref=f116e103]: EF Prime
+              - generic [ref=f116e104]: ·
+              - generic [ref=f116e105]: live 5:08:57
+        - link "Panel Room LIVE 312 1:14:58 Fursuit Care Panel Panel Room live 1:14:58" [ref=f116e107] [cursor=pointer]:
+          - /url: https://streaming.test/show/panel-room-fursuit-care-panel
+          - generic [ref=f116e108]:
+            - generic [ref=f116e109]: Panel Room
+            - generic [ref=f116e112]: LIVE
+            - generic [ref=f116e113]: "312"
+            - generic [ref=f116e117]: 1:14:58
+          - generic [ref=f116e123]:
+            - heading "Fursuit Care Panel" [level=3] [ref=f116e124]
+            - paragraph [ref=f116e125]:
+              - generic [ref=f116e126]: Panel Room
+              - generic [ref=f116e127]: ·
+              - generic [ref=f116e128]: live 1:14:58
+        - link "Art Track LIVE 96 1:29:58 Art Show Walkthrough Art Track live 1:29:58" [ref=f116e130] [cursor=pointer]:
+          - /url: https://streaming.test/show/art-track-art-show-walkthrough
+          - generic [ref=f116e131]:
+            - generic [ref=f116e132]: Art Track
+            - generic [ref=f116e135]: LIVE
+            - generic [ref=f116e136]: "96"
+            - generic [ref=f116e140]: 1:29:58
+          - generic [ref=f116e146]:
+            - heading "Art Show Walkthrough" [level=3] [ref=f116e147]
+            - paragraph [ref=f116e148]:
+              - generic [ref=f116e149]: Art Track
+              - generic [ref=f116e150]: ·
+              - generic [ref=f116e151]: live 1:29:58
+        - link "EF Prime STARTING SOON Fursuit Parade EF Prime Today at 02:32" [ref=f116e153] [cursor=pointer]:
+          - /url: https://streaming.test/show/fursuit-parade
+          - generic [ref=f116e154]:
+            - generic [ref=f116e155]: EF Prime
+            - generic [ref=f116e158]: STARTING SOON
+          - generic [ref=f116e164]:
+            - heading "Fursuit Parade" [level=3] [ref=f116e165]
+            - paragraph [ref=f116e166]:
+              - generic [ref=f116e167]: EF Prime
+              - generic [ref=f116e168]: ·
+              - generic [ref=f116e169]: Today at 02:32
+        - link "EF Prime STARTING SOON Fursuit Parade EF Prime Today at 02:28" [ref=f116e171] [cursor=pointer]:
+          - /url: https://streaming.test/show/prime-fursuit-parade
+          - generic [ref=f116e172]:
+            - generic [ref=f116e173]: EF Prime
+            - generic [ref=f116e176]: STARTING SOON
+          - generic [ref=f116e182]:
+            - heading "Fursuit Parade" [level=3] [ref=f116e183]
+            - paragraph [ref=f116e184]:
+              - generic [ref=f116e185]: EF Prime
+              - generic [ref=f116e186]: ·
+              - generic [ref=f116e187]: Today at 02:28
+        - link "EF Prime STARTING SOON Artist Alley Showcase EF Prime Today at 01:32" [ref=f116e189] [cursor=pointer]:
+          - /url: https://streaming.test/show/artist-alley-showcase
+          - generic [ref=f116e190]:
+            - generic [ref=f116e191]: EF Prime
+            - generic [ref=f116e194]: STARTING SOON
+          - generic [ref=f116e200]:
+            - heading "Artist Alley Showcase" [level=3] [ref=f116e201]
+            - paragraph [ref=f116e202]:
+              - generic [ref=f116e203]: EF Prime
+              - generic [ref=f116e204]: ·
+              - generic [ref=f116e205]: Today at 01:32
+        - link "EF Prime in 2m Opening Ceremony EF Prime Today at 02:43" [ref=f116e207] [cursor=pointer]:
+          - /url: https://streaming.test/show/prime-opening-ceremony
+          - generic [ref=f116e208]:
+            - generic [ref=f116e209]: EF Prime
+            - generic [ref=f116e212]: in 2m
+          - generic [ref=f116e218]:
+            - heading "Opening Ceremony" [level=3] [ref=f116e219]
+            - paragraph [ref=f116e220]:
+              - generic [ref=f116e221]: EF Prime
+              - generic [ref=f116e222]: ·
+              - generic [ref=f116e223]: Today at 02:43
+        - link "Dance Stage in 26m Dance Competition Prelims Dance Stage Today at 03:07" [ref=f116e225] [cursor=pointer]:
+          - /url: https://streaming.test/show/dance-stage-dance-competition-prelims
+          - generic [ref=f116e226]:
+            - generic [ref=f116e227]: Dance Stage
+            - generic [ref=f116e230]: in 26m
+          - generic [ref=f116e236]:
+            - heading "Dance Competition Prelims" [level=3] [ref=f116e237]
+            - paragraph [ref=f116e238]:
+              - generic [ref=f116e239]: Dance Stage
+              - generic [ref=f116e240]: ·
+              - generic [ref=f116e241]: Today at 03:07
+        - link "EF Prime in 51m Voice Acting Workshop EF Prime Today at 03:32" [ref=f116e243] [cursor=pointer]:
+          - /url: https://streaming.test/show/voice-acting-workshop
+          - generic [ref=f116e244]:
+            - generic [ref=f116e245]: EF Prime
+            - generic [ref=f116e248]: in 51m
+          - generic [ref=f116e254]:
+            - heading "Voice Acting Workshop" [level=3] [ref=f116e255]
+            - paragraph [ref=f116e256]:
+              - generic [ref=f116e257]: EF Prime
+              - generic [ref=f116e258]: ·
+              - generic [ref=f116e259]: Today at 03:32
+        - link "EF Prime in 1h 51m Game Show Hour EF Prime Today at 04:32" [ref=f116e261] [cursor=pointer]:
+          - /url: https://streaming.test/show/game-show-hour
+          - generic [ref=f116e262]:
+            - generic [ref=f116e263]: EF Prime
+            - generic [ref=f116e266]: in 1h 51m
+          - generic [ref=f116e272]:
+            - heading "Game Show Hour" [level=3] [ref=f116e273]
+            - paragraph [ref=f116e274]:
+              - generic [ref=f116e275]: EF Prime
+              - generic [ref=f116e276]: ·
+              - generic [ref=f116e277]: Today at 04:32
+        - link "EF Prime in 2h 11m Charity Auction EF Prime Today at 04:52" [ref=f116e279] [cursor=pointer]:
+          - /url: https://streaming.test/show/prime-charity-auction
+          - generic [ref=f116e280]:
+            - generic [ref=f116e281]: EF Prime
+            - generic [ref=f116e284]: in 2h 11m
+          - generic [ref=f116e290]:
+            - heading "Charity Auction" [level=3] [ref=f116e291]
+            - paragraph [ref=f116e292]:
+              - generic [ref=f116e293]: EF Prime
+              - generic [ref=f116e294]: ·
+              - generic [ref=f116e295]: Today at 04:52
+        - link "EF Prime in 2h 51m Closing Ceremony EF Prime Today at 05:32" [ref=f116e297] [cursor=pointer]:
+          - /url: https://streaming.test/show/closing-ceremony
+          - generic [ref=f116e298]:
+            - generic [ref=f116e299]: EF Prime
+            - generic [ref=f116e302]: in 2h 51m
+          - generic [ref=f116e308]:
+            - heading "Closing Ceremony" [level=3] [ref=f116e309]
+            - paragraph [ref=f116e310]:
+              - generic [ref=f116e311]: EF Prime
+              - generic [ref=f116e312]: ·
+              - generic [ref=f116e313]: Today at 05:32
+        - link "Panel Room in 3h 11m Writing Workshop Panel Room Today at 05:52" [ref=f116e315] [cursor=pointer]:
+          - /url: https://streaming.test/show/panel-room-writing-workshop
+          - generic [ref=f116e316]:
+            - generic [ref=f116e317]: Panel Room
+            - generic [ref=f116e320]: in 3h 11m
+          - generic [ref=f116e326]:
+            - heading "Writing Workshop" [level=3] [ref=f116e327]
+            - paragraph [ref=f116e328]:
+              - generic [ref=f116e329]: Panel Room
+              - generic [ref=f116e330]: ·
+              - generic [ref=f116e331]: Today at 05:52
+        - link "Dance Stage in 5h 11m Closing Dance Dance Stage Today at 07:52" [ref=f116e333] [cursor=pointer]:
+          - /url: https://streaming.test/show/dance-stage-closing-dance
+          - generic [ref=f116e334]:
+            - generic [ref=f116e335]: Dance Stage
+            - generic [ref=f116e338]: in 5h 11m
+          - generic [ref=f116e344]:
+            - heading "Closing Dance" [level=3] [ref=f116e345]
+            - paragraph [ref=f116e346]:
+              - generic [ref=f116e347]: Dance Stage
+              - generic [ref=f116e348]: ·
+              - generic [ref=f116e349]: Today at 07:52
+        - link "2026 23 40:00 Tech Team Debrief Today" [ref=f116e350] [cursor=pointer]:
+          - /url: https://streaming.test/archive/10
+          - generic [ref=f116e351]:
+            - generic [ref=f116e352]: "2026"
+            - generic [ref=f116e355]: "23"
+            - generic [ref=f116e359]: 40:00
+          - generic [ref=f116e365]:
+            - heading "Tech Team Debrief" [level=3] [ref=f116e366]
+            - paragraph [ref=f116e367]: Today
+        - link "2026 3.5K 45:00 Behind the Scenes Documentary Today" [ref=f116e368] [cursor=pointer]:
+          - /url: https://streaming.test/archive/7
+          - generic [ref=f116e369]:
+            - generic [ref=f116e370]: "2026"
+            - generic [ref=f116e373]: 3.5K
+            - generic [ref=f116e377]: 45:00
+          - generic [ref=f116e383]:
+            - heading "Behind the Scenes Documentary" [level=3] [ref=f116e384]
+            - paragraph [ref=f116e385]: Today
+        - link "2026 19.9K 1:00:00 Closing Ceremony 2024 Yesterday" [ref=f116e386] [cursor=pointer]:
+          - /url: https://streaming.test/archive/6
+          - generic [ref=f116e387]:
+            - generic [ref=f116e388]: "2026"
+            - generic [ref=f116e391]: 19.9K
+            - generic [ref=f116e395]: 1:00:00
+          - generic [ref=f116e401]:
+            - heading "Closing Ceremony 2024" [level=3] [ref=f116e402]
+            - paragraph [ref=f116e403]: Yesterday
+        - link "2026 6.8K 1:00:00 Guest of Honor Interview 2 days ago" [ref=f116e404] [cursor=pointer]:
+          - /url: https://streaming.test/archive/5
+          - generic [ref=f116e405]:
+            - generic [ref=f116e406]: "2026"
+            - generic [ref=f116e409]: 6.8K
+            - generic [ref=f116e413]: 1:00:00
+          - generic [ref=f116e419]:
+            - heading "Guest of Honor Interview" [level=3] [ref=f116e420]
+            - paragraph [ref=f116e421]: 2 days ago
+        - link "2026 12.6K 1:30:00 Dance Competition Finals 3 days ago" [ref=f116e422] [cursor=pointer]:
+          - /url: https://streaming.test/archive/4
+          - generic [ref=f116e423]:
+            - generic [ref=f116e424]: "2026"
+            - generic [ref=f116e427]: 12.6K
+            - generic [ref=f116e431]: 1:30:00
+          - generic [ref=f116e437]:
+            - heading "Dance Competition Finals" [level=3] [ref=f116e438]
+            - paragraph [ref=f116e439]: 3 days ago
+        - link "2026 8.9K 3:00:00 Art Auction Live 4 days ago" [ref=f116e440] [cursor=pointer]:
+          - /url: https://streaming.test/archive/3
+          - generic [ref=f116e441]:
+            - generic [ref=f116e442]: "2026"
+            - generic [ref=f116e445]: 8.9K
+            - generic [ref=f116e449]: 3:00:00
+          - generic [ref=f116e455]:
+            - heading "Art Auction Live" [level=3] [ref=f116e456]
+            - paragraph [ref=f116e457]: 4 days ago
+        - link "2026 28.5K 2:00:00 Fursuit Parade 5 days ago" [ref=f116e458] [cursor=pointer]:
+          - /url: https://streaming.test/archive/2
+          - generic [ref=f116e459]:
+            - generic [ref=f116e460]: "2026"
+            - generic [ref=f116e463]: 28.5K
+            - generic [ref=f116e467]: 2:00:00
+          - generic [ref=f116e473]:
+            - heading "Fursuit Parade" [level=3] [ref=f116e474]
+            - paragraph [ref=f116e475]: 5 days ago
+        - 'link "2026 4.5K 1:30:00 Panel: Animation in the Fandom 6 days ago" [ref=f116e476] [cursor=pointer]':
+          - /url: https://streaming.test/archive/8
+          - generic [ref=f116e477]:
+            - generic [ref=f116e478]: "2026"
+            - generic [ref=f116e481]: 4.5K
+            - generic [ref=f116e485]: 1:30:00
+          - generic [ref=f116e491]:
+            - 'heading "Panel: Animation in the Fandom" [level=3] [ref=f116e492]'
+            - paragraph [ref=f116e493]: 6 days ago
+        - link "2026 15.2K 1:30:00 Opening Ceremony 2024 1 week ago" [ref=f116e494] [cursor=pointer]:
+          - /url: https://streaming.test/archive/1
+          - generic [ref=f116e495]:
+            - generic [ref=f116e496]: "2026"
+            - generic [ref=f116e499]: 15.2K
+            - generic [ref=f116e503]: 1:30:00
+          - generic [ref=f116e509]:
+            - heading "Opening Ceremony 2024" [level=3] [ref=f116e510]
+            - paragraph [ref=f116e511]: 1 week ago
+        - link "2026 156 1:00:00 Staff Meeting Recording 1 week ago" [ref=f116e512] [cursor=pointer]:
+          - /url: https://streaming.test/archive/9
+          - generic [ref=f116e513]:
+            - generic [ref=f116e514]: "2026"
+            - generic [ref=f116e517]: "156"
+            - generic [ref=f116e521]: 1:00:00
+          - generic [ref=f116e527]:
+            - heading "Staff Meeting Recording" [level=3] [ref=f116e528]
+            - paragraph [ref=f116e529]: 1 week ago
+  - contentinfo [ref=f116e530]:
+    - generic [ref=f116e532]:
+      - generic [ref=f116e533]: Eurofurence Streaming
+      - generic [ref=f116e540]: Made with ♥ by the Video Team

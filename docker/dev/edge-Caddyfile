@@ -1,0 +1,17 @@
+# Generated for local docker-compose (scripts/dev-stack.sh).
+# Same as the production config, with upstreams pointed at compose services.
+:8080 {
+    # Set up logging
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    # Forward ALL traffic to nginx edge server
+    reverse_proxy edge-nginx:8081 {
+        # Pass through real IP
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

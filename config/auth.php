@@ -112,4 +112,19 @@ return [
 
     'password_timeout' => 10800,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Remember Me Duration
+    |--------------------------------------------------------------------------
+    |
+    | How long, in minutes, the "remember me" cookie issued at sign-in stays
+    | valid. Attendees sign in once and are expected to stay signed in for the
+    | run-up to the convention and the event itself, so this defaults to four
+    | weeks rather than Laravel's five years. Applied to the session guard in
+    | AuthServiceProvider.
+    |
+    */
+
+    'remember_lifetime' => (int) env('AUTH_REMEMBER_LIFETIME', 40320),
+
 ];

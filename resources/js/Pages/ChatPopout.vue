@@ -1,6 +1,6 @@
 <script setup>
 import { Head } from '@inertiajs/vue3';
-import ChatBox from "@/Components/Livestream/ChatBox.vue";
+import ChatPanel from "@/Components/Chat/ChatPanel.vue";
 
 // Props
 const props = defineProps({
@@ -12,9 +12,15 @@ const props = defineProps({
         type: Array,
         required: false
     },
-    rateLimit: {
+    chatSettings: {
         type: Object,
-        required: false
+        required: false,
+        default: () => ({})
+    },
+    chatState: {
+        type: Object,
+        required: false,
+        default: () => ({})
     },
     sourceId: {
         type: [Number, String],
@@ -44,10 +50,12 @@ const props = defineProps({
 
         <!-- Chat -->
         <div class="flex-1 overflow-hidden">
-            <ChatBox
-                :rate-limit="rateLimit"
+            <ChatPanel
                 :chat-messages="chatMessages"
+                :chat-settings="chatSettings"
+                :chat-state="chatState"
                 :source-id="sourceId"
+                :show-header="false"
                 class="h-full"
             />
         </div>

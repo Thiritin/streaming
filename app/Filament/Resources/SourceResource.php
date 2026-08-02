@@ -40,25 +40,23 @@ class SourceResource extends Resource
                             ->required()
                             ->maxLength(255)
                             ->live(onBlur: true)
-                            ->afterStateUpdated(function (string $state, Forms\Set $set) {
-                                $slug = Str::slug($state);
-                                $set('slug', $slug);
+                            ->afterStateUpdated(function (string $state, Forms\Set $set, string $operation) {
+                                // Only seed the slug while creating; it is immutable afterwards.
+                                if ($operation !== 'create') {
+                                    return;
+                                }
+
+                                $set('slug', Str::slug($state));
                             }),
                         TextInput::make('slug')
+                            ->label('Stream Name')
                             ->required()
                             ->unique(ignoreRecord: true)
-                            ->maxLength(255),
-                        Select::make('status')
-                            ->label('Status')
-                            ->options([
-                                SourceStatusEnum::ONLINE->value => 'Online',
-                                SourceStatusEnum::OFFLINE->value => 'Offline',
-                                SourceStatusEnum::ERROR->value => 'Error',
-                            ])
-                            ->default(SourceStatusEnum::OFFLINE->value)
-                            ->required()
-                            ->native(false)
-                            ->helperText('Set the current status of the streaming source'),
+                            ->maxLength(255)
+                            ->disabled(fn (string $operation): bool => $operation !== 'create')
+                            ->helperText(fn (string $operation): string => $operation === 'create'
+                                ? 'Becomes the RTMP ingress path and cannot be changed later.'
+                                : 'Fixed after creation: it is the RTMP ingress path and the HLS route.'),
                         TextInput::make('priority')
                             ->numeric()
                             ->default(0)
@@ -104,6 +102,26 @@ class SourceResource extends Resource
                                 );
                             })
                             ->helperText('Click to copy → OBS Settings → Stream → Stream Key'),
+                        Forms\Components\Actions::make([
+                            Forms\Components\Actions\Action::make('regenerate_key')
+                                ->label('Regenerate Stream Key')
+                                ->icon('heroicon-o-arrow-path')
+                                ->color('warning')
+                                ->requiresConfirmation()
+                                ->modalHeading('Regenerate Stream Key?')
+                                ->modalDescription('This will invalidate the current stream key. Any active streams will be disconnected.')
+                                ->action(function (?Source $record) {
+                                    $record->stream_key = Str::random(32);
+                                    $record->save();
+
+                                    Notification::make()
+                                        ->title('Stream key regenerated')
+                                        ->body('The new stream key has been saved and is now active.')
+                                        ->success()
+                                        ->send();
+                                })
+                                ->visible(fn (?Source $record): bool => $record !== null),
+                        ]),
                     ]),
             ]);
     }
@@ -188,9 +206,9 @@ class SourceResource extends Resource
                     ])
                     ->action(function ($record, array $data) {
                         $record->update(['status' => $data['status']]);
-                        
+
                         // Observer will automatically broadcast the status change event
-                        
+
                         Notification::make()
                             ->title('Status updated')
                             ->body("Source '{$record->name}' status has been updated to {$data['status']}.")
@@ -232,7 +250,7 @@ class SourceResource extends Resource
                                 $record->update(['status' => $data['status']]);
                                 // Observer will automatically broadcast the status change event
                             });
-                            
+
                             Notification::make()
                                 ->title('Status updated')
                                 ->body('The selected sources have been updated.')
@@ -278,6 +296,7 @@ class SourceResource extends Resource
     public static function getNavigationBadge(): ?string
     {
         $onlineCount = static::getModel()::where('status', SourceStatusEnum::ONLINE)->count();
+
         return $onlineCount > 0 ? (string) $onlineCount : null;
     }
 

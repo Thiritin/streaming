@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import StreamPlayer from "@/Components/Livestream/StreamPlayer.vue";
-import ChatBox from "@/Components/Livestream/ChatBox.vue";
+import ChatPanel from "@/Components/Chat/ChatPanel.vue";
 import StreamOfflineStatusPage from "@/Components/Livestream/StatusPages/StreamOfflineStatusPage.vue";
 import StreamProvisioningStatusPage from "@/Components/Livestream/StatusPages/StreamProvisioningStatusPage.vue";
 import StreamOtherDeviceStatusPage from "@/Components/Livestream/StatusPages/StreamOtherDeviceStatusPage.vue";
@@ -58,9 +58,15 @@ const props = defineProps({
         type: Array,
         required: false
     },
-    rateLimit: {
+    chatSettings: {
         type: Object,
-        required: false
+        required: false,
+        default: () => ({})
+    },
+    chatState: {
+        type: Object,
+        required: false,
+        default: () => ({})
     },
     sourceId: {
         type: [Number, String],
@@ -631,8 +637,14 @@ onUnmounted(() => {
                         </svg>
                     </button>
                 </div>
-                <ChatBox :rate-limit="rateLimit" :chat-messages="chatMessages" :show-header="false" :source-id="sourceId"
-                         class="flex-1 overflow-hidden"></ChatBox>
+                <ChatPanel
+                    :chat-messages="chatMessages"
+                    :chat-settings="chatSettings"
+                    :chat-state="chatState"
+                    :show-header="false"
+                    :source-id="sourceId"
+                    class="flex-1 overflow-hidden"
+                />
             </div>
         </div>
         
@@ -670,10 +682,11 @@ onUnmounted(() => {
                     </button>
                 </div>
             </template>
-            <ChatBox
-                v-if="showChatBox"
-                :rate-limit="rateLimit"
+            <ChatPanel
+                v-if="showChatBox && isChatDrawerOpen"
                 :chat-messages="chatMessages"
+                :chat-settings="chatSettings"
+                :chat-state="chatState"
                 :show-header="false"
                 :source-id="sourceId"
                 class="h-full"

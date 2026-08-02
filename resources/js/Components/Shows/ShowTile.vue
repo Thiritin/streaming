@@ -48,9 +48,10 @@
         </Transition>
 
         <!-- Placeholder when no thumbnail -->
-        <div v-if="!currentThumbnail && !showVideoPreview" class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-700 to-primary-900">
-          <FaVideoIcon class="w-16 h-16 text-primary-500" />
-        </div>
+        <TilePlaceholder
+          v-if="!currentThumbnail && !showVideoPreview"
+          :label="show.source"
+        />
 
         <!-- Top badges row -->
         <div class="absolute top-2 left-2 z-20">
@@ -66,7 +67,7 @@
 
           <!-- Upcoming Time -->
           <span v-else-if="isUpcoming" class="time-badge">
-            {{ formatTimeUntil(show.scheduled_start) }}
+            {{ timeUntilStart }}
           </span>
         </div>
 
@@ -81,35 +82,29 @@
         <!-- Bottom right: Duration -->
         <div v-if="isLive && show.started_at" class="absolute bottom-2 right-2 z-20">
           <span class="duration-badge">
-            {{ formatDuration(show.started_at) }}
+            {{ liveDuration }}
           </span>
         </div>
 
         <!-- Hover Overlay with play icon -->
         <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10" />
         <div class="absolute inset-0 flex items-center justify-center z-10">
-          <div class="w-14 h-14 rounded-full bg-primary-500/90 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-300 shadow-lg shadow-primary-500/30">
+          <div class="w-14 h-14 rounded-full bg-primary-500/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-300 shadow-lg shadow-primary-500/30">
             <FaPlayIcon class="w-6 h-6 text-white ml-0.5" />
           </div>
         </div>
       </div>
 
-      <!-- Content -->
-      <div class="mt-3">
-        <!-- Title -->
+      <!-- Content: title plus a single meta row keeps tiles short so more fit above the fold -->
+      <div class="mt-2.5">
         <h3 class="font-semibold text-white text-sm leading-tight line-clamp-2 group-hover:text-primary-300 transition-colors">
           {{ show.title }}
         </h3>
 
-        <!-- Source/Channel -->
-        <p v-if="show.source" class="text-primary-400 text-sm mt-0.5 truncate">
-          {{ show.source }}
-        </p>
-
-        <!-- Scheduled Time for Upcoming or Starting Soon -->
-        <p v-if="isUpcoming || isStartingSoon" class="text-primary-500 text-xs mt-1 flex items-center gap-1">
-          <FaClockIcon class="w-3 h-3" />
-          {{ formatScheduledTime(show.scheduled_start) }}
+        <p class="mt-1 flex items-center gap-2 text-xs text-primary-400 min-w-0">
+          <span v-if="show.source" class="truncate">{{ show.source }}</span>
+          <span v-if="show.source && metaTime" class="text-primary-600" aria-hidden="true">·</span>
+          <span v-if="metaTime" class="tabular-nums whitespace-nowrap">{{ metaTime }}</span>
         </p>
       </div>
     </Link>
@@ -118,12 +113,12 @@
 
 <script setup>
 import { Link } from '@inertiajs/vue3';
-import { ref, computed, onMounted, onUnmounted, nextTick, Transition } from 'vue';
-import FaVideoIcon from '../Icons/FaVideoIcon.vue';
+import { ref, computed, onUnmounted, nextTick, watch, Transition } from 'vue';
+import TilePlaceholder from '../TilePlaceholder.vue';
 import FaPlayIcon from '../Icons/FaPlayIcon.vue';
-import FaClockIcon from '../Icons/FaClockIcon.vue';
 import FaUsersIcon from '../Icons/FaUsersIcon.vue';
 import Hls from 'hls.js';
+import { useNow } from '@/composables/useNow';
 
 // Props
 const props = defineProps({
@@ -137,14 +132,29 @@ const props = defineProps({
 const currentThumbnail = ref(props.show.thumbnail_url);
 const showVideoPreview = ref(false);
 const videoPreview = ref(null);
-let updateInterval = null;
 let hoverTimeout = null;
 let hlsInstance = null;
+
+const now = useNow();
 
 // Computed properties
 const isLive = computed(() => props.show.status === 'live');
 const isStartingSoon = computed(() => props.show.status === 'starting_soon');
 const isUpcoming = computed(() => props.show.status === 'scheduled');
+
+const liveDuration = computed(() => formatDuration(props.show.started_at, now.value));
+const timeUntilStart = computed(() => formatTimeUntil(props.show.scheduled_start, now.value));
+
+// The meta row shows how long a live show has been running, or when a scheduled one starts.
+const metaTime = computed(() => {
+  if (isLive.value && props.show.started_at) {
+    return `live ${liveDuration.value}`;
+  }
+  if ((isUpcoming.value || isStartingSoon.value) && props.show.scheduled_start) {
+    return formatScheduledTime(props.show.scheduled_start);
+  }
+  return null;
+});
 
 // Get the stream URL for preview
 const streamUrl = computed(() => {
@@ -234,10 +244,9 @@ const formatViewerCount = (count) => {
   return count?.toString() || '0';
 };
 
-const formatDuration = (startTime) => {
+const formatDuration = (startTime, reference = Date.now()) => {
   const start = new Date(startTime);
-  const now = new Date();
-  const diff = Math.floor((now - start) / 1000);
+  const diff = Math.floor((reference - start) / 1000);
 
   const hours = Math.floor(diff / 3600);
   const minutes = Math.floor((diff % 3600) / 60);
@@ -249,10 +258,9 @@ const formatDuration = (startTime) => {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
-const formatTimeUntil = (scheduledTime) => {
+const formatTimeUntil = (scheduledTime, reference = Date.now()) => {
   const scheduled = new Date(scheduledTime);
-  const now = new Date();
-  const diff = Math.floor((scheduled - now) / 1000);
+  const diff = Math.floor((scheduled - reference) / 1000);
 
   if (diff <= 0) {
     return 'Starting soon';
@@ -302,32 +310,20 @@ const formatScheduledTime = (scheduledTime) => {
 };
 
 // Lifecycle
-onMounted(() => {
-  if (isLive.value || isUpcoming.value || isStartingSoon.value) {
-    updateInterval = setInterval(() => {
-      // Force re-render to update time displays
-    }, 1000);
-  }
-
-  Echo.channel(`show.${props.show.id}`)
-    .listen('.thumbnail.updated', (e) => {
-      if (e.thumbnail_url) {
-        currentThumbnail.value = e.thumbnail_url;
-      }
-    });
+// No per-tile Echo subscription: `thumbnail.updated` also broadcasts on the page's
+// `shows` channel, and one socket subscription per tile meant a grid of 20 shows
+// opened 20 of them. The page updates the prop; this keeps the local copy in step.
+watch(() => props.show.thumbnail_url, (url) => {
+  currentThumbnail.value = url;
 });
 
 onUnmounted(() => {
-  if (updateInterval) {
-    clearInterval(updateInterval);
-  }
   if (hoverTimeout) {
     clearTimeout(hoverTimeout);
   }
   if (hlsInstance) {
     hlsInstance.destroy();
   }
-  Echo.leave(`show.${props.show.id}`);
 });
 </script>
 
@@ -344,11 +340,11 @@ onUnmounted(() => {
 }
 
 .time-badge {
-  @apply bg-black/70 backdrop-blur-sm text-white px-2 py-0.5 rounded text-[10px] font-medium;
+  @apply bg-black/70 text-white px-2 py-0.5 rounded text-[10px] font-medium;
 }
 
 .viewer-badge {
-  @apply inline-flex items-center gap-1 bg-black/70 backdrop-blur-sm text-white px-2 py-0.5 rounded text-[10px] font-medium;
+  @apply inline-flex items-center gap-1 bg-black/70 text-white px-2 py-0.5 rounded text-[10px] font-medium;
 }
 
 .duration-badge {

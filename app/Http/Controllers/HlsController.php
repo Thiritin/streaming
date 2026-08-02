@@ -2,16 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\IpSubnetHelper;
 use App\Models\Server;
 use App\Models\Source;
 use App\Models\SourceUser;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
-use App\Helpers\IpSubnetHelper;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class HlsController extends Controller
 {
@@ -24,7 +24,7 @@ class HlsController extends Controller
         // Find the source by slug
         $source = Source::where('slug', $stream)->first();
 
-        if (!$source) {
+        if (! $source) {
             return response('Stream not found', 404)
                 ->header('Content-Type', 'text/plain');
         }
@@ -38,21 +38,21 @@ class HlsController extends Controller
             $systemStreamkey = config('stream.system_streamkey');
             if ($systemStreamkey && $streamkey === $systemStreamkey) {
                 // For system operations, create a minimal user object
-                $user = new User();
+                $user = new User;
                 $user->id = 0;
                 $user->name = 'System';
                 $user->streamkey = $streamkey;
             } else {
                 // Look up user by streamkey
                 $user = User::where('streamkey', $streamkey)->first();
-                if (!$user) {
+                if (! $user) {
                     return response('Invalid streamkey', 401)
                         ->header('Content-Type', 'text/plain');
                 }
             }
         } else {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response('Authentication required', 401)
                     ->header('Content-Type', 'text/plain');
             }
@@ -62,17 +62,17 @@ class HlsController extends Controller
 
         // Check for IP-based server override
         $server = $this->getServerForRequest($request, $user);
-        
-        if (!$server) {
+
+        if (! $server) {
             return response('No server available', 503)
                 ->header('Content-Type', 'text/plain');
         }
-        
+
         $port = $server->port ?? 8080;
 
         // Build cache key based on stream, server, and streamkey
-        $cacheKey = "hls_master:{$stream}:{$server->hostname}:{$port}:" . ($streamkey ?? 'auth');
-        
+        $cacheKey = "hls_master:{$stream}:{$server->hostname}:{$port}:".($streamkey ?? 'auth');
+
         // Try to get cached response
         $cachedResponse = Cache::get($cacheKey);
         if ($cachedResponse) {
@@ -92,7 +92,7 @@ class HlsController extends Controller
         try {
             // Fetch the master playlist from the server
             // For HTTPS, allow self-signed certificates in development
-            $httpClient = Http::timeout(3);
+            $httpClient = Http::timeout(3)->withHeaders($this->systemAuthHeaders());
             if (str_starts_with($masterUrl, 'https://')) {
                 $httpClient = $httpClient->withOptions(['verify' => false]);
             }
@@ -103,13 +103,14 @@ class HlsController extends Controller
 
                 // Rewrite variant URLs to use our Laravel routes and preserve streamkey
                 $playlist = preg_replace_callback(
-                    '/^(' . preg_quote($stream, '/') . '_(sd|hd|fhd)\.m3u8)$/m',
-                    function($matches) use ($streamkey) {
-                        $url = '/hls/' . $matches[1];
+                    '/^('.preg_quote($stream, '/').'_(sd|hd|fhd)\.m3u8)$/m',
+                    function ($matches) use ($streamkey) {
+                        $url = '/hls/'.$matches[1];
                         // Add streamkey parameter if present
                         if ($streamkey) {
-                            $url .= '?streamkey=' . $streamkey;
+                            $url .= '?streamkey='.$streamkey;
                         }
+
                         return $url;
                     },
                     $playlist
@@ -156,7 +157,7 @@ class HlsController extends Controller
     public function variant(Request $request, $variant)
     {
         // Extract stream name and quality from variant (e.g., "test-stream_fhd")
-        if (!preg_match('/^(.+)_(fhd|hd|sd)$/', $variant, $matches)) {
+        if (! preg_match('/^(.+)_(fhd|hd|sd)$/', $variant, $matches)) {
             return response('Invalid variant format', 400)
                 ->header('Content-Type', 'text/plain');
         }
@@ -167,7 +168,7 @@ class HlsController extends Controller
         // Find the source
         $source = Source::where('slug', $streamSlug)->first();
 
-        if (!$source) {
+        if (! $source) {
             return response('Stream not found', 404)
                 ->header('Content-Type', 'text/plain');
         }
@@ -181,21 +182,21 @@ class HlsController extends Controller
             $systemStreamkey = config('stream.system_streamkey');
             if ($systemStreamkey && $streamkey === $systemStreamkey) {
                 // For system operations, create a minimal user object
-                $user = new User();
+                $user = new User;
                 $user->id = 0;
                 $user->name = 'System';
                 $user->streamkey = $streamkey;
             } else {
                 // Look up user by streamkey
                 $user = User::where('streamkey', $streamkey)->first();
-                if (!$user) {
+                if (! $user) {
                     return response('Invalid streamkey', 401)
                         ->header('Content-Type', 'text/plain');
                 }
             }
         } else {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 return response('Authentication required', 401)
                     ->header('Content-Type', 'text/plain');
             }
@@ -207,7 +208,7 @@ class HlsController extends Controller
         // Check for IP-based server override
         $server = $this->getServerForRequest($request, $user);
 
-        if (!$server || !$server->hostname) {
+        if (! $server || ! $server->hostname) {
             return response('No server available', 503)
                 ->header('Content-Type', 'text/plain');
         }
@@ -216,8 +217,8 @@ class HlsController extends Controller
         $port = $server->port ?? 8080;
 
         // Build cache key based on variant, server, and streamkey
-        $cacheKey = "hls_variant:{$variant}:{$hostname}:{$port}:" . ($streamkey ?? 'auth');
-        
+        $cacheKey = "hls_variant:{$variant}:{$hostname}:{$port}:".($streamkey ?? 'auth');
+
         // Try to get cached response
         $cachedResponse = Cache::get($cacheKey);
         if ($cachedResponse) {
@@ -237,7 +238,7 @@ class HlsController extends Controller
 
         try {
             // For HTTPS, allow self-signed certificates in development
-            $httpClient = Http::timeout(3);
+            $httpClient = Http::timeout(3)->withHeaders($this->systemAuthHeaders());
             if (str_starts_with($edgeUrl, 'https://')) {
                 $httpClient = $httpClient->withOptions(['verify' => false]);
             }
@@ -249,7 +250,7 @@ class HlsController extends Controller
                 // Rewrite .ts segment URLs to use full edge server URL with streamkey
                 $playlist = preg_replace_callback(
                     '/^([^#\s]+\.ts)$/m',
-                    function($matches) use ($hostname, $port, $streamkey) {
+                    function ($matches) use ($hostname, $port, $streamkey) {
                         $segment = $matches[1];
                         // Use HTTPS for port 443, HTTP for other ports
                         if ($port == 443) {
@@ -258,8 +259,9 @@ class HlsController extends Controller
                             $url = "http://{$hostname}:{$port}/live/{$segment}";
                         }
                         if ($streamkey) {
-                            $url .= '?streamkey=' . $streamkey;
+                            $url .= '?streamkey='.$streamkey;
                         }
+
                         return $url;
                     },
                     $playlist
@@ -301,6 +303,24 @@ class HlsController extends Controller
             return response('Error fetching playlist', 500)
                 ->header('Content-Type', 'text/plain');
         }
+    }
+
+    /**
+     * Identify this proxy to an edge server.
+     *
+     * Edge nginx authenticates .m3u8 as well as .ts now, so these internal
+     * fetches need a credential. It goes in a header rather than the query
+     * string so the URL stays byte-identical, which keeps the edge's playlist
+     * cache key shared across viewers and keeps the key out of edge access logs.
+     * njs recognises it locally, with no round trip back here.
+     *
+     * @return array<string, string>
+     */
+    private function systemAuthHeaders(): array
+    {
+        $systemStreamkey = config('stream.system_streamkey');
+
+        return $systemStreamkey ? ['X-Stream-Key' => $systemStreamkey] : [];
     }
 
     /**

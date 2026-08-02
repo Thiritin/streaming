@@ -126,7 +126,7 @@ class EmoteService
     public function getAvailableEmotes(User $user): array
     {
         // Cache for 6 hours (well within the 7-day signed URL expiration)
-        return Cache::remember('user_emotes_'.$user->id, 21600, function () use ($user) {
+        return Cache::remember('user_emotes_v2_'.$user->id, 21600, function () use ($user) {
             // Don't select specific columns to ensure accessors work properly
             $emotes = Emote::availableFor($user)->get();
 
@@ -136,11 +136,44 @@ class EmoteService
                     'id' => $emote->id,
                     'name' => $emote->name,
                     'url' => $emote->url, // This will trigger the URL accessor
+                    'global' => (bool) $emote->is_global,
                 ];
             }
 
             return $indexed;
         });
+    }
+
+    /**
+     * Payload shared with the frontend: a name => url map for rendering
+     * messages, and a list with metadata for the picker/autocomplete.
+     *
+     * @return array{map: array<string, string>, list: array<int, array<string, mixed>>}
+     */
+    public function clientPayload(User $user): array
+    {
+        $favoriteIds = array_flip(
+            array_column($this->getUserFavorites($user), 'id')
+        );
+
+        $map = [];
+        $list = [];
+
+        foreach ($this->getAvailableEmotes($user) as $name => $emote) {
+            $map[$name] = $emote['url'];
+            $list[] = [
+                'id' => $emote['id'],
+                'name' => $emote['name'],
+                'url' => $emote['url'],
+                'global' => (bool) ($emote['global'] ?? false),
+                'favorite' => isset($favoriteIds[$emote['id']]),
+            ];
+        }
+
+        return [
+            'map' => (object) $map,
+            'list' => $list,
+        ];
     }
 
     /**

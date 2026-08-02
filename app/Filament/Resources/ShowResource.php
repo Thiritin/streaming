@@ -192,6 +192,54 @@ class ShowResource extends Resource
             ]);
     }
 
+    /**
+     * The single Go Live / End Stream control, driven by the show's current status.
+     *
+     * Used twice: as the Control column's click target, and registered (hidden) in
+     * the row actions so Filament can mount it by name.
+     */
+    protected static function liveToggleAction(): Action
+    {
+        return Action::make('toggle_live')
+            ->label(fn (Show $record) => $record->status === 'live' ? 'End Stream' : 'Go Live')
+            ->icon(fn (Show $record) => $record->status === 'live' ? 'heroicon-o-stop' : 'heroicon-o-signal')
+            ->color(fn (Show $record) => $record->status === 'live' ? 'danger' : 'success')
+            ->visible(fn (Show $record) => in_array($record->status, ['scheduled', 'live'], true))
+            ->requiresConfirmation()
+            ->modalHeading(fn (Show $record) => $record->status === 'live'
+                ? 'End Live Stream'
+                : 'Start Live Stream')
+            ->modalDescription(fn (Show $record) => $record->status === 'live'
+                ? 'Are you sure you want to end this show? This will stop the stream and disconnect all viewers.'
+                : 'Are you sure you want to start this show? This will mark it as live and notify viewers.')
+            ->modalSubmitActionLabel(fn (Show $record) => $record->status === 'live'
+                ? 'End Stream'
+                : 'Go Live')
+            ->action(function (Show $record) {
+                if ($record->status === 'scheduled') {
+                    $record->goLive();
+
+                    Notification::make()
+                        ->title('Show is now live!')
+                        ->body("'{$record->title}' is now streaming.")
+                        ->success()
+                        ->send();
+
+                    return;
+                }
+
+                if ($record->status === 'live') {
+                    $record->endLivestream();
+
+                    Notification::make()
+                        ->title('Stream ended')
+                        ->body("'{$record->title}' has ended.")
+                        ->success()
+                        ->send();
+                }
+            });
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -222,6 +270,27 @@ class ShowResource extends Resource
                         'heroicon-o-check-circle' => 'ended',
                         'heroicon-o-x-circle' => 'cancelled',
                     ]),
+                /*
+                 * Sits directly after the status badge so the operator flips a show
+                 * where they read its state, instead of hunting the row action menu.
+                 */
+                BadgeColumn::make('live_control')
+                    ->label('Control')
+                    ->getStateUsing(fn (Show $record) => match ($record->status) {
+                        'scheduled' => 'Go Live',
+                        'live' => 'End Stream',
+                        default => null,
+                    })
+                    ->placeholder('—')
+                    ->colors([
+                        'success' => 'Go Live',
+                        'danger' => 'End Stream',
+                    ])
+                    ->icons([
+                        'heroicon-o-signal' => 'Go Live',
+                        'heroicon-o-stop' => 'End Stream',
+                    ])
+                    ->action(static::liveToggleAction()),
                 TextColumn::make('scheduled_start')
                     ->label('Scheduled')
                     ->dateTime('M j, Y H:i')
@@ -295,40 +364,12 @@ class ShowResource extends Resource
                     ->label('Upcoming Shows'),
             ])
             ->actions([
-                Action::make('go_live')
-                    ->label('Go Live')
-                    ->icon('heroicon-o-signal')
-                    ->color('success')
-                    ->requiresConfirmation()
-                    ->modalHeading('Start Live Stream')
-                    ->modalDescription('Are you sure you want to start this show? This will mark it as live and notify viewers.')
-                    ->modalSubmitActionLabel('Go Live')
-                    ->visible(fn (Show $record) => $record->status === 'scheduled')
-                    ->action(function (Show $record) {
-                        $record->goLive();
-                        Notification::make()
-                            ->title('Show is now live!')
-                            ->body("'{$record->title}' is now streaming.")
-                            ->success()
-                            ->send();
-                    }),
-                Action::make('end_stream')
-                    ->label('End Stream')
-                    ->icon('heroicon-o-stop')
-                    ->color('danger')
-                    ->requiresConfirmation()
-                    ->modalHeading('End Live Stream')
-                    ->modalDescription('Are you sure you want to end this show? This will stop the stream and disconnect all viewers.')
-                    ->modalSubmitActionLabel('End Stream')
-                    ->visible(fn (Show $record) => $record->status === 'live')
-                    ->action(function (Show $record) {
-                        $record->endLivestream();
-                        Notification::make()
-                            ->title('Stream ended')
-                            ->body("'{$record->title}' has ended.")
-                            ->success()
-                            ->send();
-                    }),
+                /*
+                 * Clicking the Control column mounts this by name, so it has to be
+                 * registered here; hidden keeps it out of the row action menu, which
+                 * would otherwise offer a second way to go live.
+                 */
+                static::liveToggleAction(),
                 Action::make('view_stats')
                     ->label('View Statistics')
                     ->icon('heroicon-o-chart-bar')

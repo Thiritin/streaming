@@ -26,3 +26,5 @@ frankenphp-worker.php
 
 # Logs
 logs
+# Local dev stream loops (scripts/dev-streams.sh)
+/public/dev-streams

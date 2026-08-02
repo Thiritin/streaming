@@ -29,7 +29,6 @@
         "filament/upgrade": "^3.3",
         "laravel/breeze": "^2.3",
         "laravel/pint": "^1.21",
-        "laravel/sail": "^1.43",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.6",
         "phpunit/phpunit": "^11.5",

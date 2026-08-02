@@ -40,6 +40,11 @@ class RouteServiceProvider extends ServiceProvider
 
             Route::middleware('web')
                 ->group(base_path('routes/web.php'));
+
+            Route::middleware(['web', 'auth:web', 'can:access-manage', \App\Http\Middleware\ShareManageProps::class])
+                ->prefix('manage')
+                ->name('manage.')
+                ->group(base_path('routes/manage.php'));
         });
     }
 }

@@ -450,4 +450,77 @@ class User extends Authenticatable implements FilamentUser
             ->withTimestamps();
     }
 
+    public function timeouts()
+    {
+        return $this->hasMany(Timeout::class);
+    }
+
+    public function chatBans()
+    {
+        return $this->hasMany(ChatBan::class);
+    }
+
+    /**
+     * The timeout currently silencing this user, if any.
+     */
+    public function activeTimeout(): ?Timeout
+    {
+        return $this->timeouts()->active()->latest('expires_at')->first();
+    }
+
+    /**
+     * The ban currently silencing this user, if any.
+     */
+    public function activeChatBan(): ?ChatBan
+    {
+        return $this->chatBans()->active()->latest('id')->first();
+    }
+
+    /**
+     * Can this user delete messages and time other users out?
+     */
+    public function canModerateChat(): bool
+    {
+        return $this->isAdmin() || $this->isModerator() || $this->hasPermission('chat.moderate');
+    }
+
+    /**
+     * Can this user ban other users from chat?
+     */
+    public function canBanFromChat(): bool
+    {
+        return $this->isAdmin() || $this->hasPermission('chat.ban');
+    }
+
+    /**
+     * Roles rendered as chat badges, highest priority first.
+     */
+    public function chatBadges(): array
+    {
+        return $this->activeRoles()
+            ->visible()
+            ->ordered()
+            ->get()
+            ->map(fn (Role $role) => [
+                'slug' => $role->slug,
+                'name' => $role->name,
+                'label' => $role->metadata['badge'] ?? static::badgeLabelFor($role),
+                'color' => $role->chat_color,
+            ])
+            ->values()
+            ->all();
+    }
+
+    protected static function badgeLabelFor(Role $role): string
+    {
+        return match ($role->slug) {
+            'admin' => 'ADM',
+            'moderator' => 'MOD',
+            'staff' => 'STF',
+            'sponsor' => 'SPO',
+            'supersponsor' => 'SSP',
+            'attendee' => 'ATT',
+            default => mb_strtoupper(mb_substr($role->name, 0, 3)),
+        };
+    }
 }

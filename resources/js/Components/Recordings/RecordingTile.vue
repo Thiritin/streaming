@@ -21,13 +21,11 @@
       </Transition>
 
       <!-- Placeholder when no thumbnail -->
-      <div v-if="!recording.thumbnail_url || thumbnailError" class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-800 to-primary-900">
-        <FaVideoIcon class="w-16 h-16 text-primary-500" />
-      </div>
+      <TilePlaceholder v-if="!recording.thumbnail_url || thumbnailError" :label="recordingYear" />
 
       <!-- Bottom left: View Count -->
       <div v-if="recording.views > 0" class="absolute bottom-2 left-2 z-20">
-        <span class="bg-black/70 backdrop-blur-sm text-white px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1">
+        <span class="bg-black/70 text-white px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1">
           <FaEyeIcon class="w-3 h-3" />
           {{ formatViews(recording.views) }}
         </span>
@@ -43,7 +41,7 @@
       <!-- Hover Overlay -->
       <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10" />
       <div class="absolute inset-0 flex items-center justify-center z-10">
-        <div class="w-14 h-14 rounded-full bg-primary-500/90 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-300 shadow-lg shadow-primary-500/30">
+        <div class="w-14 h-14 rounded-full bg-primary-500/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-300 shadow-lg shadow-primary-500/30">
           <FaPlayIcon class="w-6 h-6 text-white ml-0.5" />
         </div>
       </div>
@@ -66,8 +64,8 @@
 
 <script setup>
 import { Link } from '@inertiajs/vue3';
-import { ref } from 'vue';
-import FaVideoIcon from '../Icons/FaVideoIcon.vue';
+import { computed, ref } from 'vue';
+import TilePlaceholder from '../TilePlaceholder.vue';
 import FaPlayIcon from '../Icons/FaPlayIcon.vue';
 import FaEyeIcon from '../Icons/FaEyeIcon.vue';
 
@@ -81,6 +79,12 @@ const props = defineProps({
 
 // State
 const thumbnailError = ref(false);
+
+// Placeholder art gets the year as its label, which is the useful thing to know
+// about an archive tile with no still.
+const recordingYear = computed(() =>
+  props.recording.date ? String(new Date(props.recording.date).getFullYear()) : null
+);
 
 // Methods
 const handleImageError = () => {

@@ -7,11 +7,24 @@
         <!-- Favicon -->
         <link rel="icon" type="image/svg" href="/favicon.svg">
 
-        <title inertia>{{ config('app.name', 'Eurofurence Stream') }}</title>
+        <title inertia>{{ app(\App\Services\BrandingService::class)->get('site_name') }}</title>
         <!-- Scripts -->
         @routes
         @vite(['resources/js/app.js', "resources/js/Pages/{$page['component']}.vue"])
         @inertiaHead
+
+        {{-- Accent ramp derived from the configured brand colour. Only emitted
+             when an installation has set one, otherwise app.css stays in charge. --}}
+        @php($brandPalette = app(\App\Services\BrandingService::class)->paletteVariables())
+        @if (! empty($brandPalette))
+            <style>
+                :root {
+                    @foreach ($brandPalette as $property => $value)
+                        {{ $property }}: {{ $value }};
+                    @endforeach
+                }
+            </style>
+        @endif
     </head>
     <body class="font-sans antialiased">
         @inertia

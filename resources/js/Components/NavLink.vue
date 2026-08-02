@@ -19,10 +19,15 @@ const props = defineProps({
     },
 });
 
+// Pill tabs rather than the old underline: an underline on a translucent sticky bar
+// reads as a stray border, and the pill gives the current section a shape you can
+// actually see at a glance.
+const base = 'inline-flex items-center gap-2.5 rounded-full px-4 py-2 text-[15px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-2 focus-visible:ring-offset-primary-950';
+
 const classes = computed(() =>
     props.active
-        ? 'inline-flex items-center px-1 pt-1 border-b-2 border-primary-600 text-sm font-medium leading-5 text-primary-100 focus:outline-none focus:border-primary-700 transition duration-150 ease-in-out'
-        : 'inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-primary-400 hover:text-primary-300 hover:border-primary-700 focus:outline-none focus:text-primary-300 focus:border-primary-700 transition duration-150 ease-in-out'
+        ? `${base} bg-primary-700/70 text-white`
+        : `${base} text-primary-300 hover:bg-primary-800/70 hover:text-white`
 );
 </script>
 

@@ -1,0 +1,32 @@
+# Generated for local docker-compose (scripts/dev-stack.sh).
+# Same as the production config, with upstreams pointed at compose services.
+# Origin Caddy - SSL termination for origin server
+# In production this would be on port 8080, using 8070 for local development
+:8070 {
+    # Enable automatic HTTPS with Let's Encrypt in production
+    # For localhost, it will use a self-signed certificate
+
+    # Set up logging
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    # Forward all traffic to origin nginx server
+    # Nginx handles authentication via auth_request
+    reverse_proxy origin-nginx:8083 {
+        # Pass through real IP
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        
+        # Pass through query parameters including streamkey
+        header_up X-Original-URI {uri}
+        
+        # Connection pooling for better performance
+        transport http {
+            keepalive 32s
+            keepalive_idle_conns 10
+        }
+    }
+}

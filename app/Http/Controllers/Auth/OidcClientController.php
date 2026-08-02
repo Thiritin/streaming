@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\BrandingService;
 use App\Services\Hydra\Client;
 use App\Services\OpenIDService;
 use Illuminate\Http\RedirectResponse;
@@ -35,8 +36,15 @@ class OidcClientController extends Controller
         /**
          * Only Identity Client - Redirects to error page if scope is invalid
          */
+        Log::info('OIDC DEBUG callback entered', ['query' => $request->query(), 'session_id' => Session::getId()]);
         if (isset($data['error'])) {
-            return Redirect::route('auth.login');
+            Log::warning('OIDC callback returned an error from the identity provider', $data);
+
+            // The provider rejected the authorize request (a replayed flow, a rotated CSRF
+            // cookie on its side, an expired flow). Bouncing to auth.login would start yet
+            // another authorize round and loop, hiding the error, so stop at the sign-in
+            // screen and say so.
+            return $this->failed('Sign-in was refused. Start again from this page, in a single tab.');
         }
 
         /**
@@ -45,9 +53,13 @@ class OidcClientController extends Controller
          * otherwise null === null and it would pass the check falsely.
          */
         if ($request->get('state') !== Session::get('login.oauth2state', false)) {
+            Log::warning('OIDC callback state did not match the session', [
+                'got' => $request->get('state'),
+                'expected' => Session::get('login.oauth2state', false),
+            ]);
             Session::remove('login.oauth2state');
 
-            return Redirect::route('auth.login');
+            return $this->failed('The sign-in request expired or was started in another session.');
         }
         Session::flush();
         /**
@@ -59,9 +71,15 @@ class OidcClientController extends Controller
         ]);
         $userinfoRequest = Http::identity()->withToken($accessToken->getToken())->get('/api/v1/userinfo');
         if ($userinfoRequest->successful() === false) {
-            return Redirect::route('auth.login');
+            Log::warning('OIDC userinfo request failed', ['status' => $userinfoRequest->status(), 'body' => $userinfoRequest->body()]);
+
+            // Named via BrandingService so a saved override wins over the config default.
+            $identity = app(BrandingService::class)->all()['identity_name'] ?? 'the identity provider';
+
+            return $this->failed("Your account details could not be read from {$identity}.");
         }
         $userinfo = $userinfoRequest->json();
+        Log::info('OIDC DEBUG userinfo ok', ['keys' => array_keys($userinfo ?? [])]);
 
         if (! isset($userinfo['sub'])) {
             throw new UnexpectedValueException('Could not request user id from freshly fetched token.');
@@ -82,9 +100,17 @@ class OidcClientController extends Controller
         $roleSlugs = $this->mapGroupsAndPackagesToRoles($userinfo['groups'] ?? [], $packages);
         $user->syncRolesFromLogin($roleSlugs);
 
-        Auth::loginUsingId($user->id);
+        // Remembered, so the sign-in survives the session cookie expiring or the session
+        // store being cleared. Attendees should not be bounced back to the identity
+        // provider mid-convention.
+        Auth::loginUsingId($user->id, remember: true);
         Session::put('access_token', $accessToken);
-        Session::put('avatar', $userinfo['avatar']);
+        Session::put('avatar', $userinfo['avatar'] ?? null);
+        Log::info('OIDC DEBUG logged in', [
+            'user_id' => $user->id,
+            'auth_check' => Auth::check(),
+            'session_id' => Session::getId(),
+        ]);
 
         // Middleware will handle server assignment and redirect if needed
         return $this->redirectDestination($request);
@@ -92,6 +118,17 @@ class OidcClientController extends Controller
 
     public function login(Request $request): RedirectResponse
     {
+        if ($rejection = $this->redirectUriRejection()) {
+            Log::error('OIDC redirect URI will be rejected by the provider', [
+                'redirect_uri' => route('auth.callback'),
+                'reason' => $rejection,
+            ]);
+
+            if (! app()->isProduction()) {
+                return $this->failed($rejection);
+            }
+        }
+
         $provider = $this->openIDService->setupOIDC($request, $this->clientIsAdmin($request));
         $authorizationUrl = $provider->getAuthorizationUrl();
         Session::put('login.oauth2state', $provider->getState());
@@ -102,6 +139,55 @@ class OidcClientController extends Controller
     public function clientIsAdmin(Request $request)
     {
         return false;
+    }
+
+    /**
+     * End a broken sign-in at the sign-in screen rather than at the flow initiator.
+     *
+     * `auth.login` immediately redirects to the provider's authorize endpoint, so
+     * redirecting a failure there restarts the flow: the operator sees a redirect loop
+     * instead of a message, and the underlying error stays invisible.
+     *
+     * The provider's own description is kept out of the response on purpose; it leaks
+     * internals ("the CSRF value from the token does not match ...") and means nothing to
+     * an attendee. It is in the log for whoever is debugging.
+     */
+    /**
+     * OAuth2 providers refuse a plain-http redirect URI unless the host is localhost or a
+     * `*.localhost` subdomain. Ory Hydra answers with
+     * `invalid_request: Redirect URL is using an insecure protocol ...` only *after* a full
+     * round trip through the authorize endpoint, which reads like a login failure rather
+     * than a misconfigured APP_URL. Catch it before leaving the app.
+     *
+     * @return string|null The reason, or null when the redirect URI is acceptable.
+     */
+    private function redirectUriRejection(): ?string
+    {
+        $uri = route('auth.callback');
+        $parts = parse_url($uri);
+
+        if (($parts['scheme'] ?? 'http') === 'https') {
+            return null;
+        }
+
+        $host = $parts['host'] ?? '';
+
+        if ($host === 'localhost' || str_ends_with($host, '.localhost')) {
+            return null;
+        }
+
+        return "Sign-in is misconfigured: the callback URL {$uri} uses http, which the identity "
+            .'provider only accepts for localhost hosts. Set APP_URL to an https URL, or to a '
+            .'*.localhost host, and make sure that callback URL is registered for this client.';
+    }
+
+    private function failed(?string $reason = null): RedirectResponse
+    {
+        Session::remove('login.oauth2state');
+
+        return Redirect::route('login')->withErrors([
+            'oidc' => $reason ?? 'Sign-in could not be completed. Please try again.',
+        ]);
     }
 
     private function redirectDestination(Request $request)

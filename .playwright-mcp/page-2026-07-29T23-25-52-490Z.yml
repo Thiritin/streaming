@@ -1,0 +1,56 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - heading "Stream Schedule" [level=2] [ref=e7]
+    - list [ref=e8]:
+      - listitem [ref=e9]:
+        - generic [ref=e10]: Now
+        - generic [ref=e12]:
+          - generic [ref=e13]: Main Stage
+          - generic [ref=e14]: Test Stream
+      - listitem [ref=e15]:
+        - generic [ref=e16]: Now
+        - generic [ref=e18]:
+          - generic [ref=e19]: Main Stage (Subtitled)
+          - generic [ref=e20]: Test Stream
+      - listitem [ref=e21]:
+        - generic [ref=e22]: Now
+        - generic [ref=e24]:
+          - generic [ref=e25]: Pop Quiz Hour
+          - generic [ref=e26]: Test Stream
+      - listitem [ref=e27]:
+        - generic [ref=e28]: 01:32
+        - generic [ref=e30]:
+          - generic [ref=e31]: Artist Alley Showcase
+          - generic [ref=e32]: Test Stream
+      - listitem [ref=e33]:
+        - generic [ref=e34]: 02:32
+        - generic [ref=e36]:
+          - generic [ref=e37]: Fursuit Parade
+          - generic [ref=e38]: Test Stream
+      - listitem [ref=e39]:
+        - generic [ref=e40]: 03:32
+        - generic [ref=e42]:
+          - generic [ref=e43]: Voice Acting Workshop
+          - generic [ref=e44]: Test Stream
+  - generic [ref=e45]:
+    - generic [ref=e48]:
+      - heading "Livestream" [level=1] [ref=e55]
+      - paragraph [ref=e56]: All you need is a free Eurofurence Identity account to view live streams and recordings. No ticket and no membership required.
+      - generic [ref=e57]:
+        - link "Sign in with Eurofurence Identity" [ref=e58] [cursor=pointer]:
+          - /url: https://streaming.test/auth/login
+          - text: Sign in
+          - generic [ref=e59]: with Eurofurence Identity
+        - paragraph [ref=e60]:
+          - text: No Eurofurence Identity account yet?
+          - link "Create one for free" [ref=e61] [cursor=pointer]:
+            - /url: https://identity.eurofurence.org/auth/register
+          - text: .
+    - navigation "Footer" [ref=e62]:
+      - generic [ref=e63]:
+        - link "Support" [ref=e64] [cursor=pointer]:
+          - /url: https://help.eurofurence.org/contact/
+        - link "Legal Notice" [ref=e65] [cursor=pointer]:
+          - /url: https://help.eurofurence.org/legal/imprint
+        - link "Privacy" [ref=e66] [cursor=pointer]:
+          - /url: https://help.eurofurence.org/legal/privacy

@@ -1,7 +1,18 @@
+# njs verifies playback tokens locally with an HMAC, so a request carrying ?t=
+# never reaches Laravel. See docs/streaming-auth-redesign.md.
+load_module modules/ngx_http_js_module.so;
+
 user nginx;
 worker_processes auto;
 error_log /var/log/nginx/error.log warn;
 pid /var/run/nginx.pid;
+
+# Passed through to njs as process.env. Keeping the secrets in the environment
+# rather than in this file means they are not written to disk here.
+env HLS_VIEWER_SECRET;
+env HLS_EMBED_SECRET;
+env HLS_TOKEN_LEEWAY;
+env STREAM_SYSTEM_STREAMKEY;
 
 events {
     worker_connections 4096;
@@ -10,6 +21,8 @@ events {
 }
 
 http {
+    js_import hlsAuth from /etc/nginx/njs/hls-auth.js;
+
     include /etc/nginx/mime.types;
     default_type application/octet-stream;
 
@@ -76,8 +89,20 @@ http {
             add_header Content-Type text/plain;
         }
 
-        # Authentication subrequest endpoint
+        # Playback token verification, entirely local: no network call, no PHP.
+        # Falls back to /auth-legacy when the request carries a streamkey instead.
         location = /auth {
+            internal;
+            js_content hlsAuth.verify;
+        }
+
+        # Legacy fallback, reached only for a per-user streamkey, which can only
+        # be resolved in the database. Goes away with the streamkey itself.
+        #
+        # The cache key is now effectively per streamkey rather than per segment
+        # URI, because $uri here is the constant /auth-legacy, so repeat segment
+        # requests from the same viewer stop hitting PHP.
+        location = /auth-legacy {
             internal;
             proxy_pass {{ $nginxUpstream }}/api/hls/auth;
             proxy_pass_request_body off;
@@ -100,6 +125,10 @@ http {
 
         # HLS m3u8 playlist files - proxy and cache from origin
         location ~ ^/live/(.+\.m3u8)$ {
+            # Playlists are authenticated too now; previously only segments were.
+            auth_request /auth;
+            auth_request_set $auth_status $upstream_status;
+
 @if($useInternalNetwork)
             # Proxy to origin Caddy via internal network (HTTPS with internal IP)
             proxy_pass https://origin_internal$request_uri;

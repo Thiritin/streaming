@@ -1,0 +1,167 @@
+# Local mirror of the production streaming path.
+#
+#   publisher -> SRS (ingress) -> ffmpeg ABR -> origin nginx -> origin caddy
+#             -> edge nginx -> edge caddy -> browser
+#   SRS DVR   -> dvr-uploader -> S3 (versitygw) -> recordings + thumbnails
+#
+# The Laravel app itself stays native under Yerd; containers reach it through the
+# app-bridge service, and SRS webhooks hit it exactly as they do in production.
+#
+# Start with: ./scripts/dev-stack.sh up
+
+name: ef-streaming-dev
+
+services:
+  # ------------------------------------------------------------- app bridge
+  # Plain HTTP entry point to the host-served Laravel app; see
+  # docker/dev/app-bridge.conf for why this exists.
+  app-bridge:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./docker/dev/app-bridge.conf:/etc/nginx/conf.d/default.conf:ro
+    extra_hosts:
+      - "streaming.test:host-gateway"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------- ingress
+  origin-srs:
+    image: ossrs/srs:5
+    command: ./objs/srs -c /usr/local/srs/conf/origin.conf
+    volumes:
+      - ./docker/dev/origin-srs.conf:/usr/local/srs/conf/origin.conf:ro
+      - dvr:/dvr/recordings
+    ports:
+      - "1935:1935"   # RTMP ingress (point OBS here)
+      - "1985:1985"   # SRS HTTP API
+    depends_on:
+      - app-bridge
+    restart: unless-stopped
+
+  # ------------------------------------------------------- ABR transcoding
+  hls-transcoder:
+    build: ./docker/ffmpeg-hls
+    environment:
+      SRS_API_URL: http://origin-srs:1985/api/v1
+      SRS_RTMP_URL: rtmp://origin-srs:1935
+      OUTPUT_BASE_DIR: /var/www/hls/live
+      CHECK_INTERVAL: "5"
+    volumes:
+      - hls:/var/www/hls
+    depends_on:
+      - origin-srs
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------- origin
+  origin-nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./docker/dev/origin-nginx.conf:/etc/nginx/nginx.conf:ro
+      - hls:/var/www/hls
+    depends_on:
+      - hls-transcoder
+      - app-bridge
+    restart: unless-stopped
+
+  origin-caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./docker/dev/origin-Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-logs:/var/log/caddy
+    ports:
+      - "8070:8070"   # origin, mostly for debugging
+    depends_on:
+      - origin-nginx
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------- edge
+  edge-nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./docker/dev/edge-nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - origin-caddy
+      - app-bridge
+    restart: unless-stopped
+
+  edge-caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./docker/dev/edge-Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-logs:/var/log/caddy
+    ports:
+      # 8085 matches the edge server row that LocalDevelopmentServersSeeder creates.
+      # 8080 is Yerd's and 8081 is Reverb's, so the edge stays off both.
+      - "8085:8080"
+    depends_on:
+      - edge-nginx
+    restart: unless-stopped
+
+  # --------------------------------------------------------------- storage
+  # versitygw exposes a plain directory over the S3 API: recordings, DVR
+  # uploads and thumbnails all behave like they do against real object storage.
+  s3:
+    image: ghcr.io/versity/versitygw:latest
+    command: >
+      --access ${DEV_S3_KEY:-devkey}
+      --secret ${DEV_S3_SECRET:-devsecret123}
+      --region ${AWS_DEFAULT_REGION:-eu-central-1}
+      --port :7070
+      posix /buckets
+    volumes:
+      - s3-data:/buckets
+    ports:
+      - "7070:7070"
+    restart: unless-stopped
+
+  s3-init:
+    image: alpine:3
+    # versitygw's posix backend treats top-level directories as buckets.
+    command: sh -c "mkdir -p /buckets/${AWS_BUCKET:-ef-streaming} && echo 'bucket ready'"
+    volumes:
+      - s3-data:/buckets
+    depends_on:
+      - s3
+    restart: "no"
+
+  # ------------------------------------------------------------ DVR upload
+  dvr-uploader:
+    build: ./docker/dvr-uploader
+    environment:
+      S3_BUCKET: ${AWS_BUCKET:-ef-streaming}
+      S3_REGION: ${AWS_DEFAULT_REGION:-eu-central-1}
+      S3_ACCESS_KEY: ${DEV_S3_KEY:-devkey}
+      S3_SECRET_KEY: ${DEV_S3_SECRET:-devsecret123}
+      S3_ENDPOINT: http://s3:7070
+      RECORDINGS_PATH: /dvr/recordings
+      DELETE_AFTER_UPLOAD: "false"
+      FILE_AGE_SECONDS: "15"
+      WEBHOOK_URL: http://app-bridge/api/srs/dvr
+    volumes:
+      - dvr:/dvr/recordings
+    depends_on:
+      - s3
+      - app-bridge
+    restart: unless-stopped
+
+  # -------------------------------------------------------- fake broadcasters
+  # Stands in for OBS: one ffmpeg per channel, pushing a distinct animated
+  # pattern into the ingress app with the channel's stream key.
+  publisher:
+    image: linuxserver/ffmpeg:latest
+    entrypoint: ["/bin/bash", "/publish.sh"]
+    environment:
+      RTMP_URL: rtmp://origin-srs:1935/ingress
+      CHANNELS: ${DEV_PUBLISH_CHANNELS:-}
+      SIZE: ${DEV_PUBLISH_SIZE:-1280x720}
+      FPS: ${DEV_PUBLISH_FPS:-30}
+    volumes:
+      - ./docker/dev/publish.sh:/publish.sh:ro
+    depends_on:
+      - origin-srs
+    restart: unless-stopped
+
+volumes:
+  hls:
+  dvr:
+  s3-data:
+  caddy-logs:

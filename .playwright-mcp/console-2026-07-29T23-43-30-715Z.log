@@ -1,0 +1,6 @@
+[     178ms] [ERROR] WebSocket connection to 'wss://localhost:8081/app/app-key?protocol=7&client=js&version=8.4.0&flash=false' failed: Error in connection establishment: net::ERR_SSL_PROTOCOL_ERROR @ http://[::1]:5173/node_modules/.vite/deps/pusher-js.js?v=6cb87dfa:3255
+[     255ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ https://streaming.test/hls/test-stream/master.m3u8:0
+[    1325ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ https://streaming.test/hls/test-stream/master.m3u8:0
+[   15158ms] [ERROR] WebSocket connection to 'wss://localhost:8081/app/app-key?protocol=7&client=js&version=8.4.0&flash=false' failed: Error in connection establishment: net::ERR_SSL_PROTOCOL_ERROR @ http://[::1]:5173/node_modules/.vite/deps/pusher-js.js?v=6cb87dfa:3255
+[   35090ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ https://streaming.test/hls/test-stream/master.m3u8:0
+[   36151ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ https://streaming.test/hls/test-stream/master.m3u8:0

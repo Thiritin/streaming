@@ -7,110 +7,91 @@ use App\Models\Show;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Drives auto mode, once a minute.
+ *
+ * Two independent rules, documented in full in docs/admin/auto-mode.md:
+ *
+ *  1. Start - a scheduled show goes live once its scheduled start has passed *and* its
+ *             source is actually online. Without the source check an auto show would go
+ *             live to an empty stream.
+ *  2. Stop  - a live show ends at its hard stop, whatever the source is doing. The hard
+ *             stop is `auto_stop_at`, falling back to `scheduled_end`. This is the safety
+ *             net: a dance nobody remembers to end stops itself instead of recording all
+ *             night.
+ *
+ * Only shows with `auto_mode` on are touched. Everything else is the operator's to drive.
+ */
 class CheckAutoModeShows extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
     protected $signature = 'shows:check-auto-mode';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Check and start/end auto mode shows based on schedule (ends at scheduled time regardless of source status)';
+    protected $description = 'Start auto mode shows when their source comes online, and stop them at their hard stop time';
 
-    /**
-     * Execute the console command.
-     */
-    public function handle()
+    public function handle(): int
     {
-        $this->info('Checking auto mode shows...');
-
-        // Check for shows that should start
         $this->checkShowsToStart();
-
-        // Check for shows that should end
         $this->checkShowsToEnd();
 
-        $this->info('Auto mode check completed.');
+        return self::SUCCESS;
     }
 
     /**
-     * Check for scheduled shows that should start automatically.
+     * Scheduled, auto mode, start time passed, source online.
      */
-    private function checkShowsToStart()
+    private function checkShowsToStart(): void
     {
-        // Find scheduled shows in auto mode where:
-        // 1. The scheduled start time has passed
-        // 2. The source is online
-        // 3. The show is still in scheduled status
-        $showsToStart = Show::where('auto_mode', true)
+        $shows = Show::query()
+            ->where('auto_mode', true)
             ->where('status', 'scheduled')
             ->where('scheduled_start', '<=', now())
-            ->whereHas('source', function ($query) {
-                $query->where('status', SourceStatusEnum::ONLINE);
-            })
+            ->whereHas('source', fn ($query) => $query->where('status', SourceStatusEnum::ONLINE))
             ->get();
 
-        foreach ($showsToStart as $show) {
-            $this->info("Starting auto mode show: {$show->title}");
-            
-            Log::info('CheckAutoModeShows: Auto-starting show at scheduled time', [
+        foreach ($shows as $show) {
+            Log::info('Auto mode: starting show', [
                 'show_id' => $show->id,
                 'show_title' => $show->title,
-                'scheduled_start' => $show->scheduled_start,
-                'source_status' => $show->source->status->value,
+                'scheduled_start' => $show->scheduled_start?->toIso8601String(),
+                'source_status' => $show->source?->status?->value,
             ]);
 
             $show->goLive();
 
-            $this->info("✓ Show '{$show->title}' started successfully");
-        }
-
-        if ($showsToStart->isEmpty()) {
-            $this->info('No shows to auto-start at this time.');
+            $this->info("Started '{$show->title}'");
         }
     }
 
     /**
-     * Check for live shows that should end automatically.
-     * Shows end when their scheduled end time is reached, regardless of source status.
-     * This ensures shows don't run indefinitely even if the source stays online.
+     * Live, auto mode, hard stop reached.
+     *
+     * The hard stop is filtered in PHP rather than SQL because it is `auto_stop_at` with a
+     * fallback to `scheduled_end`, and expressing that as a COALESCE would tie this to one
+     * database's date handling. The candidate set is only the live auto-mode shows, so it
+     * is a handful of rows at most.
      */
-    private function checkShowsToEnd()
+    private function checkShowsToEnd(): void
     {
-        // Find all live auto mode shows where the scheduled end time has passed
-        // These shows will be ended regardless of whether the source is online, offline, or in error
-        $showsToEnd = Show::where('auto_mode', true)
+        $shows = Show::query()
+            ->where('auto_mode', true)
             ->where('status', 'live')
-            ->where('scheduled_end', '<=', now())
-            ->get();
+            ->get()
+            ->filter(fn (Show $show) => $show->isPastAutoStop());
 
-        foreach ($showsToEnd as $show) {
-            $sourceStatus = $show->source ? $show->source->status->value : 'unknown';
-            
-            $this->info("Ending auto mode show: {$show->title}");
-            
-            Log::info('CheckAutoModeShows: Auto-ending show at scheduled end time', [
+        foreach ($shows as $show) {
+            Log::info('Auto mode: hard stop reached, ending show', [
                 'show_id' => $show->id,
                 'show_title' => $show->title,
-                'scheduled_end' => $show->scheduled_end,
-                'current_time' => now(),
-                'source_status' => $sourceStatus,
-                'reason' => 'Scheduled end time reached',
+                'hard_stop' => $show->autoStopAt()?->toIso8601String(),
+                // Recorded because an explicit hard stop that is not the scheduled end is
+                // the case worth being able to explain after the fact.
+                'explicit_hard_stop' => $show->auto_stop_at !== null,
+                'source_status' => $show->source?->status?->value,
             ]);
 
             $show->endLivestream();
 
-            $this->info("✓ Show '{$show->title}' ended successfully (scheduled end reached)");
-        }
-
-        if ($showsToEnd->isEmpty()) {
-            $this->info('No shows to auto-end at this time.');
+            $this->info("Ended '{$show->title}' (hard stop reached)");
         }
     }
 }

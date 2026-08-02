@@ -15,14 +15,13 @@ class Kernel extends ConsoleKernel
         // $schedule->command('inspire')->hourly();
         $schedule->job(new \App\Jobs\UpdateListenerCountJob)->everyMinute();
         $schedule->job(new \App\Jobs\SaveViewCountJob)->everyMinute();
-        $schedule->job(new \App\Jobs\Server\ScalingJob)->everyMinute();
         $schedule->job(new \App\Jobs\ServerAssignmentJob)->everyFifteenSeconds();
         // Disabled: CleanUpInactiveServerAssignmentsJob - clients table has been dropped
         // $schedule->job(new \App\Jobs\CleanUpInactiveServerAssignmentsJob)->everyFiveMinutes();
-        
+
         // Update server viewer counts based on active source_users
         $schedule->job(new \App\Jobs\UpdateServerViewerCountsJob)->everyThirtySeconds();
-        
+
         // Clean up stale viewer sessions that haven't been active for 3+ minutes
         $schedule->job(new \App\Jobs\CleanupStaleViewerSessionsJob)->everyMinute();
 
@@ -31,10 +30,10 @@ class Kernel extends ConsoleKernel
 
         // Capture thumbnails for live streams every minute
         $schedule->command('thumbnails:capture')->everyMinute();
-        
+
         // Record viewer statistics for live shows every minute
         $schedule->command('statistics:record')->everyMinute();
-        
+
         // Check auto mode shows every minute to start/end them based on schedule and source status
         $schedule->command('shows:check-auto-mode')->everyMinute();
     }

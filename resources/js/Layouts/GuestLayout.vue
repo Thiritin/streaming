@@ -1,79 +1,118 @@
-<script>
-import ApplicationLogo from '@/Components/Logo.vue';
-import {Link} from '@inertiajs/vue3';
+<script setup>
+import { computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 
-export default {
-    components: {ApplicationLogo, Link},
-    data() {
-        return {
-            navigation: {
-                main: [
+const page = usePage();
 
-                    {
-                        name: 'Support',
-                        href: 'https://help.eurofurence.org/contact/',
-                        newTab: true,
-                    },
+const branding = computed(() => page.props.branding ?? {});
+const login = computed(() => branding.value.login ?? {});
+const links = computed(() => branding.value.links ?? {});
 
-                    {
-                        name: 'Imprint',
-                        href: 'https://help.eurofurence.org/legal/imprint',
-                        newTab: true,
-                    },
+// Installations that upload a still in the admin panel get it behind the
+// schedule; otherwise the flat primary wash carries the column on its own.
+const backgroundImage = computed(() => login.value.backgroundImage || null);
 
-                    {
-                        name: 'Privacy',
-                        href: 'https://help.eurofurence.org/legal/privacy',
-                        newTab: true,
-                    },
-                ],
-            },
-        }
-    }
-};
+// What is on now plus what is coming up, supplied by LoginController. The rail
+// is skipped entirely when nothing is scheduled.
+const schedule = computed(() => page.props.schedule ?? []);
+
+const footerLinks = computed(() => [
+    { name: 'Support', href: links.value.support },
+    { name: 'Legal Notice', href: links.value.imprint },
+    { name: 'Privacy', href: links.value.privacy },
+].filter(item => item.href));
 </script>
 
 <template>
-    <div class="min-h-screen w-full bg-white flex page">
-        <!-- Logo -->
-        <div class="bg-primary-700 hidden lg:block w-full relative overflow-hidden flex justify-center items-center">
-            <video class="block w-full h-full object-cover top-0 left-0 absolute brightness-75" loop="loop" muted="muted" autoplay="autoplay" playsinline>
-                <source src="../../assets/bg.mp4" type="video/mp4">
-            </video>
+    <div class="min-h-screen w-full flex flex-col lg:flex-row bg-primary-900 page">
+        <!-- Brand side -->
+        <div class="relative hidden lg:block lg:w-1/2 overflow-hidden bg-primary-800 border-r border-white/10">
+            <template v-if="backgroundImage">
+                <div
+                    class="absolute inset-0 bg-cover bg-center"
+                    :style="{ backgroundImage: `url(${backgroundImage})` }"
+                />
+                <!-- Flat scrim, only over an uploaded photo, so the schedule
+                     stays legible. Without an image there is nothing to darken. -->
+                <div class="absolute inset-0 bg-primary-900/70" />
+            </template>
+
+            <div
+                v-if="schedule.length"
+                class="absolute inset-0 flex items-center px-12 xl:px-20"
+            >
+                <div class="w-full max-w-sm">
+                    <h2 class="font-mono text-xs uppercase tracking-[0.16em] text-primary-400">
+                        Stream Schedule
+                    </h2>
+
+                    <ul class="mt-7 flex flex-col gap-1">
+                        <li
+                            v-for="item in schedule"
+                            :key="item.id"
+                            class="grid grid-cols-[4.25rem_1fr] items-start gap-4 rounded-lg px-3 py-3"
+                            :class="item.current ? 'bg-primary-100/10' : ''"
+                        >
+                            <!-- On-air state is carried by the row highlight and a
+                                 single dot. Repeating the word on every live row
+                                 turns the rail into a wall of badges. -->
+                            <span
+                                class="flex items-center gap-2 font-mono text-sm tabular-nums"
+                                :class="item.current ? 'text-primary-100' : 'text-primary-400'"
+                            >
+                                <span
+                                    v-if="item.current"
+                                    class="size-1.5 shrink-0 rounded-full bg-primary-100 animate-pulse motion-reduce:animate-none"
+                                />
+                                <span v-else class="size-1.5 shrink-0" />
+                                <!-- A show that has been live since yesterday
+                                     would print a start time that reads as out of
+                                     order against tonight's clock times. -->
+                                {{ item.current ? 'Now' : item.time }}
+                            </span>
+
+                            <span class="min-w-0">
+                                <span
+                                    class="block leading-snug"
+                                    :class="item.current ? 'text-white font-semibold' : 'text-primary-100'"
+                                >{{ item.title }}</span>
+                                <span
+                                    v-if="item.source"
+                                    class="mt-0.5 block text-sm text-primary-400"
+                                >{{ item.source }}</span>
+                            </span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
         </div>
-        <!-- Page Content -->
-        <div
-            class="flex-1 flex flex-col bg-primary-900 items-center p-4 sm:px-6 lg:flex-none lg:px-20 xl:px-12">
-            <!-- Spacer -->
-            <div class="h-[25%]"></div>
-            <!-- Slot Content -->
-            <div class="flex-auto mx-auto w-full max-w-sm lg:w-96">
+
+        <!-- Content side -->
+        <div class="flex-1 flex flex-col px-6 py-10 sm:px-10 lg:px-16 xl:px-24">
+            <div class="flex-1 flex flex-col justify-center">
                 <transition name="page">
-                    <div>
+                    <div class="w-full max-w-md mx-auto lg:mx-0">
                         <slot></slot>
                     </div>
                 </transition>
             </div>
-            <!-- Footer Content -->
-            <div class="pt-8">
-                <nav aria-label="Footer" class="-mx-5 -my-2 flex flex-wrap items-center justify-center">
-                    <div v-for="item in navigation.main" :key="item.name" class="px-5 py-2">
-                        <Link v-if="item.href == null" :href="item.link"
-                              :target="[item.newTab ? '_blank' : '_top']"
-                              class="text-base text-primary-500 hover:text-primary-400"> {{
-                                item.name
-                            }}
-                        </Link>
-                        <a v-else :href="item.href" :target="[item.newTab ? '_blank' : '_top']"
-                           class="text-base text-primary-500 hover:text-primary-400"> {{
-                                item.name
-                            }} </a>
-                    </div>
-                </nav>
-            </div>
+
+            <nav aria-label="Footer" class="w-full max-w-md mx-auto lg:mx-0 pt-10">
+                <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/10 pt-5">
+                    <a
+                        v-for="item in footerLinks"
+                        :key="item.name"
+                        :href="item.href"
+                        target="_blank"
+                        rel="noopener"
+                        class="text-sm text-primary-400 hover:text-primary-200 transition-colors"
+                    >{{ item.name }}</a>
+                </div>
+            </nav>
         </div>
     </div>
 </template>
+
 <style>
 .page-enter-active {
     transition: opacity .1s ease-in;
@@ -93,5 +132,4 @@ export default {
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     transition-duration: 150ms;
 }
-
 </style>

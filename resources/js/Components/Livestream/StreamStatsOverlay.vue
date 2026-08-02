@@ -44,14 +44,6 @@
                         <span class="stat-label">Download Speed:</span>
                         <span class="stat-value">{{ formatBitrate(stats.bandwidth) }}</span>
                     </div>
-                    <div class="stat-item" v-if="stats.throughput">
-                        <span class="stat-label">Processing Speed:</span>
-                        <span class="stat-value">{{ formatBitrate(stats.throughput) }}</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label">System Bandwidth:</span>
-                        <span class="stat-value">{{ formatBitrate(stats.bitrate) }}</span>
-                    </div>
                     <div class="stat-item">
                         <span class="stat-label">Buffer:</span>
                         <span class="stat-value">{{ formatTime(stats.bufferLength) }}</span>
@@ -108,12 +100,10 @@ const stats = ref({
     resolution: null,
     playlistResolution: null,
     fps: null,
-    bitrate: null,
     segmentBitrate: null,
     videoCodec: null,
     audioCodec: null,
     bandwidth: null,
-    throughput: null,
     bufferLength: null,
     droppedFrames: null,
     latency: null,
@@ -127,6 +117,33 @@ const stats = ref({
 });
 
 let statsInterval = null;
+
+// hls.js has no cumulative transfer counters, so tally them from fragment loads.
+// Tracked per-instance: a source change rebuilds the provider and resets these.
+let countedHls = null;
+let detachCounters = null;
+
+const attachTransferCounters = (hls, ctor) => {
+    if (countedHls === hls) return;
+
+    detachCounters?.();
+
+    const onFragLoaded = (_event, data) => {
+        stats.value.mediaRequests += 1;
+        stats.value.mediaBytesTransferred += data?.frag?.stats?.total ?? 0;
+    };
+
+    hls.on(ctor.Events.FRAG_LOADED, onFragLoaded);
+
+    countedHls = hls;
+    stats.value.mediaRequests = 0;
+    stats.value.mediaBytesTransferred = 0;
+    detachCounters = () => {
+        hls.off(ctor.Events.FRAG_LOADED, onFragLoaded);
+        countedHls = null;
+        detachCounters = null;
+    };
+};
 
 const formatBitrate = (bitrate) => {
     if (!bitrate || bitrate === 0 || bitrate === 1) return 'N/A';
@@ -173,122 +190,68 @@ const formatBytes = (bytes) => {
 };
 
 const updateStats = () => {
-    if (!props.player) return;
-
     const player = props.player;
-    
-    // Get video dimensions
-    if (player.videoHeight && player.videoWidth) {
-        stats.value.resolution = `${player.videoWidth()}x${player.videoHeight()}`;
-    }
+    if (!player) return;
 
-    // Get playback stats (only show relevant ones for live streams)
-    stats.value.volume = player.volume();
-    
-    // For live streams, show live edge status instead of duration/position
-    if (player.liveTracker) {
-        const liveCurrentTime = player.liveTracker.liveCurrentTime();
-        const currentTime = player.currentTime();
-        stats.value.latency = Math.max(0, liveCurrentTime - currentTime);
-        stats.value.currentTime = currentTime;
-        // Don't show duration for live streams
+    const state = player.state;
+    if (!state) return;
+
+    stats.value.volume = state.volume;
+    stats.value.currentTime = state.currentTime;
+
+    // Live streams have no meaningful duration; report distance from the edge instead.
+    if (state.live) {
         stats.value.duration = null;
+        stats.value.latency = Math.max(0, state.seekableEnd - state.currentTime);
     } else {
-        stats.value.duration = player.duration();
-        stats.value.currentTime = player.currentTime();
+        stats.value.duration = state.duration;
+        stats.value.latency = null;
     }
 
-    // Get buffer info
-    const buffered = player.buffered();
-    if (buffered.length > 0) {
-        const currentTime = player.currentTime();
-        let bufferEnd = 0;
-        for (let i = 0; i < buffered.length; i++) {
-            if (buffered.start(i) <= currentTime && buffered.end(i) > currentTime) {
-                bufferEnd = buffered.end(i);
-                break;
-            }
+    stats.value.bufferLength = Math.max(0, state.bufferedEnd - state.currentTime);
+    stats.value.availableQualities = state.qualities?.length || null;
+
+    const provider = player.provider;
+    const video = provider?.video;
+
+    if (video) {
+        if (video.videoWidth && video.videoHeight) {
+            stats.value.resolution = `${video.videoWidth}x${video.videoHeight}`;
         }
-        stats.value.bufferLength = bufferEnd - currentTime;
-    }
 
-    // Get tech-specific stats
-    const tech = player.tech({ IWillNotUseThisInPlugins: true });
-    if (tech && tech.el_) {
-        const videoEl = tech.el_;
-        
-        // Get dropped frames
-        if (videoEl.getVideoPlaybackQuality) {
-            const quality = videoEl.getVideoPlaybackQuality();
-            stats.value.droppedFrames = quality.droppedVideoFrames || 0;
+        if (video.getVideoPlaybackQuality) {
+            stats.value.droppedFrames = video.getVideoPlaybackQuality().droppedVideoFrames || 0;
         }
     }
 
-    // Get VHS (HLS) specific stats
-    if (tech && tech.vhs) {
-        const vhs = tech.vhs;
-        
-        // Get bandwidth metrics
-        if (vhs.bandwidth) {
-            stats.value.bandwidth = vhs.bandwidth; // Network bandwidth
-        }
-        
-        if (vhs.systemBandwidth) {
-            stats.value.bitrate = vhs.systemBandwidth; // Overall system bandwidth
-        }
-        
-        if (vhs.throughput) {
-            // Throughput is the processing speed after download
-            stats.value.throughput = vhs.throughput;
-        }
+    // Everything below is hls.js only. Safari playing HLS natively has no instance.
+    const hls = provider?.instance;
+    if (!hls) return;
 
-        // Get current media playlist info
-        if (vhs.playlists) {
-            const media = vhs.playlists.media();
-            if (media && media.attributes) {
-                // Get actual segment bitrate
-                if (media.attributes.BANDWIDTH) {
-                    stats.value.segmentBitrate = media.attributes.BANDWIDTH;
-                }
-                // Get codec info
-                if (media.attributes.CODECS) {
-                    const codecs = media.attributes.CODECS.split(',');
-                    stats.value.videoCodec = codecs[0] || 'N/A';
-                    if (codecs[1]) {
-                        stats.value.audioCodec = codecs[1];
-                    }
-                }
-                // Get resolution from playlist
-                if (media.attributes.RESOLUTION) {
-                    stats.value.playlistResolution = `${media.attributes.RESOLUTION.width}x${media.attributes.RESOLUTION.height}`;
-                }
-                // Frame rate if available
-                if (media.attributes['FRAME-RATE']) {
-                    stats.value.fps = Math.round(media.attributes['FRAME-RATE']);
-                }
-            }
-            
-            // Get main playlist info
-            const main = vhs.playlists.main;
-            if (main && main.playlists) {
-                stats.value.availableQualities = main.playlists.length;
-                
-                // Find current quality index
-                const currentMedia = vhs.playlists.media();
-                if (currentMedia) {
-                    const index = main.playlists.findIndex(p => p === currentMedia || p.id === currentMedia.id);
-                    if (index !== -1) {
-                        stats.value.currentQuality = index + 1;
-                    }
-                }
-            }
-        }
+    if (provider.ctor) attachTransferCounters(hls, provider.ctor);
 
-        // Get segment loading stats
-        if (vhs.stats) {
-            stats.value.mediaRequests = vhs.stats.mediaRequests || 0;
-            stats.value.mediaBytesTransferred = vhs.stats.mediaBytesTransferred || 0;
-        }
+    stats.value.bandwidth = hls.bandwidthEstimate;
+
+    // hls.latency is only populated for low-latency streams; fall back to the
+    // seekable-window figure already computed above.
+    if (Number.isFinite(hls.latency) && hls.latency > 0) {
+        stats.value.latency = hls.latency;
+    }
+
+    const level = hls.levels?.[hls.currentLevel];
+    if (!level) return;
+
+    stats.value.currentQuality = hls.currentLevel + 1;
+    stats.value.segmentBitrate = level.bitrate;
+    stats.value.videoCodec = level.videoCodec || null;
+    stats.value.audioCodec = level.audioCodec || null;
+
+    if (level.width && level.height) {
+        stats.value.playlistResolution = `${level.width}x${level.height}`;
+    }
+
+    if (level.frameRate) {
+        stats.value.fps = Math.round(level.frameRate);
     }
 };
 
@@ -313,6 +276,7 @@ onUnmounted(() => {
     if (statsInterval) {
         clearInterval(statsInterval);
     }
+    detachCounters?.();
 });
 </script>
 

@@ -2,14 +2,10 @@
 
 namespace Tests\Feature\Filament;
 
-use App\Models\User;
 use App\Models\Role;
 use App\Models\Server;
-use App\Models\Source;
-use App\Models\Show;
-use App\Models\Emote;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Livewire\Livewire;
 use Tests\TestCase;
 
 class AdminPanelTest extends TestCase
@@ -17,6 +13,7 @@ class AdminPanelTest extends TestCase
     use RefreshDatabase;
 
     protected User $adminUser;
+
     protected User $regularUser;
 
     protected function setUp(): void
@@ -46,7 +43,7 @@ class AdminPanelTest extends TestCase
     public function test_admin_panel_redirects_to_login_for_guests(): void
     {
         $response = $this->get('/admin');
-        
+
         $response->assertRedirect('/admin/login');
     }
 
@@ -56,7 +53,7 @@ class AdminPanelTest extends TestCase
     public function test_regular_users_cannot_access_admin_panel(): void
     {
         $response = $this->actingAs($this->regularUser)->get('/admin');
-        
+
         $response->assertForbidden();
     }
 
@@ -66,7 +63,7 @@ class AdminPanelTest extends TestCase
     public function test_admin_users_can_access_dashboard(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Dashboard');
     }
@@ -77,7 +74,7 @@ class AdminPanelTest extends TestCase
     public function test_admin_login_page_loads(): void
     {
         $response = $this->get('/admin/login');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Sign in');
     }
@@ -88,7 +85,7 @@ class AdminPanelTest extends TestCase
     public function test_admin_can_access_servers_resource(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin/servers');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Servers');
     }
@@ -99,7 +96,7 @@ class AdminPanelTest extends TestCase
     public function test_admin_can_access_users_resource(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin/users');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Users');
     }
@@ -110,7 +107,7 @@ class AdminPanelTest extends TestCase
     public function test_admin_can_access_roles_resource(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin/roles');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Roles');
     }
@@ -121,7 +118,7 @@ class AdminPanelTest extends TestCase
     public function test_admin_can_access_sources_resource(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin/sources');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Sources');
     }
@@ -132,7 +129,7 @@ class AdminPanelTest extends TestCase
     public function test_admin_can_access_shows_resource(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin/shows');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Shows');
     }
@@ -143,7 +140,7 @@ class AdminPanelTest extends TestCase
     public function test_admin_can_access_emotes_resource(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin/emotes');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Emotes');
     }
@@ -154,7 +151,7 @@ class AdminPanelTest extends TestCase
     public function test_admin_can_access_stream_control_page(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin/stream');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Stream Control');
     }
@@ -165,7 +162,7 @@ class AdminPanelTest extends TestCase
     public function test_navigation_groups_are_displayed(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Streaming');
         $response->assertSee('Infrastructure');
@@ -192,7 +189,7 @@ class AdminPanelTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->adminUser)->get('/admin/servers');
-        
+
         $response->assertSuccessful();
         $response->assertSee('test-edge');
         // Health column only shows for edge servers in the table
@@ -204,11 +201,11 @@ class AdminPanelTest extends TestCase
     public function test_admin_can_create_server(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin/servers/create');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Create Server');
         $response->assertSee('Hostname');
-        $response->assertSee('Leave empty for locally managed servers'); // hetzner_id helper text
+        $response->assertSee('Hetzner server ID (will be auto-filled for cloud servers)', false); // hetzner_id helper text
     }
 
     /**
@@ -217,7 +214,7 @@ class AdminPanelTest extends TestCase
     public function test_admin_can_create_source(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin/sources/create');
-        
+
         $response->assertSuccessful();
         $response->assertSee('Create Source');
         // Form labels are rendered differently in Filament
@@ -241,7 +238,7 @@ class AdminPanelTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->adminUser)->get('/admin');
-        
+
         $response->assertSuccessful();
         // Dashboard should load without errors even with data
     }
@@ -252,7 +249,7 @@ class AdminPanelTest extends TestCase
     public function test_brand_name_is_displayed(): void
     {
         $response = $this->actingAs($this->adminUser)->get('/admin');
-        
+
         $response->assertSuccessful();
         $response->assertSee('EF Streaming Admin');
     }

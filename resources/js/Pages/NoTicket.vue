@@ -10,8 +10,8 @@ import LoginScreenWelcome from "@/Components/LoginScreenWelcome.vue";
         <Head>
             <title>Unauthorized</title>
         </Head>
-        <Logo></Logo>
-        <LoginScreenWelcome title="Only Attendees" sub-title="Unauthorized Access" class="mb-4"></LoginScreenWelcome>
+        <Logo class="h-11 w-auto"></Logo>
+        <LoginScreenWelcome title="Only Attendees" sub-title="Unauthorized Access" class="mt-12 mb-4"></LoginScreenWelcome>
         <p class="text-primary-300 text-sm mb-3">The current steam is limited to staff & members of the Eurofurence e.V.</p>
     </GuestLayout>
 </template>

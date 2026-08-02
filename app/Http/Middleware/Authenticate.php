@@ -12,6 +12,12 @@ class Authenticate extends Middleware
      */
     protected function redirectTo(Request $request): ?string
     {
+        \Illuminate\Support\Facades\Log::info('AUTH DEBUG unauthenticated redirect', [
+            'url' => $request->fullUrl(),
+            'session_id' => $request->hasSession() ? $request->session()->getId() : null,
+            'session_keys' => $request->hasSession() ? array_keys($request->session()->all()) : [],
+        ]);
+
         return $request->expectsJson() ? null : route('login');
     }
 }

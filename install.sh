@@ -51,6 +51,15 @@ DVR_AWS_SECRET_ACCESS_KEY=
 DVR_AWS_DEFAULT_REGION=eu-west-1
 DVR_AWS_BUCKET=streaming-dvr
 DVR_AWS_ENDPOINT=https://s3.eurofurence.org
+
+# Playback token secrets. Must match the app's HLS_VIEWER_SECRET and
+# HLS_EMBED_SECRET; HLS_TOKEN_LEEWAY must match stream.token.leeway.
+# Fill these in before starting the stack, or edge nginx rejects every token.
+# See docs/streaming-auth-redesign.md.
+HLS_VIEWER_SECRET=${HLS_VIEWER_SECRET:-}
+HLS_EMBED_SECRET=${HLS_EMBED_SECRET:-}
+HLS_TOKEN_LEEWAY=${HLS_TOKEN_LEEWAY:-60}
+STREAM_SYSTEM_STREAMKEY=${STREAM_SYSTEM_STREAMKEY:-}
 EOF
 
 # Download Edge Docker Compose configuration
@@ -60,10 +69,20 @@ version: '3.8'
 services:
   # Edge Nginx - Caching proxy for HLS content
   edge-nginx:
-    image: nginx:alpine
+    # Built rather than pulled: the image needs the njs module to verify
+    # playback tokens locally.
+    build:
+      context: .
+      dockerfile: Dockerfile.edge-nginx
     container_name: edge-nginx
+    environment:
+      HLS_VIEWER_SECRET: ${HLS_VIEWER_SECRET}
+      HLS_EMBED_SECRET: ${HLS_EMBED_SECRET}
+      HLS_TOKEN_LEEWAY: ${HLS_TOKEN_LEEWAY}
+      STREAM_SYSTEM_STREAMKEY: ${STREAM_SYSTEM_STREAMKEY}
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./hls-auth.js:/etc/nginx/njs/hls-auth.js:ro
     tmpfs:
       - /var/cache/nginx:rw,noexec,nosuid,size=512m
     restart: unless-stopped
@@ -99,10 +118,21 @@ volumes:
 
 # Create Edge Nginx configuration
 cat > nginx.conf <<'NGINXCONF'
+# njs verifies playback tokens locally with an HMAC, so a request carrying ?t=
+# never reaches Laravel. See docs/streaming-auth-redesign.md.
+load_module modules/ngx_http_js_module.so;
+
 user nginx;
 worker_processes auto;
 error_log /var/log/nginx/error.log warn;
 pid /var/run/nginx.pid;
+
+# Passed through to njs as process.env; nginx strips the worker environment
+# otherwise.
+env HLS_VIEWER_SECRET;
+env HLS_EMBED_SECRET;
+env HLS_TOKEN_LEEWAY;
+env STREAM_SYSTEM_STREAMKEY;
 
 events {
     worker_connections 4096;
@@ -111,6 +141,8 @@ events {
 }
 
 http {
+    js_import hlsAuth from /etc/nginx/njs/hls-auth.js;
+
     include /etc/nginx/mime.types;
     default_type application/octet-stream;
 
@@ -169,8 +201,16 @@ http {
             add_header Content-Type text/plain;
         }
 
-        # Authentication subrequest endpoint
+        # Playback token verification, entirely local: no network call, no PHP.
+        # Falls back to /auth-legacy when the request carries a streamkey instead.
         location = /auth {
+            internal;
+            js_content hlsAuth.verify;
+        }
+
+        # Legacy fallback, reached only for a per-user streamkey, which can only be
+        # resolved in the database. Goes away with the streamkey itself.
+        location = /auth-legacy {
             internal;
             proxy_pass http://well-oarfish-oddly.ngrok-free.app:443/api/hls/auth;
             proxy_pass_request_body off;
@@ -193,6 +233,10 @@ http {
 
         # HLS m3u8 playlist files - proxy and cache from origin
         location ~ ^/live/(.+\.m3u8)$ {
+            # Playlists are authenticated too now; previously only segments were.
+            auth_request /auth;
+            auth_request_set $auth_status $upstream_status;
+
             # Proxy to origin Caddy server
             proxy_pass http://origin_caddy$request_uri;
             proxy_http_version 1.1;
@@ -280,7 +324,33 @@ edge-10-Ur16YGLgHK2J.stream.eurofurence.org {
 }CADDYFILE
 # Start services
 echo "Starting Docker services..."
-docker compose up -d
+# Served by the app so they stay identical to the copies in docker/edge-nginx
+# that the test suite exercises. .env is written above but never sourced, so
+# SHARED_SECRET and APP_URL are pulled out of it here.
+set -a
+. ./.env
+set +a
+
+# Accept: application/json so a bad secret is a 401 that -f catches, rather
+# than a 302 to the login page that -L would save as HTML into the target file.
+echo "Downloading edge nginx Dockerfile and token verifier..."
+curl -fsS -H "X-Shared-Secret: ${SHARED_SECRET}" \
+     -H "Accept: application/json" \
+     -o Dockerfile.edge-nginx \
+     "${APP_URL}/api/server/config/dockerfile-edge" || {
+    echo "Failed to download Dockerfile.edge-nginx"
+    exit 1
+}
+curl -fsS -H "X-Shared-Secret: ${SHARED_SECRET}" \
+     -H "Accept: application/json" \
+     -o hls-auth.js \
+     "${APP_URL}/api/server/config/hls-auth-js" || {
+    echo "Failed to download hls-auth.js"
+    exit 1
+}
+
+# --build so a changed Dockerfile or njs module is actually picked up.
+docker compose up -d --build
 
 # Wait for services to be ready
 echo "Waiting for services to start..."

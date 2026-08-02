@@ -23,6 +23,7 @@ class Show extends Model
         'actual_end',
         'status',
         'auto_mode',
+        'auto_stop_at',
         'recordable',
         'thumbnail_path',
         'thumbnail_updated_at',
@@ -42,6 +43,7 @@ class Show extends Model
         'actual_start' => 'datetime',
         'actual_end' => 'datetime',
         'thumbnail_updated_at' => 'datetime',
+        'auto_stop_at' => 'datetime',
         'auto_mode' => 'boolean',
         'recordable' => 'boolean',
         'tags' => 'array',
@@ -390,6 +392,41 @@ class Show extends Model
     public function isAutoMode()
     {
         return $this->auto_mode === true;
+    }
+
+    /**
+     * The moment an auto-mode show must stop, whatever the source is doing.
+     *
+     * Falls back to `scheduled_end` when no explicit hard stop is set, which is what auto
+     * mode did before the column existed. See docs/admin/auto-mode.md.
+     */
+    public function autoStopAt(): ?Carbon
+    {
+        if (! $this->isAutoMode()) {
+            return null;
+        }
+
+        return $this->auto_stop_at ?? $this->scheduled_end;
+    }
+
+    /**
+     * Whether the hard stop has passed. This is the dance safety net: a show nobody
+     * remembered to end stops on its own instead of recording all night.
+     */
+    public function isPastAutoStop(): bool
+    {
+        $stop = $this->autoStopAt();
+
+        return $stop !== null && $stop->lte(now());
+    }
+
+    /**
+     * Private means only listed roles may watch, and nobody else even sees the show.
+     * Public means anyone signed in.
+     */
+    public function isPrivate(): bool
+    {
+        return ! empty($this->required_roles);
     }
 
     /**

@@ -14,11 +14,11 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Actions\EditAction;
-use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\IconColumn;
-use Filament\Tables\Table;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 class ServerResource extends Resource
@@ -28,11 +28,11 @@ class ServerResource extends Resource
     protected static ?string $slug = 'servers';
 
     protected static ?string $recordTitleAttribute = 'id';
-    
+
     protected static ?string $navigationIcon = 'heroicon-o-server-stack';
-    
+
     protected static ?string $navigationGroup = 'Infrastructure';
-    
+
     protected static ?int $navigationSort = 10;
 
     public static function form(Form $form): Form
@@ -96,7 +96,7 @@ class ServerResource extends Resource
                     ->hidden(fn (?Server $record): bool => $record?->type !== ServerTypeEnum::EDGE)
                     ->reactive()
                     ->default(true)
-                    ->helperText('Set this if you want to use this server as a stream server. This will prevent the server from being deleted by autoscaling measures.'),
+                    ->helperText('Legacy flag from the removed autoscaler. It no longer affects anything.'),
 
                 Placeholder::make('created_at')
                     ->label('Created Date')
@@ -153,12 +153,10 @@ class ServerResource extends Resource
                     ->sortable()
                     ->badge()
                     ->color('info')
-                    ->formatStateUsing(fn ($state, $record) => 
-                        $record && $record->type === ServerTypeEnum::EDGE ? $state : '-'
+                    ->formatStateUsing(fn ($state, $record) => $record && $record->type === ServerTypeEnum::EDGE ? $state : '-'
                     )
-                    ->description(fn ($record) => 
-                        $record && $record->type === ServerTypeEnum::EDGE && $record->max_clients > 0 
-                            ? round(($record->viewer_count / $record->max_clients) * 100) . '% capacity'
+                    ->description(fn ($record) => $record && $record->type === ServerTypeEnum::EDGE && $record->max_clients > 0
+                            ? round(($record->viewer_count / $record->max_clients) * 100).'% capacity'
                             : null
                     ),
 
@@ -166,8 +164,8 @@ class ServerResource extends Resource
                     ->label('Heartbeat')
                     ->icon(fn ($record) => $record && $record->hasRecentHeartbeat() ? 'heroicon-o-check-circle' : 'heroicon-o-x-circle')
                     ->color(fn ($record) => $record && $record->hasRecentHeartbeat() ? 'success' : 'danger')
-                    ->tooltip(fn ($record) => $record && $record->last_heartbeat 
-                        ? 'Last heartbeat: ' . $record->last_heartbeat->diffForHumans()
+                    ->tooltip(fn ($record) => $record && $record->last_heartbeat
+                        ? 'Last heartbeat: '.$record->last_heartbeat->diffForHumans()
                         : 'No heartbeat received'
                     ),
 
@@ -179,8 +177,7 @@ class ServerResource extends Resource
                         'unknown' => 'gray',
                         default => 'secondary',
                     })
-                    ->tooltip(fn ($record) => 
-                        $record && $record->last_health_check 
+                    ->tooltip(fn ($record) => $record && $record->last_health_check
                             ? "Last check: {$record->last_health_check->diffForHumans()}\n{$record->health_check_message}"
                             : 'No health check performed'
                     )
@@ -201,7 +198,7 @@ class ServerResource extends Resource
                     ->icon('heroicon-o-trash')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->visible(fn (?Server $record): bool => $record && !empty($record->hetzner_id))
+                    ->visible(fn (?Server $record): bool => $record && ! empty($record->hetzner_id))
                     ->action(fn (Server $record) => $record->deprovision()),
                 Action::make('Delete')
                     ->icon('heroicon-o-x-mark')
@@ -216,7 +213,7 @@ class ServerResource extends Resource
                 SelectFilter::make('status')
                     ->options([
                         'active' => 'Active',
-                        'provisioning' => 'Provisioning', 
+                        'provisioning' => 'Provisioning',
                         'deprovisioning' => 'Deprovisioning',
                         'deleted' => 'Deleted',
                         'error' => 'Error',
