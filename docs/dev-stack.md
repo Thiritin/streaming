@@ -37,10 +37,11 @@ which proxy to the edge server row on `localhost:8085`, exactly as in production
 ```
 publisher (ffmpeg, stands in for OBS)
    |  rtmp://localhost:1935/ingress/<slug>?secret=<stream_key>
-SRS origin  ──DVR mp4──> dvr-uploader ──> versitygw (S3 API) ──> recordings, thumbnails
+SRS origin
    |  rtmp
 ffmpeg-hls (480p/720p/1080p ladder, aligned GOPs; remuxed by default locally)
-   |  shared volume
+   |  shared volume ──> archive-uploader ──> versitygw (S3 API) ──> segment archive
+   |                                          + per-hour index playlists
 origin nginx :8083 ──> origin caddy :8070
    |
 edge nginx :8081 (njs verifies ?t= tokens) ──> edge caddy ──> localhost:8085 ──> browser

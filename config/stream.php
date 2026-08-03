@@ -67,7 +67,7 @@ return [
     // namespace an operator publishes them under.
     'images' => [
         'ffmpeg_hls' => env('STREAM_IMAGE_FFMPEG_HLS', 'ffmpeg-hls:latest'),
-        'dvr_uploader' => env('STREAM_IMAGE_DVR_UPLOADER', 'dvr-uploader:latest'),
+        'archive_uploader' => env('STREAM_IMAGE_ARCHIVE_UPLOADER', 'archive-uploader:latest'),
     ],
 
     // Filesystem disk holding the segment archive and the generated recording

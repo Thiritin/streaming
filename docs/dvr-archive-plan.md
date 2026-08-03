@@ -516,11 +516,22 @@ rest is headroom for upload lag and for an S3 outage that stalls the reaper.
 6. Manage UI: index, then the trim editor.
 7. **Done.** Player: `live:dvr` wired through `StreamPlayer.vue`, stream-type-aware
    `backBufferLength`.
-8. Retire `DvrExtractorService`, `dvr-extract.sh`, `dvr-process.sh`, `ExtractDvrSegments`,
-   and the SRS `dvr` block.
+8. **Done.** Retired the whole MP4 path: `DvrExtractorService`, `dvr-extract.sh`,
+   `dvr-process.sh`, `ExtractDvrSegments`, `SrsDvrController` and its two routes,
+   `uploader.py`, the `dvr-uploader` service and its volume, and the SRS `dvr` block
+   (now `enabled off`). `docker/dvr-uploader` became `docker/archive-uploader`, and
+   `stream.images.dvr_uploader` became `stream.images.archive_uploader`.
 
-Keep the SRS MP4 DVR running as a cold backup through the next event. It costs disk and
-nothing else, and it is the fallback if the segment archive misses something.
+An earlier revision of this plan kept the SRS MP4 DVR as a cold backup through the first
+event, on the grounds that it "costs disk and nothing else". The 90 minute soak measured
+that cost: 45 GB of MP4 against 34 GB of segment archive for the same period, having been
+9x ahead earlier in the run. On a production origin it is the largest single consumer of
+disk, and it backs up a path that has now been verified frame-exact over 90 minutes. It
+was removed rather than carried.
+
+The consequence is worth stating plainly: **the segment archive is the only copy.** If the
+uploader loses a segment before it reaches S3, nothing else holds it. The reaper is what
+makes that safe, since it refuses to delete anything S3 has not confirmed.
 
 ### PDT drift: measured, then designed around
 
