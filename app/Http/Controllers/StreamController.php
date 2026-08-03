@@ -246,7 +246,7 @@ class StreamController extends Controller
             ->where('is_published', true)
             ->count();
 
-        $primarySource = Source::ordered()->first();
+        $primarySource = Source::featured();
         $featured = $this->resolveFeaturedShow($user, $primarySource);
 
         // Channel chips: only sources that actually have something in the grid.
@@ -289,7 +289,7 @@ class StreamController extends Controller
     {
         $exclude = fn ($query) => $query->where('id', '!=', $current->id);
 
-        $primarySource = Source::ordered()->first();
+        $primarySource = Source::featured();
 
         $show = null;
 

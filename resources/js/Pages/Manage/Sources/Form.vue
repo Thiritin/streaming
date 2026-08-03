@@ -137,6 +137,13 @@ const submit = () => {
             helper="Higher sorts first on the public grid"
           />
           <FormField
+            v-model="form.is_featured"
+            label="Featured channel"
+            type="checkbox"
+            :error="form.errors.is_featured"
+            helper="Owns the hero on the landing page, and is where an ended show sends viewers. Only one source can be featured; turning this on turns it off elsewhere."
+          />
+          <FormField
             v-model="form.description"
             label="Description"
             type="textarea"

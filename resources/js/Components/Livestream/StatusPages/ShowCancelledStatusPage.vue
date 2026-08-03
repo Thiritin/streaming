@@ -65,15 +65,15 @@
             </div>
             
             <!-- Main Stream Link -->
-            <div v-else-if="mainStreamUrl" class="mt-8">
+            <div v-else-if="promotedUrl" class="mt-8">
                 <a 
-                    :href="mainStreamUrl"
+                    :href="promotedUrl"
                     class="inline-flex items-center px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
                 >
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
                     </svg>
-                    Back to Schedule
+                    {{ promotedLabel ?? 'Back to Schedule' }}
                 </a>
             </div>
         </div>
@@ -82,6 +82,7 @@
 
 <script setup>
 import dayjs from 'dayjs';
+import { usePromotedShow } from '@/composables/usePromotedShow';
 
 const props = defineProps({
     show: {
@@ -96,11 +97,17 @@ const props = defineProps({
         type: Array,
         default: () => []
     },
+    promoted: {
+        type: Object,
+        default: null
+    },
     mainStreamUrl: {
         type: String,
         default: '/schedule'
     }
 });
+
+const { promotedUrl, promotedLabel } = usePromotedShow(props, props.mainStreamUrl);
 
 const formatScheduledTime = (dateString) => {
     if (!dateString) return '';

@@ -58,7 +58,7 @@
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
                     </svg>
-                    {{ promotedLabel }}
+                    {{ promotedLabel ?? 'Watch Main Stream' }}
                 </a>
             </div>
         </div>
@@ -67,6 +67,7 @@
 
 <script setup>
 import { computed } from 'vue';
+import { usePromotedShow } from '@/composables/usePromotedShow';
 import dayjs from 'dayjs';
 import duration from 'dayjs/plugin/duration';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -98,17 +99,7 @@ const props = defineProps({
     }
 });
 
-const promotedUrl = computed(() => (props.promoted?.slug ? `/show/${props.promoted.slug}` : props.mainStreamUrl));
-
-const promotedLabel = computed(() => {
-    if (!props.promoted) return 'Watch Main Stream';
-    if (props.promoted.is_live) {
-        return props.promoted.is_primary_channel
-            ? `Watch ${props.promoted.source} now`
-            : `Watch ${props.promoted.title} now`;
-    }
-    return `Up next: ${props.promoted.title}`;
-});
+const { promotedUrl, promotedLabel } = usePromotedShow(props, props.mainStreamUrl);
 
 const streamDuration = computed(() => {
     if (!props.show?.actual_start || !props.show?.actual_end) return '';

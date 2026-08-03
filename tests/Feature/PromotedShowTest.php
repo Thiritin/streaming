@@ -29,15 +29,19 @@ class PromotedShowTest extends TestCase
 
         $this->user = User::factory()->create();
 
-        // Ordered by priority descending, so the higher number is the primary channel.
+        // The featured channel is an explicit flag, not the highest priority: priority is
+        // display order on the grid, and reordering the grid must not move what the site
+        // promotes. The priorities here are deliberately inverted against the flag so a
+        // regression back to ordering would fail these.
         $this->primary = Source::factory()->create([
             'name' => 'Main Stage',
-            'priority' => 100,
+            'priority' => 1,
+            'is_featured' => true,
             'status' => SourceStatusEnum::ONLINE,
         ]);
         $this->secondary = Source::factory()->create([
             'name' => 'Stage B',
-            'priority' => 10,
+            'priority' => 500,
             'status' => SourceStatusEnum::ONLINE,
         ]);
     }
@@ -143,5 +147,24 @@ class PromotedShowTest extends TestCase
     public function test_promotes_nothing_when_there_is_nothing_else(): void
     {
         $this->assertNull($this->promotedFor($this->endedShow()));
+    }
+
+    public function test_featuring_a_channel_demotes_the_previous_one(): void
+    {
+        $this->assertTrue($this->primary->fresh()->is_featured);
+
+        $this->secondary->update(['is_featured' => true]);
+
+        $this->assertFalse($this->primary->fresh()->is_featured);
+        $this->assertTrue($this->secondary->fresh()->is_featured);
+        $this->assertSame($this->secondary->id, Source::featured()->id);
+    }
+
+    public function test_falls_back_to_display_order_when_nothing_is_flagged(): void
+    {
+        Source::query()->update(['is_featured' => false]);
+
+        // Stage B has the higher priority, so it takes over as the hero.
+        $this->assertSame($this->secondary->id, Source::featured()->id);
     }
 }

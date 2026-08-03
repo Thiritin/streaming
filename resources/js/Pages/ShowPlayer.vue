@@ -575,7 +575,7 @@ onUnmounted(() => {
                     </div>
                     <!-- Show Status Pages -->
                     <div v-else-if="activeShow?.status === 'scheduled'">
-                        <ShowScheduledStatusPage :show="activeShow" />
+                        <ShowScheduledStatusPage :show="activeShow" :promoted="promoted" />
                     </div>
                     <div v-else-if="activeShow?.status === 'ended'">
                         <ShowEndedStatusPage 
@@ -589,6 +589,7 @@ onUnmounted(() => {
                             :show="activeShow" 
                             :other-live-shows="otherLiveShows"
                             :upcoming-shows="upcomingShows"
+                            :promoted="promoted"
                             main-stream-url="/schedule" />
                     </div>
                     <!-- Stream Status Pages -->

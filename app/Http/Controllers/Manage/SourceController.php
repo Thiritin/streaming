@@ -68,6 +68,7 @@ class SourceController extends Controller
                 'name' => '',
                 'slug' => '',
                 'priority' => 0,
+                'is_featured' => false,
                 'description' => '',
             ],
         ]);
@@ -96,6 +97,7 @@ class SourceController extends Controller
                 'slug' => $source->slug,
                 'status' => $source->status?->value,
                 'priority' => $source->priority,
+                'is_featured' => (bool) $source->is_featured,
                 'description' => $source->description,
                 'rtmp_url' => $source->getRtmpServerUrl(),
                 'stream_key' => $source->getObsStreamKey(),
