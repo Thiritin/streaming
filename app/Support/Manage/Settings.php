@@ -40,6 +40,11 @@ final class Settings
 
         foreach ($this->fields() as $field) {
             $rules['values.'.$field['key']] = $field['rules'] ?? ['nullable', 'string'];
+
+            // A repeater validates its rows too, one rule set per column.
+            foreach ($field['itemRules'] ?? [] as $column => $columnRules) {
+                $rules["values.{$field['key']}.*.{$column}"] = $columnRules;
+            }
         }
 
         return $rules;
@@ -56,6 +61,10 @@ final class Settings
 
         foreach ($this->fields() as $field) {
             $attributes['values.'.$field['key']] = strtolower($field['label']);
+
+            foreach (array_keys($field['itemRules'] ?? []) as $column) {
+                $attributes["values.{$field['key']}.*.{$column}"] = $column;
+            }
         }
 
         return $attributes;
@@ -63,6 +72,10 @@ final class Settings
 
     /**
      * Save the posted values, ignoring anything not declared in the registry.
+     *
+     * A value equal to the shipped default deletes its row rather than writing
+     * one, so "use the default" really does hand the key back to
+     * config/branding.php instead of pinning today's default into the database.
      *
      * @param  array<string, mixed>  $values
      */
@@ -74,13 +87,83 @@ final class Settings
             }
 
             $value = $values[$field['key']];
+            $value = is_string($value) ? trim($value) : $value;
+
+            if (($field['type'] ?? null) === 'links') {
+                $value = $this->cleanRows($value, array_keys($field['itemRules'] ?? []));
+            }
+
+            $store = $field['store'] ?? config('settings.store', 'branding');
+
+            if ($this->matchesDefault($value, config("{$store}.{$field['key']}"))) {
+                BrandingSetting::where('key', $field['key'])->get()->each->delete();
+
+                continue;
+            }
 
             BrandingSetting::setValue(
                 $field['key'],
-                is_string($value) ? trim($value) : $value,
+                is_array($value) ? json_encode($value) : $value,
                 $field['helper'] ?? null,
             );
         }
+    }
+
+    /**
+     * A cleared field counts as "back to the default", not as a stored blank.
+     *
+     * ConvertEmptyStringsToNull rewrites an emptied input to null before it ever
+     * reaches here, and BrandingSetting::getValue reads a null row as unset, so
+     * a blank row could never win over a non-empty default anyway. Deleting says
+     * the same thing without leaving a row that claims otherwise.
+     */
+    private function matchesDefault(mixed $value, mixed $default): bool
+    {
+        if ($value === null || $value === '' || $value === []) {
+            return true;
+        }
+
+        return $value === $default;
+    }
+
+    /**
+     * Drop repeater rows that are blank or missing a column, and keep only the
+     * declared columns, so a hand-crafted post cannot smuggle extra keys into
+     * the stored JSON. Order is preserved; that is what the footer renders by.
+     *
+     * @param  array<int, string>  $columns
+     * @return array<int, array<string, string>>
+     */
+    private function cleanRows(mixed $rows, array $columns): array
+    {
+        if (! is_array($rows) || $columns === []) {
+            return [];
+        }
+
+        $clean = [];
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $values = [];
+
+            foreach ($columns as $column) {
+                $value = $row[$column] ?? null;
+                $values[$column] = is_string($value) ? trim($value) : '';
+            }
+
+            // All or nothing: a row missing either half is an unfinished edit,
+            // not a link.
+            if (in_array('', $values, true)) {
+                continue;
+            }
+
+            $clean[] = $values;
+        }
+
+        return $clean;
     }
 
     /**
@@ -113,6 +196,12 @@ final class Settings
         $default = config("{$store}.{$field['key']}");
         $value = BrandingSetting::getValue($field['key'], $default);
 
+        // Repeaters are stored as JSON but edited as rows.
+        if ($field['type'] === 'links') {
+            $value = self::decodeRows($value);
+            $default = self::decodeRows($default);
+        }
+
         return [
             'key' => $field['key'],
             'label' => $field['label'],
@@ -134,6 +223,29 @@ final class Settings
     }
 
     /**
+     * A stored repeater value as rows. Accepts the JSON string the table holds
+     * and an already-decoded array (the config default), and answers with an
+     * empty list for anything unparseable, so one bad row can never break the
+     * settings page or the footer.
+     *
+     * @return array<int, array<string, string>>
+     */
+    public static function decodeRows(mixed $value): array
+    {
+        if (is_array($value)) {
+            return array_values($value);
+        }
+
+        if (! is_string($value) || trim($value) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($value, true);
+
+        return is_array($decoded) ? array_values($decoded) : [];
+    }
+
+    /**
      * Preset swatches as a list, so the order survives the trip to the frontend.
      *
      * @param  array<string, mixed>  $field
@@ -145,13 +257,7 @@ final class Settings
             return null;
         }
 
-        $presets = [];
-
-        foreach ($field['presets'] as $hex => $label) {
-            $presets[] = ['hex' => $hex, 'label' => $label];
-        }
-
-        return $presets;
+        return \App\Support\ColorPresets::forFrontend();
     }
 
     /**

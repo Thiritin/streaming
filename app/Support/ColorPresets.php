@@ -17,10 +17,19 @@ final class ColorPresets
      *
      * @var array<string, string>
      */
+    /**
+     * The neutral ramp in resources/css/app.css, which is what renders when no
+     * accent is saved.
+     *
+     * Selecting it stores nothing: an empty `primary_color` means the stylesheet
+     * stays authoritative, and its hand-tuned ramp is closer than anything
+     * ColorRamp would derive from the 500 stop alone. The hex here is only what
+     * the swatch paints itself.
+     */
+    public const BUILT_IN = ['value' => '', 'hex' => '#6a7282', 'label' => 'Neutral gray (built-in)'];
+
     public const PRESETS = [
-        // The ramp shipped in resources/css/app.css, offered by name so an
-        // installation can get back to it after trying something else.
-        '#048072' => 'Deep Teal (built-in)',
+        '#048072' => 'Deep Teal',
 
         '#ef4444' => 'Red',
         '#f97316' => 'Orange',
@@ -43,16 +52,21 @@ final class ColorPresets
     ];
 
     /**
-     * Presets as a list the frontend can iterate over.
+     * Presets as a list the frontend can iterate over, the built-in first so
+     * getting back to the neutral default is one click rather than clearing a
+     * field by hand.
      *
-     * @return array<int, array{hex: string, label: string}>
+     * `value` is what gets stored, `hex` is what the swatch shows. They differ
+     * only for the built-in, which stores nothing.
+     *
+     * @return array<int, array{value: string, hex: string, label: string}>
      */
     public static function forFrontend(): array
     {
-        $presets = [];
+        $presets = [self::BUILT_IN];
 
         foreach (self::PRESETS as $hex => $label) {
-            $presets[] = ['hex' => $hex, 'label' => $label];
+            $presets[] = ['value' => $hex, 'hex' => $hex, 'label' => $label];
         }
 
         return $presets;
