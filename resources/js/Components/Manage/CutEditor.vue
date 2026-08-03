@@ -112,6 +112,53 @@ const inPct = computed(() => pct(inMs.value));
 const outPct = computed(() => pct(outMs.value));
 const playheadPct = computed(() => pct(playheadMs.value));
 
+const hoverMs = ref(null);
+const hoverPct = computed(() => pct(hoverMs.value));
+
+/**
+ * Ruler ticks, aligned to real clock boundaries rather than to the edge of the view.
+ *
+ * Ticks landing on 01:05:00 rather than 01:04:37 are what makes a ruler readable: the
+ * operator is matching against a programme time, not counting pixels. The interval is the
+ * smallest that keeps the labels from colliding, so zooming in gives finer marks without
+ * the labels ever overlapping.
+ */
+const TICK_STEPS = [
+    1_000, 2_000, 5_000, 10_000, 15_000, 30_000,
+    60_000, 120_000, 300_000, 600_000, 900_000, 1_800_000,
+    3_600_000, 7_200_000, 21_600_000,
+];
+
+const tickInterval = computed(() => {
+    if (!window_.value) return null;
+    const target = window_.value.span / 10; // aim for about ten labels
+    return TICK_STEPS.find((step) => step >= target) ?? TICK_STEPS[TICK_STEPS.length - 1];
+});
+
+const ticks = computed(() => {
+    if (!window_.value || !tickInterval.value) return [];
+
+    const step = tickInterval.value;
+    const out = [];
+    // Minor ticks at a quarter of the labelled interval give a sense of scale between
+    // labels without adding clutter.
+    const minor = step / 4;
+    let cursor = Math.ceil(window_.value.from / minor) * minor;
+
+    while (cursor <= window_.value.to && out.length < 400) {
+        const major = cursor % step === 0;
+        out.push({
+            ms: cursor,
+            left: pct(cursor),
+            major,
+            label: major ? (step < 60_000 ? formatClock(cursor) : formatClock(cursor).slice(0, 5)) : null,
+        });
+        cursor += minor;
+    }
+
+    return out;
+});
+
 const selectionStyle = computed(() => {
     if (inPct.value === null || outPct.value === null) return { display: 'none' };
     return { left: `${inPct.value}%`, width: `${Math.max(0, outPct.value - inPct.value)}%` };
@@ -380,10 +427,13 @@ watch(
         </div>
 
         <template v-else>
+            <!-- Picture and its controls are centred as one block; the timeline below
+                 stays full width, where the extra pixels buy real precision. -->
+            <div class="mx-auto w-full max-w-3xl space-y-3">
             <!-- Height-capped rather than width-driven: the timeline and the picture have
                  to be on screen together, or setting a marker means scrolling away from
                  the frame you are setting it against. -->
-            <div class="relative flex max-h-[46vh] w-full max-w-3xl items-center justify-center overflow-hidden rounded border border-hairline bg-black">
+            <div class="relative flex max-h-[46vh] w-full items-center justify-center overflow-hidden rounded border border-hairline bg-black">
                 <video
                     ref="video"
                     class="max-h-[46vh] w-full object-contain"
@@ -415,40 +465,105 @@ watch(
 
                 <span class="ml-auto font-mono text-fg-2">{{ formatClock(playheadMs) }}</span>
             </div>
+            </div>
 
             <!-- Spans a padded view of the archive, not just the cut, so material outside
                  the markers stays reachable. -->
-            <div
-                ref="track"
-                class="relative h-14 w-full cursor-pointer select-none rounded border border-hairline bg-surface-2"
-                @pointerdown="onTrackPointerDown"
-            >
-                <div class="absolute inset-y-0 bg-primary-500/25" :style="selectionStyle"></div>
+            <div class="select-none rounded border border-hairline bg-surface-2">
+                <!-- Ruler. Times are the archive's own clock, which is what the markers
+                     are expressed in, so the operator reads one scale throughout. -->
+                <div class="relative h-5 border-b border-hairline">
+                    <template v-for="(tick, i) in ticks" :key="i">
+                        <div
+                            class="absolute bottom-0 w-px bg-fg-3/40"
+                            :class="tick.major ? 'h-2' : 'h-1'"
+                            :style="{ left: `${tick.left}%` }"
+                        ></div>
+                        <span
+                            v-if="tick.label"
+                            class="absolute top-0 -translate-x-1/2 font-mono text-[10px] leading-4 text-fg-3"
+                            :style="{ left: `${tick.left}%` }"
+                        >{{ tick.label }}</span>
+                    </template>
+                </div>
 
                 <div
-                    v-if="inPct !== null"
-                    class="absolute inset-y-0 -ml-1 w-2 cursor-ew-resize rounded-sm bg-primary-400"
-                    :style="{ left: `${inPct}%` }"
-                    title="Drag the in point"
-                    @pointerdown="grabHandle('in', $event)"
-                ></div>
-                <div
-                    v-if="outPct !== null"
-                    class="absolute inset-y-0 -ml-1 w-2 cursor-ew-resize rounded-sm bg-primary-400"
-                    :style="{ left: `${outPct}%` }"
-                    title="Drag the out point"
-                    @pointerdown="grabHandle('out', $event)"
-                ></div>
-                <div
-                    v-if="playheadPct !== null"
-                    class="pointer-events-none absolute inset-y-0 w-px bg-fg-1"
-                    :style="{ left: `${playheadPct}%` }"
-                ></div>
+                    ref="track"
+                    class="relative h-16 w-full cursor-pointer"
+                    @pointerdown="onTrackPointerDown"
+                    @pointermove="hoverMs = msFromClientX($event.clientX)"
+                    @pointerleave="hoverMs = null"
+                >
+                    <!-- Grid, continuing the ruler down through the track so a marker can
+                         be lined up against a time without moving the eye. -->
+                    <div
+                        v-for="(tick, i) in ticks"
+                        :key="`g${i}`"
+                        class="absolute inset-y-0 w-px"
+                        :class="tick.major ? 'bg-fg-3/15' : 'bg-fg-3/5'"
+                        :style="{ left: `${tick.left}%` }"
+                    ></div>
+
+                    <!-- Everything outside the cut is dimmed rather than the inside being
+                         tinted: what will be published should read as the normal state. -->
+                    <div
+                        v-if="inPct !== null"
+                        class="absolute inset-y-0 left-0 bg-surface-0/60"
+                        :style="{ width: `${inPct}%` }"
+                    ></div>
+                    <div
+                        v-if="outPct !== null"
+                        class="absolute inset-y-0 right-0 bg-surface-0/60"
+                        :style="{ width: `${100 - outPct}%` }"
+                    ></div>
+
+                    <div
+                        class="absolute inset-y-0 border-y-2 border-primary-500/70 bg-primary-500/15"
+                        :style="selectionStyle"
+                    ></div>
+
+                    <div
+                        v-if="hoverPct !== null && !dragging"
+                        class="pointer-events-none absolute inset-y-0 w-px bg-fg-1/30"
+                        :style="{ left: `${hoverPct}%` }"
+                    ></div>
+
+                    <div
+                        v-if="inPct !== null"
+                        class="group absolute inset-y-0 -ml-1.5 flex w-3 cursor-ew-resize items-center justify-center rounded-sm bg-primary-500"
+                        :style="{ left: `${inPct}%` }"
+                        title="Drag the in point"
+                        @pointerdown="grabHandle('in', $event)"
+                    >
+                        <div class="h-5 w-px bg-black/40"></div>
+                    </div>
+                    <div
+                        v-if="outPct !== null"
+                        class="group absolute inset-y-0 -ml-1.5 flex w-3 cursor-ew-resize items-center justify-center rounded-sm bg-primary-500"
+                        :style="{ left: `${outPct}%` }"
+                        title="Drag the out point"
+                        @pointerdown="grabHandle('out', $event)"
+                    >
+                        <div class="h-5 w-px bg-black/40"></div>
+                    </div>
+
+                    <div
+                        v-if="playheadPct !== null"
+                        class="pointer-events-none absolute inset-y-0 w-0.5 bg-fg-1"
+                        :style="{ left: `${playheadPct}%` }"
+                    >
+                        <div class="absolute -top-px -left-[3px] h-1.5 w-2 bg-fg-1"></div>
+                    </div>
+                </div>
             </div>
 
             <div class="flex justify-between font-mono text-[11px] text-fg-3">
                 <span>{{ formatClock(window_.from) }}</span>
-                <span class="text-fg-2">cut {{ formatDuration(cutSeconds) }}</span>
+                <span class="text-fg-2">
+                    cut {{ formatDuration(cutSeconds) }}
+                    <span class="text-fg-3">of {{ formatDuration(Math.round(window_.span / 1000)) }} shown</span>
+                    <span v-if="hoverMs !== null" class="ml-2">&middot; {{ formatClock(hoverMs) }}</span>
+                </span>
                 <span>{{ formatClock(window_.to) }}</span>
             </div>
 
