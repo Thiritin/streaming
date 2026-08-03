@@ -4,13 +4,13 @@ A self-hosted livestream platform for conventions. It takes RTMP from the encode
 
 Nothing about any one convention is baked in. Names, copy, links, logo, login background and accent colour live in the database and are edited in the admin panel.
 
-![Browse](docs/screenshots/browse.jpg)
+![Browse](.github/screenshots/browse.jpg)
 
 ## What it does
 
 **Watch.** A browse grid with a live hero, per-channel filters, hover previews and a programme guide. The player is HLS with a quality ladder, a seekable live window, theatre mode, a pop-out chat and an external-player link for VLC and friends. It works on a phone.
 
-<img src="docs/screenshots/mobile-player.jpg" alt="The player on a phone" width="320">
+<img src=".github/screenshots/mobile-player.jpg" alt="The player on a phone" width="320">
 
 
 **Chat.** One channel per source, so chat survives the handover from one show to the next. Timeouts, bans, purge, clear, announcements, slow mode and per-message actions, plus chat commands for moderators. Custom emotes are uploaded by users and approved by staff.
@@ -27,15 +27,15 @@ Nothing about any one convention is baked in. Names, copy, links, logo, login ba
 
 | | |
 |---|---|
-| ![Player and chat](docs/screenshots/player-chat.jpg) | ![Programme guide](docs/screenshots/schedule.png) |
+| ![Player and chat](.github/screenshots/player-chat.jpg) | ![Programme guide](.github/screenshots/schedule.png) |
 | Player, live chat and moderator badges | Programme guide across channels and days |
-| ![Archive](docs/screenshots/archive.jpg) | ![Cut editor](docs/screenshots/manage-cut-editor.jpg) |
+| ![Archive](.github/screenshots/archive.jpg) | ![Cut editor](.github/screenshots/manage-cut-editor.jpg) |
 | Archive, one collection per year | Cutting a recording out of the continuous archive |
-| ![Dashboard](docs/screenshots/manage-dashboard.png) | ![Planner](docs/screenshots/manage-planner.png) |
+| ![Dashboard](.github/screenshots/manage-dashboard.png) | ![Planner](.github/screenshots/manage-planner.png) |
 | Capacity, server health and what is on air | Planning the programme on a timeline |
-| ![Shows](docs/screenshots/manage-shows.png) | ![Settings](docs/screenshots/manage-settings.png) |
+| ![Shows](.github/screenshots/manage-shows.png) | ![Settings](.github/screenshots/manage-settings.png) |
 | Shows, with stream control per row | Branding, colours and links, applied without a rebuild |
-| ![Sources](docs/screenshots/manage-sources.png) | ![Sign-in](docs/screenshots/login.png) |
+| ![Sources](.github/screenshots/manage-sources.png) | ![Sign-in](.github/screenshots/login.png) |
 | Sources, one per room, each with its own stream key | Sign-in, with what is on air next to it |
 
 The demo content in these screenshots is [Big Buck Bunny](https://peach.blender.org/) (CC BY 3.0, Blender Foundation).

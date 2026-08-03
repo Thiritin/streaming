@@ -37,3 +37,8 @@ __pycache__/
 
 # Playwright MCP session artefacts (console logs, snapshots, screenshots)
 .playwright-mcp/
+
+# Throwaway screenshots dropped in the working directory. The ones the README
+# uses live in .github/screenshots.
+/*.png
+/*.jpg
