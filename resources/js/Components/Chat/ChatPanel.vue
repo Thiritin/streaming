@@ -255,29 +255,35 @@ const onBan = (message) => act(() => chat.moderation.ban(message.user.id))
                     Beginning of chat
                 </div>
 
-                <ChatMessage
-                    v-for="message in chat.messages.value"
-                    :key="message.id"
-                    :message="message"
-                    :emotes="emotes"
-                    :allowed-domains="allowedDomains"
-                    :current-user="currentUserName"
-                    :show-timestamps="showTimestamps"
-                    :can-moderate="chat.canModerate.value"
-                    :can-ban="!!chat.permissions.value.ban"
-                    :is-own="message.user?.id === chat.me.value?.id"
-                    @reply="startReply"
-                    @open-user="openUserCard"
-                    @delete="onDelete"
-                    @timeout="onTimeout"
-                    @ban="onBan"
-                />
+                <!-- Enter only, and only opacity/transform: a leave or move
+                     transition here would fight the autoscroll, and anything
+                     that changes height would break the scroll anchoring that
+                     `loadOlder` does off scrollHeight. -->
+                <TransitionGroup name="msg">
+                    <ChatMessage
+                        v-for="message in chat.messages.value"
+                        :key="message.id"
+                        :message="message"
+                        :emotes="emotes"
+                        :allowed-domains="allowedDomains"
+                        :current-user="currentUserName"
+                        :show-timestamps="showTimestamps"
+                        :can-moderate="chat.canModerate.value"
+                        :can-ban="!!chat.permissions.value.ban"
+                        :is-own="message.user?.id === chat.me.value?.id"
+                        @reply="startReply"
+                        @open-user="openUserCard"
+                        @delete="onDelete"
+                        @timeout="onTimeout"
+                        @ban="onBan"
+                    />
+                </TransitionGroup>
             </div>
 
             <transition
-                enter-active-class="transition duration-150"
+                enter-active-class="transition duration-(--dur-fast)"
                 enter-from-class="translate-y-2 opacity-0"
-                leave-active-class="transition duration-150"
+                leave-active-class="transition duration-(--dur-fast)"
                 leave-to-class="translate-y-2 opacity-0"
             >
                 <button
@@ -292,9 +298,9 @@ const onBan = (message) => act(() => chat.moderation.ban(message.user.id))
 
             <!-- Mod tools: overlays the top of the chat log, messages stay visible below -->
             <transition
-                enter-active-class="transition duration-200 ease-out"
+                enter-active-class="transition duration-(--dur-base) ease-(--ease-out-expo)"
                 enter-from-class="-translate-y-full opacity-0"
-                leave-active-class="transition duration-150 ease-in"
+                leave-active-class="transition duration-(--dur-fast) ease-(--ease-in-quart)"
                 leave-to-class="-translate-y-full opacity-0"
             >
                 <div v-if="showModTools" class="absolute inset-x-0 top-0 z-30">
@@ -311,9 +317,9 @@ const onBan = (message) => act(() => chat.moderation.ban(message.user.id))
 
             <!-- User card: same top overlay, stacked above the mod tools -->
             <transition
-                enter-active-class="transition duration-200 ease-out"
+                enter-active-class="transition duration-(--dur-base) ease-(--ease-out-expo)"
                 enter-from-class="-translate-y-full opacity-0"
-                leave-active-class="transition duration-150 ease-in"
+                leave-active-class="transition duration-(--dur-fast) ease-(--ease-in-quart)"
                 leave-to-class="-translate-y-full opacity-0"
             >
                 <div v-if="userCard" class="absolute inset-x-0 top-0 z-40">
@@ -365,3 +371,19 @@ const onBan = (message) => act(() => chat.moderation.ban(message.user.id))
 
     </div>
 </template>
+
+<style scoped>
+/* Messages arrive one at a time from a socket, so this stays cheap: opacity and
+   a 4px lift, no height, nothing that would move the scroll position under
+   someone reading. */
+.msg-enter-active {
+    transition:
+        opacity var(--dur-fast) var(--ease-out-quart),
+        transform var(--dur-fast) var(--ease-out-quart);
+}
+
+.msg-enter-from {
+    opacity: 0;
+    transform: translateY(4px);
+}
+</style>

@@ -8,25 +8,26 @@
   >
     <!-- Thumbnail Container -->
     <div
-      class="aspect-video relative bg-primary-900 rounded-xl overflow-hidden ring-1 ring-white/5 transition-all duration-300"
+      class="aspect-video relative bg-primary-900 rounded-xl overflow-hidden ring-1 ring-white/5 transition-all duration-(--dur-base)"
       :class="isPending
         ? 'ring-white/10'
         : 'group-hover:ring-2 group-hover:ring-primary-500/60 group-hover:shadow-lg group-hover:shadow-primary-500/20'"
     >
-      <!-- Thumbnail Image -->
-      <Transition
-        enter-active-class="transition-all duration-500 ease-out"
-        enter-from-class="opacity-0 blur-md"
-        enter-to-class="opacity-100 blur-0"
-      >
-        <img
-          v-if="recording.thumbnail_url && !isPending"
-          :src="recording.thumbnail_url"
-          :alt="recording.title"
-          class="w-full h-full object-cover absolute inset-0 transition-transform duration-500 group-hover:scale-105"
-          @error="handleImageError"
-        />
-      </Transition>
+      <!-- Thumbnail. The fade is driven by `load`, not by mount: an archive grid
+           scrolls past dozens of these and a still that pops in when its bytes
+           land is the thing that reads as cheap. -->
+      <img
+        v-if="recording.thumbnail_url && !isPending && !thumbnailError"
+        :src="recording.thumbnail_url"
+        :alt="recording.title"
+        :loading="priority ? 'eager' : 'lazy'"
+        :fetchpriority="priority ? 'high' : 'auto'"
+        decoding="async"
+        class="w-full h-full object-cover absolute inset-0 transition-[opacity,filter,transform] duration-(--dur-slow) ease-(--ease-out-expo) group-hover:scale-105"
+        :class="thumbnailLoaded ? 'opacity-100 blur-0' : 'opacity-0 blur-md'"
+        @load="thumbnailLoaded = true"
+        @error="handleImageError"
+      />
 
       <!-- Placeholder when no thumbnail -->
       <TilePlaceholder v-if="isPending || !recording.thumbnail_url || thumbnailError" :label="isPending ? null : recordingYear" />
@@ -60,9 +61,9 @@
         </div>
 
         <!-- Hover Overlay -->
-        <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10" />
+        <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-(--dur-base) z-10" />
         <div class="absolute inset-0 flex items-center justify-center z-10">
-          <div class="w-14 h-14 rounded-full bg-primary-500/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-300 shadow-lg shadow-primary-500/30">
+          <div class="w-14 h-14 rounded-full bg-primary-500/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-(--dur-base) ease-(--ease-spring) shadow-lg shadow-primary-500/30">
             <FaPlayIcon class="w-6 h-6 text-white ml-0.5" />
           </div>
         </div>
@@ -103,11 +104,18 @@ const props = defineProps({
   recording: {
     type: Object,
     required: true,
+  },
+  // Set on the tiles the first screen shows. Everything below the fold loads
+  // lazily, so a year page does not open a request per still on navigation.
+  priority: {
+    type: Boolean,
+    default: false,
   }
 });
 
 // State
 const thumbnailError = ref(false);
+const thumbnailLoaded = ref(false);
 
 // A show that has ended but has no published recording yet. It sits in the same grid
 // as everything else, dimmed and unclickable, so the year does not look like it is

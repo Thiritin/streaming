@@ -144,7 +144,9 @@ class UserController extends Controller
         return [
             'name' => $user->name,
             'sub' => $user->sub,
-            'reg_id' => $user->reg_id ?? '-',
+            // Null, not '-': this is a number column, and it renders its own
+            // placeholder for an empty cell.
+            'reg_id' => $user->reg_id,
             'roles' => $roles->isEmpty() ? '-' : $roles->pluck('name')->implode(', '),
             'server' => $user->server?->hostname ?? '-',
             'created_at' => $user->created_at?->format('M j, Y H:i'),

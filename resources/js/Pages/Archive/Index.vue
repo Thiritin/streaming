@@ -37,9 +37,15 @@
         </Link>
       </div>
 
-      <div v-if="searchResults.length" class="stream-grid">
-        <RecordingTile v-for="recording in searchResults" :key="recording.id" :recording="recording" />
-      </div>
+      <TransitionGroup v-if="searchResults.length" tag="div" name="tile" appear class="stream-grid">
+        <RecordingTile
+          v-for="(recording, index) in searchResults"
+          :key="recording.id"
+          :recording="recording"
+          :priority="index < 8"
+          :style="{ '--stagger': Math.min(index, 12) }"
+        />
+      </TransitionGroup>
       <p v-else class="py-16 text-center text-primary-400">Nothing matches that search.</p>
     </div>
 
@@ -48,7 +54,7 @@
       <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pb-10">
         <div v-if="collections.length" class="collection-grid">
           <Link
-            v-for="collection in collections"
+            v-for="(collection, index) in collections"
             :key="collection.year"
             :href="route('recordings.year', collection.year)"
             class="collection-card group"
@@ -58,7 +64,10 @@
                 v-if="collection.thumbnail_url"
                 :src="collection.thumbnail_url"
                 :alt="`${collection.year} collection`"
-                class="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                :loading="index < 4 ? 'eager' : 'lazy'"
+                :fetchpriority="index < 4 ? 'high' : 'auto'"
+                decoding="async"
+                class="absolute inset-0 h-full w-full object-cover transition-transform duration-(--dur-slow) ease-(--ease-out-expo) group-hover:scale-105"
               />
               <TilePlaceholder v-else />
 
@@ -103,9 +112,15 @@
           </Link>
         </div>
 
-        <div class="stream-grid">
-          <RecordingTile v-for="recording in recentRecordings" :key="recording.id" :recording="recording" />
-        </div>
+        <TransitionGroup tag="div" name="tile" appear class="stream-grid">
+          <!-- Below the year collections, so these always load lazily. -->
+          <RecordingTile
+            v-for="(recording, index) in recentRecordings"
+            :key="recording.id"
+            :recording="recording"
+            :style="{ '--stagger': Math.min(index, 12) }"
+          />
+        </TransitionGroup>
       </div>
     </template>
   </div>
@@ -161,7 +176,7 @@ const formatViews = (views) => {
 }
 
 .collection-card {
-  @apply flex flex-col overflow-hidden rounded-xl bg-primary-950/50 ring-1 ring-white/5 transition-all duration-300;
+  @apply flex flex-col overflow-hidden rounded-xl bg-primary-950/50 ring-1 ring-white/5 transition-all duration-(--dur-base);
 }
 
 .collection-card:hover {

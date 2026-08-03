@@ -215,7 +215,7 @@ const submit = () => {
             <CheckboxList
               v-model="form.required_roles"
               :options="options.roles"
-              empty-label="No roles exist yet."
+              empty-label="Nothing ticked: anyone can watch this recording."
             />
           </FormField>
         </FormSection>

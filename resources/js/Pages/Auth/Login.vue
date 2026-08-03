@@ -44,7 +44,7 @@ const error = computed(() => page.props.errors?.oidc ?? null);
             <div class="flex flex-col gap-3">
                 <a
                     :href="route('auth.login')"
-                    class="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-500 px-12 py-3 text-2xl font-semibold text-white transition-colors duration-200 hover:bg-primary-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 focus-visible:ring-offset-2 focus-visible:ring-offset-primary-900"
+                    class="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-500 px-12 py-3 text-2xl font-semibold text-white transition-colors duration-(--dur-base) hover:bg-primary-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 focus-visible:ring-offset-2 focus-visible:ring-offset-primary-900"
                 >
                     {{ login.buttonLabel }}
                     <span v-if="identity.name" class="sr-only">with {{ identity.name }}</span>

@@ -57,6 +57,7 @@ defineExpose({
             ref="playerRef"
             :src="hlsUrl"
             :title="showInfo?.title || ''"
+            :poster="showInfo?.thumbnail_url || ''"
             :is-live="true"
             :live-stream-type="liveStreamType"
             :autoplay="true"

@@ -520,6 +520,10 @@ class StreamController extends Controller
                     'source' => $s->source ? $s->source->name : null,
                     'status' => $s->status,
                     'scheduled_start' => $s->scheduled_start,
+                    // The same tile as the browse grid renders these, so without them
+                    // every "other live show" below the player is a blank placeholder.
+                    'thumbnail_url' => $s->thumbnail_url,
+                    'viewer_count' => $s->viewer_count,
                     'can_watch' => $s->canWatch(),
                     'is_restricted' => $s->hasAccessRestriction(),
                 ];

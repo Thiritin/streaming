@@ -49,12 +49,19 @@
 
     <!-- One grid for everything: live, upcoming and the archive -->
     <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 py-6">
-      <div v-if="visibleItems.length" class="stream-grid">
-        <template v-for="item in visibleItems" :key="`${item.kind}-${item.id}`">
-          <RecordingTile v-if="item.kind === 'archive'" :recording="item.data" />
-          <ShowTile v-else :show="item.data" />
-        </template>
-      </div>
+      <!-- One keyed child per item, so the group can track a tile across a filter
+           switch or an Echo update. `--stagger` caps at 12 to keep the tail of a
+           long grid from waiting on a delay nobody sees. -->
+      <TransitionGroup v-if="visibleItems.length" tag="div" name="tile" appear class="stream-grid">
+        <component
+          :is="item.kind === 'archive' ? RecordingTile : ShowTile"
+          v-for="(item, index) in visibleItems"
+          :key="`${item.kind}-${item.id}`"
+          v-bind="item.kind === 'archive' ? { recording: item.data } : { show: item.data }"
+          :priority="index < 8"
+          :style="{ '--stagger': Math.min(index, 12) }"
+        />
+      </TransitionGroup>
 
       <p v-else class="py-16 text-center text-primary-400">
         Nothing here right now.
@@ -239,7 +246,4 @@ onUnmounted(() => {
   display: none;
 }
 
-.stream-grid > * {
-  animation: fadeIn 0.35s ease-out forwards;
-}
 </style>

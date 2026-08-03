@@ -14,7 +14,11 @@ const tone = (name) => tones[name] ?? tones.success;
 </script>
 
 <template>
-  <div class="pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2">
+  <TransitionGroup
+    tag="div"
+    name="toast"
+    class="pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2"
+  >
     <div
       v-for="toast in toasts"
       :key="toast.id"
@@ -36,5 +40,33 @@ const tone = (name) => tones[name] ?? tones.success;
         <ManageIcon name="x" :size="14" />
       </button>
     </div>
-  </div>
+  </TransitionGroup>
 </template>
+
+<style scoped>
+/* Toasts come in from the right edge they are pinned to. A leaving toast is
+   taken out of flow so the stack below it slides up under `.toast-move` instead
+   of jumping once the fade finishes. */
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity var(--dur-base) var(--ease-out-expo),
+    transform var(--dur-base) var(--ease-out-expo);
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(1.5rem);
+}
+
+.toast-leave-active {
+  position: absolute;
+  right: 0;
+  width: 100%;
+}
+
+.toast-move {
+  transition: transform var(--dur-base) var(--ease-out-quart);
+}
+</style>

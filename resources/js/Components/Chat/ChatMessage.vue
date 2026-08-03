@@ -38,8 +38,11 @@ const noticeClasses = {
 }
 </script>
 
+<!-- The v-if chain (notice/system, announcement, regular message) is the only
+     root node on purpose. Comments at the root would make this a fragment in a
+     dev build, and the <TransitionGroup> in ChatPanel needs a single element to
+     hang its enter classes on. -->
 <template>
-    <!-- Inline notice: moderation events, command feedback, client-side errors -->
     <div
         v-if="message.type === 'notice' || message.type === 'system'"
         class="px-3 py-1.5 text-xs"
@@ -48,7 +51,6 @@ const noticeClasses = {
         <span class="mr-1 opacity-60">•</span>{{ message.body }}
     </div>
 
-    <!-- Announcement -->
     <div v-else-if="message.type === 'announcement'" class="px-2 py-1">
         <div class="rounded-md border-l-4 border-amber-400 bg-amber-400/10 px-3 py-2">
             <div class="mb-1 text-[10px] font-bold uppercase tracking-widest text-amber-300">Announcement</div>
@@ -77,7 +79,6 @@ const noticeClasses = {
         </div>
     </div>
 
-    <!-- Regular message -->
     <div
         v-else
         class="group relative px-3 py-[3px] text-sm leading-snug transition-colors hover:bg-primary-900/70"

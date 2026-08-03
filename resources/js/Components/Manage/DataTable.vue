@@ -83,6 +83,12 @@ const numberDisplay = (value) => {
     return value.display ?? null;
   }
 
+  // A non-numeric value would format as the literal "NaN", which reads as broken
+  // data rather than an empty cell, so it falls through to the placeholder.
+  if (Number.isNaN(Number(value))) {
+    return null;
+  }
+
   return new Intl.NumberFormat('en-GB').format(value).replace(/,/g, ' ');
 };
 

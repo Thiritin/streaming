@@ -46,9 +46,15 @@
     </div>
 
     <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pb-14">
-      <div v-if="recordings.length" class="stream-grid">
-        <RecordingTile v-for="recording in recordings" :key="recording.id" :recording="recording" />
-      </div>
+      <TransitionGroup v-if="recordings.length" tag="div" name="tile" appear class="stream-grid">
+        <RecordingTile
+          v-for="(recording, index) in recordings"
+          :key="recording.id"
+          :recording="recording"
+          :priority="index < 8"
+          :style="{ '--stagger': Math.min(index, 12) }"
+        />
+      </TransitionGroup>
 
       <p v-else class="py-16 text-center text-primary-400">
         {{ search ? `Nothing in ${year} matches that search.` : `Nothing published for ${year} yet.` }}

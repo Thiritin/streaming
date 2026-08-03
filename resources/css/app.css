@@ -142,17 +142,6 @@
 }
 
 /* Animation keyframes */
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
 @keyframes pulse {
     0%, 100% {
         opacity: 1;
@@ -181,6 +170,46 @@
    every element on the page animate, which showed up as dropped frames while
    scrolling. Components declare their own transitions on the few properties
    that actually change. */
+
+/* Tile grids (`.stream-grid` on browse and the archive). Shared here rather than
+   per page because all three grids use the same <TransitionGroup name="tile">.
+   Enter is staggered off an inline `--stagger` the page sets from the loop index,
+   so a filter switch deals the tiles out instead of flashing the whole set in.
+   There is deliberately no leave transition: a leaving tile that holds its grid
+   slot pushes the incoming set down, and dropping it immediately is also what
+   lets `.tile-move` measure honestly, so a show that goes live slides to its new
+   position instead of jumping. */
+.tile-enter-active {
+    transition:
+        opacity var(--dur-slow) var(--ease-out-expo),
+        transform var(--dur-slow) var(--ease-out-expo);
+    transition-delay: calc(var(--stagger, 0) * 22ms);
+}
+
+.tile-enter-from {
+    opacity: 0;
+    transform: translateY(12px);
+}
+
+.tile-move {
+    transition: transform var(--dur-base) var(--ease-out-quart);
+}
+
+/* One gate for every animation in the app. Components no longer carry their own
+   media query, and motion added later cannot ship without honouring the setting.
+   Durations collapse to ~0 rather than to `none` so Vue's <Transition> still gets
+   its transitionend/animationend and never strands an element mid-enter. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0ms !important;
+        scroll-behavior: auto !important;
+    }
+}
 
 /* Theater mode styles */
 body.theater-mode {

@@ -23,11 +23,19 @@
 
             <!-- Off air, or the stream has not attached yet -->
             <div v-if="!streaming" class="absolute inset-0">
+              <!-- The hero still is the page's LCP element, so it loads eagerly
+                   and at high priority; the fade is keyed on `load` so it eases
+                   in rather than snapping over the placeholder. -->
               <img
                 v-if="show.thumbnail_url"
                 :src="show.thumbnail_url"
                 :alt="show.title"
-                class="w-full h-full object-cover"
+                loading="eager"
+                fetchpriority="high"
+                decoding="async"
+                class="w-full h-full object-cover transition-[opacity,filter] duration-(--dur-slow) ease-(--ease-out-expo)"
+                :class="heroImageLoaded ? 'opacity-100 blur-0' : 'opacity-0 blur-md'"
+                @load="heroImageLoaded = true"
               />
               <TilePlaceholder v-else :label="show.source" />
 
@@ -136,6 +144,7 @@ const player = ref(null);
 const streaming = ref(false);
 const failed = ref(false);
 const muted = ref(true);
+const heroImageLoaded = ref(false);
 let hlsInstance = null;
 let recoveries = 0;
 const MAX_RECOVERIES = 3;

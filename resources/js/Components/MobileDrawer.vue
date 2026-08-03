@@ -48,10 +48,10 @@ onUnmounted(() => {
 <template>
   <!-- Backdrop -->
   <Transition
-    enter-active-class="transition-opacity ease-out duration-300"
+    enter-active-class="transition-opacity ease-(--ease-out-expo) duration-(--dur-base)"
     enter-from-class="opacity-0"
     enter-to-class="opacity-100"
-    leave-active-class="transition-opacity ease-in duration-200"
+    leave-active-class="transition-opacity ease-(--ease-in-quart) duration-(--dur-base)"
     leave-from-class="opacity-100"
     leave-to-class="opacity-0"
   >
@@ -64,10 +64,10 @@ onUnmounted(() => {
 
   <!-- Drawer -->
   <Transition
-    :enter-active-class="`transition-transform ease-out duration-300`"
+    :enter-active-class="`transition-transform ease-(--ease-out-expo) duration-(--dur-base)`"
     :enter-from-class="position === 'right' ? 'translate-x-full' : '-translate-x-full'"
     enter-to-class="translate-x-0"
-    :leave-active-class="`transition-transform ease-in duration-200`"
+    :leave-active-class="`transition-transform ease-(--ease-in-quart) duration-(--dur-base)`"
     leave-from-class="translate-x-0"
     :leave-to-class="position === 'right' ? 'translate-x-full' : '-translate-x-full'"
   >

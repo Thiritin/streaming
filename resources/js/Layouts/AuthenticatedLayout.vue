@@ -32,7 +32,9 @@ const chatEnabled = computed(() => page.props.features?.chat !== false);
     <div class="min-h-screen bg-primary-900 flex flex-col">
       <!-- Top Navigation Bar -->
       <nav class="bg-primary-950 sticky top-0 w-full z-50 border-b border-primary-800/50">
-        <div class="mx-auto max-w-page px-4 lg:px-6">
+        <!-- Same track as the page content (Container.vue), so the logo sits on the
+             same left edge as the first card below it. -->
+        <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8">
           <!-- Three tracks rather than justify-between: the middle one is what keeps the
                menu dead centre in the bar no matter how wide the logo or the user block get. -->
           <div class="grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-4">
@@ -181,10 +183,10 @@ const chatEnabled = computed(() => page.props.features?.chat !== false);
 
         <!-- Mobile Navigation Menu -->
         <Transition
-          enter-active-class="transition duration-200 ease-out"
+          enter-active-class="transition duration-(--dur-base) ease-(--ease-out-expo)"
           enter-from-class="opacity-0 -translate-y-2"
           enter-to-class="opacity-100 translate-y-0"
-          leave-active-class="transition duration-150 ease-in"
+          leave-active-class="transition duration-(--dur-fast) ease-(--ease-in-quart)"
           leave-from-class="opacity-100 translate-y-0"
           leave-to-class="opacity-0 -translate-y-2"
         >
@@ -250,7 +252,7 @@ const chatEnabled = computed(() => page.props.features?.chat !== false);
 
       <!-- Footer -->
       <footer class="border-t border-primary-800/50 bg-primary-950/50 py-6 mt-auto">
-        <div class="px-4 lg:px-6">
+        <div class="px-4 sm:px-6 lg:px-8">
           <div class="flex flex-col sm:flex-row items-center justify-between gap-4 max-w-page mx-auto">
             <div class="flex items-center gap-2 text-primary-400 text-sm">
               <Logo v-if="hasLogo" class="h-5 w-auto fill-current text-primary-500" />

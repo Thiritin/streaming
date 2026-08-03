@@ -69,7 +69,7 @@ const submit = () => form.put(route('manage.users.update', props.user.id), { pre
             <CheckboxList
               v-model="form.roles"
               :options="options.roles"
-              empty-label="No roles exist yet."
+              empty-label="No roles attached: this account has attendee access only."
             />
           </FormField>
         </FormSection>
