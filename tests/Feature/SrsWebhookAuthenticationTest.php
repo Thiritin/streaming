@@ -65,30 +65,14 @@ class SrsWebhookAuthenticationTest extends TestCase
     }
 
     /**
-     * Test successful authentication with valid streamkey
+     * Publisher authentication is per source, not per user.
+     *
+     * Two tests were removed here: one asserting a user's `streamkey` authenticated a
+     * publish, and one asserting `?streamkey=` and `?secret=` were interchangeable.
+     * Neither is true any more. `/api/srs/auth` compares `?secret=` against the source's
+     * own `stream_key`, or `?shared_secret=` for edge-to-origin forwards; a user's
+     * streamkey is only read on the playback path. See docs/dev-stack.md.
      */
-    public function test_auth_succeeds_with_valid_streamkey()
-    {
-        $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
-            'stream' => 'livestream',
-            'tcUrl' => 'rtmp://localhost/live',
-            'pageUrl' => '',
-            'param' => '?secret='.$this->userWithStreamkey->streamkey,
-        ]);
-
-        $response->assertStatus(200)
-            ->assertJson([
-                'code' => 0,
-                'client' => [
-                    'id' => (string) $this->userWithStreamkey->id,
-                ],
-            ])
-            ->assertJsonStructure([
-                'code',
-                'client' => ['id', 'signature'],
-            ]);
-    }
 
     /**
      * Test authentication fails with invalid streamkey
@@ -96,9 +80,9 @@ class SrsWebhookAuthenticationTest extends TestCase
     public function test_auth_fails_with_invalid_streamkey()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'livestream',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'pageUrl' => '',
             'param' => '?secret=invalid_streamkey_456',
         ]);
@@ -113,9 +97,9 @@ class SrsWebhookAuthenticationTest extends TestCase
     public function test_auth_fails_without_streamkey()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'livestream',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'pageUrl' => '',
             'param' => '',
         ]);
@@ -135,9 +119,9 @@ class SrsWebhookAuthenticationTest extends TestCase
         ]);
 
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'livestream',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'pageUrl' => '',
             'param' => '?secret='.$userWithoutServer->streamkey,
         ]);
@@ -162,9 +146,9 @@ class SrsWebhookAuthenticationTest extends TestCase
         $userWithoutPermission->assignRole($userRole);
 
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'livestream',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'pageUrl' => '',
             'param' => '?secret='.$userWithoutPermission->streamkey,
         ]);
@@ -179,7 +163,7 @@ class SrsWebhookAuthenticationTest extends TestCase
     public function test_server_auth_succeeds_with_valid_shared_secret()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://origin.server/live',
             'pageUrl' => '',
@@ -205,7 +189,7 @@ class SrsWebhookAuthenticationTest extends TestCase
     public function test_server_auth_fails_with_invalid_shared_secret()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://origin.server/live',
             'pageUrl' => '',
@@ -222,9 +206,9 @@ class SrsWebhookAuthenticationTest extends TestCase
     public function test_unpublish_webhook_returns_success()
     {
         $response = $this->postJson('/api/srs/unpublish', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'livestream',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'pageUrl' => '',
             'param' => '?secret='.$this->userWithStreamkey->streamkey,
         ]);
@@ -240,7 +224,7 @@ class SrsWebhookAuthenticationTest extends TestCase
     {
         // Send both shared_secret and streamkey
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://origin.server/live',
             'pageUrl' => '',
@@ -264,9 +248,9 @@ class SrsWebhookAuthenticationTest extends TestCase
     public function test_auth_handles_malformed_param_string()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'livestream',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'pageUrl' => '',
             'param' => 'malformed&&&==param',
         ]);
@@ -275,43 +259,4 @@ class SrsWebhookAuthenticationTest extends TestCase
             ->assertJson(['code' => 403]);
     }
 
-    /**
-     * Test that both 'secret' and 'streamkey' parameters are accepted
-     */
-    public function test_auth_accepts_both_secret_and_streamkey_params()
-    {
-        // Test with 'streamkey' parameter
-        $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
-            'stream' => 'livestream',
-            'tcUrl' => 'rtmp://localhost/live',
-            'pageUrl' => '',
-            'param' => '?streamkey='.$this->userWithStreamkey->streamkey,
-        ]);
-
-        $response->assertStatus(200)
-            ->assertJson([
-                'code' => 0,
-                'client' => [
-                    'id' => (string) $this->userWithStreamkey->id,
-                ],
-            ]);
-
-        // Test with 'secret' parameter (already tested above, but let's be explicit)
-        $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
-            'stream' => 'livestream',
-            'tcUrl' => 'rtmp://localhost/live',
-            'pageUrl' => '',
-            'param' => '?secret='.$this->userWithStreamkey->streamkey,
-        ]);
-
-        $response->assertStatus(200)
-            ->assertJson([
-                'code' => 0,
-                'client' => [
-                    'id' => (string) $this->userWithStreamkey->id,
-                ],
-            ]);
-    }
 }
