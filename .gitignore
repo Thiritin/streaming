@@ -34,3 +34,6 @@ logs
 
 # Python bytecode from the DVR uploader image build
 __pycache__/
+
+# Playwright MCP session artefacts (console logs, snapshots, screenshots)
+.playwright-mcp/

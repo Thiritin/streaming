@@ -56,17 +56,52 @@ const inMs = computed(() => toMs(props.startsAt));
 const outMs = computed(() => toMs(props.endsAt));
 
 /**
- * The visible span. Padded around the cut so there is context on both sides, then clamped
- * to what the archive actually holds.
+ * The visible span, held as state rather than derived from the markers.
+ *
+ * Deriving it was a mistake: dragging a handle moved the window, which rescaled the
+ * timeline under the cursor, so the handle chased the pointer and the bar appeared to
+ * grow. The coordinate system has to stay fixed while dragging. It only changes when the
+ * operator asks for it, via fitToCut / showWholeArchive.
  */
+const view = ref(null);
+
 const window_ = computed(() => {
-    if (!archive.value) return null;
+    if (!view.value) return null;
+    return { ...view.value, span: view.value.to - view.value.from };
+});
+
+/** Frame the cut with context on either side, clamped to what the archive holds. */
+const fitToCut = () => {
+    if (!archive.value) return;
     const pad = props.padMinutes * 60_000;
     const from = Math.max(archive.value.from, (inMs.value ?? archive.value.from) - pad);
     const to = Math.min(archive.value.to, (outMs.value ?? archive.value.to) + pad);
-    if (to <= from) return null;
-    return { from, to, span: to - from };
-});
+    if (to > from) view.value = { from, to };
+};
+
+const showWholeArchive = () => {
+    if (!archive.value) return;
+    view.value = { from: archive.value.from, to: archive.value.to };
+};
+
+// Synchronously, not in onMounted: the template dereferences the window on its very first
+// render, which happens before mounted hooks run.
+fitToCut();
+
+/** Zoom about the playhead, so the frame being examined stays put. */
+const zoom = (factor) => {
+    if (!view.value || !archive.value) return;
+    const span = view.value.to - view.value.from;
+    const centre = playheadMs.value ?? view.value.from + span / 2;
+    const next = Math.max(60_000, Math.min(archive.value.to - archive.value.from, span * factor));
+    let from = centre - (centre - view.value.from) * (next / span);
+    let to = from + next;
+
+    if (from < archive.value.from) { from = archive.value.from; to = from + next; }
+    if (to > archive.value.to) { to = archive.value.to; from = to - next; }
+
+    view.value = { from: Math.max(archive.value.from, from), to: Math.min(archive.value.to, to) };
+};
 
 const pct = (ms) => {
     if (!window_.value || ms === null) return null;
@@ -311,25 +346,35 @@ onMounted(() => {
     window.addEventListener('keydown', onKeydown);
 });
 
+// The archive bounds arrive with the page, but guard against them landing late.
+watch(archive, (value, previous) => {
+    if (value && !previous) {
+        fitToCut();
+        loadPreview();
+    }
+});
+
 onBeforeUnmount(() => {
     window.removeEventListener('keydown', onKeydown);
     window.removeEventListener('pointermove', onPointerMove);
     hls?.destroy();
 });
 
-// Reload only when the window actually moves, not on every marker nudge, so dragging a
-// handle does not tear down the player mid-gesture.
+// Reloads only when the view is deliberately changed (fit, zoom, whole archive). Marker
+// edits no longer touch the window at all, so dragging never tears down the player.
 watch(
-    () => (window_.value ? `${window_.value.from}-${window_.value.to}` : null),
+    () => (view.value ? `${view.value.from}-${view.value.to}` : null),
     (next, previous) => {
-        if (next && next !== previous && !dragging.value) loadPreview();
+        if (next && previous && next !== previous) loadPreview();
     },
 );
 </script>
 
 <template>
     <div ref="root" tabindex="-1" class="space-y-3 outline-none">
-        <div v-if="!archive" class="rounded border border-hairline bg-surface-2 p-4 text-sm text-fg-3">
+        <!-- Guarded on the window rather than the archive, because the template
+             dereferences the window and the two are not set at the same moment. -->
+        <div v-if="!window_" class="rounded border border-hairline bg-surface-2 p-4 text-sm text-fg-3">
             No archive is available for this source yet, so there is nothing to cut.
             Segments appear a few seconds behind live.
         </div>
@@ -359,6 +404,15 @@ watch(
                 <button type="button" class="cut-btn" @click="togglePlay">Play / pause</button>
                 <button type="button" class="cut-btn" @click="previewStart">Preview start</button>
                 <button type="button" class="cut-btn" @click="previewEnd">Preview last 5s</button>
+
+                <span class="mx-1 text-fg-3">|</span>
+                <!-- The view is fixed while editing, so these are the only way to reach
+                     material outside the current frame. -->
+                <button type="button" class="cut-btn" @click="zoom(0.5)" title="Zoom in around the playhead">+</button>
+                <button type="button" class="cut-btn" @click="zoom(2)" title="Zoom out around the playhead">-</button>
+                <button type="button" class="cut-btn" @click="fitToCut">Fit to cut</button>
+                <button type="button" class="cut-btn" @click="showWholeArchive">Whole archive</button>
+
                 <span class="ml-auto font-mono text-fg-2">{{ formatClock(playheadMs) }}</span>
             </div>
 
