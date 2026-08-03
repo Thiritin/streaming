@@ -152,7 +152,7 @@ const submit = () => {
               v-model:starts-at="form.starts_at"
               v-model:ends-at="form.ends_at"
               :available="available"
-              :preview-url="recording?.m3u8_url"
+              :recording-id="recording.id"
             />
           </FormField>
           <p v-if="recording?.build_error" class="text-xs text-danger-500">

@@ -265,6 +265,46 @@ class RecordingController extends Controller
     }
 
     /**
+     * Playlist for an arbitrary window of the source archive, for the trim editor.
+     *
+     * Separate from the recording's own playlist because the editor has to show material
+     * outside the current markers; that is how an operator finds where the show actually
+     * starts. The window is bounded so a careless request cannot ask for seven days of a
+     * continuously running source in one playlist.
+     */
+    public function preview(Request $request, Recording $recording)
+    {
+        $this->authorize('view', $recording);
+
+        $source = $recording->archiveSourceSlug();
+        abort_unless($source, 404);
+
+        $rendition = $request->string('rendition', 'hd')->toString();
+        $service = app(ArchivePlaylistService::class);
+
+        abort_unless(in_array($rendition, $service->renditions(), true), 404);
+
+        $from = CarbonImmutable::parse($request->string('from')->toString());
+        $to = CarbonImmutable::parse($request->string('to')->toString());
+
+        if ($to->diffInHours($from) > 4) {
+            $to = $from->addHours(4);
+        }
+
+        try {
+            $body = $service->renderRange($source, $from, $to, $rendition);
+        } catch (\Throwable $e) {
+            abort(410, $e->getMessage());
+        }
+
+        return response($body, 200, [
+            'Content-Type' => 'application/vnd.apple.mpegurl',
+            // Segment URLs inside are signed and time limited.
+            'Cache-Control' => 'private, no-store',
+        ]);
+    }
+
+    /**
      * How much of the source's archive is still cuttable.
      *
      * Bounded at both ends for different reasons: the uploader runs a few seconds behind

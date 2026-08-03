@@ -3,113 +3,183 @@
  * Sets the in/out markers of a recording against its source archive.
  *
  * A cut is a time range, not a rendered file: saving rewrites a playlist, so trimming is
- * non-destructive and can be redone any number of times. That is why this edits absolute
- * wall-clock instants rather than offsets into a video - the archive is a continuous
- * per-source timeline and a recording is a window onto it.
+ * non-destructive and repeatable. The editor therefore works in absolute wall clock, not
+ * offsets into a video, because the archive is one continuous per-source timeline and a
+ * recording is a window onto it.
  *
- * Markers snap to the 2s segment grid because nothing is ever cut inside a segment; that
- * is what keeps the joins seamless. Sub-segment precision would be a lie.
+ * The preview deliberately covers a padded window *around* the cut rather than the cut
+ * itself. Finding the real start means watching what happened before the current in
+ * point, which a preview limited to the current markers cannot show.
  */
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import Hls from 'hls.js';
 
 const props = defineProps({
+    recordingId: { type: [Number, String], required: true },
     startsAt: { type: String, default: null },
     endsAt: { type: String, default: null },
-    /** Bounds of the archive: { from, to } as ISO strings. Outside this there is nothing to cut. */
+    /** Bounds of the archive: { from, to } ISO strings. Outside this there is nothing to cut. */
     available: { type: Object, default: () => ({ from: null, to: null }) },
-    /** Playable master playlist for previewing, if the cut has been built. */
-    previewUrl: { type: String, default: null },
     segmentSeconds: { type: Number, default: 2 },
+    /** Minutes of archive shown on either side of the cut. */
+    padMinutes: { type: Number, default: 5 },
 });
 
 const emit = defineEmits(['update:startsAt', 'update:endsAt']);
 
 const video = ref(null);
-const playhead = ref(0);
+const track = ref(null);
+const root = ref(null);
+
+let hls = null;
+
+const playheadMs = ref(null);
+const dragging = ref(null);
+const loading = ref(false);
+const loadError = ref(null);
+/** Wall-clock instant the loaded preview begins at, for mapping currentTime -> absolute. */
+const previewStartMs = ref(null);
+/** Set while previewing a marker, so playback can be stopped at the right point. */
+const stopAtMs = ref(null);
 
 const toMs = (v) => (v ? new Date(v).getTime() : null);
+const toIso = (ms) => new Date(ms).toISOString();
 
-const bounds = computed(() => {
+const archive = computed(() => {
     const from = toMs(props.available.from);
     const to = toMs(props.available.to);
     if (from === null || to === null || to <= from) return null;
-    return { from, to, span: to - from };
+    return { from, to };
 });
 
 const inMs = computed(() => toMs(props.startsAt));
 const outMs = computed(() => toMs(props.endsAt));
 
-/** Position within the archive window, 0-100, for the marker overlays. */
+/**
+ * The visible span. Padded around the cut so there is context on both sides, then clamped
+ * to what the archive actually holds.
+ */
+const window_ = computed(() => {
+    if (!archive.value) return null;
+    const pad = props.padMinutes * 60_000;
+    const from = Math.max(archive.value.from, (inMs.value ?? archive.value.from) - pad);
+    const to = Math.min(archive.value.to, (outMs.value ?? archive.value.to) + pad);
+    if (to <= from) return null;
+    return { from, to, span: to - from };
+});
+
 const pct = (ms) => {
-    if (!bounds.value || ms === null) return null;
-    return Math.min(100, Math.max(0, ((ms - bounds.value.from) / bounds.value.span) * 100));
+    if (!window_.value || ms === null) return null;
+    return Math.min(100, Math.max(0, ((ms - window_.value.from) / window_.value.span) * 100));
 };
 
 const inPct = computed(() => pct(inMs.value));
 const outPct = computed(() => pct(outMs.value));
+const playheadPct = computed(() => pct(playheadMs.value));
 
 const selectionStyle = computed(() => {
     if (inPct.value === null || outPct.value === null) return { display: 'none' };
     return { left: `${inPct.value}%`, width: `${Math.max(0, outPct.value - inPct.value)}%` };
 });
 
-const duration = computed(() => {
-    if (inMs.value === null || outMs.value === null) return null;
-    return Math.max(0, Math.round((outMs.value - inMs.value) / 1000));
-});
+const cutSeconds = computed(() =>
+    inMs.value === null || outMs.value === null
+        ? null
+        : Math.max(0, Math.round((outMs.value - inMs.value) / 1000)),
+);
 
-const formatDuration = (seconds) => {
-    if (seconds === null) return '--:--';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
+const formatDuration = (s) => {
+    if (s === null) return '--:--';
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
     return h > 0
-        ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-        : `${m}:${String(s).padStart(2, '0')}`;
+        ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+        : `${m}:${String(sec).padStart(2, '0')}`;
 };
 
 const formatClock = (ms) =>
+    ms === null ? '--:--:--' : new Date(ms).toISOString().slice(11, 19);
+
+const formatFull = (ms) =>
     ms === null ? '--' : new Date(ms).toISOString().replace('T', ' ').slice(0, 19) + 'Z';
 
-/** Snap to the segment grid, measured from the start of the archive window. */
+/** Markers snap to the segment grid; nothing is ever cut inside a segment. */
 const snap = (ms) => {
-    if (!bounds.value) return ms;
+    if (!archive.value) return ms;
     const grid = props.segmentSeconds * 1000;
-    return bounds.value.from + Math.round((ms - bounds.value.from) / grid) * grid;
+    return archive.value.from + Math.round((ms - archive.value.from) / grid) * grid;
 };
 
-const clamp = (ms) => {
-    if (!bounds.value) return ms;
-    return Math.min(bounds.value.to, Math.max(bounds.value.from, ms));
-};
+const clampToArchive = (ms) =>
+    !archive.value ? ms : Math.min(archive.value.to, Math.max(archive.value.from, ms));
 
 const setMarker = (which, ms) => {
-    const value = new Date(snap(clamp(ms))).toISOString();
-    emit(which === 'in' ? 'update:startsAt' : 'update:endsAt', value);
+    let value = snap(clampToArchive(ms));
+
+    // Keep the markers ordered and at least one segment apart, so a drag past the other
+    // handle pushes rather than inverting the range.
+    const grid = props.segmentSeconds * 1000;
+    if (which === 'in' && outMs.value !== null) value = Math.min(value, outMs.value - grid);
+    if (which === 'out' && inMs.value !== null) value = Math.max(value, inMs.value + grid);
+
+    emit(which === 'in' ? 'update:startsAt' : 'update:endsAt', toIso(value));
 };
 
-const msFromEvent = (event) => {
-    if (!bounds.value) return null;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    return bounds.value.from + ratio * bounds.value.span;
+const msFromClientX = (clientX) => {
+    if (!window_.value || !track.value) return null;
+    const rect = track.value.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return window_.value.from + ratio * window_.value.span;
 };
 
-const scrubTo = (event) => {
-    const ms = msFromEvent(event);
-    if (ms === null) return;
-    playhead.value = ms;
-
-    // The preview plays the current cut, so seeking is relative to the in marker.
-    if (video.value && inMs.value !== null) {
-        const offset = (ms - inMs.value) / 1000;
-        if (offset >= 0 && Number.isFinite(video.value.duration)) {
-            video.value.currentTime = Math.min(offset, video.value.duration);
-        }
+/** Move the video to an absolute instant. */
+const seekTo = (ms) => {
+    playheadMs.value = ms;
+    if (!video.value || previewStartMs.value === null) return;
+    const offset = (ms - previewStartMs.value) / 1000;
+    if (offset >= 0 && Number.isFinite(video.value.duration)) {
+        video.value.currentTime = Math.min(offset, video.value.duration);
     }
 };
 
-const markHere = (which) => setMarker(which, playhead.value || inMs.value || bounds.value?.from);
+const onTrackPointerDown = (event) => {
+    const ms = msFromClientX(event.clientX);
+    if (ms === null) return;
+
+    // Grab whichever handle is nearer, so the track behaves like a range slider rather
+    // than only scrubbing.
+    const near = (a) => (a === null ? Infinity : Math.abs(a - ms));
+    const grabbable = window_.value.span * 0.02;
+
+    if (Math.min(near(inMs.value), near(outMs.value)) < grabbable) {
+        dragging.value = near(inMs.value) <= near(outMs.value) ? 'in' : 'out';
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp, { once: true });
+        return;
+    }
+
+    stopAtMs.value = null;
+    seekTo(ms);
+};
+
+const onPointerMove = (event) => {
+    if (!dragging.value) return;
+    const ms = msFromClientX(event.clientX);
+    if (ms !== null) setMarker(dragging.value, ms);
+};
+
+const onPointerUp = () => {
+    dragging.value = null;
+    window.removeEventListener('pointermove', onPointerMove);
+};
+
+const grabHandle = (which, event) => {
+    event.stopPropagation();
+    dragging.value = which;
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp, { once: true });
+};
 
 const nudge = (which, segments) => {
     const current = which === 'in' ? inMs.value : outMs.value;
@@ -117,99 +187,250 @@ const nudge = (which, segments) => {
     setMarker(which, current + segments * props.segmentSeconds * 1000);
 };
 
-// Keep the playhead inside the archive when the bounds arrive after mount.
-watch(bounds, (value) => {
-    if (value && (playhead.value < value.from || playhead.value > value.to)) {
-        playhead.value = inMs.value ?? value.from;
-    }
-}, { immediate: true });
+const markHere = (which) => {
+    if (playheadMs.value === null) return;
+    setMarker(which, playheadMs.value);
+};
 
-const playheadPct = computed(() => pct(playhead.value));
+/** Play from the in point, which is what a viewer will see first. */
+const previewStart = () => {
+    if (inMs.value === null) return;
+    stopAtMs.value = inMs.value + 10_000;
+    seekTo(inMs.value);
+    video.value?.play();
+};
+
+/** Play the last few seconds, which is where a bad out point actually shows. */
+const previewEnd = () => {
+    if (outMs.value === null) return;
+    stopAtMs.value = outMs.value;
+    seekTo(outMs.value - 5_000);
+    video.value?.play();
+};
+
+const togglePlay = () => {
+    if (!video.value) return;
+    stopAtMs.value = null;
+    video.value.paused ? video.value.play() : video.value.pause();
+};
+
+const onTimeUpdate = () => {
+    if (!video.value || previewStartMs.value === null) return;
+    playheadMs.value = previewStartMs.value + video.value.currentTime * 1000;
+
+    if (stopAtMs.value !== null && playheadMs.value >= stopAtMs.value) {
+        video.value.pause();
+        stopAtMs.value = null;
+    }
+};
+
+const onKeydown = (event) => {
+    // Never hijack typing in the surrounding form.
+    const tag = event.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable) return;
+    if (!root.value?.contains(event.target)) return;
+
+    const step = event.shiftKey ? 5 : 1;
+    const handled = () => {
+        event.preventDefault();
+        event.stopPropagation();
+    };
+
+    switch (event.key.toLowerCase()) {
+        case 'i': markHere('in'); return handled();
+        case 'o': markHere('out'); return handled();
+        case 'k': case ' ': togglePlay(); return handled();
+        case 'j': seekTo((playheadMs.value ?? 0) - step * 1000); return handled();
+        case 'l': seekTo((playheadMs.value ?? 0) + step * 1000); return handled();
+        case 'arrowleft': seekTo((playheadMs.value ?? 0) - props.segmentSeconds * 1000); return handled();
+        case 'arrowright': seekTo((playheadMs.value ?? 0) + props.segmentSeconds * 1000); return handled();
+        case '[': nudge('in', -step); return handled();
+        case ']': nudge('in', step); return handled();
+        case '{': nudge('out', -step); return handled();
+        case '}': nudge('out', step); return handled();
+        case 'home': previewStart(); return handled();
+        case 'end': previewEnd(); return handled();
+    }
+};
+
+/**
+ * hls.js rather than a bare <video src>: browsers other than Safari have no native HLS,
+ * and a raw .m3u8 in a src attribute fails with "no video with supported format found".
+ */
+const loadPreview = async () => {
+    if (!window_.value || !video.value) return;
+
+    const url =
+        route('manage.recordings.preview', props.recordingId) +
+        `?from=${encodeURIComponent(toIso(window_.value.from))}` +
+        `&to=${encodeURIComponent(toIso(window_.value.to))}&rendition=hd`;
+
+    loading.value = true;
+    loadError.value = null;
+
+    // The playlist's first segment can start slightly before the requested window, since
+    // selection is by segment start. Read the real start so currentTime maps to the right
+    // instant instead of drifting by up to one segment.
+    try {
+        const text = await fetch(url, { headers: { Accept: 'application/vnd.apple.mpegurl' } })
+            .then((r) => {
+                if (!r.ok) throw new Error(`Preview unavailable (${r.status})`);
+                return r.text();
+            });
+        const match = text.match(/#EXT-X-PROGRAM-DATE-TIME:(.+)/);
+        previewStartMs.value = match ? new Date(match[1].trim()).getTime() : window_.value.from;
+    } catch (e) {
+        loading.value = false;
+        loadError.value = e.message;
+        return;
+    }
+
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+
+    if (Hls.isSupported()) {
+        hls = new Hls({ enableWorker: true, lowLatencyMode: false, backBufferLength: 120 });
+        hls.on(Hls.Events.ERROR, (_e, data) => {
+            if (data.fatal) loadError.value = `Playback error: ${data.details}`;
+        });
+        hls.loadSource(url);
+        hls.attachMedia(video.value);
+    } else {
+        // Safari plays HLS natively.
+        video.value.src = url;
+    }
+
+    loading.value = false;
+    if (inMs.value !== null) playheadMs.value = inMs.value;
+};
+
+onMounted(() => {
+    loadPreview();
+    window.addEventListener('keydown', onKeydown);
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('keydown', onKeydown);
+    window.removeEventListener('pointermove', onPointerMove);
+    hls?.destroy();
+});
+
+// Reload only when the window actually moves, not on every marker nudge, so dragging a
+// handle does not tear down the player mid-gesture.
+watch(
+    () => (window_.value ? `${window_.value.from}-${window_.value.to}` : null),
+    (next, previous) => {
+        if (next && next !== previous && !dragging.value) loadPreview();
+    },
+);
 </script>
 
 <template>
-    <div class="space-y-4">
-        <div v-if="!bounds" class="rounded border border-hairline bg-surface-2 p-4 text-sm text-fg-3">
-            No archive is available for this source yet, so there is nothing to cut. Segments
-            appear here a few seconds behind live.
+    <div ref="root" tabindex="-1" class="space-y-3 outline-none">
+        <div v-if="!archive" class="rounded border border-hairline bg-surface-2 p-4 text-sm text-fg-3">
+            No archive is available for this source yet, so there is nothing to cut.
+            Segments appear a few seconds behind live.
         </div>
 
         <template v-else>
-            <div class="overflow-hidden rounded border border-hairline bg-black">
+            <div class="relative overflow-hidden rounded border border-hairline bg-black">
                 <video
-                    v-if="previewUrl"
                     ref="video"
-                    :src="previewUrl"
-                    controls
                     class="aspect-video w-full"
+                    playsinline
+                    muted
+                    @timeupdate="onTimeUpdate"
+                    @click="togglePlay"
                 ></video>
-                <div v-else class="flex aspect-video w-full items-center justify-center text-sm text-fg-3">
-                    Save the cut to generate a preview.
-                </div>
-            </div>
-
-            <!-- The scrubber spans the whole archive window, not the cut, so an operator
-                 can see how much material sits outside the current markers. -->
-            <div>
                 <div
-                    class="relative h-12 w-full cursor-pointer rounded border border-hairline bg-surface-2"
-                    @click="scrubTo"
+                    v-if="loadError"
+                    class="absolute inset-0 flex items-center justify-center bg-black/80 p-4 text-center text-sm text-danger-400"
                 >
-                    <div class="absolute inset-y-0 bg-primary-500/25" :style="selectionStyle"></div>
-
-                    <div
-                        v-if="inPct !== null"
-                        class="absolute inset-y-0 w-0.5 bg-primary-500"
-                        :style="{ left: `${inPct}%` }"
-                    ></div>
-                    <div
-                        v-if="outPct !== null"
-                        class="absolute inset-y-0 w-0.5 bg-primary-500"
-                        :style="{ left: `${outPct}%` }"
-                    ></div>
-                    <div
-                        v-if="playheadPct !== null"
-                        class="absolute inset-y-0 w-px bg-fg-1"
-                        :style="{ left: `${playheadPct}%` }"
-                    ></div>
-                </div>
-
-                <div class="mt-1 flex justify-between text-[11px] text-fg-3">
-                    <span>{{ formatClock(bounds.from) }}</span>
-                    <span>archive available</span>
-                    <span>{{ formatClock(bounds.to) }}</span>
+                    {{ loadError }}
                 </div>
             </div>
 
-            <div class="grid gap-4 sm:grid-cols-2">
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <button type="button" class="cut-btn" @click="togglePlay">Play / pause</button>
+                <button type="button" class="cut-btn" @click="previewStart">Preview start</button>
+                <button type="button" class="cut-btn" @click="previewEnd">Preview last 5s</button>
+                <span class="ml-auto font-mono text-fg-2">{{ formatClock(playheadMs) }}</span>
+            </div>
+
+            <!-- Spans a padded view of the archive, not just the cut, so material outside
+                 the markers stays reachable. -->
+            <div
+                ref="track"
+                class="relative h-14 w-full cursor-pointer select-none rounded border border-hairline bg-surface-2"
+                @pointerdown="onTrackPointerDown"
+            >
+                <div class="absolute inset-y-0 bg-primary-500/25" :style="selectionStyle"></div>
+
+                <div
+                    v-if="inPct !== null"
+                    class="absolute inset-y-0 -ml-1 w-2 cursor-ew-resize rounded-sm bg-primary-400"
+                    :style="{ left: `${inPct}%` }"
+                    title="Drag the in point"
+                    @pointerdown="grabHandle('in', $event)"
+                ></div>
+                <div
+                    v-if="outPct !== null"
+                    class="absolute inset-y-0 -ml-1 w-2 cursor-ew-resize rounded-sm bg-primary-400"
+                    :style="{ left: `${outPct}%` }"
+                    title="Drag the out point"
+                    @pointerdown="grabHandle('out', $event)"
+                ></div>
+                <div
+                    v-if="playheadPct !== null"
+                    class="pointer-events-none absolute inset-y-0 w-px bg-fg-1"
+                    :style="{ left: `${playheadPct}%` }"
+                ></div>
+            </div>
+
+            <div class="flex justify-between font-mono text-[11px] text-fg-3">
+                <span>{{ formatClock(window_.from) }}</span>
+                <span class="text-fg-2">cut {{ formatDuration(cutSeconds) }}</span>
+                <span>{{ formatClock(window_.to) }}</span>
+            </div>
+
+            <div class="grid gap-3 sm:grid-cols-2">
                 <div class="space-y-1">
-                    <div class="flex items-center gap-2">
-                        <button type="button" class="rounded border border-hairline px-2 py-1 text-xs" @click="markHere('in')">
-                            Set in here
-                        </button>
-                        <button type="button" class="rounded border border-hairline px-2 py-1 text-xs" @click="nudge('in', -1)">-2s</button>
-                        <button type="button" class="rounded border border-hairline px-2 py-1 text-xs" @click="nudge('in', 1)">+2s</button>
+                    <div class="flex flex-wrap items-center gap-1">
+                        <button type="button" class="cut-btn" @click="markHere('in')">Set in (I)</button>
+                        <button type="button" class="cut-btn" @click="nudge('in', -1)">-2s</button>
+                        <button type="button" class="cut-btn" @click="nudge('in', 1)">+2s</button>
                     </div>
-                    <p class="font-mono text-xs text-fg-2">in &nbsp;{{ formatClock(inMs) }}</p>
+                    <p class="font-mono text-[11px] text-fg-2">in &nbsp;{{ formatFull(inMs) }}</p>
                 </div>
 
                 <div class="space-y-1">
-                    <div class="flex items-center gap-2">
-                        <button type="button" class="rounded border border-hairline px-2 py-1 text-xs" @click="markHere('out')">
-                            Set out here
-                        </button>
-                        <button type="button" class="rounded border border-hairline px-2 py-1 text-xs" @click="nudge('out', -1)">-2s</button>
-                        <button type="button" class="rounded border border-hairline px-2 py-1 text-xs" @click="nudge('out', 1)">+2s</button>
+                    <div class="flex flex-wrap items-center gap-1">
+                        <button type="button" class="cut-btn" @click="markHere('out')">Set out (O)</button>
+                        <button type="button" class="cut-btn" @click="nudge('out', -1)">-2s</button>
+                        <button type="button" class="cut-btn" @click="nudge('out', 1)">+2s</button>
                     </div>
-                    <p class="font-mono text-xs text-fg-2">out {{ formatClock(outMs) }}</p>
+                    <p class="font-mono text-[11px] text-fg-2">out {{ formatFull(outMs) }}</p>
                 </div>
             </div>
 
-            <p class="text-xs text-fg-3">
-                Cut length {{ formatDuration(duration) }}. Markers snap to {{ segmentSeconds }}s
-                because segments are never split; saving rewrites the playlist, so this can be
-                adjusted again at any time.
+            <p class="text-[11px] leading-relaxed text-fg-3">
+                <span class="font-mono">K</span>/space play,
+                <span class="font-mono">J</span>/<span class="font-mono">L</span> back/forward 1s
+                (shift 5s), <span class="font-mono">arrows</span> one segment,
+                <span class="font-mono">I</span>/<span class="font-mono">O</span> set in/out at the
+                playhead, <span class="font-mono">[</span> <span class="font-mono">]</span> nudge in,
+                <span class="font-mono">{</span> <span class="font-mono">}</span> nudge out,
+                <span class="font-mono">Home</span>/<span class="font-mono">End</span> preview
+                start/end. Markers snap to {{ segmentSeconds }}s because segments are never split.
             </p>
         </template>
     </div>
 </template>
+
+<style scoped>
+.cut-btn {
+    @apply rounded border border-hairline px-2 py-1 text-xs text-fg-2 transition hover:bg-surface-3;
+}
+</style>

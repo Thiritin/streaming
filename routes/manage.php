@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Manage\DashboardController;
 use App\Http\Controllers\Manage\EmoteController;
+use App\Http\Controllers\Manage\PretalxConnectionController;
 use App\Http\Controllers\Manage\PretalxImportController;
 use App\Http\Controllers\Manage\RecordingController;
 use App\Http\Controllers\Manage\RoleController;
@@ -149,6 +150,8 @@ Route::post('shows/{show}/recording', [RecordingController::class, 'storeFromSho
     ->name('shows.recording.store');
 Route::post('recordings/{recording}/rebuild', [RecordingController::class, 'rebuild'])
     ->name('recordings.rebuild');
+Route::get('recordings/{recording}/preview.m3u8', [RecordingController::class, 'preview'])
+    ->name('recordings.preview');
 Route::get('recordings', [RecordingController::class, 'index'])->name('recordings.index');
 Route::get('recordings/create', [RecordingController::class, 'create'])->name('recordings.create');
 Route::post('recordings', [RecordingController::class, 'store'])->name('recordings.store');
@@ -160,6 +163,7 @@ Route::delete('recordings/{recording}', [RecordingController::class, 'destroy'])
  * System settings: identity, login copy, colours, links. Generated from
  * config/settings.php, so a new knob needs no route change.
  */
+Route::post('settings/pretalx/test', PretalxConnectionController::class)->name('settings.pretalx.test');
 Route::get('settings', [SettingsController::class, 'edit'])->name('settings');
 Route::put('settings', [SettingsController::class, 'update'])->name('settings.update');
 Route::post('settings/reset', [SettingsController::class, 'reset'])->name('settings.reset');

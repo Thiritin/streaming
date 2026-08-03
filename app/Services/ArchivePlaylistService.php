@@ -142,6 +142,44 @@ class ArchivePlaylistService
     }
 
     /**
+     * Playlist for an arbitrary window of a source's archive, independent of any cut.
+     *
+     * This is what the trim editor previews. Scrubbing only within the current cut would
+     * be useless for the job it exists to do: an operator sets the in point by looking at
+     * what happened *before* the current one, so the editor needs to play material outside
+     * the markers.
+     */
+    public function renderRange(
+        string $source,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        string $rendition,
+    ): string {
+        if (! array_key_exists($rendition, self::RENDITIONS)) {
+            throw new \InvalidArgumentException("Unknown rendition [{$rendition}].");
+        }
+
+        $segments = $this->segmentsInRange($source, $from->utc(), $to->utc());
+
+        return $this->renderMediaPlaylist($segments, $source, $rendition);
+    }
+
+    /**
+     * The instant the first segment of a range starts.
+     *
+     * The editor maps the video element's currentTime onto wall clock, and a range never
+     * begins exactly on the requested boundary: selection is by segment start, so the
+     * first segment can begin slightly before `from`. Without this the markers would be
+     * off by up to one segment.
+     */
+    public function rangeStart(string $source, CarbonImmutable $from, CarbonImmutable $to): ?CarbonImmutable
+    {
+        $segments = $this->segmentsInRange($source, $from->utc(), $to->utc());
+
+        return $segments === [] ? null : $segments[0]['pdt'];
+    }
+
+    /**
      * Same as build(), but records the failure on the model rather than throwing, so a
      * controller can report it without the recording ending up in an unclear state.
      */
