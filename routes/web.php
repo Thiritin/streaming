@@ -59,6 +59,19 @@ Route::middleware(['auth.optional:web'])->group(function () {
     Route::get('/archive/year/{year}', [\App\Http\Controllers\RecordingController::class, 'year'])
         ->whereNumber('year')
         ->name('recordings.year');
+    /*
+     * Recording playlists, rendered per request rather than stored.
+     *
+     * Declared before /archive/{recording} so the .m3u8 paths are not swallowed by the
+     * show route. Segments are handed out as presigned URLs so the archive bucket stays
+     * private; that makes this the only place `required_roles` can be enforced, and it
+     * is why the playlists cannot simply be static objects in S3.
+     */
+    Route::get('/archive/{slug}/master.m3u8', [\App\Http\Controllers\RecordingPlaylistController::class, 'master'])
+        ->name('recordings.playlist.master');
+    Route::get('/archive/{slug}/{rendition}.m3u8', [\App\Http\Controllers\RecordingPlaylistController::class, 'media'])
+        ->name('recordings.playlist.media');
+
     Route::get('/archive/{recording}', [\App\Http\Controllers\RecordingController::class, 'show'])->name('recordings.show');
     Route::redirect('/recordings', '/archive');
     Route::get('/recordings/{recording}', fn ($recording) => redirect("/archive/{$recording}"));

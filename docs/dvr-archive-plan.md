@@ -488,7 +488,31 @@ rest is headroom for upload lag and for an S3 outage that stalls the reaper.
    completion, manifest, verified reaper, upload throttle, hour-playlist index.
 4. `ArchivePlaylistService` plus schema migration; generate VOD playlists for one show
    end to end.
-5. Edge: `/archive/` and `/recordings/` locations behind the playback token; gzip m3u8.
+5. ~~Edge: `/archive/` and `/recordings/` locations behind the playback token.~~ **Dropped.**
+   Recordings are ordinary VOD: there is no live capacity to spread and nothing on the
+   media path the edge would protect. Playlists are rendered by the app per request and
+   segments are handed out as presigned URLs (`ARCHIVE_URL_TTL`, 24h by default).
+
+   A public bucket was considered and rejected. `archive/` holds the raw continuous
+   capture of every source, including material never published and everything an operator
+   trimmed off, so public reads would expose far more than the published output. Signing
+   keeps the bucket private without a second delivery tier.
+
+   Two consequences worth stating, because they are not obvious:
+
+   - **Playlists cannot be stored.** A signed URL expires, so a playlist written to S3
+     would be dead a day later. They are generated per request instead, which also puts
+     the access check on the request that mints the URLs. That is the only point at which
+     `required_roles` can actually be enforced.
+   - **No copying.** An earlier draft copied a cut's segments into a public prefix. With
+     signing there is no privacy reason left, and the remaining reason (archive expiry
+     breaking a published recording) is better solved by making retention
+     recording-aware: never expire a segment a published recording references. Zero
+     duplication instead of a second copy of everything published.
+
+   Cost: a signed URL runs ~500 characters, so a 15 minute cut is ~201 KB of playlist
+   (22 KB gzipped) and an hour is roughly four times that. Acceptable for VOD, which
+   fetches the playlist once rather than every two seconds like live.
 6. Manage UI: index, then the trim editor.
 7. **Done.** Player: `live:dvr` wired through `StreamPlayer.vue`, stream-type-aware
    `backBufferLength`.

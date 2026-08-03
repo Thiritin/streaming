@@ -77,6 +77,11 @@ return [
     // for everything, so point this at `s3` rather than configuring DVR_AWS_* twice.
     'archive_disk' => env('ARCHIVE_DISK', 'dvr'),
 
+    // Lifetime of a presigned segment URL. A VOD playlist is fetched once at the start
+    // of a session rather than refreshed, so this only has to outlast a viewing; the
+    // trade is that a leaked playlist stays usable until the signatures lapse.
+    'archive_url_ttl' => (int) env('ARCHIVE_URL_TTL', 86400),
+
     // System streamkey for internal operations (thumbnails, monitoring, etc.)
     'system_streamkey' => env('STREAM_SYSTEM_STREAMKEY', ''),
 

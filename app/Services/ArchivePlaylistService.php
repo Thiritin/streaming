@@ -42,7 +42,16 @@ class ArchivePlaylistService
     }
 
     /**
-     * Regenerate every playlist for a recording from its current markers.
+     * Resolve a recording's cut and cache what the listing needs.
+     *
+     * Deliberately does not write playlists anywhere. Segments are served through
+     * presigned URLs, which expire, so a stored playlist would be dead 24 hours after it
+     * was written. Playlists are rendered per request instead (see renderMaster and
+     * renderMedia), which also puts the access check on the request that hands out the
+     * URLs rather than on a static object anyone could fetch.
+     *
+     * What is stored is only what a listing needs without touching S3: duration, segment
+     * count, and whether the range resolves at all.
      */
     public function build(Recording $recording): void
     {
@@ -77,26 +86,59 @@ class ArchivePlaylistService
             );
         }
 
-        foreach (array_keys(self::RENDITIONS) as $rendition) {
-            Storage::disk($this->disk)->put(
-                $this->mediaPlaylistPath($recording, $rendition),
-                $this->renderMediaPlaylist($segments, $source, $rendition),
-            );
-        }
-
-        Storage::disk($this->disk)->put(
-            $this->masterPlaylistPath($recording),
-            $this->renderMasterPlaylist($recording),
-        );
-
         $recording->forceFill([
-            'm3u8_url' => Storage::disk($this->disk)->url($this->masterPlaylistPath($recording)),
+            // The app renders the playlist, so this is a route rather than an S3 object.
+            'm3u8_url' => route('recordings.playlist.master', $recording->slug),
             'duration' => (int) round(array_sum(array_column($segments, 'duration'))),
             'segment_count' => count($segments),
             'status' => 'ready',
             'build_error' => null,
             'playlist_built_at' => now(),
         ])->save();
+    }
+
+    /**
+     * Master playlist, listing the renditions the archive actually holds for this cut.
+     */
+    public function renderMaster(Recording $recording): string
+    {
+        $lines = ['#EXTM3U', '#EXT-X-VERSION:6', '#EXT-X-INDEPENDENT-SEGMENTS'];
+
+        foreach (self::RENDITIONS as $rendition => $meta) {
+            $lines[] = sprintf(
+                '#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS="avc1.64001f,mp4a.40.2"',
+                $meta['bandwidth'],
+                $meta['resolution'],
+            );
+            $lines[] = route('recordings.playlist.media', [$recording->slug, $rendition]);
+        }
+
+        return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * Media playlist for one rendition, with a presigned URL per segment.
+     */
+    public function renderMedia(Recording $recording, string $rendition): string
+    {
+        if (! array_key_exists($rendition, self::RENDITIONS)) {
+            throw new \InvalidArgumentException("Unknown rendition [{$rendition}].");
+        }
+
+        $source = $recording->archiveSourceSlug();
+
+        $segments = $this->segmentsInRange(
+            $source,
+            CarbonImmutable::parse($recording->starts_at)->utc(),
+            CarbonImmutable::parse($recording->ends_at)->utc(),
+        );
+
+        return $this->renderMediaPlaylist($segments, $source, $rendition);
+    }
+
+    public function renditions(): array
+    {
+        return array_keys(self::RENDITIONS);
     }
 
     /**
@@ -299,38 +341,33 @@ class ArchivePlaylistService
     /**
      * Index entries name segments generically, because all renditions are cut at the same
      * instants and one entry therefore describes all three.
+     *
+     * Presigned rather than public: the archive holds the raw continuous capture of every
+     * source, which includes material that was never published and everything an operator
+     * trimmed off. A signed URL grants access to one object for a bounded time, so the
+     * bucket itself stays private.
      */
     protected function segmentUrl(string $source, array $segment, string $rendition): string
     {
         $name = str_replace('%v', $rendition, $segment['name']);
         $hour = $segment['pdt']->format('Ymd/H');
 
-        return Storage::disk($this->disk)->url(self::ARCHIVE_PREFIX."/{$source}/{$hour}/{$name}");
+        return Storage::disk($this->disk)->temporaryUrl(
+            self::ARCHIVE_PREFIX."/{$source}/{$hour}/{$name}",
+            now()->addSeconds(self::signedUrlLifetime()),
+        );
     }
 
-    protected function renderMasterPlaylist(Recording $recording): string
+    /**
+     * How long a segment URL stays valid.
+     *
+     * Long enough that a viewer never hits an expiry mid-playback, since a playlist is
+     * fetched once at the start of a VOD session rather than refreshed like a live one.
+     * The trade is explicit: a leaked playlist grants access to those segments until the
+     * signatures lapse.
+     */
+    public static function signedUrlLifetime(): int
     {
-        $lines = ['#EXTM3U', '#EXT-X-VERSION:6', '#EXT-X-INDEPENDENT-SEGMENTS'];
-
-        foreach (self::RENDITIONS as $rendition => $meta) {
-            $lines[] = sprintf(
-                '#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS="avc1.64001f,mp4a.40.2"',
-                $meta['bandwidth'],
-                $meta['resolution'],
-            );
-            $lines[] = Storage::disk($this->disk)->url($this->mediaPlaylistPath($recording, $rendition));
-        }
-
-        return implode("\n", $lines)."\n";
-    }
-
-    protected function mediaPlaylistPath(Recording $recording, string $rendition): string
-    {
-        return self::RECORDINGS_PREFIX."/{$recording->slug}/{$rendition}.m3u8";
-    }
-
-    protected function masterPlaylistPath(Recording $recording): string
-    {
-        return self::RECORDINGS_PREFIX."/{$recording->slug}/master.m3u8";
+        return (int) config('stream.archive_url_ttl', 86400);
     }
 }
