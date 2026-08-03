@@ -61,7 +61,7 @@ case "${1:-up}" in
     check_token_secrets
     # --build so edits to the transcoder script or the edge's njs bundle take
     # effect; both are baked into their images rather than mounted.
-    $COMPOSE up -d --build origin-srs hls-transcoder origin-nginx origin-caddy edge-nginx edge-caddy s3 s3-init dvr-uploader
+    $COMPOSE up -d --build origin-srs hls-transcoder origin-nginx origin-caddy edge-nginx edge-caddy s3 s3-init dvr-uploader archive-uploader
     start_publishers
 
     # Unquoted delimiter so the S3 port expands. Nothing else in this block uses
