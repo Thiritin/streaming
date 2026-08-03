@@ -119,9 +119,15 @@ services:
       # Must match DVR_WINDOW_SEGMENTS on origin-ffmpeg-hls (1800 x 2s). The reaper
       # never deletes inside the window a viewer can still seek back into.
       DVR_WINDOW_SECONDS: '3600'
-      # 0 is unlimited. The origin uploads ~1.4 MB/s per source continuously while
-      # also feeding the edge, so set a real cap once the link budget is known.
-      MAX_UPLOAD_RATE_MBPS: '0'
+      # Ceiling on archive upload bandwidth, so it cannot starve origin->edge
+      # egress on the same uplink. 20% of a 1 Gbps link.
+      #
+      # This must stay ABOVE total ingest or uploads fall permanently behind and
+      # the origin disk fills: the floor is sources x 11.5 Mbps (the ladder total),
+      # so 200 Mbps carries 8 sources at 2x headroom. Raise it alongside the source
+      # count, never lower it to "save bandwidth" - the uploader logs an error if
+      # the backlog grows, but by then it is already losing. 0 disables the cap.
+      MAX_UPLOAD_RATE_MBPS: '200'
     volumes:
       - hls-content:/var/www/hls
       - archive-state:/var/lib/dvr-archive

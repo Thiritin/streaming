@@ -31,3 +31,6 @@ logs
 
 # Generated per-server install script (contains a live shared secret)
 /install.sh
+
+# Python bytecode from the DVR uploader image build
+__pycache__/

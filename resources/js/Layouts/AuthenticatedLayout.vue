@@ -12,7 +12,19 @@ const showingNavigationDropdown = ref(false);
 const page = usePage();
 const branding = computed(() => page.props.branding ?? {});
 const siteName = computed(() => branding.value.siteName ?? '');
+// No logo uploaded means the nav mark is the site name in text, so the home
+// link never collapses to nothing.
+const hasLogo = computed(() => !!branding.value.logoUrl);
+// Configured in /manage > Settings, any number of them. None means no link row.
+const footerLinks = computed(() => branding.value.links ?? []);
 const logoutUrl = computed(() => branding.value.identity?.logoutUrl ?? '#');
+
+// A signed-out visitor only reaches this layout where login is optional, so the
+// user block becomes a sign-in button and the emote library, which only exists
+// for chat, drops out along with chat itself.
+const user = computed(() => page.props.auth?.user ?? null);
+const loginUrl = computed(() => page.props.features?.loginUrl ?? '/login');
+const chatEnabled = computed(() => page.props.features?.chat !== false);
 </script>
 
 <template>
@@ -28,7 +40,13 @@ const logoutUrl = computed(() => branding.value.identity?.logoutUrl ?? '#');
             <div class="flex items-center gap-6">
               <!-- Logo -->
               <Link :href="route('shows.grid')" prefetch class="flex items-center gap-2 group">
-                <Logo class="h-8 w-auto fill-current text-primary-300 group-hover:text-primary-200 transition-colors" />
+                <Logo v-if="hasLogo" class="h-8 w-auto fill-current text-primary-300 group-hover:text-primary-200 transition-colors" />
+                <span
+                  v-else
+                  class="text-base font-semibold text-primary-200 group-hover:text-white transition-colors"
+                >
+                  {{ siteName }}
+                </span>
               </Link>
             </div>
 
@@ -52,7 +70,7 @@ const logoutUrl = computed(() => branding.value.identity?.logoutUrl ?? '#');
                   </svg>
                   <span>Archive</span>
                 </NavLink>
-                <NavLink :href="route('emotes.index')" :active="route().current('emotes.*')" prefetch>
+                <NavLink v-if="chatEnabled && user" :href="route('emotes.index')" :active="route().current('emotes.*')" prefetch>
                   <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="9" stroke-width="2" />
                     <path stroke-linecap="round" stroke-width="2" d="M9 10h.01M15 10h.01M8.5 14.5a4.5 4.5 0 007 0" />
@@ -75,8 +93,17 @@ const logoutUrl = computed(() => branding.value.identity?.logoutUrl ?? '#');
 
             <!-- Right side -->
             <div class="hidden sm:flex sm:items-center justify-end gap-3">
+              <!-- Signed out, on an installation where login is optional -->
+              <a
+                v-if="!user"
+                :href="loginUrl"
+                class="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-500"
+              >
+                Sign in
+              </a>
+
               <!-- User Dropdown -->
-              <Dropdown align="right" width="48">
+              <Dropdown v-else align="right" width="48">
                 <template #trigger>
                   <button
                     type="button"
@@ -175,7 +202,7 @@ const logoutUrl = computed(() => branding.value.identity?.logoutUrl ?? '#');
               <ResponsiveNavLink :href="route('recordings.index')" :active="route().current('recordings.*')" prefetch>
                 Archive
               </ResponsiveNavLink>
-              <ResponsiveNavLink :href="route('emotes.index')" :active="route().current('emotes.*')" prefetch>
+              <ResponsiveNavLink v-if="chatEnabled && user" :href="route('emotes.index')" :active="route().current('emotes.*')" prefetch>
                 Emotes
               </ResponsiveNavLink>
               <ResponsiveNavLink v-if="$page.props.auth.can_access_manage" :href="route('manage.home')" :active="route().current('manage.*')">
@@ -184,7 +211,13 @@ const logoutUrl = computed(() => branding.value.identity?.logoutUrl ?? '#');
             </div>
 
             <!-- Mobile User Info -->
-            <div class="pt-4 pb-3 border-t border-primary-800">
+            <div v-if="!user" class="pt-4 pb-3 border-t border-primary-800">
+              <ResponsiveNavLink :href="loginUrl" as="a">
+                Sign in
+              </ResponsiveNavLink>
+            </div>
+
+            <div v-else class="pt-4 pb-3 border-t border-primary-800">
               <div class="flex items-center px-4 gap-3">
                 <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
                   <span class="text-white font-semibold">
@@ -220,9 +253,20 @@ const logoutUrl = computed(() => branding.value.identity?.logoutUrl ?? '#');
         <div class="px-4 lg:px-6">
           <div class="flex flex-col sm:flex-row items-center justify-between gap-4 max-w-page mx-auto">
             <div class="flex items-center gap-2 text-primary-400 text-sm">
-              <Logo class="h-5 w-auto fill-current text-primary-500" />
+              <Logo v-if="hasLogo" class="h-5 w-auto fill-current text-primary-500" />
               <span>{{ siteName }}</span>
             </div>
+            <div v-if="footerLinks.length" class="flex flex-wrap items-center justify-center gap-x-5 gap-y-1">
+              <a
+                v-for="item in footerLinks"
+                :key="item.url"
+                :href="item.url"
+                target="_blank"
+                rel="noopener"
+                class="text-sm text-primary-400 hover:text-primary-200 transition-colors"
+              >{{ item.label }}</a>
+            </div>
+
             <div class="text-primary-500 text-sm">
               Made with <span class="text-red-500">&#9829;</span> by the Video Team
             </div>

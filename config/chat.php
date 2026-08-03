@@ -1,6 +1,13 @@
 <?php
 
 return [
+    /*
+     * Master switch for chat. When false every chat endpoint answers 404, the
+     * client gets no chat props, and the panel, pop-out and emote pages are
+     * hidden. Streams keep playing; only the conversation goes away.
+     */
+    'enabled' => (bool) env('CHAT_ENABLED', true),
+
     'default' => [
         /*
          * Max Tries is the amount of messages a user can send within Rate Decay seconds

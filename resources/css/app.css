@@ -1,18 +1,22 @@
 @import 'tailwindcss';
 
 @theme {
-    /* Primary color palette - green theme */
-    --color-primary-50: oklch(94.77% 0.075 181.53);
-    --color-primary-100: oklch(89.5% 0.159 181.34);
-    --color-primary-200: oklch(80.03% 0.142 181.59);
-    --color-primary-300: oklch(71.68% 0.127 181.62);
-    --color-primary-400: oklch(62.48% 0.111 181.51);
-    --color-primary-500: oklch(53.86% 0.096 181.61);
-    --color-primary-600: oklch(45.51% 0.081 181.98);
-    --color-primary-700: oklch(38.07% 0.068 181.7);
-    --color-primary-800: oklch(29.53% 0.053 180.86);
-    --color-primary-900: oklch(21.87% 0.039 183.18);
-    --color-primary-950: oklch(17.17% 0.031 183.02);
+    /* Primary ramp. Tailwind's own `gray` verbatim, a cool neutral, so an
+       installation that has not picked an accent colour looks deliberate
+       rather than like somebody else's brand. Setting one in
+       /manage > Settings derives a ramp from it and overrides these at
+       runtime; see App\Services\BrandingService::paletteVariables. */
+    --color-primary-50: oklch(98.5% 0.002 247.839);
+    --color-primary-100: oklch(96.7% 0.003 264.542);
+    --color-primary-200: oklch(92.8% 0.006 264.531);
+    --color-primary-300: oklch(87.2% 0.01 258.338);
+    --color-primary-400: oklch(70.7% 0.022 261.325);
+    --color-primary-500: oklch(55.1% 0.027 264.364);
+    --color-primary-600: oklch(44.6% 0.03 256.802);
+    --color-primary-700: oklch(37.3% 0.034 259.733);
+    --color-primary-800: oklch(27.8% 0.033 256.848);
+    --color-primary-900: oklch(21% 0.034 264.665);
+    --color-primary-950: oklch(13% 0.028 261.692);
 
     --color-background: var(--background);
     --color-foreground: var(--foreground);

@@ -39,6 +39,11 @@ const emotes = computed(() => page.props.chat?.emotes?.map ?? {})
 const allowedDomains = computed(() => page.props.chat?.config?.allowedDomains ?? [])
 const currentUserName = computed(() => chat.me.value?.name ?? null)
 
+// Only possible where login is optional: guests read the log over the public
+// channel but get a sign-in prompt where the composer would be.
+const signedIn = computed(() => !!page.props.auth?.user)
+const loginUrl = computed(() => page.props.features?.loginUrl ?? '/login')
+
 const activeModes = computed(() => {
     const modes = []
 
@@ -331,7 +336,20 @@ const onBan = (message) => act(() => chat.moderation.ban(message.user.id))
             </transition>
         </div>
 
+        <div
+            v-if="!signedIn"
+            class="border-t border-primary-800 px-3 py-3 text-center text-sm text-primary-300"
+        >
+            <a
+                :href="loginUrl"
+                class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-500"
+            >
+                Sign in to chat
+            </a>
+        </div>
+
         <ChatInput
+            v-else
             ref="input"
             v-model="draft"
             :reply-to="replyTo"

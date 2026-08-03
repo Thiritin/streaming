@@ -41,9 +41,10 @@ class SettingsTest extends TestCase
             'logo_path' => 'branding/logo.png',
             'login_background_image' => '',
             'login_background_video' => '',
-            'support_url' => 'https://help.example.test',
-            'imprint_url' => 'https://help.example.test/imprint',
-            'privacy_url' => 'https://help.example.test/privacy',
+            'footer_links' => [
+                ['label' => 'Support', 'url' => 'https://help.example.test'],
+                ['label' => 'Privacy', 'url' => 'https://help.example.test/privacy'],
+            ],
         ], $overrides)];
     }
 
@@ -130,8 +131,57 @@ class SettingsTest extends TestCase
     {
         $this->actingAs($this->admin)
             ->from(route('manage.settings'))
-            ->put(route('manage.settings.update'), $this->payload(['support_url' => 'not a url']))
-            ->assertSessionHasErrors('values.support_url');
+            ->put(route('manage.settings.update'), $this->payload(['identity_register_url' => 'not a url']))
+            ->assertSessionHasErrors('values.identity_register_url');
+    }
+
+    public function test_footer_links_are_stored_as_an_ordered_list(): void
+    {
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload([
+                'footer_links' => [
+                    ['label' => 'Code of Conduct', 'url' => 'https://example.test/coc'],
+                    ['label' => 'Support', 'url' => 'https://example.test/help'],
+                    ['label' => 'Privacy', 'url' => 'https://example.test/privacy'],
+                ],
+            ]));
+
+        $this->assertSame([
+            ['label' => 'Code of Conduct', 'url' => 'https://example.test/coc'],
+            ['label' => 'Support', 'url' => 'https://example.test/help'],
+            ['label' => 'Privacy', 'url' => 'https://example.test/privacy'],
+        ], app(BrandingService::class)->footerLinks());
+    }
+
+    public function test_a_footer_link_needs_both_a_title_and_a_valid_url(): void
+    {
+        $this->actingAs($this->admin)
+            ->from(route('manage.settings'))
+            ->put(route('manage.settings.update'), $this->payload([
+                'footer_links' => [['label' => 'Broken', 'url' => 'not a url']],
+            ]))
+            ->assertSessionHasErrors('values.footer_links.0.url');
+
+        $this->actingAs($this->admin)
+            ->from(route('manage.settings'))
+            ->put(route('manage.settings.update'), $this->payload([
+                'footer_links' => [['label' => '', 'url' => 'https://example.test']],
+            ]))
+            ->assertSessionHasErrors('values.footer_links.0.label');
+    }
+
+    public function test_no_footer_links_means_no_row_and_no_stored_value(): void
+    {
+        BrandingSetting::setValue('footer_links', json_encode([
+            ['label' => 'Support', 'url' => 'https://example.test/help'],
+        ]));
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['footer_links' => []]));
+
+        $this->assertDatabaseMissing('branding_settings', ['key' => 'footer_links']);
+        $this->assertSame([], app(BrandingService::class)->footerLinks());
+        $this->assertSame([], app(BrandingService::class)->forFrontend()['links']);
     }
 
     public function test_the_accent_colour_must_be_a_hex_value(): void
@@ -161,6 +211,50 @@ class SettingsTest extends TestCase
 
         $this->assertDatabaseCount('branding_settings', 0);
         $this->assertSame(config('branding.site_name'), BrandingSetting::getValue('site_name'));
+    }
+
+    public function test_saving_a_value_equal_to_the_default_drops_the_row(): void
+    {
+        BrandingSetting::setValue('login_headline', 'Something else');
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload([
+                'login_headline' => config('branding.login_headline'),
+            ]));
+
+        // Not merely equal to the default: no row at all, so a later change to
+        // the shipped default applies instead of being shadowed forever.
+        $this->assertDatabaseMissing('branding_settings', ['key' => 'login_headline']);
+        $this->assertSame(config('branding.login_headline'), BrandingSetting::getValue('login_headline'));
+    }
+
+    public function test_clearing_an_optional_field_whose_default_is_empty_stores_nothing(): void
+    {
+        // login_eyebrow ships empty, so clearing it is a no-op that should not
+        // leave a row behind either.
+        BrandingSetting::setValue('login_eyebrow', 'Testcon');
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['login_eyebrow' => '']));
+
+        $this->assertDatabaseMissing('branding_settings', ['key' => 'login_eyebrow']);
+    }
+
+    public function test_clearing_optional_copy_puts_the_shipped_default_back(): void
+    {
+        // login_tagline ships with wording. Emptying the input is "I did not
+        // choose one", not "I chose nothing": ConvertEmptyStringsToNull turns it
+        // into null on the way in and a null row reads as unset, so the only
+        // consistent outcome is the default.
+        $this->assertNotSame('', (string) config('branding.login_tagline'));
+
+        BrandingSetting::setValue('login_tagline', 'Custom wording');
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['login_tagline' => '']));
+
+        $this->assertDatabaseMissing('branding_settings', ['key' => 'login_tagline']);
+        $this->assertSame(config('branding.login_tagline'), BrandingSetting::getValue('login_tagline'));
     }
 
     public function test_only_administrators_can_read_or_change_the_settings(): void

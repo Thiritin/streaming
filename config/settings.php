@@ -131,7 +131,7 @@ return [
                     'label' => 'Logo',
                     'type' => 'image',
                     'purpose' => 'branding_logo',
-                    'helper' => 'Leave empty to use the built-in mark.',
+                    'helper' => 'Leave empty to show the site name as text instead.',
                     'rules' => ['nullable', 'string', 'max:2048'],
                 ],
                 [
@@ -156,29 +156,22 @@ return [
         [
             'key' => 'links',
             'label' => 'Footer links',
-            'description' => 'Shown in the footer of the public site.',
-            'columns' => 3,
+            'description' => 'Shown in the footer of the public site, in this order. Add as many as you need; with none, the footer link row is hidden.',
+            'columns' => 1,
             'fields' => [
                 [
-                    'key' => 'support_url',
-                    'label' => 'Support',
-                    'type' => 'url',
-                    'helper' => 'Support link in the footer.',
-                    'rules' => ['nullable', 'url', 'max:2048'],
-                ],
-                [
-                    'key' => 'imprint_url',
-                    'label' => 'Legal Notice',
-                    'type' => 'url',
-                    'helper' => 'Legal Notice link in the footer.',
-                    'rules' => ['nullable', 'url', 'max:2048'],
-                ],
-                [
-                    'key' => 'privacy_url',
-                    'label' => 'Privacy',
-                    'type' => 'url',
-                    'helper' => 'Privacy link in the footer.',
-                    'rules' => ['nullable', 'url', 'max:2048'],
+                    'key' => 'footer_links',
+                    'label' => 'Links',
+                    // A repeater of {label, url} rows, stored as JSON. `itemRules`
+                    // are expanded onto values.footer_links.* by Settings::rules().
+                    'type' => 'links',
+                    'full' => true,
+                    'helper' => 'Title and address for each link. Empty rows are dropped on save.',
+                    'rules' => ['nullable', 'array', 'max:12'],
+                    'itemRules' => [
+                        'label' => ['required', 'string', 'max:40'],
+                        'url' => ['required', 'url', 'max:2048'],
+                    ],
                 ],
             ],
         ],

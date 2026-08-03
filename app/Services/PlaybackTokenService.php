@@ -48,6 +48,29 @@ class PlaybackTokenService
     }
 
     /**
+     * Issue a token for a signed-out viewer.
+     *
+     * Only reachable on an installation with `auth.required` off, and only for
+     * a source the caller has already established carries no role restriction.
+     * The token has no subject, which is exactly what "we do not know who this
+     * is" means; edges never look at `sub`, they only check the source binding.
+     */
+    public function issueGuest(
+        Source|string $source,
+        ?string $edge = null,
+        ?string $sessionId = null,
+        ?int $ttl = null,
+    ): string {
+        return $this->issue(new PlaybackToken(
+            type: PlaybackTokenTypeEnum::VIEWER,
+            source: $this->slug($source),
+            edge: $edge,
+            sessionId: $sessionId ?? (string) Str::uuid(),
+            expiresAt: time() + ($ttl ?? $this->ttl()),
+        ));
+    }
+
+    /**
      * Issue a key for an external embed.
      *
      * No expiry by default: the URL is baked into a VRChat world and can never

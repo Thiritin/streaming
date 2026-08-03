@@ -8,6 +8,8 @@ This is a Laravel-based streaming system for conventions that manages live video
 
 Nothing convention-specific is hardcoded. Names, copy, links, logo, login background and accent colour resolve through `App\Services\BrandingService`, backed by the `branding_settings` table with neutral fallbacks in `config/branding.php`. Never reintroduce a convention name, domain, or logo as a literal or a config default.
 
+Branding has exactly one source: the `branding_settings` table, edited at `/manage` > Settings or via `php artisan branding:set key=value`. Do not add `env()` to `config/branding.php` or `BRANDING_*` vars to `.env` - a saved row always wins, so a second source could only disagree. The accent colour is applied as runtime CSS custom properties (`app.blade.php`, after `@vite`), so changing it needs no rebuild; never move it into a `VITE_` var.
+
 ## Core Architecture
 
 ### Tech Stack

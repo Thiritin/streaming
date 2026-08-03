@@ -7,77 +7,81 @@ return [
     | Branding defaults
     |--------------------------------------------------------------------------
     |
-    | Every value here can be overridden per installation from the admin panel
-    | (Streaming > Branding), which stores changes in the branding_settings
-    | table. These are the fallbacks used when no override has been saved, so a
-    | fresh install of the streaming system boots with sensible neutral copy.
+    | The shipped neutral defaults, and nothing else. Every value here is set per
+    | installation from the admin panel (/manage > Settings), which stores what
+    | you save in the branding_settings table; a key with no row falls back to
+    | the literal below, so a fresh install boots with neutral copy.
+    |
+    | Deliberately no env() here. Branding is edited by organisers, not by ops,
+    | and a second source would only be able to disagree: once a value is saved
+    | in the panel it wins, so an env var that looks authoritative would quietly
+    | stop applying. Scripted setup goes through `php artisan branding:set`.
     |
     | Keys are flat and dot-free on purpose: they map 1:1 onto the setting keys
     | in the database and onto the Inertia "branding" prop.
     |
     */
 
-    'convention_name' => env('BRANDING_CONVENTION_NAME', env('APP_NAME', 'Streaming')),
+    'convention_name' => env('APP_NAME', 'Streaming'),
 
-    'site_name' => env('BRANDING_SITE_NAME', env('APP_NAME', 'Streaming')),
+    'site_name' => env('APP_NAME', 'Streaming'),
 
     // Shown above the login headline. Keep it short. Empty by default: an
     // installation that has not set one gets no placeholder convention name.
-    'login_eyebrow' => env('BRANDING_LOGIN_EYEBROW'),
+    'login_eyebrow' => null,
 
-    'login_headline' => env('BRANDING_LOGIN_HEADLINE', 'Livestream'),
+    'login_headline' => 'Livestream',
 
-    'login_tagline' => env('BRANDING_LOGIN_TAGLINE', 'Open to everyone'),
+    'login_tagline' => 'Open to everyone',
 
-    'login_body' => env('BRANDING_LOGIN_BODY', 'Sign in to watch the live streams and recordings.'),
+    'login_body' => 'Sign in to watch the live streams and recordings.',
 
-    'login_button_label' => env('BRANDING_LOGIN_BUTTON_LABEL', 'Sign in'),
+    'login_button_label' => 'Sign in',
 
     // Name of the OIDC provider, used in the sign-in and register wording.
-    'identity_name' => env('BRANDING_IDENTITY_NAME', 'identity'),
+    'identity_name' => 'identity',
 
     /*
      | Identity provider endpoints. Both are installation specific, so they stay
      | empty here: the login screen hides the register link when there is no
      | URL, and logout falls back to the local session teardown.
      */
-    'identity_register_url' => env('BRANDING_IDENTITY_REGISTER_URL'),
+    'identity_register_url' => null,
 
-    'identity_logout_url' => env('BRANDING_IDENTITY_LOGOUT_URL'),
-
-    /*
-     | Footer links. Each one is dropped from the footer when left empty.
-     */
-    'support_url' => env('BRANDING_SUPPORT_URL'),
-
-    'imprint_url' => env('BRANDING_IMPRINT_URL'),
-
-    'privacy_url' => env('BRANDING_PRIVACY_URL'),
+    'identity_logout_url' => null,
 
     /*
-     | Path on the public disk to a logo image. When empty the built-in logo
-     | component falls back to its bundled SVG mark.
+     | Footer links, as a list of {label, url} in the order they are shown. Any
+     | number of them, titled whatever the installation wants; empty means the
+     | footer link row is not rendered at all. Stored as JSON in the settings
+     | table, so this stays a plain PHP array here.
      */
-    'logo_path' => env('BRANDING_LOGO_PATH'),
+    'footer_links' => [],
+
+    /*
+     | Path on the public disk to a logo image. When empty nothing is rendered
+     | in its place and callers fall back to the site name in text.
+     */
+    'logo_path' => null,
 
     /*
      | Background media for the login screen. The image is used as the video
      | poster, so it is what visitors see before the clip has buffered.
      */
-    'login_background_image' => env('BRANDING_LOGIN_BACKGROUND_IMAGE'),
+    'login_background_image' => null,
 
     /*
      | Left empty, the login screen falls back to the background clip bundled
      | with the frontend assets.
      */
-    'login_background_video' => env('BRANDING_LOGIN_BACKGROUND_VIDEO'),
+    'login_background_video' => null,
 
     /*
      | Base accent colour as a hex string. When set, a 50-950 ramp is derived
      | from it at runtime and injected as CSS custom properties, overriding the
-     | --color-primary-* defaults in resources/css/app.css. Leave empty to use
-     | the ramp shipped in the stylesheet untouched.
+     | --color-primary-* defaults in resources/css/app.css. No rebuild involved.
+     | Leave empty to use the ramp shipped in the stylesheet untouched.
      */
-    'primary_color' => env('BRANDING_PRIMARY_COLOR'),
+    'primary_color' => null,
 
 ];

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import StreamPlayer from "@/Components/Livestream/StreamPlayer.vue";
 import ChatPanel from "@/Components/Chat/ChatPanel.vue";
 import StreamOfflineStatusPage from "@/Components/Livestream/StatusPages/StreamOfflineStatusPage.vue";
@@ -74,6 +74,8 @@ const props = defineProps({
     }
 });
 
+const page = usePage();
+
 // Reactive state
 const otherDevice = ref(props.initialOtherDevice);
 const activeShow = ref(props.currentShow);
@@ -120,7 +122,8 @@ const loadTheaterModePreference = () => {
 };
 
 // Computed properties
-const showChatBox = computed(() => status.value !== 'offline' && activeShow.value?.status === 'live');
+const chatEnabled = computed(() => page.props.features?.chat !== false);
+const showChatBox = computed(() => chatEnabled.value && status.value !== 'offline' && activeShow.value?.status === 'live');
 const showPlayer = computed(() => activeShow.value && activeShow.value.status === 'live' && hlsUrl.value && status.value === 'online' && sourceStatus.value === 'online' && provisioning.value === false && otherDevice.value === false && !isReconnecting.value);
 const showTitle = computed(() => activeShow.value ? activeShow.value.title : 'No Show Active');
 const otherLiveShows = computed(() => shows.value.filter(s => s.id !== activeShow.value?.id && s.status === 'live' && s.slug));

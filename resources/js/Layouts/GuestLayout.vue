@@ -6,7 +6,6 @@ const page = usePage();
 
 const branding = computed(() => page.props.branding ?? {});
 const login = computed(() => branding.value.login ?? {});
-const links = computed(() => branding.value.links ?? {});
 
 // Installations that upload a still in the admin panel get it behind the
 // schedule; otherwise the flat primary wash carries the column on its own.
@@ -16,11 +15,9 @@ const backgroundImage = computed(() => login.value.backgroundImage || null);
 // is skipped entirely when nothing is scheduled.
 const schedule = computed(() => page.props.schedule ?? []);
 
-const footerLinks = computed(() => [
-    { name: 'Support', href: links.value.support },
-    { name: 'Legal Notice', href: links.value.imprint },
-    { name: 'Privacy', href: links.value.privacy },
-].filter(item => item.href));
+// Whatever the installation configured, in its own order. None means the whole
+// footer goes, rule included: an empty bordered strip is just a stray line.
+const footerLinks = computed(() => branding.value.links ?? []);
 </script>
 
 <template>
@@ -97,16 +94,16 @@ const footerLinks = computed(() => [
                 </transition>
             </div>
 
-            <nav aria-label="Footer" class="w-full max-w-md mx-auto lg:mx-0 pt-10">
+            <nav v-if="footerLinks.length" aria-label="Footer" class="w-full max-w-md mx-auto lg:mx-0 pt-10">
                 <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/10 pt-5">
                     <a
                         v-for="item in footerLinks"
-                        :key="item.name"
-                        :href="item.href"
+                        :key="item.url"
+                        :href="item.url"
                         target="_blank"
                         rel="noopener"
                         class="text-sm text-primary-400 hover:text-primary-200 transition-colors"
-                    >{{ item.name }}</a>
+                    >{{ item.label }}</a>
                 </div>
             </nav>
         </div>

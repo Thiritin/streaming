@@ -20,6 +20,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Mandatory login
+    |--------------------------------------------------------------------------
+    |
+    | When true (the default) every page except the login screen is behind the
+    | identity provider. When false the browse, schedule, archive and player
+    | pages are open to guests and signing in is only required for chat, which
+    | needs an identity to attribute, rate limit and moderate.
+    |
+    | Restricted shows and recordings stay hidden from guests either way; the
+    | role check in `accessibleBy()` fails closed without a user.
+    |
+    */
+
+    'required' => (bool) env('AUTH_REQUIRED', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Authentication Guards
     |--------------------------------------------------------------------------
     |

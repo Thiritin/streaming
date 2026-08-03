@@ -11,7 +11,7 @@ Covered by `tests/Feature/Manage/AccessTest.php` and `UploadTest.php`.
 - [x] `/manage` gated by `access-manage` (staff, `admin.access` or legacy `filament.access`)
 - [x] Guest -> `/login` (OIDC). `CHANGED`: no `/manage/login`
 - [x] Brand name and logo from `BrandingService`, not hardcoded
-- [x] Nav groups: Overview, Streaming, Infrastructure, User Management, Chat, Content, Settings — rail drops items whose route does not exist yet, asserted by `the_rail_only_advertises_routes_that_exist`
+- [x] Nav groups: Overview, Streaming, Infrastructure, Administration — rail drops items whose route does not exist yet, asserted by `the_rail_only_advertises_routes_that_exist`
 - [x] Rail badges: live/upcoming shows, online sources, pending emotes, role count, plus an alert count on Dashboard
 - [x] Fluid content width
 - [x] Upload endpoint covers all six purposes with the right disk, directory and visibility

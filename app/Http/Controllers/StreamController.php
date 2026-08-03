@@ -22,10 +22,18 @@ class StreamController extends Controller
     /**
      * Backlog plus live chat state for a source, shared by the player and the popout.
      *
+     * A guest (only possible when login is optional) reads along but has no
+     * limits, timeout or ban of their own, so those come back empty and the
+     * client renders a sign-in prompt in place of the composer.
+     *
      * @return array<string, mixed>
      */
-    protected function chatProps(?int $sourceId, User $user): array
+    protected function chatProps(?int $sourceId, ?User $user): array
     {
+        if (! config('chat.enabled')) {
+            return $this->emptyChatProps();
+        }
+
         $messages = Message::with(['user', 'replyTo.user'])
             ->visibleTo($user)
             ->where('source_id', $sourceId)
@@ -35,6 +43,25 @@ class StreamController extends Controller
             ->reverse();
 
         $settings = app(ChatSettingsService::class)->all($sourceId);
+
+        if (! $user) {
+            return [
+                'chatMessages' => app(MessagePresenter::class)->presentMany($messages),
+                'chatSettings' => $settings,
+                'chatState' => [
+                    'limits' => [
+                        'slow_mode_seconds' => (int) $settings['slow_mode_seconds'],
+                        'max_tries' => (int) $settings['max_tries'],
+                        'rate_decay' => (int) $settings['rate_decay'],
+                        'seconds_left' => 0,
+                        'can_bypass' => false,
+                    ],
+                    'timeout' => null,
+                    'ban' => null,
+                ],
+            ];
+        }
+
         $canBypass = $user->canModerateChat() || $user->hasPermission('chat.ignore.ratelimit');
         $slowMode = (int) $settings['slow_mode_seconds'];
         $timeout = $user->activeTimeout();
@@ -65,11 +92,36 @@ class StreamController extends Controller
     }
 
     /**
+     * What the player gets when chat is switched off, so the page shape stays
+     * the same and the client only has to check one flag.
+     *
+     * @return array<string, mixed>
+     */
+    protected function emptyChatProps(): array
+    {
+        return [
+            'chatMessages' => [],
+            'chatSettings' => app(ChatSettingsService::class)->all(null),
+            'chatState' => [
+                'limits' => [
+                    'slow_mode_seconds' => 0,
+                    'max_tries' => 0,
+                    'rate_decay' => 0,
+                    'seconds_left' => 0,
+                    'can_bypass' => false,
+                ],
+                'timeout' => null,
+                'ban' => null,
+            ],
+        ];
+    }
+
+    /**
      * Shows grid - main landing page
      */
     public function index()
     {
-        /** @var User $user */
+        /** @var User|null $user */
         $user = Auth::user();
 
         // Get live shows (filtered by access)
@@ -294,6 +346,10 @@ class StreamController extends Controller
      */
     private function featuredChatExcerpt(?User $user, ?array $featured): array
     {
+        if (! config('chat.enabled')) {
+            return ['source_id' => null, 'messages' => []];
+        }
+
         if (! $featured || ! ($featured['source_id'] ?? null)) {
             return ['source_id' => null, 'messages' => []];
         }
@@ -347,7 +403,14 @@ class StreamController extends Controller
      */
     private function playbackProps(?User $user, Show $show): ?array
     {
-        if (! $user || ! $show->source) {
+        if (! $show->source) {
+            return null;
+        }
+
+        // A guest only gets here when login is optional, and only for a show
+        // canBeAccessedBy() already cleared, which for them means an
+        // unrestricted one.
+        if (! $user && config('auth.required')) {
             return null;
         }
 
@@ -360,11 +423,13 @@ class StreamController extends Controller
         }
 
         return [
-            'token' => $tokens->issueViewer(
-                user: $user,
-                source: $show->source,
-                edge: $user->server?->hostname,
-            ),
+            'token' => $user
+                ? $tokens->issueViewer(
+                    user: $user,
+                    source: $show->source,
+                    edge: $user->server?->hostname,
+                )
+                : $tokens->issueGuest(source: $show->source),
             'expires_in' => $tokens->ttl(),
             'refresh_after' => $tokens->refreshAfter(),
         ];
@@ -375,7 +440,7 @@ class StreamController extends Controller
         // Load show with source relationship
         $show->load('source');
 
-        /** @var User $user */
+        /** @var User|null $user */
         $user = Auth::user();
 
         // Check access restrictions
@@ -417,7 +482,7 @@ class StreamController extends Controller
 
     public function show(Request $request, Show $show)
     {
-        /** @var User $user */
+        /** @var User|null $user */
         $user = Auth::user();
 
         // Load show with source relationship
@@ -495,7 +560,7 @@ class StreamController extends Controller
      */
     public function chat(Request $request, Show $show)
     {
-        /** @var User $user */
+        /** @var User|null $user */
         $user = Auth::user();
 
         // Load show with source relationship

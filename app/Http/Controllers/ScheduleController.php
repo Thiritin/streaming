@@ -15,7 +15,7 @@ class ScheduleController extends Controller
      */
     public function index()
     {
-        /** @var User $user */
+        /** @var User|null $user */
         $user = Auth::user();
 
         $shows = Show::with('source')

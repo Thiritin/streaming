@@ -1,33 +1,19 @@
-<!-- Installations set their own logo in the admin panel. The fallback below is a
-     neutral broadcast mark drawn in currentColor, so nothing here is tied to a
-     single convention. -->
+<!-- Installations set their own logo in the admin panel. Without one this renders
+     nothing at all rather than a stand-in mark, so an installation that has not
+     picked a logo shows its name instead of someone else's shape. Callers that
+     would be left with an empty box fall back to the site name themselves. -->
 <template>
+    <!-- No height of its own on purpose. Every caller sizes the mark for where it
+         sits (h-5 in the mobile bar, h-8 in the header, h-24 on the login screen),
+         and a height here would be a second `height` utility on the same element:
+         which one won would come down to stylesheet order rather than the caller.
+         max-h-full only bounds it inside a parent that is already sized. -->
     <img
         v-if="logoUrl"
         :src="logoUrl"
         :alt="conventionName"
-        class="block h-full w-auto object-contain"
+        class="block w-auto max-h-full object-contain"
     />
-    <svg
-        v-else
-        viewBox="0 0 64 64"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        role="img"
-        :aria-label="conventionName || 'Logo'"
-    >
-        <circle cx="32" cy="32" r="30" fill="currentColor" fill-opacity="0.12" />
-        <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="3" />
-        <!-- Play glyph -->
-        <path d="M26 22.5 44 32 26 41.5z" fill="currentColor" />
-        <!-- Broadcast arcs on either side of the glyph -->
-        <path
-            d="M17.5 21a19 19 0 0 0 0 22M46.5 21a19 19 0 0 1 0 22"
-            stroke="currentColor"
-            stroke-width="3"
-            stroke-linecap="round"
-        />
-    </svg>
 </template>
 <script setup>
 import { computed } from 'vue';

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
 use App\Helpers\IpSubnetHelper;
 use App\Models\Server;
 use App\Models\Source;
@@ -52,7 +54,7 @@ class HlsController extends Controller
             }
         } else {
             $user = Auth::user();
-            if (! $user) {
+            if (! $user && config('auth.required')) {
                 return response('Authentication required', 401)
                     ->header('Content-Type', 'text/plain');
             }
@@ -132,7 +134,7 @@ class HlsController extends Controller
                 'url' => $masterUrl,
                 'status_code' => $response->status(),
                 'response_body' => $response->body(),
-                'user_id' => $user->id,
+                'user_id' => $user?->id,
                 'streamkey' => $streamkey ?? null,
             ]);
 
@@ -196,11 +198,11 @@ class HlsController extends Controller
             }
         } else {
             $user = Auth::user();
-            if (! $user) {
+            if (! $user && config('auth.required')) {
                 return response('Authentication required', 401)
                     ->header('Content-Type', 'text/plain');
             }
-            $streamkey = $user->streamkey;
+            $streamkey = $user?->streamkey;
         }
 
         $this->trackUserAccess($source, $user, $request);
@@ -285,7 +287,7 @@ class HlsController extends Controller
                 'url' => $edgeUrl,
                 'status_code' => $response->status(),
                 'response_body' => $response->body(),
-                'user_id' => $user->id,
+                'user_id' => $user?->id,
                 'streamkey' => $streamkey ?? null,
             ]);
 
@@ -328,8 +330,10 @@ class HlsController extends Controller
      */
     private function trackUserAccess($source, $user, $request)
     {
-        // Skip tracking for system user
-        if ($user->id === 0) {
+        // Skip tracking for the system user, and for signed-out viewers on an
+        // installation with optional login: SourceUser is keyed by user_id, so
+        // there is nothing to attribute a guest session to.
+        if (! $user || $user->id === 0) {
             return;
         }
 
@@ -399,8 +403,18 @@ class HlsController extends Controller
         }
 
         // For system users, just return the first available edge server
-        if ($user->id === 0) {
+        if ($user && $user->id === 0) {
             return Server::getActiveEdges()->first();
+        }
+
+        // Signed-out viewers have no stored assignment to reuse, so they get
+        // the least loaded edge on every request instead. Same ordering as
+        // User::assignServerToUser, minus the persistence.
+        if (! $user) {
+            return Server::where('status', ServerStatusEnum::ACTIVE)
+                ->where('type', ServerTypeEnum::EDGE)
+                ->orderBy('viewer_count', 'asc')
+                ->first();
         }
 
         return $user->getOrAssignServer($clientIp);

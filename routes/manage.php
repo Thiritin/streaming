@@ -12,7 +12,6 @@ use App\Http\Controllers\Manage\ShowController;
 use App\Http\Controllers\Manage\ShowPlannerController;
 use App\Http\Controllers\Manage\ShowStatisticsController;
 use App\Http\Controllers\Manage\SourceController;
-use App\Http\Controllers\Manage\StreamController;
 use App\Http\Controllers\Manage\TableColumnController;
 use App\Http\Controllers\Manage\UploadController;
 use App\Http\Controllers\Manage\UserController;
@@ -97,13 +96,6 @@ Route::post('servers', [ServerController::class, 'store'])->name('servers.store'
 Route::get('servers/{server}', [ServerController::class, 'edit'])->name('servers.edit');
 Route::put('servers/{server}', [ServerController::class, 'update'])->name('servers.update');
 Route::delete('servers/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
-
-/*
- * Global stream state. The status is an enum in the URL rather than a posted
- * field, so each button is its own endpoint and nothing has to be validated.
- */
-Route::get('stream', [StreamController::class, 'show'])->name('stream');
-Route::post('stream/{status}', [StreamController::class, 'update'])->name('stream.update');
 
 /*
  * Users arrive through OIDC, so there is no create route: an operator can change

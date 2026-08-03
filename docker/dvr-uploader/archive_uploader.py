@@ -216,6 +216,12 @@ class Manifest:
                 'LIMIT ?', (limit,)
             ).fetchall()
 
+    def pending_count(self):
+        with self._conn() as c:
+            return c.execute(
+                'SELECT COUNT(*) FROM segments WHERE verified_at IS NULL'
+            ).fetchone()[0]
+
     def reapable(self, limit=2000):
         with self._conn() as c:
             return c.execute(
@@ -648,14 +654,42 @@ def periodic(interval, fn, *args):
             logger.exception('%s failed', getattr(fn, '__name__', fn))
 
 
-def report():
+def report(manifest):
+    """
+    Metrics, plus a standing check that the upload cap is above the ingest rate.
+
+    Setting MAX_UPLOAD_RATE_MBPS below what the transcoder produces does not degrade
+    gracefully: uploads simply fall behind for hours and then the origin disk fills.
+    The symptom appears a long way from the cause, so watch the backlog trend and say
+    so early. A rising backlog across several minutes means the cap (or the link) is
+    under the ingest rate, not that a single upload was slow.
+    """
+    history = []
+
     while True:
         time.sleep(60)
+
+        pending = manifest.pending_count()
+        history.append(pending)
+        history = history[-5:]
+
         with metrics_lock:
             logger.info(
-                'indexed=%d uploaded=%d verified=%d reaped=%d failed=%d',
+                'indexed=%d uploaded=%d verified=%d reaped=%d failed=%d pending=%d',
                 metrics['indexed'], metrics['uploaded'], metrics['verified'],
-                metrics['reaped'], metrics['failed'],
+                metrics['reaped'], metrics['failed'], pending,
+            )
+
+        if len(history) == 5 and all(b < a for b, a in zip(history, history[1:])):
+            sources = len(discover_sources()) or 1
+            needed = sources * 11.5  # measured ladder total, Mbps per source
+            logger.error(
+                'Upload backlog has grown for %d minutes straight (%s). The archive '
+                'is not keeping up with ingest and the origin disk will fill. %d '
+                'source(s) need ~%.0f Mbps sustained; cap is %s.',
+                len(history), ' -> '.join(str(h) for h in history), sources, needed,
+                f'{MAX_UPLOAD_RATE_MBPS} Mbps' if MAX_UPLOAD_RATE_MBPS > 0
+                else 'unlimited (so the link itself is the limit)',
             )
 
 
@@ -681,7 +715,7 @@ def main():
         # meanwhile rather than being lost.
         logger.error('Bucket %s not reachable yet: %s', S3_BUCKET, exc)
 
-    threading.Thread(target=report, daemon=True).start()
+    threading.Thread(target=report, args=(manifest,), daemon=True).start()
     threading.Thread(
         target=periodic, args=(INDEX_UPLOAD_INTERVAL, indexer.flush), daemon=True
     ).start()

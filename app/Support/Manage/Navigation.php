@@ -30,6 +30,13 @@ final class Navigation
     {
         $badges = $this->badges();
 
+        /*
+         * Four headings, deliberately. Seven groups meant most of them held one
+         * item, so the rail was mostly separators and the eye had to read every
+         * heading to find anything. Programme work is one block, the machines are
+         * another, and everything that is configuration rather than daily
+         * operation sits under Administration.
+         */
         $groups = [
             ['label' => 'Overview', 'items' => [
                 $this->item('Dashboard', 'layout-dashboard', 'manage.home', $badges['alerts'] ?? null),
@@ -38,22 +45,15 @@ final class Navigation
                 $this->item('Sources', 'video', 'manage.sources.index', $badges['sources'] ?? null),
                 $this->item('Shows', 'play-circle', 'manage.shows.index', $badges['shows'] ?? null),
                 $this->item('Planner', 'calendar', 'manage.shows.planner'),
-                $this->item('Stream Control', 'sliders-horizontal', 'manage.stream'),
+                $this->item('Recordings', 'film', 'manage.recordings.index'),
             ]],
             ['label' => 'Infrastructure', 'items' => [
                 $this->item('Servers', 'server', 'manage.servers.index'),
             ]],
-            ['label' => 'User Management', 'items' => [
+            ['label' => 'Administration', 'items' => [
                 $this->item('Users', 'users', 'manage.users.index'),
                 $this->item('Roles', 'shield-check', 'manage.roles.index', $badges['roles'] ?? null),
-            ]],
-            ['label' => 'Chat', 'items' => [
                 $this->item('Emotes', 'smile', 'manage.emotes.index', $badges['emotes'] ?? null),
-            ]],
-            ['label' => 'Content', 'items' => [
-                $this->item('Recordings', 'film', 'manage.recordings.index'),
-            ]],
-            ['label' => 'Settings', 'items' => [
                 $this->item('Branding & texts', 'paintbrush', 'manage.settings'),
             ]],
         ];

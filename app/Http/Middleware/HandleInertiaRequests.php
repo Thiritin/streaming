@@ -33,12 +33,13 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $user = $request->user();
+        $chatEnabled = (bool) config('chat.enabled');
         $chatCommands = [];
         $chatConfig = [];
         $emotes = ['map' => (object) [], 'list' => []];
         $chatPermissions = [];
 
-        if ($user) {
+        if ($user && $chatEnabled) {
             // Use new CommandRegistry for commands
             $commandRegistry = app(CommandRegistry::class);
             $availableCommands = $commandRegistry->availableFor($user);
@@ -75,6 +76,15 @@ class HandleInertiaRequests extends Middleware
                 'status' => fn () => $request->session()->get('status'),
             ],
             'branding' => app(BrandingService::class)->forFrontend(),
+            // Deployment-wide switches the client needs to know about: whether
+            // chat exists at all, and whether a guest is allowed to browse
+            // without signing in. Both come from the env, see config/chat.php
+            // and config/auth.php.
+            'features' => [
+                'chat' => $chatEnabled,
+                'authRequired' => (bool) config('auth.required'),
+                'loginUrl' => route('login'),
+            ],
             'auth' => [
                 'user' => $user ? array_merge(
                     $user->only('id', 'name', 'role'),
@@ -90,6 +100,7 @@ class HandleInertiaRequests extends Middleware
                 'has_server_assignment' => $user ? ($user->server_id && $user->streamkey ? true : false) : false,
             ],
             'chat' => [
+                'enabled' => $chatEnabled,
                 'commands' => $chatCommands,
                 'config' => $chatConfig,
                 'emotes' => $emotes,

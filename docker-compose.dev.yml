@@ -182,6 +182,10 @@ services:
       DVR_WINDOW_SECONDS: ${DEV_DVR_WINDOW_SECONDS:-300}
       REAP_INTERVAL: "30"
       INDEX_UPLOAD_INTERVAL: "20"
+      # Unlimited locally; S3 is a container on the same host. Set this low
+      # (e.g. 10, well under the ~11.5 Mbps per source the ladder produces) to
+      # watch the backlog guard fire.
+      MAX_UPLOAD_RATE_MBPS: ${DEV_MAX_UPLOAD_RATE_MBPS:-0}
     volumes:
       - hls:/var/www/hls
       - archive-state:/var/lib/dvr-archive
