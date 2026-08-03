@@ -14,6 +14,7 @@ class SourceStatusChangedEvent implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public Source $source;
+
     public string $previousStatus;
 
     /**
@@ -33,7 +34,7 @@ class SourceStatusChangedEvent implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new Channel('source.' . $this->source->id),
+            new Channel('source.'.$this->source->id),
         ];
     }
 

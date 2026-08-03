@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
@@ -13,10 +15,15 @@ class Recording extends Model
 
     protected $fillable = [
         'show_id',
+        'source_id',
         'title',
         'slug',
         'description',
         'date',
+        'starts_at',
+        'ends_at',
+        'archive_prefix',
+        'status',
         'duration',
         'm3u8_url',
         'thumbnail_path',
@@ -29,7 +36,11 @@ class Recording extends Model
 
     protected $casts = [
         'date' => 'datetime',
+        'starts_at' => 'datetime',
+        'ends_at' => 'datetime',
+        'playlist_built_at' => 'datetime',
         'duration' => 'integer',
+        'segment_count' => 'integer',
         'views' => 'integer',
         'is_published' => 'boolean',
         'thumbnail_updated_at' => 'datetime',
@@ -61,11 +72,78 @@ class Recording extends Model
     }
 
     /**
+     * Cut markers are normalised to the app timezone before they are stored.
+     *
+     * starts_at and ends_at are `timestamp without time zone`, matching the rest of the
+     * schema, and Laravel writes them with `Y-m-d H:i:s` and no offset. The digits that
+     * reach Postgres are therefore whatever timezone the Carbon happened to be in, and a
+     * UTC one lands as local time on read: the instant silently moves by the offset.
+     *
+     * It only shows up later, as a cut that resolves to zero segments and reports the
+     * archive as expired, so normalise here rather than expecting every caller to
+     * remember. Callers passing app-local values are unaffected.
+     */
+    protected function startsAt(): Attribute
+    {
+        return $this->localDateTime();
+    }
+
+    protected function endsAt(): Attribute
+    {
+        return $this->localDateTime();
+    }
+
+    protected function localDateTime(): Attribute
+    {
+        return Attribute::make(
+            set: fn ($value) => $value === null
+                ? null
+                : Carbon::parse($value)->setTimezone(config('app.timezone')),
+        );
+    }
+
+    /**
      * Get the show associated with this recording.
      */
     public function show()
     {
         return $this->belongsTo(Show::class);
+    }
+
+    /**
+     * The source whose archive this recording is a view of.
+     */
+    public function source()
+    {
+        return $this->belongsTo(Source::class);
+    }
+
+    /**
+     * Slug of the archive this cut reads from.
+     *
+     * Prefers the stored prefix so an existing recording keeps resolving if its source is
+     * later renamed, and falls back to the live relation for recordings created before
+     * the prefix was recorded.
+     */
+    public function archiveSourceSlug(): ?string
+    {
+        if ($this->archive_prefix) {
+            return str_contains($this->archive_prefix, '/')
+                ? substr(strrchr($this->archive_prefix, '/'), 1)
+                : $this->archive_prefix;
+        }
+
+        return $this->source?->slug ?? $this->show?->source?->slug;
+    }
+
+    /**
+     * Whether the cut is fully specified. An end marker is required: the archive is a
+     * continuous timeline with no natural end for a source that stays online for the
+     * whole event, so something has to say where the recording stops.
+     */
+    public function hasCut(): bool
+    {
+        return $this->starts_at !== null && $this->ends_at !== null;
     }
 
     /**

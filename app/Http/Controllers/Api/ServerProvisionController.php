@@ -26,7 +26,7 @@ class ServerProvisionController extends Controller
 
         // Find server by shared secret
         $server = Server::where('shared_secret', $sharedSecret)->first();
-        if (!$server) {
+        if (! $server) {
             return response('Unauthorized', 401);
         }
 
@@ -37,15 +37,15 @@ class ServerProvisionController extends Controller
             case 'nginx-origin':
                 $content = $this->provisioningService->generateNginxOriginConfig($server);
                 break;
-                
+
             case 'nginx-edge':
                 $content = $this->provisioningService->generateNginxEdgeConfig($server);
                 break;
-                
+
             case 'caddy-origin':
                 $content = $this->provisioningService->generateCaddyOriginConfig($server);
                 break;
-                
+
             case 'caddy-edge':
                 $content = $this->provisioningService->generateCaddyEdgeConfig($server);
                 break;
@@ -59,7 +59,18 @@ class ServerProvisionController extends Controller
                 $content = $this->provisioningService->generateDockerCompose($server);
                 $contentType = 'application/x-yaml';
                 break;
-                
+
+                // Edge nginx needs the njs module to verify playback tokens locally,
+                // so it is built on the host from this Dockerfile rather than pulled.
+            case 'dockerfile-edge':
+                $content = $this->provisioningService->generateConfig($server, 'edge-dockerfile');
+                break;
+
+            case 'hls-auth-js':
+                $content = $this->provisioningService->generateConfig($server, 'hls-auth-js');
+                $contentType = 'application/javascript';
+                break;
+
             default:
                 return response('Not found', 404);
         }
@@ -77,7 +88,7 @@ class ServerProvisionController extends Controller
 
         // Find server by shared secret
         $server = Server::where('shared_secret', $sharedSecret)->first();
-        if (!$server) {
+        if (! $server) {
             return response('Unauthorized', 401);
         }
 
@@ -115,19 +126,19 @@ class ServerProvisionController extends Controller
         ]);
 
         $server = Server::find($data['server_id']);
-        if (!$server || $server->shared_secret !== $sharedSecret) {
+        if (! $server || $server->shared_secret !== $sharedSecret) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 
         // Check if this server can become origin (if it's an origin type)
-        if ($server->type === \App\Enum\ServerTypeEnum::ORIGIN && 
+        if ($server->type === \App\Enum\ServerTypeEnum::ORIGIN &&
             $data['status'] === \App\Enum\ServerStatusEnum::ACTIVE->value &&
-            !$server->canBecomeOrigin()) {
+            ! $server->canBecomeOrigin()) {
             Log::warning('Cannot activate origin server - another origin is already active', [
                 'server_id' => $server->id,
                 'hostname' => $data['hostname'],
             ]);
-            
+
             return response()->json([
                 'error' => 'Another origin server is already active',
                 'status' => 'conflict',
@@ -184,7 +195,7 @@ class ServerProvisionController extends Controller
 
         // Optional: Include health data in request
         $health = $request->input('health', []);
-        if (!empty($health)) {
+        if (! empty($health)) {
             $server->update([
                 'metadata' => array_merge($server->metadata ?? [], [
                     'health' => $health,

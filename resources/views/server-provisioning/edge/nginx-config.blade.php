@@ -1,7 +1,18 @@
+# njs verifies playback tokens locally with an HMAC, so a request carrying ?t=
+# never reaches Laravel. See docs/streaming-auth-redesign.md.
+load_module modules/ngx_http_js_module.so;
+
 user nginx;
 worker_processes auto;
 error_log /var/log/nginx/error.log warn;
 pid /var/run/nginx.pid;
+
+# Passed through to njs as process.env. Keeping the secrets in the environment
+# rather than in this file means they are not written to disk here.
+env HLS_VIEWER_SECRET;
+env HLS_EMBED_SECRET;
+env HLS_TOKEN_LEEWAY;
+env STREAM_SYSTEM_STREAMKEY;
 
 events {
     worker_connections 4096;
@@ -10,6 +21,8 @@ events {
 }
 
 http {
+    js_import hlsAuth from /etc/nginx/njs/hls-auth.js;
+
     include /etc/nginx/mime.types;
     default_type application/octet-stream;
 
@@ -27,9 +40,12 @@ http {
     gzip_vary on;
     gzip_proxied any;
     gzip_comp_level 6;
+    {{-- An 1800-entry DVR playlist is ~179KB raw and ~10KB gzipped, so compressing
+         m3u8 is worth real bandwidth. video/mp2t is deliberately absent: MPEG-TS is
+         already compressed, so gzipping segments burns CPU for no size gain. --}}
     gzip_types text/plain text/css text/xml text/javascript
                application/json application/javascript application/xml+rss
-               application/vnd.apple.mpegurl video/mp2t;
+               application/vnd.apple.mpegurl;
 
     # Rate limiting
     limit_req_zone $binary_remote_addr zone=viewer_limit:10m rate=30r/s;
@@ -76,8 +92,20 @@ http {
             add_header Content-Type text/plain;
         }
 
-        # Authentication subrequest endpoint
+        # Playback token verification, entirely local: no network call, no PHP.
+        # Falls back to /auth-legacy when the request carries a streamkey instead.
         location = /auth {
+            internal;
+            js_content hlsAuth.verify;
+        }
+
+        # Legacy fallback, reached only for a per-user streamkey, which can only
+        # be resolved in the database. Goes away with the streamkey itself.
+        #
+        # The cache key is now effectively per streamkey rather than per segment
+        # URI, because $uri here is the constant /auth-legacy, so repeat segment
+        # requests from the same viewer stop hitting PHP.
+        location = /auth-legacy {
             internal;
             proxy_pass {{ $nginxUpstream }}/api/hls/auth;
             proxy_pass_request_body off;
@@ -91,7 +119,14 @@ http {
             # Pass streamkey as header for authentication
             proxy_set_header X-Stream-Key $arg_streamkey;
 
-            # Cache auth responses for performance
+            # Cache auth responses for performance.
+            #
+            # Laravel answers with 'Cache-Control: no-cache, private', which nginx
+            # obeys by default - so without this the cache never stored anything and
+            # every single segment and playlist request went through to PHP.
+            # Ignoring those headers is what makes proxy_cache_valid below real.
+            # Cost: a revoked streamkey stays usable for up to the cache lifetime.
+            proxy_ignore_headers Cache-Control Expires Set-Cookie;
             proxy_cache auth_cache;
             proxy_cache_key "$remote_addr:$arg_streamkey:$uri";
             proxy_cache_valid 200 1m;
@@ -100,6 +135,10 @@ http {
 
         # HLS m3u8 playlist files - proxy and cache from origin
         location ~ ^/live/(.+\.m3u8)$ {
+            # Playlists are authenticated too now; previously only segments were.
+            auth_request /auth;
+            auth_request_set $auth_status $upstream_status;
+
 @if($useInternalNetwork)
             # Proxy to origin Caddy via internal network (HTTPS with internal IP)
             proxy_pass https://origin_internal$request_uri;
@@ -107,9 +146,9 @@ http {
 
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
-            proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_ssl_name {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
 
-            proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_set_header Host {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header Connection "";
@@ -120,9 +159,9 @@ http {
 
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
-            proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_ssl_name {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
 
-            proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_set_header Host {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header Connection "";
@@ -166,9 +205,9 @@ http {
 
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
-            proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_ssl_name {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
 
-            proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_set_header Host {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header Connection "";
@@ -179,9 +218,9 @@ http {
 
             # SSL/SNI configuration for proper certificate validation
             proxy_ssl_server_name on;
-            proxy_ssl_name {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_ssl_name {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
 
-            proxy_set_header Host {{ $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org' }};
+            proxy_set_header Host {{ $originServer ? $originServer->hostname : trim('origin.'.config('dns.zone'), '.') }};
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header Connection "";

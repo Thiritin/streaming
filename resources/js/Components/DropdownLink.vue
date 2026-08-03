@@ -17,14 +17,14 @@ defineProps({
     <Link
         v-if="as === 'Link'"
         :href="href"
-        class="flex items-center gap-2 w-full px-4 py-2 text-left text-sm leading-5 text-primary-200 hover:bg-primary-600 hover:text-white focus:outline-none focus:bg-primary-600 transition duration-150 ease-in-out"
+        class="flex items-center gap-2 w-full px-4 py-2 text-left text-sm leading-5 text-primary-200 hover:bg-primary-600 hover:text-white focus:outline-none focus:bg-primary-600 transition duration-(--dur-fast) ease-in-out"
     >
         <slot />
     </Link>
     <a
         v-else
         :href="href"
-        class="flex items-center gap-2 w-full px-4 py-2 text-left text-sm leading-5 text-primary-200 hover:bg-primary-600 hover:text-white focus:outline-none focus:bg-primary-600 transition duration-150 ease-in-out"
+        class="flex items-center gap-2 w-full px-4 py-2 text-left text-sm leading-5 text-primary-200 hover:bg-primary-600 hover:text-white focus:outline-none focus:bg-primary-600 transition duration-(--dur-fast) ease-in-out"
     >
         <slot />
     </a>

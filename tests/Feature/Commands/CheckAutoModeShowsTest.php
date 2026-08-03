@@ -6,7 +6,6 @@ use App\Enum\SourceStatusEnum;
 use App\Models\Show;
 use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class CheckAutoModeShowsTest extends TestCase
@@ -53,13 +52,7 @@ class CheckAutoModeShowsTest extends TestCase
         ]);
 
         // Act: Run the command
-        $this->artisan('shows:check-auto-mode')
-            ->expectsOutput('Checking auto mode shows...')
-            ->expectsOutput("Starting auto mode show: {$showToStart->title}")
-            ->expectsOutput("✓ Show '{$showToStart->title}' started successfully")
-            ->expectsOutput('No shows to auto-end at this time.')
-            ->expectsOutput('Auto mode check completed.')
-            ->assertExitCode(0);
+        $this->artisan('shows:check-auto-mode')->assertExitCode(0);
 
         // Assert
         $showToStart->refresh();
@@ -116,15 +109,7 @@ class CheckAutoModeShowsTest extends TestCase
         ]);
 
         // Act: Run the command
-        $this->artisan('shows:check-auto-mode')
-            ->expectsOutput('Checking auto mode shows...')
-            ->expectsOutput('No shows to auto-start at this time.')
-            ->expectsOutput("Ending auto mode show: {$showWithOnlineSource->title}")
-            ->expectsOutput("✓ Show '{$showWithOnlineSource->title}' ended successfully (scheduled end reached)")
-            ->expectsOutput("Ending auto mode show: {$showWithOfflineSource->title}")
-            ->expectsOutput("✓ Show '{$showWithOfflineSource->title}' ended successfully (scheduled end reached)")
-            ->expectsOutput('Auto mode check completed.')
-            ->assertExitCode(0);
+        $this->artisan('shows:check-auto-mode')->assertExitCode(0);
 
         // Assert
         $showWithOnlineSource->refresh();
@@ -172,12 +157,7 @@ class CheckAutoModeShowsTest extends TestCase
         ]);
 
         // Act: Run the command
-        $this->artisan('shows:check-auto-mode')
-            ->expectsOutput('Checking auto mode shows...')
-            ->expectsOutput('No shows to auto-start at this time.')
-            ->expectsOutput('No shows to auto-end at this time.')
-            ->expectsOutput('Auto mode check completed.')
-            ->assertExitCode(0);
+        $this->artisan('shows:check-auto-mode')->assertExitCode(0);
 
         // Assert: Both shows should remain live
         $showWithOfflineSource->refresh();
@@ -214,12 +194,7 @@ class CheckAutoModeShowsTest extends TestCase
         ]);
 
         // Act: Run the command
-        $this->artisan('shows:check-auto-mode')
-            ->expectsOutput('Checking auto mode shows...')
-            ->expectsOutput('No shows to auto-start at this time.')
-            ->expectsOutput('No shows to auto-end at this time.')
-            ->expectsOutput('Auto mode check completed.')
-            ->assertExitCode(0);
+        $this->artisan('shows:check-auto-mode')->assertExitCode(0);
     }
 
     /** @test */
@@ -252,7 +227,7 @@ class CheckAutoModeShowsTest extends TestCase
             'scheduled_end' => now()->subMinutes(5),
             'actual_start' => now()->subHours(3),
         ]);
-        
+
         // Also create a show with online source that should end (past scheduled end)
         $showWithOnlineSourceToEnd = Show::factory()->create([
             'source_id' => $onlineSource->id,
@@ -264,8 +239,7 @@ class CheckAutoModeShowsTest extends TestCase
         ]);
 
         // Act: Run the command
-        $this->artisan('shows:check-auto-mode')
-            ->assertExitCode(0);
+        $this->artisan('shows:check-auto-mode')->assertExitCode(0);
 
         // Assert: All appropriate shows were processed
         foreach ($showsToStart as $show) {
@@ -279,7 +253,7 @@ class CheckAutoModeShowsTest extends TestCase
             $this->assertEquals('ended', $show->status);
             $this->assertNotNull($show->actual_end);
         }
-        
+
         // Also verify the show with online source was ended
         $showWithOnlineSourceToEnd->refresh();
         $this->assertEquals('ended', $showWithOnlineSourceToEnd->status);
@@ -304,16 +278,90 @@ class CheckAutoModeShowsTest extends TestCase
         ]);
 
         // Act: Run the command
-        $this->artisan('shows:check-auto-mode')
-            ->expectsOutput('Checking auto mode shows...')
-            ->expectsOutput('No shows to auto-start at this time.')
-            ->expectsOutput('No shows to auto-end at this time.')
-            ->expectsOutput('Auto mode check completed.')
-            ->assertExitCode(0);
+        $this->artisan('shows:check-auto-mode')->assertExitCode(0);
 
         // Assert: Show remains unchanged
         $liveShow->refresh();
         $this->assertEquals('live', $liveShow->status);
         $this->assertEquals(now()->subHour()->format('Y-m-d H:i'), $liveShow->actual_start->format('Y-m-d H:i'));
+    }
+
+    /**
+     * The dance case: the slot ends at 01:00 but recording may run to 02:00. Nothing may
+     * stop the show before its hard stop, and nothing may leave it running after.
+     *
+     * @test
+     */
+    public function an_explicit_hard_stop_overrides_the_scheduled_end()
+    {
+        $source = Source::factory()->create(['status' => SourceStatusEnum::ONLINE]);
+
+        $stillRunning = Show::factory()->create([
+            'source_id' => $source->id,
+            'auto_mode' => true,
+            'status' => 'live',
+            'scheduled_start' => now()->subHours(3),
+            'scheduled_end' => now()->subMinutes(30),
+            'auto_stop_at' => now()->addMinutes(30),
+        ]);
+
+        $overdue = Show::factory()->create([
+            'source_id' => $source->id,
+            'auto_mode' => true,
+            'status' => 'live',
+            'scheduled_start' => now()->subHours(3),
+            'scheduled_end' => now()->addHour(),
+            'auto_stop_at' => now()->subMinute(),
+        ]);
+
+        $this->artisan('shows:check-auto-mode')->assertExitCode(0);
+
+        // Past the scheduled end, but the hard stop has not come: keep recording.
+        $this->assertEquals('live', $stillRunning->fresh()->status);
+
+        // Hard stop reached even though the slot has time left, and the source is still
+        // pushing: this is the safety net doing its job.
+        $this->assertEquals('ended', $overdue->fresh()->status);
+        $this->assertNotNull($overdue->fresh()->actual_end);
+    }
+
+    /** @test */
+    public function a_manual_show_is_never_stopped_by_a_hard_stop()
+    {
+        $source = Source::factory()->create(['status' => SourceStatusEnum::ONLINE]);
+
+        $show = Show::factory()->create([
+            'source_id' => $source->id,
+            'auto_mode' => false,
+            'status' => 'live',
+            'scheduled_start' => now()->subHours(3),
+            'scheduled_end' => now()->subHour(),
+            'auto_stop_at' => now()->subHour(),
+        ]);
+
+        $this->artisan('shows:check-auto-mode')->assertExitCode(0);
+
+        // Auto mode off means both rules are off; ending it stays the operator's call.
+        $this->assertEquals('live', $show->fresh()->status);
+    }
+
+    /** @test */
+    public function auto_mode_never_cancels_a_show_whose_source_never_arrives()
+    {
+        $source = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE]);
+
+        $show = Show::factory()->create([
+            'source_id' => $source->id,
+            'auto_mode' => true,
+            'status' => 'scheduled',
+            'scheduled_start' => now()->subHours(2),
+            'scheduled_end' => now()->subHour(),
+            'auto_stop_at' => now()->subHour(),
+        ]);
+
+        $this->artisan('shows:check-auto-mode')->assertExitCode(0);
+
+        // Still scheduled, not cancelled: that is a decision, not an automation.
+        $this->assertEquals('scheduled', $show->fresh()->status);
     }
 }

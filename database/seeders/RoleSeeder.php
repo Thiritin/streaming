@@ -20,7 +20,7 @@ class RoleSeeder extends Seeder
                 'description' => 'Full system administrator with all permissions',
                 'chat_color' => '#FF0000', // Red color for admins
                 'priority' => 100, // Highest priority
-                'assigned_at_login' => true, // Synced from identity provider groups
+                'external_id' => null, // Set the provider's group ID to sync this role at login
                 'is_visible' => true,
                 'permissions' => [
                     'admin.access',
@@ -59,7 +59,7 @@ class RoleSeeder extends Seeder
                 'description' => 'Chat and user moderator with limited permissions',
                 'chat_color' => '#00FF00', // Green color for moderators
                 'priority' => 50, // High priority but less than admin
-                'assigned_at_login' => true, // Synced from identity provider groups
+                'external_id' => null, // Set the provider's group ID to sync this role at login
                 'is_visible' => true,
                 'permissions' => [
                     'filament.access',
@@ -79,15 +79,15 @@ class RoleSeeder extends Seeder
             ]
         );
 
-        // Staff role (general EF staff)
+        // Staff role (general convention staff)
         Role::updateOrCreate(
             ['slug' => 'staff'],
             [
                 'name' => 'Staff',
-                'description' => 'General Eurofurence staff member',
+                'description' => 'General convention staff member',
                 'chat_color' => '#3B82F6', // Blue color for staff
                 'priority' => 30,
-                'assigned_at_login' => true, // Synced from identity provider groups
+                'external_id' => null, // Set the provider's group ID to sync this role at login
                 'is_visible' => true,
                 'permissions' => [
                     'chat.send',
@@ -108,7 +108,7 @@ class RoleSeeder extends Seeder
                 'description' => 'Event super sponsor',
                 'chat_color' => '#83559e', // Purple color for super sponsors
                 'priority' => 28,
-                'assigned_at_login' => true, // Can be synced from registration system
+                'external_id' => null, // Set the registration package name to sync this role at login
                 'is_visible' => true,
                 'permissions' => [
                     'chat.bypass_slow_mode',
@@ -129,7 +129,7 @@ class RoleSeeder extends Seeder
                 'description' => 'Event sponsor',
                 'chat_color' => '#f6cb21', // Yellow/Gold color for sponsors
                 'priority' => 25,
-                'assigned_at_login' => true, // Can be synced from registration system
+                'external_id' => null, // Set the registration package name to sync this role at login
                 'is_visible' => true,
                 'permissions' => [
                     'chat.bypass_slow_mode',
@@ -149,7 +149,7 @@ class RoleSeeder extends Seeder
                 'description' => 'Registered attendee',
                 'chat_color' => null, // Use default chat color
                 'priority' => 10,
-                'assigned_at_login' => true, // Can be synced from registration system
+                'external_id' => null, // Set the registration package name to sync this role at login
                 'is_visible' => false, // Don't show badge for regular attendees
                 'permissions' => [
                     'chat.send',
@@ -167,7 +167,6 @@ class RoleSeeder extends Seeder
                 'description' => 'Authenticated user without ticket',
                 'chat_color' => null, // Use default chat color
                 'priority' => 5, // Lower priority than attendee
-                'assigned_at_login' => false,
                 'is_visible' => false, // Don't show badge
                 'permissions' => [
                     'chat.send',

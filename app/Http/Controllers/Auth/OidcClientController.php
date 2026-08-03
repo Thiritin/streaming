@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Role;
 use App\Models\User;
+use App\Services\BrandingService;
 use App\Services\Hydra\Client;
 use App\Services\OpenIDService;
 use Illuminate\Http\RedirectResponse;
@@ -35,8 +37,15 @@ class OidcClientController extends Controller
         /**
          * Only Identity Client - Redirects to error page if scope is invalid
          */
+        Log::info('OIDC DEBUG callback entered', ['query' => $request->query(), 'session_id' => Session::getId()]);
         if (isset($data['error'])) {
-            return Redirect::route('auth.login');
+            Log::warning('OIDC callback returned an error from the identity provider', $data);
+
+            // The provider rejected the authorize request (a replayed flow, a rotated CSRF
+            // cookie on its side, an expired flow). Bouncing to auth.login would start yet
+            // another authorize round and loop, hiding the error, so stop at the sign-in
+            // screen and say so.
+            return $this->failed('Sign-in was refused. Start again from this page, in a single tab.');
         }
 
         /**
@@ -45,9 +54,13 @@ class OidcClientController extends Controller
          * otherwise null === null and it would pass the check falsely.
          */
         if ($request->get('state') !== Session::get('login.oauth2state', false)) {
+            Log::warning('OIDC callback state did not match the session', [
+                'got' => $request->get('state'),
+                'expected' => Session::get('login.oauth2state', false),
+            ]);
             Session::remove('login.oauth2state');
 
-            return Redirect::route('auth.login');
+            return $this->failed('The sign-in request expired or was started in another session.');
         }
         Session::flush();
         /**
@@ -59,9 +72,15 @@ class OidcClientController extends Controller
         ]);
         $userinfoRequest = Http::identity()->withToken($accessToken->getToken())->get('/api/v1/userinfo');
         if ($userinfoRequest->successful() === false) {
-            return Redirect::route('auth.login');
+            Log::warning('OIDC userinfo request failed', ['status' => $userinfoRequest->status(), 'body' => $userinfoRequest->body()]);
+
+            // Named via BrandingService so a saved override wins over the config default.
+            $identity = app(BrandingService::class)->all()['identity_name'] ?? 'the identity provider';
+
+            return $this->failed("Your account details could not be read from {$identity}.");
         }
         $userinfo = $userinfoRequest->json();
+        Log::info('OIDC DEBUG userinfo ok', ['keys' => array_keys($userinfo ?? [])]);
 
         if (! isset($userinfo['sub'])) {
             throw new UnexpectedValueException('Could not request user id from freshly fetched token.');
@@ -75,16 +94,24 @@ class OidcClientController extends Controller
         ]);
         $user = $user->fresh();
 
-        // Fetch attendee packages from EF registration API
+        // Fetch attendee packages from the registration API
         $packages = $this->fetchAttendeePackages($userid);
 
         // Sync roles from registration system (groups and packages)
         $roleSlugs = $this->mapGroupsAndPackagesToRoles($userinfo['groups'] ?? [], $packages);
         $user->syncRolesFromLogin($roleSlugs);
 
-        Auth::loginUsingId($user->id);
+        // Remembered, so the sign-in survives the session cookie expiring or the session
+        // store being cleared. Attendees should not be bounced back to the identity
+        // provider mid-convention.
+        Auth::loginUsingId($user->id, remember: true);
         Session::put('access_token', $accessToken);
-        Session::put('avatar', $userinfo['avatar']);
+        Session::put('avatar', $userinfo['avatar'] ?? null);
+        Log::info('OIDC DEBUG logged in', [
+            'user_id' => $user->id,
+            'auth_check' => Auth::check(),
+            'session_id' => Session::getId(),
+        ]);
 
         // Middleware will handle server assignment and redirect if needed
         return $this->redirectDestination($request);
@@ -92,6 +119,17 @@ class OidcClientController extends Controller
 
     public function login(Request $request): RedirectResponse
     {
+        if ($rejection = $this->redirectUriRejection()) {
+            Log::error('OIDC redirect URI will be rejected by the provider', [
+                'redirect_uri' => route('auth.callback'),
+                'reason' => $rejection,
+            ]);
+
+            if (! app()->isProduction()) {
+                return $this->failed($rejection);
+            }
+        }
+
         $provider = $this->openIDService->setupOIDC($request, $this->clientIsAdmin($request));
         $authorizationUrl = $provider->getAuthorizationUrl();
         Session::put('login.oauth2state', $provider->getState());
@@ -104,13 +142,62 @@ class OidcClientController extends Controller
         return false;
     }
 
+    /**
+     * End a broken sign-in at the sign-in screen rather than at the flow initiator.
+     *
+     * `auth.login` immediately redirects to the provider's authorize endpoint, so
+     * redirecting a failure there restarts the flow: the operator sees a redirect loop
+     * instead of a message, and the underlying error stays invisible.
+     *
+     * The provider's own description is kept out of the response on purpose; it leaks
+     * internals ("the CSRF value from the token does not match ...") and means nothing to
+     * an attendee. It is in the log for whoever is debugging.
+     */
+    /**
+     * OAuth2 providers refuse a plain-http redirect URI unless the host is localhost or a
+     * `*.localhost` subdomain. Ory Hydra answers with
+     * `invalid_request: Redirect URL is using an insecure protocol ...` only *after* a full
+     * round trip through the authorize endpoint, which reads like a login failure rather
+     * than a misconfigured APP_URL. Catch it before leaving the app.
+     *
+     * @return string|null The reason, or null when the redirect URI is acceptable.
+     */
+    private function redirectUriRejection(): ?string
+    {
+        $uri = route('auth.callback');
+        $parts = parse_url($uri);
+
+        if (($parts['scheme'] ?? 'http') === 'https') {
+            return null;
+        }
+
+        $host = $parts['host'] ?? '';
+
+        if ($host === 'localhost' || str_ends_with($host, '.localhost')) {
+            return null;
+        }
+
+        return "Sign-in is misconfigured: the callback URL {$uri} uses http, which the identity "
+            .'provider only accepts for localhost hosts. Set APP_URL to an https URL, or to a '
+            .'*.localhost host, and make sure that callback URL is registered for this client.';
+    }
+
+    private function failed(?string $reason = null): RedirectResponse
+    {
+        Session::remove('login.oauth2state');
+
+        return Redirect::route('login')->withErrors([
+            'oidc' => $reason ?? 'Sign-in could not be completed. Please try again.',
+        ]);
+    }
+
     private function redirectDestination(Request $request)
     {
         return Redirect::route('shows.grid');
     }
 
     /**
-     * Fetch attendee packages from EF registration API
+     * Fetch attendee packages from the registration API
      * This is optional - if the registration system is offline, we silently continue without packages
      */
     private function fetchAttendeePackages(string $userId): array
@@ -177,50 +264,60 @@ class OidcClientController extends Controller
     }
 
     /**
-     * Map registration system groups and packages to role slugs
+     * Collect the external identifiers this sign-in grants.
+     *
+     * Nothing is translated to a role here. A role claims an identifier by
+     * putting it in its `external_id`, so which role a group ID or a package
+     * maps to is a question for the roles table, editable in /manage, rather
+     * than something wired into this class.
+     *
+     * @param  array<int, string>  $groups  Group IDs from the userinfo claim.
+     * @param  array<int, string>  $packages  Package names from the registration system.
+     * @return array<int, string>
      */
     private function mapGroupsAndPackagesToRoles(array $groups, array $packages): array
     {
-        $roles = [];
+        // Group IDs are already the identifier, so they pass through untouched.
+        $identifiers = array_values($groups);
 
-        // Check packages for sponsor/supersponsor
+        /*
+         * Packages are not. A package reads like "day-supersponsor-2026", so a
+         * role claims one by declaring the part it recognises. Longest first, or
+         * the sponsor role would swallow every supersponsor package.
+         */
+        $claimed = Role::loginAssigned()
+            ->pluck('external_id')
+            ->filter()
+            ->sortByDesc(fn (string $id) => strlen($id))
+            ->values();
+
         foreach ($packages as $package) {
-            $packageName = strtolower($package);
+            $package = strtolower((string) $package);
 
-            if (str_contains($packageName, 'supersponsor')) {
-                $roles[] = 'supersponsor';
-            } elseif (str_contains($packageName, 'sponsor')) {
-                $roles[] = 'sponsor';
+            foreach ($claimed as $identifier) {
+                if (str_contains($package, strtolower($identifier))) {
+                    $identifiers[] = $identifier;
+
+                    // One role per package: the longest match already won.
+                    break;
+                }
             }
         }
 
-        // Map groups to roles
-        // Group IDs from identity provider userinfo groups array
-        $groupMapping = [
-            'KVJ7GW275683NMZL' => 'admin', // Streaming Admin group
-            '54ZYODX15G2K1M76' => 'staff', // General EF Staff
-        ];
+        /*
+         * Everyone who got this far signed in successfully, so a role that
+         * declares itself the baseline gets handed out unconditionally.
+         */
+        $identifiers[] = 'attendee';
 
-        foreach ($groups as $group) {
-            if (isset($groupMapping[$group])) {
-                $roles[] = $groupMapping[$group];
-            }
-        }
+        $identifiers = array_values(array_unique($identifiers));
 
-        // Add attendee role as base role if not already included
-        if (! in_array('attendee', $roles)) {
-            $roles[] = 'attendee';
-        }
-
-        // Remove duplicates
-        $roles = array_unique($roles);
-
-        Log::info('Mapped roles for user', [
+        Log::info('Mapped external identifiers for user', [
             'groups' => $groups,
             'packages' => $packages,
-            'roles' => $roles,
+            'identifiers' => $identifiers,
         ]);
 
-        return $roles;
+        return $identifiers;
     }
 }

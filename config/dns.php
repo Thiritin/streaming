@@ -12,9 +12,9 @@ return [
     |
     */
 
-    'server' => env('DNS_SERVER', '85.199.154.53'),
+    'server' => env('DNS_SERVER'),
 
-    'zone' => env('DNS_ZONE', 'stream.eurofurence.org'),
+    'zone' => env('DNS_ZONE'),
 
     'key_name' => env('DNS_KEY_NAME', 'stream-ddns'),
 

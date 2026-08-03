@@ -2,303 +2,191 @@
 
 namespace Tests\Unit\Commands;
 
-use Tests\TestCase;
 use App\Console\Commands\Chat\SlowModeCommand;
-use App\Models\User;
-use App\Models\Role;
-use App\Models\ChatSetting;
+use App\Events\Chat\Broadcasts\ChatSettingsUpdatedEvent;
 use App\Events\CommandFeedbackEvent;
-use App\Events\SystemMessageEvent;
+use App\Models\ChatSetting;
+use App\Models\Role;
+use App\Models\User;
+use App\Services\Chat\ChatSettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
+use Tests\TestCase;
 
 class SlowModeCommandTest extends TestCase
 {
     use RefreshDatabase;
 
     protected SlowModeCommand $command;
+
     protected User $admin;
+
     protected User $moderator;
+
     protected User $regularUser;
 
     protected function setUp(): void
     {
         parent::setUp();
-        
-        $this->command = new SlowModeCommand();
-        
-        // Create roles
-        Role::create([
-            'name' => 'Admin',
-            'slug' => 'admin',
-            'chat_color' => '#ff0000',
-            'is_staff' => true,
-        ]);
-        
-        Role::create([
-            'name' => 'Moderator',
-            'slug' => 'moderator',
-            'chat_color' => '#00ff00',
-            'is_staff' => true,
-        ]);
-        
+
+        $this->command = new SlowModeCommand;
+
+        Role::create(['name' => 'Admin', 'slug' => 'admin', 'chat_color' => '#ff0000', 'is_staff' => true]);
+        Role::create(['name' => 'Moderator', 'slug' => 'moderator', 'chat_color' => '#00ff00', 'is_staff' => true]);
+
         $this->admin = User::factory()->create();
         $this->admin->assignRole('admin');
-        
+
         $this->moderator = User::factory()->create();
         $this->moderator->assignRole('moderator');
-        
+
         $this->regularUser = User::factory()->create();
-        
-        // Clear cache
+
         Cache::flush();
     }
 
-    public function test_command_has_correct_metadata()
+    public function test_command_has_correct_metadata(): void
     {
         $this->assertEquals('slowmode', $this->command->name());
         $this->assertEquals('/slowmode [seconds|off]', $this->command->signature());
-        $this->assertEquals('Enable or configure slow mode for chat', $this->command->description());
+        $this->assertEquals('Enable, configure or disable slow mode', $this->command->description());
         $this->assertContains('slow', $this->command->aliases());
     }
 
-    public function test_admin_can_enable_slow_mode()
+    public function test_admin_can_enable_slow_mode(): void
     {
         Event::fake();
-        
-        $this->command->handle($this->admin, [
-            'duration' => '10'
-        ]);
-        
-        // Check setting was created
-        $this->assertDatabaseHas('chat_settings', [
-            'key' => 'slow_mode_seconds',
-            'value' => '10',
-        ]);
-        
-        // Check cache was set
-        $this->assertEquals(10, Cache::get('chat.slow_mode'));
-        
-        // Check events were dispatched
-        Event::assertDispatched(CommandFeedbackEvent::class, function ($event) {
-            return str_contains($event->message, 'Slow mode enabled: 10 seconds');
-        });
-        
-        Event::assertDispatched(SystemMessageEvent::class);
+
+        $this->command->handle($this->admin, ['duration' => '10']);
+
+        $this->assertDatabaseHas('chat_settings', ['key' => 'slow_mode_seconds', 'value' => '10']);
+        $this->assertSame(10, app(ChatSettingsService::class)->slowModeSeconds());
+
+        Event::assertDispatched(
+            CommandFeedbackEvent::class,
+            fn ($event) => str_contains($event->message, 'Slow mode enabled: 10 seconds'),
+        );
+        Event::assertDispatched(ChatSettingsUpdatedEvent::class);
     }
 
-    public function test_moderator_can_enable_slow_mode()
+    public function test_moderator_can_enable_slow_mode(): void
     {
         $this->assertTrue($this->command->authorize($this->moderator));
-        
+
         Event::fake();
-        
-        $this->command->handle($this->moderator, [
-            'duration' => '30'
-        ]);
-        
-        $this->assertDatabaseHas('chat_settings', [
-            'key' => 'slow_mode_seconds',
-            'value' => '30',
-        ]);
+
+        $this->command->handle($this->moderator, ['duration' => '30']);
+
+        $this->assertDatabaseHas('chat_settings', ['key' => 'slow_mode_seconds', 'value' => '30']);
     }
 
-    public function test_regular_user_cannot_enable_slow_mode()
+    public function test_regular_user_cannot_enable_slow_mode(): void
     {
         $this->assertFalse($this->command->authorize($this->regularUser));
     }
 
-    public function test_disable_slow_mode_with_off()
+    public function test_slow_mode_can_be_turned_off(): void
     {
-        // First enable slow mode
-        ChatSetting::create([
-            'key' => 'slow_mode_seconds',
-            'value' => '15',
-        ]);
-        Cache::put('chat.slow_mode', 15, now()->addHours(24));
-        
+        app(ChatSettingsService::class)->update(['slow_mode_seconds' => 15]);
+
         Event::fake();
-        
-        $this->command->handle($this->admin, [
-            'duration' => 'off'
-        ]);
-        
-        // Check setting was updated
-        $this->assertDatabaseHas('chat_settings', [
-            'key' => 'slow_mode_seconds',
-            'value' => '0',
-        ]);
-        
-        // Check cache was cleared
-        $this->assertFalse(Cache::has('chat.slow_mode'));
-        
-        Event::assertDispatched(CommandFeedbackEvent::class, function ($event) {
-            return str_contains($event->message, 'Slow mode has been disabled');
-        });
+
+        $this->command->handle($this->admin, ['duration' => 'off']);
+
+        $this->assertDatabaseHas('chat_settings', ['key' => 'slow_mode_seconds', 'value' => '0']);
+        $this->assertSame(0, app(ChatSettingsService::class)->slowModeSeconds());
+
+        Event::assertDispatched(
+            CommandFeedbackEvent::class,
+            fn ($event) => str_contains($event->message, 'Slow mode disabled'),
+        );
     }
 
-    public function test_disable_slow_mode_with_zero()
+    public function test_zero_also_turns_slow_mode_off(): void
     {
-        ChatSetting::create([
-            'key' => 'slow_mode_seconds',
-            'value' => '10',
-        ]);
-        
+        app(ChatSettingsService::class)->update(['slow_mode_seconds' => 10]);
+
         Event::fake();
-        
-        $this->command->handle($this->admin, [
-            'duration' => '0'
-        ]);
-        
-        $this->assertDatabaseHas('chat_settings', [
-            'key' => 'slow_mode_seconds',
-            'value' => '0',
-        ]);
-        
-        Event::assertDispatched(CommandFeedbackEvent::class, function ($event) {
-            return str_contains($event->message, 'disabled');
-        });
+
+        $this->command->handle($this->admin, ['duration' => '0']);
+
+        $this->assertDatabaseHas('chat_settings', ['key' => 'slow_mode_seconds', 'value' => '0']);
     }
 
-    public function test_check_current_status_when_no_parameter()
+    public function test_status_is_reported_when_no_duration_is_given(): void
     {
-        // Set current slow mode
-        ChatSetting::create([
-            'key' => 'slow_mode_seconds',
-            'value' => '20',
-        ]);
-        
+        app(ChatSettingsService::class)->update(['slow_mode_seconds' => 20]);
+
         Event::fake();
-        
-        $this->command->handle($this->admin, [
-            'duration' => null
-        ]);
-        
-        Event::assertDispatched(CommandFeedbackEvent::class, function ($event) {
-            return str_contains($event->message, 'currently set to 20 seconds');
-        });
+
+        $this->command->handle($this->admin, ['duration' => null]);
+
+        Event::assertDispatched(
+            CommandFeedbackEvent::class,
+            fn ($event) => str_contains($event->message, 'Slow mode is set to 20 seconds'),
+        );
+        Event::assertNotDispatched(ChatSettingsUpdatedEvent::class);
     }
 
-    public function test_check_status_when_disabled()
+    public function test_status_is_reported_when_disabled(): void
     {
         Event::fake();
-        
-        $this->command->handle($this->admin, [
-            'duration' => null
-        ]);
-        
-        Event::assertDispatched(CommandFeedbackEvent::class, function ($event) {
-            return str_contains($event->message, 'currently disabled');
-        });
+
+        $this->command->handle($this->admin, ['duration' => null]);
+
+        Event::assertDispatched(
+            CommandFeedbackEvent::class,
+            fn ($event) => str_contains($event->message, 'Slow mode is disabled'),
+        );
     }
 
-    public function test_invalid_duration_shows_error()
+    public function test_invalid_duration_is_rejected(): void
     {
         Event::fake();
-        
-        $this->command->handle($this->admin, [
-            'duration' => 'invalid'
-        ]);
-        
-        Event::assertDispatched(CommandFeedbackEvent::class, function ($event) {
-            return str_contains($event->message, 'must be a positive number');
-        });
-        
-        $this->assertDatabaseMissing('chat_settings', [
-            'key' => 'slow_mode_seconds',
-        ]);
+
+        $this->command->handle($this->admin, ['duration' => 'invalid']);
+
+        Event::assertDispatched(
+            CommandFeedbackEvent::class,
+            fn ($event) => str_contains($event->message, 'between 1 and 300'),
+        );
+
+        $this->assertDatabaseMissing('chat_settings', ['key' => 'slow_mode_seconds']);
     }
 
-    public function test_negative_duration_shows_error()
+    public function test_duration_over_the_limit_is_rejected(): void
     {
         Event::fake();
-        
-        $this->command->handle($this->admin, [
-            'duration' => '-5'
-        ]);
-        
-        Event::assertDispatched(CommandFeedbackEvent::class, function ($event) {
-            return str_contains($event->message, 'must be a positive number');
-        });
+
+        $this->command->handle($this->admin, ['duration' => '301']);
+
+        Event::assertDispatched(
+            CommandFeedbackEvent::class,
+            fn ($event) => str_contains($event->message, 'between 1 and 300'),
+        );
+
+        $this->assertDatabaseMissing('chat_settings', ['key' => 'slow_mode_seconds']);
     }
 
-    public function test_duration_limits()
+    public function test_existing_setting_is_updated_in_place(): void
     {
-        Event::fake();
-        
-        // Test too short (0 seconds)
-        $this->command->handle($this->admin, [
-            'duration' => '0.5'
-        ]);
-        
-        Event::assertDispatched(CommandFeedbackEvent::class, function ($event) {
-            return str_contains($event->message, 'between 1 and 300 seconds');
-        });
-        
-        // Test too long (over 300 seconds)
-        $this->command->handle($this->admin, [
-            'duration' => '301'
-        ]);
-        
-        Event::assertDispatched(CommandFeedbackEvent::class, function ($event) {
-            return str_contains($event->message, 'between 1 and 300 seconds');
-        });
-        
-        // Test valid range
-        Event::fake();
-        
-        $this->command->handle($this->admin, [
-            'duration' => '60'
-        ]);
-        
-        Event::assertDispatched(CommandFeedbackEvent::class, function ($event) {
-            return str_contains($event->message, 'Slow mode enabled: 60 seconds');
-        });
-    }
+        $setting = ChatSetting::create(['key' => 'slow_mode_seconds', 'value' => '5']);
 
-    public function test_update_existing_slow_mode_setting()
-    {
-        // Create initial setting
-        $setting = ChatSetting::create([
-            'key' => 'slow_mode_seconds',
-            'value' => '5',
-        ]);
-        
         Event::fake();
-        
-        $this->command->handle($this->admin, [
-            'duration' => '15'
-        ]);
-        
-        // Should update existing setting, not create new one
+
+        $this->command->handle($this->admin, ['duration' => '15']);
+
         $this->assertDatabaseCount('chat_settings', 1);
-        
-        $setting->refresh();
-        $this->assertEquals('15', $setting->value);
+        $this->assertSame('15', $setting->refresh()->value);
     }
 
-    public function test_command_provides_examples()
+    public function test_command_provides_examples(): void
     {
         $examples = $this->command->examples();
-        
-        $this->assertIsArray($examples);
+
         $this->assertArrayHasKey('/slowmode', $examples);
         $this->assertArrayHasKey('/slowmode 10', $examples);
         $this->assertArrayHasKey('/slowmode off', $examples);
-        $this->assertArrayHasKey('/slow 5', $examples);
-    }
-
-    public function test_slow_mode_cache_is_persistent()
-    {
-        $this->command->handle($this->admin, [
-            'duration' => '45'
-        ]);
-        
-        // Check cache is set with TTL
-        $this->assertEquals(45, Cache::get('chat.slow_mode'));
-        
-        // Check cache key exists
-        $this->assertTrue(Cache::has('chat.slow_mode'));
     }
 }

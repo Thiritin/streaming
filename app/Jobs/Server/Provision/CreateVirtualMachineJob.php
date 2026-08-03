@@ -27,11 +27,11 @@ class CreateVirtualMachineJob implements ShouldQueue
         $hetznerServerType = ($this->server->type === ServerTypeEnum::ORIGIN) ? 'ccx43' : 'cpx21';
         $hetznerClient = Hetzner::client();
         $name = $this->server->type->value.'-'.$this->server->id.'-'.Str::random(12);
-        
+
         // Generate cloud-init script using the provisioning service
         $provisioningService = app(ServerProvisioningService::class);
         $cloudInitScript = $provisioningService->generateCloudInit($this->server);
-        
+
         // Prepare SSH keys array - only add if available
         $sshKeys = [];
         try {
@@ -60,7 +60,7 @@ class CreateVirtualMachineJob implements ShouldQueue
         $serverType = $hetznerClient->serverTypes()->getByName($hetznerServerType);
         $image = $hetznerClient->images()->getByName('ubuntu-22.04');
         $location = $hetznerClient->locations()->getByName('nbg1');
-        
+
         $payload = [
             'name' => $name,
             'server_type' => $serverType->id,
@@ -74,34 +74,34 @@ class CreateVirtualMachineJob implements ShouldQueue
                 'type' => $this->server->type->value,
             ],
         ];
-        
+
         // Make direct API call using Guzzle
-        $httpClient = new \GuzzleHttp\Client();
+        $httpClient = new \GuzzleHttp\Client;
         $response = $httpClient->post('https://api.hetzner.cloud/v1/servers', [
             'headers' => [
-                'Authorization' => 'Bearer ' . config('services.hetzner.token'),
+                'Authorization' => 'Bearer '.config('services.hetzner.token'),
                 'Content-Type' => 'application/json',
             ],
             'json' => $payload,
         ]);
-        
+
         $responseBody = json_decode($response->getBody()->getContents());
         $server = $responseBody->server;
 
-        // Wait for server to be ready with network info  
+        // Wait for server to be ready with network info
         $maxAttempts = 12; // 2 minutes max wait
         $attempts = 0;
         while ($attempts < $maxAttempts) {
             sleep(10);
-            
+
             // Fetch updated server info
             $getResponse = $httpClient->get("https://api.hetzner.cloud/v1/servers/{$server->id}", [
                 'headers' => [
-                    'Authorization' => 'Bearer ' . config('services.hetzner.token'),
+                    'Authorization' => 'Bearer '.config('services.hetzner.token'),
                 ],
             ]);
             $server = json_decode($getResponse->getBody()->getContents())->server;
-            
+
             // Check if we have the public IP (always required)
             if (isset($server->public_net->ipv4->ip)) {
                 break;
@@ -114,14 +114,14 @@ class CreateVirtualMachineJob implements ShouldQueue
 
         $this->server->update([
             'hetzner_id' => $server->id,
-            'hostname' => $name.'.stream.eurofurence.org',
+            'hostname' => trim($name.'.'.config('dns.zone'), '.'),
             'ip' => $server->public_net->ipv4->ip,
             'internal_ip' => $internalIp,
             'port' => 443,
             'max_clients' => ($this->server->type === ServerTypeEnum::EDGE) ? 100 : 1000,
             'status' => ServerStatusEnum::PROVISIONING,
         ]);
-        
+
         // Chain the DNS creation and wait for ready jobs
         \Illuminate\Support\Facades\Bus::chain([
             new CreateDnsRecordJob($this->server),

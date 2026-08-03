@@ -15,11 +15,11 @@ return new class extends Migration
             // Add fields for origin server
             $table->string('hls_path')->nullable()->after('shared_secret');
             $table->string('origin_url')->nullable()->after('hls_path');
-            
+
             // Add fields for edge server monitoring
             $table->integer('viewer_count')->default(0)->after('max_clients');
             $table->timestamp('last_heartbeat')->nullable()->after('viewer_count');
-            
+
             // Add index for finding origin server quickly
             $table->index(['type', 'status']);
         });

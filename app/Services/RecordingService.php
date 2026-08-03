@@ -66,7 +66,7 @@ class RecordingService
             }
             Log::warning('Failed to extract duration from m3u8, falling back to ffprobe');
         }
-        
+
         // Fallback to ffprobe for non-m3u8 files or if m3u8 parsing failed
         try {
             $command = [
@@ -81,6 +81,7 @@ class RecordingService
 
             if (! $result->successful()) {
                 Log::error('FFprobe error extracting duration: '.$result->errorOutput());
+
                 return null;
             }
 
@@ -92,10 +93,11 @@ class RecordingService
             return null;
         } catch (\Exception $e) {
             Log::error('Failed to extract duration with ffprobe: '.$e->getMessage());
+
             return null;
         }
     }
-    
+
     /**
      * Extract duration by parsing m3u8 playlist
      */
@@ -104,22 +106,23 @@ class RecordingService
         try {
             // Download the m3u8 playlist
             $response = Http::timeout(10)->get($url);
-            
-            if (!$response->successful()) {
-                Log::error('Failed to fetch m3u8 playlist: ' . $response->status());
+
+            if (! $response->successful()) {
+                Log::error('Failed to fetch m3u8 playlist: '.$response->status());
+
                 return null;
             }
-            
+
             $content = $response->body();
             $lines = explode("\n", $content);
             $totalDuration = 0.0;
             $segmentCount = 0;
-            
+
             // Check if it's a master playlist
             if (str_contains($content, '#EXT-X-STREAM-INF')) {
                 // This is a master playlist, we need to fetch a variant
-                Log::info('Detected master playlist, fetching first variant from: ' . $url);
-                
+                Log::info('Detected master playlist, fetching first variant from: '.$url);
+
                 // Find first variant URL
                 $variantUrl = null;
                 $variantCount = 0;
@@ -131,7 +134,7 @@ class RecordingService
                             // Next non-empty, non-comment line should be the variant URL
                             for ($j = $i + 1; $j < count($lines); $j++) {
                                 $nextLine = trim($lines[$j]);
-                                if ($nextLine && !str_starts_with($nextLine, '#')) {
+                                if ($nextLine && ! str_starts_with($nextLine, '#')) {
                                     $variantUrl = $nextLine;
                                     break 2; // Break out of both loops
                                 }
@@ -139,26 +142,27 @@ class RecordingService
                         }
                     }
                 }
-                
+
                 Log::info("Master playlist has {$variantCount} variants");
-                
-                if (!$variantUrl) {
+
+                if (! $variantUrl) {
                     Log::error('No variant URL found in master playlist');
+
                     return null;
                 }
-                
+
                 // Make variant URL absolute if it's relative
-                if (!filter_var($variantUrl, FILTER_VALIDATE_URL)) {
+                if (! filter_var($variantUrl, FILTER_VALIDATE_URL)) {
                     $baseUrl = dirname($url);
-                    $variantUrl = $baseUrl . '/' . $variantUrl;
+                    $variantUrl = $baseUrl.'/'.$variantUrl;
                 }
-                
-                Log::info('Fetching first variant playlist: ' . $variantUrl);
-                
+
+                Log::info('Fetching first variant playlist: '.$variantUrl);
+
                 // Recursively fetch the variant playlist
                 return $this->extractDurationFromM3u8($variantUrl);
             }
-            
+
             // Parse segment durations from media playlist
             foreach ($lines as $line) {
                 // Look for EXTINF tags which contain segment duration
@@ -172,16 +176,19 @@ class RecordingService
                     }
                 }
             }
-            
+
             if ($totalDuration > 0) {
                 Log::info("Extracted duration from m3u8: {$totalDuration} seconds from {$segmentCount} segments");
+
                 return (int) round($totalDuration);
             }
-            
-            Log::warning("No duration extracted from m3u8 (no EXTINF tags found)");
+
+            Log::warning('No duration extracted from m3u8 (no EXTINF tags found)');
+
             return null;
         } catch (\Exception $e) {
-            Log::error('Failed to parse m3u8 for duration: ' . $e->getMessage());
+            Log::error('Failed to parse m3u8 for duration: '.$e->getMessage());
+
             return null;
         }
     }
@@ -211,7 +218,7 @@ class RecordingService
                 // For longer videos, capture from the middle
                 $captureTime = min($recording->duration / 2, 300); // Max 5 minutes in
             }
-            
+
             $result = $this->captureFrameAtTime($recording->m3u8_url, $tempPath, $captureTime);
 
             if (! $result || ! file_exists($tempPath)) {
@@ -268,7 +275,7 @@ class RecordingService
     {
         // Use the URL directly
         $inputUrl = $videoUrl;
-        
+
         // Build ffmpeg command
         // -ss: Seek to specific time
         // -i: input stream
@@ -278,7 +285,7 @@ class RecordingService
         $command = [
             'ffmpeg',
             '-y', // Overwrite output
-            '-ss', (string)$timeInSeconds, // Seek to specific time
+            '-ss', (string) $timeInSeconds, // Seek to specific time
             '-i', $inputUrl,
             '-frames:v', '1', // Capture 1 frame
             '-vf', "scale={$this->thumbnailWidth}:{$this->thumbnailHeight}:force_original_aspect_ratio=decrease,pad={$this->thumbnailWidth}:{$this->thumbnailHeight}:(ow-iw)/2:(oh-ih)/2",
@@ -292,12 +299,13 @@ class RecordingService
 
         if (! $result->successful()) {
             Log::error('FFmpeg error capturing thumbnail: '.$result->errorOutput());
+
             return false;
         }
 
         return true;
     }
-    
+
     /**
      * Get the URL of the first video segment from an m3u8 playlist
      */
@@ -305,14 +313,14 @@ class RecordingService
     {
         try {
             $response = Http::timeout(10)->get($m3u8Url);
-            
-            if (!$response->successful()) {
+
+            if (! $response->successful()) {
                 return null;
             }
-            
+
             $content = $response->body();
             $lines = explode("\n", $content);
-            
+
             // Check if it's a master playlist
             if (str_contains($content, '#EXT-X-STREAM-INF')) {
                 // Get the first variant playlist
@@ -320,12 +328,13 @@ class RecordingService
                     if (str_starts_with($line, '#EXT-X-STREAM-INF')) {
                         for ($j = $i + 1; $j < count($lines); $j++) {
                             $nextLine = trim($lines[$j]);
-                            if ($nextLine && !str_starts_with($nextLine, '#')) {
+                            if ($nextLine && ! str_starts_with($nextLine, '#')) {
                                 // Make URL absolute if relative
-                                if (!filter_var($nextLine, FILTER_VALIDATE_URL)) {
+                                if (! filter_var($nextLine, FILTER_VALIDATE_URL)) {
                                     $baseUrl = dirname($m3u8Url);
-                                    $nextLine = $baseUrl . '/' . $nextLine;
+                                    $nextLine = $baseUrl.'/'.$nextLine;
                                 }
+
                                 // Recursively get first segment from variant playlist
                                 return $this->getFirstSegmentUrl($nextLine);
                             }
@@ -333,26 +342,28 @@ class RecordingService
                     }
                 }
             }
-            
+
             // Find the first .ts segment
             foreach ($lines as $line) {
                 $line = trim($line);
-                if ($line && !str_starts_with($line, '#')) {
+                if ($line && ! str_starts_with($line, '#')) {
                     // This should be a segment URL
                     if (str_contains($line, '.ts') || str_contains($line, '.m4s')) {
                         // Make URL absolute if relative
-                        if (!filter_var($line, FILTER_VALIDATE_URL)) {
+                        if (! filter_var($line, FILTER_VALIDATE_URL)) {
                             $baseUrl = dirname($m3u8Url);
-                            $line = $baseUrl . '/' . $line;
+                            $line = $baseUrl.'/'.$line;
                         }
+
                         return $line;
                     }
                 }
             }
-            
+
             return null;
         } catch (\Exception $e) {
-            Log::error('Failed to get first segment from m3u8: ' . $e->getMessage());
+            Log::error('Failed to get first segment from m3u8: '.$e->getMessage());
+
             return null;
         }
     }
@@ -438,4 +449,3 @@ class RecordingService
         Log::info("Processed {$recordings->count()} recordings");
     }
 }
-

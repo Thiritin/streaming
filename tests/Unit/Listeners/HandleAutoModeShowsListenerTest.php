@@ -8,7 +8,6 @@ use App\Listeners\HandleAutoModeShowsListener;
 use App\Models\Show;
 use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class HandleAutoModeShowsListenerTest extends TestCase
@@ -16,13 +15,14 @@ class HandleAutoModeShowsListenerTest extends TestCase
     use RefreshDatabase;
 
     private HandleAutoModeShowsListener $listener;
+
     private Source $source;
 
     protected function setUp(): void
     {
         parent::setUp();
-        
-        $this->listener = new HandleAutoModeShowsListener();
+
+        $this->listener = new HandleAutoModeShowsListener;
         $this->source = Source::factory()->create([
             'status' => SourceStatusEnum::OFFLINE,
         ]);

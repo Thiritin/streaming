@@ -8,8 +8,11 @@ use App\Services\CommandRegistry;
 class HelpCommand extends AbstractChatCommand
 {
     protected string $name = 'help';
+
     protected array $aliases = ['h', 'commands'];
+
     protected string $description = 'Show available commands and their usage';
+
     protected string $signature = '/help [command]';
 
     protected array $parameters = [
@@ -24,9 +27,10 @@ class HelpCommand extends AbstractChatCommand
 
     protected function getRegistry(): CommandRegistry
     {
-        if (!$this->registry) {
+        if (! $this->registry) {
             $this->registry = app(CommandRegistry::class);
         }
+
         return $this->registry;
     }
 
@@ -50,13 +54,15 @@ class HelpCommand extends AbstractChatCommand
     {
         $command = $this->getRegistry()->get($commandName);
 
-        if (!$command) {
+        if (! $command) {
             $this->feedback($user, "Command '/{$commandName}' not found.", 'error');
+
             return;
         }
 
-        if (!$command->authorize($user)) {
+        if (! $command->authorize($user)) {
             $this->feedback($user, "You don't have permission to use '/{$commandName}'.", 'error');
+
             return;
         }
 
@@ -68,12 +74,12 @@ class HelpCommand extends AbstractChatCommand
         $message .= "**Description:** {$info['description']}\n";
         $message .= "**Usage:** {$info['signature']}\n";
 
-        if (!empty($info['aliases'])) {
-            $aliases = array_map(fn($a) => "/{$a}", $info['aliases']);
-            $message .= "**Aliases:** " . implode(', ', $aliases) . "\n";
+        if (! empty($info['aliases'])) {
+            $aliases = array_map(fn ($a) => "/{$a}", $info['aliases']);
+            $message .= '**Aliases:** '.implode(', ', $aliases)."\n";
         }
 
-        if (!empty($examples)) {
+        if (! empty($examples)) {
             $message .= "\n**Examples:**\n";
             foreach ($examples as $example => $description) {
                 $message .= "• `{$example}` - {$description}\n";
@@ -89,6 +95,7 @@ class HelpCommand extends AbstractChatCommand
 
         if (empty($availableCommands)) {
             $this->feedback($user, 'No commands available for your permission level.', 'info');
+
             return;
         }
 
@@ -110,14 +117,14 @@ class HelpCommand extends AbstractChatCommand
             $message .= "\n";
         }
 
-        $message .= "_Use `/help <command>` for detailed information about a specific command._";
+        $message .= '_Use `/help <command>` for detailed information about a specific command._';
 
         $this->feedback($user, $message, 'info', ['format' => 'markdown']);
     }
 
     private function getCommandCategory(string $commandName): string
     {
-        return match($commandName) {
+        return match ($commandName) {
             'timeout', 'slowmode', 'delete', 'nuke' => 'Moderation',
             'badge' => 'User Management',
             'broadcast' => 'Communication',

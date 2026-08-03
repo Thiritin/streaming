@@ -50,7 +50,7 @@ class ServerDeprovisioningTest extends TestCase
         Log::shouldReceive('info')
             ->times(7) // 1 for initial log, 5 for each user reassignment, 1 for completion
             ->andReturnTrue();
-        
+
         Log::shouldReceive('warning')
             ->times(0); // Should not have any warnings
 
@@ -94,7 +94,7 @@ class ServerDeprovisioningTest extends TestCase
         Log::shouldReceive('info')
             ->times(2) // 1 for initial log, 1 for completion
             ->andReturnTrue();
-        
+
         Log::shouldReceive('warning')
             ->times(3) // 3 warnings for each user that couldn't be reassigned
             ->andReturnTrue();
@@ -239,7 +239,7 @@ class ServerDeprovisioningTest extends TestCase
 
         // Should return false as there are no other servers available
         $this->assertFalse($result);
-        
+
         // User should be unassigned
         $user->refresh();
         $this->assertNull($user->server_id);

@@ -17,8 +17,9 @@ class LocalDevelopmentServersSeeder extends Seeder
     public function run(): void
     {
         // Only run in local environment
-        if (!app()->isLocal()) {
+        if (! app()->isLocal()) {
             $this->command->info('Skipping local development servers seeder (not in local environment)');
+
             return;
         }
 
@@ -80,10 +81,10 @@ class LocalDevelopmentServersSeeder extends Seeder
                 ['Edge', "{$localEdge->hostname}:{$localEdge->port}", $localEdge->port, $localEdge->status->value, 'Browser access point / CDN'],
             ]
         );
-        
+
         $this->command->info('');
         $this->command->info('To start streaming:');
-        $this->command->info('1. Run: docker-compose up');
+        $this->command->info('1. Run the SRS origin/edge stack separately (no longer bundled via docker-compose locally)');
         $this->command->info('2. Configure OBS with RTMP URL: rtmp://localhost:1935/live');
         $this->command->info('3. Use stream key from your Source model');
         $this->command->info('4. Access HLS stream at: http://localhost:8085/live/{source_slug}_fhd/index.m3u8');

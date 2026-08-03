@@ -105,10 +105,9 @@ class InertiaComponentTest extends TestCase
             ->where('initialStatus', 'online')
             ->has('initialListeners')
             ->has('chatMessages')
-            ->has('rateLimit.maxTries')
-            ->has('rateLimit.rateDecay')
-            ->has('rateLimit.slowMode')
-            ->has('rateLimit.secondsLeft')
+            ->has('chatSettings.slow_mode_seconds')
+            ->has('chatSettings.emote_only')
+            ->has('chatState.limits.seconds_left')
         );
     }
 

@@ -60,10 +60,10 @@ const alignmentClasses = {
         </div>
 
         <transition
-            enter-active-class="transition ease-out duration-200"
+            enter-active-class="transition ease-(--ease-out-expo) duration-(--dur-base)"
             enter-from-class="transform opacity-0 scale-95"
             enter-to-class="transform opacity-100 scale-100"
-            leave-active-class="transition ease-in duration-75"
+            leave-active-class="transition ease-(--ease-in-quart) duration-(--dur-fast)"
             leave-from-class="transform opacity-100 scale-100"
             leave-to-class="transform opacity-0 scale-95"
         >

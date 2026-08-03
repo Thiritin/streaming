@@ -16,7 +16,7 @@ class CheckSharedSecretMiddleware
     {
         // Check for shared secret in header first, then fall back to request parameter
         $sharedSecret = $request->header('X-Shared-Secret') ?: $request->get('shared_secret');
-        
+
         $server = Server::where('shared_secret', $sharedSecret)->first();
         // Throw auth exception
         if (is_null($server)) {

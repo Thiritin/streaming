@@ -22,7 +22,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             RoleSeeder::class,
         ]);
-        
+
         // Create local development servers and test source for testing
         if (App::isLocal()) {
             $this->call([

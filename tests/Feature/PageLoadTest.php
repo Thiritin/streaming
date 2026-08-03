@@ -82,7 +82,8 @@ class PageLoadTest extends TestCase
             ->has('initialStatus')
             ->has('initialListeners')
             ->has('chatMessages')
-            ->has('rateLimit')
+            ->has('chatSettings')
+            ->has('chatState')
         );
     }
 
@@ -237,18 +238,25 @@ class PageLoadTest extends TestCase
     public function test_authenticated_user_can_send_message()
     {
         $response = $this->actingAs($this->user)
-            ->post(route('message.send'), [
+            ->postJson(route('message.send'), [
                 'message' => 'Test message',
+                'source_id' => $this->show->source_id,
             ]);
 
         $response->assertStatus(200);
         $response->assertJsonStructure([
             'success',
-            'rateLimit' => [
-                'maxTries',
-                'secondsLeft',
-                'rateDecay',
-                'slowMode',
+            'message' => [
+                'id',
+                'body',
+                'user',
+                'badges',
+            ],
+            'limits' => [
+                'slow_mode_seconds',
+                'max_tries',
+                'rate_decay',
+                'seconds_left',
             ],
         ]);
     }

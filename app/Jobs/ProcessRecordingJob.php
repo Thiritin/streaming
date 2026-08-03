@@ -5,14 +5,14 @@ namespace App\Jobs;
 use App\Models\Recording;
 use App\Services\RecordingService;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Contracts\Queue\ShouldBeUnique;
 
-class ProcessRecordingJob implements ShouldQueue, ShouldBeUnique
+class ProcessRecordingJob implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -45,31 +45,32 @@ class ProcessRecordingJob implements ShouldQueue, ShouldBeUnique
     public function handle(RecordingService $recordingService): void
     {
         $startTime = microtime(true);
-        
+
         // Reload the recording to get the latest data
         $this->recording->refresh();
-        
+
         Log::info("Processing recording {$this->recording->id}: {$this->recording->title}", [
             'recording_id' => $this->recording->id,
             'm3u8_url' => $this->recording->m3u8_url,
             'current_duration' => $this->recording->duration,
-            'has_duration' => !is_null($this->recording->duration),
-            'has_thumbnail' => !is_null($this->recording->thumbnail_path),
+            'has_duration' => ! is_null($this->recording->duration),
+            'has_thumbnail' => ! is_null($this->recording->thumbnail_path),
         ]);
 
         // Skip if already processed (unless force reprocess is set)
-        if ($this->recording->duration && $this->recording->thumbnail_path && !$this->recording->force_reprocess) {
+        if ($this->recording->duration && $this->recording->thumbnail_path && ! $this->recording->force_reprocess) {
             Log::info("Recording {$this->recording->id} already fully processed, skipping", [
                 'recording_id' => $this->recording->id,
                 'duration' => $this->recording->duration,
                 'thumbnail_path' => $this->recording->thumbnail_path,
             ]);
+
             return;
         }
 
         try {
             $recordingService->processRecording($this->recording);
-            
+
             $processingTime = round(microtime(true) - $startTime, 2);
             $freshRecording = $this->recording->fresh();
             Log::info("Successfully processed recording {$this->recording->id} in {$processingTime} seconds", [
@@ -96,7 +97,7 @@ class ProcessRecordingJob implements ShouldQueue, ShouldBeUnique
      */
     public function uniqueId(): string
     {
-        return 'process-recording-' . $this->recording->id;
+        return 'process-recording-'.$this->recording->id;
     }
 
     /**

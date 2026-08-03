@@ -1,111 +1,48 @@
 <script setup>
-import VideoJsPlayer from "@/Components/Livestream/VideoJsPlayer.vue";
+import VideoPlayer from "@/Components/Player/VideoPlayer.vue";
 import StreamStatsOverlay from "@/Components/Livestream/StreamStatsOverlay.vue";
-import { ref, computed, onMounted } from 'vue';
-import { usePage } from '@inertiajs/vue3';
+import { ref } from 'vue';
 
 const props = defineProps({
     hlsUrl: String,
-    showInfo: Object
+    showInfo: Object,
+    /**
+     * The transcoder publishes a 60 minute sliding window (1800 segments at
+     * hls_time 2), so live playback is seekable and the player should show a
+     * scrubber rather than a fixed LIVE indicator. Pass 'live' to force the
+     * non-seekable behaviour for a source that does not keep a window.
+     */
+    liveStreamType: {
+        type: String,
+        default: 'live:dvr',
+    },
 })
 
-// State for controls visibility
-const controlsVisible = ref(true);
 const showUnmutePrompt = ref(false);
 const showStats = ref(false);
+const playerRef = ref(null);
 
-// Detect if user navigated internally vs direct page load
-// Internal navigation means user has already interacted with the site
-const isInternalNavigation = ref(false);
-
-onMounted(() => {
-    // Check if this is an internal navigation
-    // We can detect this by checking if there's a referrer from the same origin
-    // or by checking session storage for a navigation flag
-    const referrer = document.referrer;
-    const currentOrigin = window.location.origin;
-    
-    // Check if referrer is from same origin
-    if (referrer && referrer.startsWith(currentOrigin)) {
-        isInternalNavigation.value = true;
-        console.log('Internal navigation detected - will try unmuted autoplay');
-    } else {
-        // Check session storage as backup
-        const hasNavigated = sessionStorage.getItem('has_navigated');
-        if (hasNavigated === 'true') {
-            isInternalNavigation.value = true;
-            console.log('Previous navigation detected - will try unmuted autoplay');
-        } else {
-            console.log('Direct page load - will use muted autoplay');
-        }
-    }
-    
-    // Mark that user has navigated within the site
-    sessionStorage.setItem('has_navigated', 'true');
-});
-
-// Handle player events
 const handleError = (error) => {
     console.error('Player error:', error);
 };
 
-const handlePlaying = () => {
-    console.log('Stream is playing');
-    // Check if we should show unmute prompt
-    if (playerRef.value?.getPlayer && playerRef.value.getPlayer().muted()) {
-        showUnmutePrompt.value = true;
-        // Hide prompt after 5 seconds or when player is unmuted
-        setTimeout(() => {
-            if (playerRef.value?.getPlayer && playerRef.value.getPlayer().muted()) {
-                showUnmutePrompt.value = false;
-            }
-        }, 5000);
-    }
-};
-
-// Watch for volume changes to hide prompt when unmuted
-const handleVolumeChange = () => {
-    if (playerRef.value?.getPlayer && !playerRef.value.getPlayer().muted()) {
-        showUnmutePrompt.value = false;
-    }
+// VideoPlayer emits this after unmuted autoplay was blocked and it fell back to
+// muted playback, so the viewer has audio one click away.
+const handleAutoplayBlocked = () => {
+    showUnmutePrompt.value = true;
 };
 
 const handleUnmute = () => {
-    if (playerRef.value?.getPlayer) {
-        const player = playerRef.value.getPlayer();
-        try {
-            player.muted(false);
-            showUnmutePrompt.value = false;
-        } catch (error) {
-            console.log('Could not unmute:', error);
-            // If unmuting fails, at least hide the prompt since user tried
-            showUnmutePrompt.value = false;
-        }
-    }
-};
+    const player = playerRef.value?.getPlayer();
+    if (player) player.muted = false;
 
-const handleQualityChanged = (quality) => {
-    console.log('Quality changed:', quality);
-    if (props.showInfo) {
-        console.log('Playing show:', props.showInfo.title);
-    }
-};
-
-const handleUserActive = () => {
-    controlsVisible.value = true;
-};
-
-const handleUserInactive = () => {
-    controlsVisible.value = false;
+    showUnmutePrompt.value = false;
 };
 
 const handleToggleStats = () => {
     showStats.value = !showStats.value;
 };
 
-const playerRef = ref(null);
-
-// Expose methods for parent component
 defineExpose({
     play: () => playerRef.value?.play(),
     pause: () => playerRef.value?.pause(),
@@ -116,32 +53,26 @@ defineExpose({
 
 <template>
     <div class="stream-player-container" v-if="hlsUrl">
-        <VideoJsPlayer 
-            :stream-url="hlsUrl"
-            :hls-url="hlsUrl"
-            :autoplay="true"
-            :muted="!isInternalNavigation"
-            :controls="true"
-            :is-live="true"
-            :is-internal-navigation="isInternalNavigation"
-            @error="handleError"
-            @playing="handlePlaying"
-            @qualityChanged="handleQualityChanged"
-            @useractive="handleUserActive"
-            @userinactive="handleUserInactive"
-            @volumechange="handleVolumeChange"
-            @toggleStats="handleToggleStats"
+        <VideoPlayer
             ref="playerRef"
+            :src="hlsUrl"
+            :title="showInfo?.title || ''"
+            :poster="showInfo?.thumbnail_url || ''"
+            :is-live="true"
+            :live-stream-type="liveStreamType"
+            :autoplay="true"
+            @error="handleError"
+            @autoplay-blocked="handleAutoplayBlocked"
+            @toggle-stats="handleToggleStats"
         />
-        
-        
+
         <!-- Stream Statistics Overlay -->
-        <StreamStatsOverlay 
+        <StreamStatsOverlay
             :visible="showStats"
-            :player="playerRef?.getPlayer && playerRef.getPlayer()"
+            :player="playerRef?.getPlayer()"
             @close="showStats = false"
         />
-        
+
         <!-- Unmute prompt -->
         <transition name="fade">
             <div v-if="showUnmutePrompt" class="unmute-prompt" @click="handleUnmute">
@@ -164,28 +95,6 @@ defineExpose({
     position: relative;
 }
 
-.show-info-overlay {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 8px 12px;
-    border-radius: 4px;
-    z-index: 10;
-    pointer-events: none;
-}
-
-.show-title {
-    font-weight: bold;
-    font-size: 14px;
-}
-
-.show-source {
-    font-size: 12px;
-    opacity: 0.8;
-}
-
 .no-stream-message {
     display: flex;
     align-items: center;
@@ -195,7 +104,7 @@ defineExpose({
     font-size: 18px;
 }
 
-:deep(.video-js-container) {
+:deep(.video-player) {
     width: 100%;
     height: 100%;
 }

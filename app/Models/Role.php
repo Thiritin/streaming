@@ -13,17 +13,19 @@ class Role extends Model
     protected $fillable = [
         'name',
         'slug',
+        // What the identity provider calls this role: a group ID from the
+        // userinfo claim, or a registration package name. Set, the role is
+        // synced at every login; empty, it is only ever assigned by hand.
+        'external_id',
         'description',
         'chat_color',
         'priority',
-        'assigned_at_login',
         'is_visible',
         'permissions',
         'metadata',
     ];
 
     protected $casts = [
-        'assigned_at_login' => 'boolean',
         'is_visible' => 'boolean',
         'permissions' => 'array',
         'metadata' => 'array',
@@ -136,19 +138,22 @@ class Role extends Model
     }
 
     /**
-     * Scope for roles assigned at login.
+     * Roles the identity provider owns: they carry the identifier it knows them
+     * by, so login rewrites them.
      */
     public function scopeLoginAssigned($query)
     {
-        return $query->where('assigned_at_login', true);
+        return $query->whereNotNull('external_id')->where('external_id', '!=', '');
     }
 
     /**
-     * Scope for manually assigned roles.
+     * Roles login never touches, because nothing external names them.
      */
     public function scopeManuallyAssigned($query)
     {
-        return $query->where('assigned_at_login', false);
+        return $query->where(fn ($query) => $query
+            ->whereNull('external_id')
+            ->orWhere('external_id', ''));
     }
 
     /**

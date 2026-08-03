@@ -26,24 +26,25 @@ class CommandController extends Controller
     {
         $request->validate([
             'command' => 'required|string|max:1000',
+            'source_id' => 'nullable|integer|exists:sources,id',
         ]);
 
         $user = Auth::user();
         $commandInput = $request->input('command');
 
         // Check if user is timed out (unless it's the help command)
-        if (!str_starts_with(trim($commandInput), '/help')) {
+        if (! str_starts_with(trim($commandInput), '/help')) {
             $activeTimeout = Timeout::where('user_id', $user->id)
                 ->where('expires_at', '>', now())
                 ->first();
-                
+
             if ($activeTimeout) {
                 $remainingTime = now()->diffInSeconds($activeTimeout->expires_at);
                 $message = "You are timed out for {$remainingTime} more seconds";
                 if ($activeTimeout->reason) {
                     $message .= " (Reason: {$activeTimeout->reason})";
                 }
-                
+
                 return response()->json([
                     'success' => false,
                     'error' => $message,
@@ -57,9 +58,10 @@ class CommandController extends Controller
         }
 
         // Rate limiting for commands
-        $key = 'command-execute:' . $user->id;
+        $key = 'command-execute:'.$user->id;
         if (RateLimiter::tooManyAttempts($key, 10)) {
             $seconds = RateLimiter::availableIn($key);
+
             return response()->json([
                 'success' => false,
                 'error' => "Too many commands. Please wait {$seconds} seconds.",
@@ -70,8 +72,8 @@ class CommandController extends Controller
 
         // Find the command
         $command = $this->registry->findByInput($commandInput);
-        
-        if (!$command) {
+
+        if (! $command) {
             return response()->json([
                 'success' => false,
                 'error' => 'Command not found. Type /help for available commands.',
@@ -83,8 +85,13 @@ class CommandController extends Controller
             $command->setRawInput($commandInput);
         }
 
+        // Commands act on the chat they were typed in
+        if (method_exists($command, 'setSourceId')) {
+            $command->setSourceId($request->integer('source_id') ?: null);
+        }
+
         // Check authorization
-        if (!$command->authorize($user)) {
+        if (! $command->authorize($user)) {
             return response()->json([
                 'success' => false,
                 'error' => 'You do not have permission to use this command.',
@@ -147,7 +154,7 @@ class CommandController extends Controller
             ]);
 
             // Send error feedback to user
-            $command->feedback($user, 'Command failed: ' . $e->getMessage(), 'error');
+            $command->feedback($user, 'Command failed: '.$e->getMessage(), 'error');
 
             return response()->json([
                 'success' => false,
@@ -230,13 +237,13 @@ class CommandController extends Controller
 
         $command = $this->registry->get($commandName);
 
-        if (!$command) {
+        if (! $command) {
             return response()->json([
                 'error' => 'Command not found.',
             ], 404);
         }
 
-        if (!$command->authorize($user)) {
+        if (! $command->authorize($user)) {
             return response()->json([
                 'error' => 'You do not have permission to view this command.',
             ], 403);

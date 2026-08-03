@@ -17,7 +17,7 @@ class RecordingSeeder extends Seeder
             [
                 'title' => 'Opening Ceremony 2024',
                 'slug' => 'opening-ceremony-2024',
-                'description' => 'The grand opening ceremony of Eurofurence 2024, featuring special guests, announcements, and a spectacular light show.',
+                'description' => 'The grand opening ceremony of the 2024 convention, featuring special guests, announcements, and a spectacular light show.',
                 'date' => Carbon::now()->subDays(7)->setHour(19)->setMinute(0),
                 'duration' => 5400, // 1.5 hours
                 'm3u8_url' => 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
@@ -67,7 +67,7 @@ class RecordingSeeder extends Seeder
             [
                 'title' => 'Closing Ceremony 2024',
                 'slug' => 'closing-ceremony-2024',
-                'description' => 'The emotional closing ceremony of Eurofurence 2024. See you next year!',
+                'description' => 'The emotional closing ceremony of the 2024 convention. See you next year!',
                 'date' => Carbon::now()->subDays(1)->setHour(18)->setMinute(0),
                 'duration' => 3600, // 1 hour
                 'm3u8_url' => 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
@@ -77,7 +77,7 @@ class RecordingSeeder extends Seeder
             [
                 'title' => 'Behind the Scenes Documentary',
                 'slug' => 'behind-the-scenes-2024',
-                'description' => 'A special documentary showing the preparation and hard work that goes into making Eurofurence happen.',
+                'description' => 'A special documentary showing the preparation and hard work that goes into making the convention happen.',
                 'date' => Carbon::now()->subHours(12),
                 'duration' => 2700, // 45 minutes
                 'm3u8_url' => 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',

@@ -5,16 +5,15 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
-use Filament\Models\Contracts\FilamentUser;
+use App\Helpers\IpSubnetHelper;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
-use App\Helpers\IpSubnetHelper;
 
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
@@ -51,7 +50,6 @@ class User extends Authenticatable implements FilamentUser
         return $this->belongsTo(Server::class);
     }
 
-
     public function getOrAssignServer($clientIp = null)
     {
         // Check for subnet-based override first
@@ -65,7 +63,7 @@ class User extends Authenticatable implements FilamentUser
                 ($localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet))
             )) {
                 // Create a virtual server object with the override hostname
-                $server = new Server();
+                $server = new Server;
                 $server->hostname = $localHostname;
                 $server->port = 8080;
 
@@ -146,7 +144,7 @@ class User extends Authenticatable implements FilamentUser
 
         // If no servers have capacity, still try to get the least loaded one
         // This ensures users can still connect in emergency situations
-        if (!$server) {
+        if (! $server) {
             $server = $query->orderBy('viewer_count', 'asc')->first();
 
             if ($server) {
@@ -321,31 +319,32 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Sync roles from login (registration system).
+     * Rewrite the roles the identity provider owns from what it just told us.
+     *
+     * Ownership is decided by the role, not by this call: a role carrying an
+     * `external_id` is the provider's to give and take away, and a role without
+     * one is never touched here, however it was assigned.
+     *
+     * @param  array<int, string>  $externalIds  Group IDs and package names from the provider.
      */
-    public function syncRolesFromLogin(array $rolesSlugs): void
+    public function syncRolesFromLogin(array $externalIds): void
     {
-        // Log current roles before sync
         \Log::info('Before sync - User '.$this->id.' roles: ', $this->roles()->pluck('slug')->toArray());
-        \Log::info('Syncing roles from login: ', $rolesSlugs);
+        \Log::info('Syncing roles from login: ', $externalIds);
 
-        // Get IDs of roles that should be detached (only those with assigned_at_login = true)
+        // Drop every provider-owned role first, so one that is no longer granted
+        // actually goes away rather than lingering from a previous login.
         $roleIdsToDetach = $this->roles()
-            ->where('assigned_at_login', true)
+            ->loginAssigned()
             ->pluck('roles.id')
             ->toArray();
 
-        \Log::info('Roles to detach (IDs): ', $roleIdsToDetach);
-
-        // Detach only those specific roles
         if (! empty($roleIdsToDetach)) {
             $this->roles()->detach($roleIdsToDetach);
-            \Log::info('Detached roles with assigned_at_login=true');
         }
 
-        // Add new roles from login
-        $roles = Role::whereIn('slug', $rolesSlugs)
-            ->where('assigned_at_login', true)
+        $roles = Role::loginAssigned()
+            ->whereIn('external_id', $externalIds)
             ->get();
 
         \Log::info('Adding roles: ', $roles->pluck('slug')->toArray());
@@ -354,7 +353,6 @@ class User extends Authenticatable implements FilamentUser
             $role->assignTo($this, null);
         }
 
-        // Log final roles after sync
         \Log::info('After sync - User '.$this->id.' roles: ', $this->roles()->pluck('slug')->toArray());
     }
 
@@ -370,14 +368,6 @@ class User extends Authenticatable implements FilamentUser
         }
 
         return false;
-    }
-
-    /**
-     * Check if user can access Filament panel.
-     */
-    public function canAccessPanel(\Filament\Panel $panel): bool
-    {
-        return $this->hasPermission('filament.access') || $this->isStaff();
     }
 
     /**
@@ -450,4 +440,77 @@ class User extends Authenticatable implements FilamentUser
             ->withTimestamps();
     }
 
+    public function timeouts()
+    {
+        return $this->hasMany(Timeout::class);
+    }
+
+    public function chatBans()
+    {
+        return $this->hasMany(ChatBan::class);
+    }
+
+    /**
+     * The timeout currently silencing this user, if any.
+     */
+    public function activeTimeout(): ?Timeout
+    {
+        return $this->timeouts()->active()->latest('expires_at')->first();
+    }
+
+    /**
+     * The ban currently silencing this user, if any.
+     */
+    public function activeChatBan(): ?ChatBan
+    {
+        return $this->chatBans()->active()->latest('id')->first();
+    }
+
+    /**
+     * Can this user delete messages and time other users out?
+     */
+    public function canModerateChat(): bool
+    {
+        return $this->isAdmin() || $this->isModerator() || $this->hasPermission('chat.moderate');
+    }
+
+    /**
+     * Can this user ban other users from chat?
+     */
+    public function canBanFromChat(): bool
+    {
+        return $this->isAdmin() || $this->hasPermission('chat.ban');
+    }
+
+    /**
+     * Roles rendered as chat badges, highest priority first.
+     */
+    public function chatBadges(): array
+    {
+        return $this->activeRoles()
+            ->visible()
+            ->ordered()
+            ->get()
+            ->map(fn (Role $role) => [
+                'slug' => $role->slug,
+                'name' => $role->name,
+                'label' => $role->metadata['badge'] ?? static::badgeLabelFor($role),
+                'color' => $role->chat_color,
+            ])
+            ->values()
+            ->all();
+    }
+
+    protected static function badgeLabelFor(Role $role): string
+    {
+        return match ($role->slug) {
+            'admin' => 'ADM',
+            'moderator' => 'MOD',
+            'staff' => 'STF',
+            'sponsor' => 'SPO',
+            'supersponsor' => 'SSP',
+            'attendee' => 'ATT',
+            default => mb_strtoupper(mb_substr($role->name, 0, 3)),
+        };
+    }
 }

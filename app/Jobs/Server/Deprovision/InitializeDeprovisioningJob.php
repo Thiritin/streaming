@@ -24,17 +24,17 @@ class InitializeDeprovisioningJob implements ShouldQueue
         // Get all users currently assigned to this server
         $usersToReassign = $this->server->users()->get();
         $userCount = $usersToReassign->count();
-        
+
         if ($userCount > 0) {
             Log::info('Reassigning users from deprovisioning server', [
                 'server_id' => $this->server->id,
                 'server_hostname' => $this->server->hostname,
                 'user_count' => $userCount,
             ]);
-            
+
             $reassignedCount = 0;
             $failedCount = 0;
-            
+
             // Attempt to reassign each user to another available server
             foreach ($usersToReassign as $user) {
                 // The assignServerToUser method will find the best available server
@@ -54,7 +54,7 @@ class InitializeDeprovisioningJob implements ShouldQueue
                     ]);
                 }
             }
-            
+
             Log::info('User reassignment complete', [
                 'server_id' => $this->server->id,
                 'total_users' => $userCount,
@@ -62,7 +62,7 @@ class InitializeDeprovisioningJob implements ShouldQueue
                 'failed' => $failedCount,
             ]);
         }
-        
+
         // Update server status to deprovisioning
         $this->server->update([
             'status' => ServerStatusEnum::DEPROVISIONING,

@@ -3,20 +3,16 @@
 namespace App\Events;
 
 use App\Models\User;
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class CommandFeedbackEvent implements ShouldBroadcast
+class CommandFeedbackEvent implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    /**
-     * Create a new event instance.
-     */
     public function __construct(
         public User $user,
         public string $message,
@@ -29,8 +25,10 @@ class CommandFeedbackEvent implements ShouldBroadcast
      */
     public function broadcastOn(): array
     {
+        // Same private channel as the rest of the per-user chat events, so a client
+        // only has to authorise one subscription.
         return [
-            new PrivateChannel('command-feedback.' . $this->user->id),
+            new PrivateChannel('user.'.$this->user->id),
         ];
     }
 

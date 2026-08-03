@@ -2,10 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Models\Server;
-use App\Jobs\Server\ServerHealthCheckJob;
-use App\Enum\ServerTypeEnum;
 use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
+use App\Jobs\Server\ServerHealthCheckJob;
+use App\Models\Server;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -33,7 +33,7 @@ class ServerHealthCheckTest extends TestCase
 
         // Origin servers should always return true without making HTTP request
         $result = $originServer->performHealthCheck();
-        
+
         $this->assertTrue($result);
         // Origin servers don't get health status updated
         $originServer->refresh();
@@ -175,7 +175,7 @@ class ServerHealthCheckTest extends TestCase
         ]);
 
         // Run the job
-        $job = new ServerHealthCheckJob();
+        $job = new ServerHealthCheckJob;
         $job->handle();
 
         // Check that active servers were checked

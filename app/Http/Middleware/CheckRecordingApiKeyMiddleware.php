@@ -17,15 +17,15 @@ class CheckRecordingApiKeyMiddleware
     {
         // Check for API key in header first, then fall back to request parameter
         $apiKey = $request->header('X-Recording-Api-Key') ?: $request->get('api_key');
-        
+
         // Get the expected API key from environment
         $expectedApiKey = config('app.recording_api_key', env('RECORDING_API_KEY'));
-        
+
         // Check if API key matches
         if (empty($expectedApiKey) || $apiKey !== $expectedApiKey) {
             return response()->json([
                 'error' => 'Unauthorized',
-                'message' => 'Invalid or missing API key'
+                'message' => 'Invalid or missing API key',
             ], 401);
         }
 

@@ -64,7 +64,7 @@ class ShowAutoModeTest extends TestCase
         // Use Carbon's setTestNow to freeze time for this test
         $testTime = now()->startOfMinute(); // Use start of minute for clean comparisons
         $this->travelTo($testTime);
-        
+
         // Test exact start time
         $show = Show::factory()->create([
             'scheduled_start' => $testTime->copy(),
@@ -78,7 +78,7 @@ class ShowAutoModeTest extends TestCase
             'scheduled_end' => $testTime->copy(),
         ]);
         $this->assertTrue($show2->isWithinScheduledTime());
-        
+
         // Clean up
         $this->travelBack();
     }
@@ -111,14 +111,14 @@ class ShowAutoModeTest extends TestCase
         // Use Carbon's setTestNow to freeze time for this test
         $testTime = now()->startOfMinute();
         $this->travelTo($testTime);
-        
+
         $show = Show::factory()->create([
             'scheduled_start' => $testTime->copy()->subHour(),
             'scheduled_end' => $testTime->copy(),
         ]);
 
         $this->assertFalse($show->isPastScheduledEnd());
-        
+
         // Clean up
         $this->travelBack();
     }
@@ -154,13 +154,13 @@ class ShowAutoModeTest extends TestCase
             'auto_mode' => true,
             'status' => 'live',
         ]);
-        
+
         Show::factory()->create([
             'source_id' => $source->id,
             'auto_mode' => true,
             'status' => 'scheduled',
         ]);
-        
+
         Show::factory()->create([
             'source_id' => $source->id,
             'auto_mode' => false,

@@ -7,6 +7,7 @@ use App\Enum\ServerTypeEnum;
 use App\Jobs\Server\DeleteServerJob;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ServerException;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -14,6 +15,8 @@ use Illuminate\Support\Str;
 
 class Server extends Model
 {
+    use HasFactory;
+
     protected $guarded = [];
 
     protected $casts = [
@@ -39,13 +42,13 @@ class Server extends Model
     protected static function boot()
     {
         parent::boot();
-        
+
         static::creating(function ($server) {
             // Auto-generate shared secret if not provided
             if (empty($server->shared_secret)) {
                 $server->shared_secret = Str::random(40);
             }
-            
+
             // Set default status if not provided
             if (empty($server->status)) {
                 $server->status = ServerStatusEnum::PROVISIONING;
@@ -88,7 +91,7 @@ class Server extends Model
             ->where('id', '!=', $this->id)
             ->exists();
 
-        return !$existingOrigin;
+        return ! $existingOrigin;
     }
 
     /**
@@ -99,12 +102,14 @@ class Server extends Model
         if ($this->type === ServerTypeEnum::ORIGIN) {
             // Origin server serves HLS directly from SRS
             $protocol = $this->port === 443 ? 'https' : 'http';
-            $port = in_array($this->port, [80, 443]) ? '' : ':' . $this->port;
+            $port = in_array($this->port, [80, 443]) ? '' : ':'.$this->port;
+
             return "{$protocol}://{$this->hostname}{$port}";
         } else {
             // Edge server proxies from origin
             $protocol = $this->port === 443 ? 'https' : 'http';
-            $port = in_array($this->port, [80, 443]) ? '' : ':' . $this->port;
+            $port = in_array($this->port, [80, 443]) ? '' : ':'.$this->port;
+
             return "{$protocol}://{$this->hostname}{$port}";
         }
     }
@@ -115,10 +120,11 @@ class Server extends Model
     public function getHlsUrl(string $streamSlug, string $quality = 'fhd'): string
     {
         $baseUrl = $this->getHlsBaseUrl();
-        
+
         if ($this->type === ServerTypeEnum::ORIGIN) {
             // Origin server path structure from SRS
             $hlsPath = $this->hls_path ?: '/live';
+
             return "{$baseUrl}{$hlsPath}/{$streamSlug}_{$quality}/index.m3u8";
         } else {
             // Edge server proxies the same path
@@ -137,6 +143,7 @@ class Server extends Model
                 return $origin->getHlsBaseUrl();
             }
         }
+
         return null;
     }
 
@@ -156,10 +163,10 @@ class Server extends Model
      */
     public function hasRecentHeartbeat(): bool
     {
-        if (!$this->last_heartbeat) {
+        if (! $this->last_heartbeat) {
             return false;
         }
-        
+
         // Consider heartbeat stale after 1 minute
         return $this->last_heartbeat->gt(now()->subMinute());
     }
@@ -192,7 +199,7 @@ class Server extends Model
     {
         // Unassign all users from this server before deletion
         $this->users()->update(['server_id' => null]);
-        
+
         return parent::delete();
     }
 
@@ -201,7 +208,7 @@ class Server extends Model
      */
     public function isHetznerServer(): bool
     {
-        return !empty($this->hetzner_id);
+        return ! empty($this->hetzner_id);
     }
 
     /**
@@ -209,12 +216,12 @@ class Server extends Model
      */
     public function canUseInternalNetworkWith(?Server $otherServer): bool
     {
-        if (!$otherServer) {
+        if (! $otherServer) {
             return false;
         }
 
         // Both servers must be Hetzner servers
-        if (!$this->isHetznerServer() || !$otherServer->isHetznerServer()) {
+        if (! $this->isHetznerServer() || ! $otherServer->isHetznerServer()) {
             return false;
         }
 
@@ -229,7 +236,7 @@ class Server extends Model
     public function isReady(): bool
     {
         // For manual/local servers (null hetzner_id), assume they're ready if active
-        if (!$this->hetzner_id && $this->status === ServerStatusEnum::ACTIVE) {
+        if (! $this->hetzner_id && $this->status === ServerStatusEnum::ACTIVE) {
             return true;
         }
 
@@ -239,20 +246,20 @@ class Server extends Model
         if ($this->type === ServerTypeEnum::ORIGIN) {
             // Origin servers run SRS with API on port 1985
             $proto = 'http';
-            $hostname = $this->ip . ':1985';
+            $hostname = $this->ip.':1985';
         }
 
         // For local Docker containers (null hetzner_id), use http
-        if (!$this->hetzner_id) {
+        if (! $this->hetzner_id) {
             $proto = 'http';
             // Use the hostname directly for Docker containers
             if ($this->type === ServerTypeEnum::EDGE) {
-                $hostname = $this->hostname . ':' . $this->port;
+                $hostname = $this->hostname.':'.$this->port;
             }
         }
 
         try {
-            $request = Http::timeout(5)->get($proto . '://' . $hostname . '/ready');
+            $request = Http::timeout(5)->get($proto.'://'.$hostname.'/ready');
         } catch (ClientException|ServerException|ConnectionException $e) {
             return false;
         }
@@ -266,7 +273,7 @@ class Server extends Model
             // Origin is in use if any streams are live
             return \App\Models\Source::where('status', \App\Enum\SourceStatusEnum::ONLINE)->exists();
         }
-        
+
         // Edge is in use if it has viewers
         return $this->viewer_count > 0;
     }
@@ -279,7 +286,8 @@ class Server extends Model
         if (in_array($this->port, [80, 443])) {
             return $this->hostname;
         }
-        return $this->hostname . ':' . $this->port;
+
+        return $this->hostname.':'.$this->port;
     }
 
     /**
@@ -295,19 +303,20 @@ class Server extends Model
         try {
             $protocol = in_array($this->port, [443]) ? 'https' : 'http';
             $url = "{$protocol}://{$this->getHostWithPort()}/health";
-            
+
             $response = Http::timeout(5)->get($url);
-            
+
             if ($response->successful()) {
                 $this->update([
                     'health_status' => 'healthy',
                     'last_health_check' => now(),
                     'health_check_message' => 'Health check passed',
                 ]);
+
                 return true;
             } else {
                 $errorMessage = "HTTP {$response->status()}: {$response->body()}";
-                
+
                 // Log the health check failure
                 \Log::error('Server health check failed', [
                     'server_id' => $this->id,
@@ -317,17 +326,18 @@ class Server extends Model
                     'response_body' => $response->body(),
                     'message' => $errorMessage,
                 ]);
-                
+
                 $this->update([
                     'health_status' => 'unhealthy',
                     'last_health_check' => now(),
                     'health_check_message' => $errorMessage,
                 ]);
+
                 return false;
             }
         } catch (\Exception $e) {
-            $errorMessage = 'Health check failed: ' . $e->getMessage();
-            
+            $errorMessage = 'Health check failed: '.$e->getMessage();
+
             // Log the health check exception
             \Log::error('Server health check exception', [
                 'server_id' => $this->id,
@@ -336,12 +346,13 @@ class Server extends Model
                 'exception' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
-            
+
             $this->update([
                 'health_status' => 'unhealthy',
                 'last_health_check' => now(),
                 'health_check_message' => $errorMessage,
             ]);
+
             return false;
         }
     }
@@ -351,10 +362,10 @@ class Server extends Model
      */
     public function hasRecentHealthCheck(): bool
     {
-        if (!$this->last_health_check) {
+        if (! $this->last_health_check) {
             return false;
         }
-        
+
         // Consider health check stale after 2 minutes
         return $this->last_health_check->gt(now()->subMinutes(2));
     }

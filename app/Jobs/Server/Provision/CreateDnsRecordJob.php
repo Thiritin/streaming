@@ -2,7 +2,6 @@
 
 namespace App\Jobs\Server\Provision;
 
-use App\Enum\ServerTypeEnum;
 use App\Models\Server;
 use App\Services\DnsKeyService;
 use Illuminate\Bus\Queueable;

@@ -39,6 +39,7 @@ class HandleAutoModeShowsListener implements ShouldQueue
             Log::info('HandleAutoModeShowsListener: No auto mode shows found for source', [
                 'source_id' => $source->id,
             ]);
+
             return;
         }
 
@@ -96,7 +97,7 @@ class HandleAutoModeShowsListener implements ShouldQueue
         // 2. It's within the scheduled time window OR past the scheduled start time
         if ($show->status === 'scheduled') {
             $now = now();
-            
+
             // Check if we should start the show
             if ($show->scheduled_start <= $now) {
                 Log::info('HandleAutoModeShowsListener: Auto-starting show - source online and past scheduled start', [
@@ -144,7 +145,7 @@ class HandleAutoModeShowsListener implements ShouldQueue
                 'show_id' => $show->id,
                 'show_title' => $show->title,
             ]);
-        } else if ($show->status === 'live' && $show->isWithinScheduledTime()) {
+        } elseif ($show->status === 'live' && $show->isWithinScheduledTime()) {
             Log::info('HandleAutoModeShowsListener: Source offline during scheduled time - keeping show live', [
                 'show_id' => $show->id,
                 'show_title' => $show->title,

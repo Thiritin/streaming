@@ -162,7 +162,7 @@ class Emote extends Model
         }
 
         // If no S3 key, return null
-        if (!$this->s3_key) {
+        if (! $this->s3_key) {
             return null;
         }
 

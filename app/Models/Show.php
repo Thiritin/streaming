@@ -23,7 +23,8 @@ class Show extends Model
         'actual_end',
         'status',
         'auto_mode',
-        'recordable',
+        'auto_stop_at',
+        'announce_recording',
         'thumbnail_path',
         'thumbnail_updated_at',
         'thumbnail_capture_error',
@@ -34,6 +35,8 @@ class Show extends Model
         'metadata',
         'required_roles',
         'server_id',
+        // Set by the pretalx import; its presence is what stops a slot being imported twice.
+        'pretalx_slot_id',
     ];
 
     protected $casts = [
@@ -42,8 +45,9 @@ class Show extends Model
         'actual_start' => 'datetime',
         'actual_end' => 'datetime',
         'thumbnail_updated_at' => 'datetime',
+        'auto_stop_at' => 'datetime',
         'auto_mode' => 'boolean',
-        'recordable' => 'boolean',
+        'announce_recording' => 'boolean',
         'tags' => 'array',
         'metadata' => 'array',
         'required_roles' => 'array',
@@ -116,11 +120,23 @@ class Show extends Model
     }
 
     /**
-     * Get the recording for this show.
+     * Recordings cut from this show's slot.
+     *
+     * hasMany rather than hasOne: a recording is a time range over the source's archive,
+     * so a long block can be sliced into several published pieces without re-recording
+     * anything. `recording()` stays as the convenience accessor for the common 1:1 case.
+     */
+    public function recordings()
+    {
+        return $this->hasMany(Recording::class);
+    }
+
+    /**
+     * The primary recording for this show, if one has been cut.
      */
     public function recording()
     {
-        return $this->hasOne(Recording::class);
+        return $this->hasOne(Recording::class)->latestOfMany();
     }
 
     /**
@@ -274,6 +290,18 @@ class Show extends Model
     }
 
     /**
+     * The description as HTML.
+     *
+     * Descriptions are markdown - that is what pretalx abstracts are written in, and what
+     * the form accepts - and the stored value stays markdown so it can be edited. This is
+     * the rendered, sanitised form for display.
+     */
+    public function getDescriptionHtmlAttribute(): ?string
+    {
+        return \App\Support\Markdown::render($this->description);
+    }
+
+    /**
      * Get the full URL for the thumbnail path stored in database.
      * Returns a signed URL for S3 access.
      */
@@ -390,6 +418,41 @@ class Show extends Model
     public function isAutoMode()
     {
         return $this->auto_mode === true;
+    }
+
+    /**
+     * The moment an auto-mode show must stop, whatever the source is doing.
+     *
+     * Falls back to `scheduled_end` when no explicit hard stop is set, which is what auto
+     * mode did before the column existed. See docs/admin/auto-mode.md.
+     */
+    public function autoStopAt(): ?Carbon
+    {
+        if (! $this->isAutoMode()) {
+            return null;
+        }
+
+        return $this->auto_stop_at ?? $this->scheduled_end;
+    }
+
+    /**
+     * Whether the hard stop has passed. This is the dance safety net: a show nobody
+     * remembered to end stops on its own instead of recording all night.
+     */
+    public function isPastAutoStop(): bool
+    {
+        $stop = $this->autoStopAt();
+
+        return $stop !== null && $stop->lte(now());
+    }
+
+    /**
+     * Private means only listed roles may watch, and nobody else even sees the show.
+     * Public means anyone signed in.
+     */
+    public function isPrivate(): bool
+    {
+        return ! empty($this->required_roles);
     }
 
     /**

@@ -35,6 +35,12 @@ return [
         'url' => env('OIDC_URL'),
         'client_id' => env('OIDC_CLIENT_ID'),
         'secret' => env('OIDC_SECRET'),
+
+        /*
+         | Which provider group maps to which role is not configured here: a role
+         | claims a group ID (or a registration package) through its
+         | `external_id`, editable under Administration > Roles.
+         */
     ],
 
     'stream' => [

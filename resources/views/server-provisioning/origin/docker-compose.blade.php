@@ -21,13 +21,21 @@ services:
 
   # Origin FFmpeg HLS Transcoder
   origin-ffmpeg-hls:
-    image: eurofurence/ffmpeg-hls:latest
+    image: {{ config('stream.images.ffmpeg_hls') }}
     container_name: origin-ffmpeg-hls
     environment:
       SRS_API_URL: http://origin-srs:1985/api/v1
       SRS_RTMP_URL: rtmp://origin-srs:1935
       OUTPUT_BASE_DIR: /var/www/hls/live
       CHECK_INTERVAL: 5
+      # 1800 segments at hls_time 2 is the 60 minute live rewind window; the extra
+      # 60 retained segments are the grace the S3 uploader gets before a segment is
+      # deleted. See docs/dvr-archive-plan.md.
+      DVR_WINDOW_SEGMENTS: 1800
+      HLS_DELETE_THRESHOLD: 60
+      # Restart FFmpeg if it stops advancing its playlists while SRS still reports
+      # the stream as publishing.
+      SEGMENT_STALL_SECONDS: 15
     volumes:
       - hls-content:/var/www/hls
     restart: unless-stopped
@@ -71,10 +79,10 @@ services:
   
   # DVR S3 Uploader Service
   dvr-uploader:
-    image: eurofurence/dvr-uploader:latest
+    image: {{ config('stream.images.dvr_uploader') }}
     container_name: dvr-uploader
     environment:
-      S3_BUCKET: ${DVR_AWS_BUCKET:-ef-streaming-recordings}
+      S3_BUCKET: ${DVR_AWS_BUCKET:-streaming-recordings}
       S3_REGION: ${DVR_AWS_DEFAULT_REGION:-eu-central-1}
       S3_ACCESS_KEY: ${DVR_AWS_ACCESS_KEY_ID}
       S3_SECRET_KEY: ${DVR_AWS_SECRET_ACCESS_KEY}
@@ -83,13 +91,49 @@ services:
       DELETE_AFTER_UPLOAD: 'true'
       WEBHOOK_URL: '{{ $serverUrl }}/api/dvr/upload-webhook'
       FILE_AGE_SECONDS: '30'
-      UPLOAD_DELAY_SECONDS: '5'
-      MAX_UPLOAD_RATE_MBPS: '3'
     volumes:
       - dvr-recordings:/dvr/recordings
     restart: unless-stopped
     depends_on:
       - origin-srs
+    networks:
+      - streaming
+
+  # HLS Segment Archive Uploader
+  #
+  # Mirrors the transcoder's segments to S3 and maintains the per-hour index
+  # playlists that recordings are cut from. Separate container from dvr-uploader
+  # above, which keeps handling the SRS MP4 DVR as a cold backup: the two watch
+  # different volumes and share only the image. See docs/dvr-archive-plan.md.
+  archive-uploader:
+    image: {{ config('stream.images.dvr_uploader') }}
+    container_name: archive-uploader
+    command: ["python", "-u", "archive_uploader.py"]
+    environment:
+      S3_BUCKET: ${DVR_AWS_BUCKET:-streaming-recordings}
+      S3_REGION: ${DVR_AWS_DEFAULT_REGION:-eu-central-1}
+      S3_ACCESS_KEY: ${DVR_AWS_ACCESS_KEY_ID}
+      S3_SECRET_KEY: ${DVR_AWS_SECRET_ACCESS_KEY}
+      S3_ENDPOINT: ${DVR_AWS_ENDPOINT}
+      HLS_PATH: /var/www/hls/live
+      # Must match DVR_WINDOW_SEGMENTS on origin-ffmpeg-hls (1800 x 2s). The reaper
+      # never deletes inside the window a viewer can still seek back into.
+      DVR_WINDOW_SECONDS: '3600'
+      # Ceiling on archive upload bandwidth, so it cannot starve origin->edge
+      # egress on the same uplink. 20% of a 1 Gbps link.
+      #
+      # This must stay ABOVE total ingest or uploads fall permanently behind and
+      # the origin disk fills: the floor is sources x 11.5 Mbps (the ladder total),
+      # so 200 Mbps carries 8 sources at 2x headroom. Raise it alongside the source
+      # count, never lower it to "save bandwidth" - the uploader logs an error if
+      # the backlog grows, but by then it is already losing. 0 disables the cap.
+      MAX_UPLOAD_RATE_MBPS: '200'
+    volumes:
+      - hls-content:/var/www/hls
+      - archive-state:/var/lib/dvr-archive
+    restart: unless-stopped
+    depends_on:
+      - origin-ffmpeg-hls
     networks:
       - streaming
 
@@ -100,5 +144,6 @@ networks:
 volumes:
   hls-content:
   dvr-recordings:
+  archive-state:
   caddy-data:
   caddy-config:

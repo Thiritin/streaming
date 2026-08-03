@@ -1,9 +1,10 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import StreamPlayer from "@/Components/Livestream/StreamPlayer.vue";
-import ChatBox from "@/Components/Livestream/ChatBox.vue";
+import ChatPanel from "@/Components/Chat/ChatPanel.vue";
+import MarkdownText from "@/Components/MarkdownText.vue";
 import StreamOfflineStatusPage from "@/Components/Livestream/StatusPages/StreamOfflineStatusPage.vue";
 import StreamProvisioningStatusPage from "@/Components/Livestream/StatusPages/StreamProvisioningStatusPage.vue";
 import StreamOtherDeviceStatusPage from "@/Components/Livestream/StatusPages/StreamOtherDeviceStatusPage.vue";
@@ -58,15 +59,23 @@ const props = defineProps({
         type: Array,
         required: false
     },
-    rateLimit: {
+    chatSettings: {
         type: Object,
-        required: false
+        required: false,
+        default: () => ({})
+    },
+    chatState: {
+        type: Object,
+        required: false,
+        default: () => ({})
     },
     sourceId: {
         type: [Number, String],
         required: true
     }
 });
+
+const page = usePage();
 
 // Reactive state
 const otherDevice = ref(props.initialOtherDevice);
@@ -114,7 +123,8 @@ const loadTheaterModePreference = () => {
 };
 
 // Computed properties
-const showChatBox = computed(() => status.value !== 'offline' && activeShow.value?.status === 'live');
+const chatEnabled = computed(() => page.props.features?.chat !== false);
+const showChatBox = computed(() => chatEnabled.value && status.value !== 'offline' && activeShow.value?.status === 'live');
 const showPlayer = computed(() => activeShow.value && activeShow.value.status === 'live' && hlsUrl.value && status.value === 'online' && sourceStatus.value === 'online' && provisioning.value === false && otherDevice.value === false && !isReconnecting.value);
 const showTitle = computed(() => activeShow.value ? activeShow.value.title : 'No Show Active');
 const otherLiveShows = computed(() => shows.value.filter(s => s.id !== activeShow.value?.id && s.status === 'live' && s.slug));
@@ -441,7 +451,7 @@ onUnmounted(() => {
         </Head>
 
         <div
-            class="flex flex-col xl:flex-row xl:overflow-hidden transition-all duration-300"
+            class="flex flex-col xl:flex-row xl:overflow-hidden transition-all duration-(--dur-base)"
             :class="isTheaterMode ? 'fixed inset-0 z-50 bg-primary-950' : 'xl:h-[calc(100vh-3rem)]'"
         >
             <!-- Livestream -->
@@ -527,7 +537,12 @@ onUnmounted(() => {
                     <!-- Stream Information -->
                     <Container class="bg-primary-800 border-t-2 border-primary-700" padding="p-6">
                         <h2 class="text-2xl font-bold text-white mb-3">{{ activeShow?.title || 'Stream' }}</h2>
-                        <p v-if="activeShow?.description" class="text-primary-200 text-lg leading-relaxed mb-4">{{ activeShow.description }}</p>
+                        <MarkdownText
+                            v-if="activeShow?.description"
+                            :html="activeShow.description_html"
+                            :text="activeShow.description"
+                            class="text-primary-200 text-lg leading-relaxed mb-4"
+                        />
                         <div v-if="activeShow?.source" class="flex items-center gap-2 text-sm">
                             <span class="font-semibold text-primary-300">Source:</span>
                             <span class="text-primary-400">{{ activeShow.source.name || activeShow.source }}</span>
@@ -593,7 +608,12 @@ onUnmounted(() => {
                     <!-- Stream Information for non-player states -->
                     <Container v-if="!showPlayer && activeShow" class="bg-primary-800 border-t-2 border-primary-700" padding="p-6">
                         <h2 class="text-2xl font-bold text-white mb-3">{{ activeShow.title }}</h2>
-                        <p v-if="activeShow.description" class="text-primary-200 text-lg leading-relaxed mb-4">{{ activeShow.description }}</p>
+                        <MarkdownText
+                            v-if="activeShow.description"
+                            :html="activeShow.description_html"
+                            :text="activeShow.description"
+                            class="text-primary-200 text-lg leading-relaxed mb-4"
+                        />
                         <div v-if="activeShow.source" class="flex items-center gap-2 text-sm">
                             <span class="font-semibold text-primary-300">Source:</span>
                             <span class="text-primary-400">{{ activeShow.source.name || activeShow.source }}</span>
@@ -631,8 +651,14 @@ onUnmounted(() => {
                         </svg>
                     </button>
                 </div>
-                <ChatBox :rate-limit="rateLimit" :chat-messages="chatMessages" :show-header="false" :source-id="sourceId"
-                         class="flex-1 overflow-hidden"></ChatBox>
+                <ChatPanel
+                    :chat-messages="chatMessages"
+                    :chat-settings="chatSettings"
+                    :chat-state="chatState"
+                    :show-header="false"
+                    :source-id="sourceId"
+                    class="flex-1 overflow-hidden"
+                />
             </div>
         </div>
         
@@ -640,7 +666,7 @@ onUnmounted(() => {
         <button 
             v-if="showChatBox && showPlayer && !isChatDrawerOpen"
             @click="isChatDrawerOpen = true"
-            class="xl:hidden fixed bottom-4 right-4 z-30 bg-primary-700 hover:bg-primary-600 text-white rounded-full p-4 shadow-lg transition-all duration-300 hover:scale-110"
+            class="xl:hidden fixed bottom-4 right-4 z-30 bg-primary-700 hover:bg-primary-600 text-white rounded-full p-4 shadow-lg transition-all duration-(--dur-base) hover:scale-110"
         >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
@@ -670,10 +696,11 @@ onUnmounted(() => {
                     </button>
                 </div>
             </template>
-            <ChatBox
-                v-if="showChatBox"
-                :rate-limit="rateLimit"
+            <ChatPanel
+                v-if="showChatBox && isChatDrawerOpen"
                 :chat-messages="chatMessages"
+                :chat-settings="chatSettings"
+                :chat-state="chatState"
                 :show-header="false"
                 :source-id="sourceId"
                 class="h-full"

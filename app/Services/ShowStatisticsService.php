@@ -2,10 +2,9 @@
 
 namespace App\Services;
 
-use App\Models\Server;
 use App\Models\Show;
-use App\Models\Source;
 use App\Models\ShowStatistic;
+use App\Models\Source;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -15,30 +14,30 @@ class ShowStatisticsService
 {
     public function recordStatistics(Show $show): void
     {
-        if (!$show->actual_start || $show->status !== 'live') {
+        if (! $show->actual_start || $show->status !== 'live') {
             return;
         }
 
         // Get the source for this show
         $source = $show->source;
-        
+
         $currentViewerCount = 0;
         $uniqueViewers = 0;
-        
+
         if ($source) {
             // Get active viewer count from source_users table
             $currentViewerCount = $source->activeViewers()->count();
-            
+
             // For unique viewers, count distinct users who have watched this source today
             $uniqueViewers = DB::table('source_users')
                 ->where('source_id', $source->id)
                 ->where('joined_at', '>=', now()->startOfDay())
                 ->distinct('user_id')
                 ->count('user_id');
-                
+
             // Also check cache as fallback (in case edge servers are reporting)
             $cachedCount = Cache::get("stream_total_viewers:{$source->slug}", 0);
-            
+
             // Use the higher of the two counts (in case edge servers are reporting higher numbers)
             if ($cachedCount > $currentViewerCount) {
                 $currentViewerCount = $cachedCount;
@@ -103,17 +102,30 @@ class ShowStatisticsService
         ];
     }
 
+    /**
+     * Average, peak and unique viewers per hour of the broadcast.
+     *
+     * Bucketed in PHP rather than with DATE_FORMAT: that function is MySQL-only, so this
+     * query threw "column %Y-%m-%d %H:00:00 does not exist" on Postgres and SQLite, taking
+     * the whole statistics page down everywhere except production.
+     *
+     * The row count is bounded by the length of a show at one sample per minute, so there
+     * is nothing to gain from pushing the grouping into the database.
+     */
     private function getHourlyStats(Show $show, Carbon $startTime, Carbon $endTime): Collection
     {
         return ShowStatistic::where('show_id', $show->id)
             ->whereBetween('recorded_at', [$startTime, $endTime])
-            ->selectRaw('DATE_FORMAT(recorded_at, "%Y-%m-%d %H:00:00") as hour')
-            ->selectRaw('AVG(viewer_count) as avg_viewers')
-            ->selectRaw('MAX(viewer_count) as peak_viewers')
-            ->selectRaw('MAX(unique_viewers) as unique_viewers')
-            ->groupBy('hour')
-            ->orderBy('hour')
-            ->get();
+            ->orderBy('recorded_at')
+            ->get(['recorded_at', 'viewer_count', 'unique_viewers'])
+            ->groupBy(fn (ShowStatistic $stat) => $stat->recorded_at->format('Y-m-d H:00:00'))
+            ->map(fn (Collection $hour, string $key) => [
+                'hour' => $key,
+                'avg_viewers' => round($hour->avg('viewer_count'), 1),
+                'peak_viewers' => (int) $hour->max('viewer_count'),
+                'unique_viewers' => (int) $hour->max('unique_viewers'),
+            ])
+            ->values();
     }
 
     public function getRealtimeStats(Show $show): array
@@ -122,7 +134,7 @@ class ShowStatisticsService
         $source = Source::where('slug', $show->slug)
             ->orWhere('id', $show->source_id)
             ->first();
-            
+
         $currentViewers = 0;
         if ($source) {
             $currentViewers = Cache::get("stream_total_viewers:{$source->slug}", 0);
@@ -138,7 +150,7 @@ class ShowStatisticsService
 
         return [
             'current' => $currentViewers,
-            'trend' => $last5Minutes->map(fn($stat) => [
+            'trend' => $last5Minutes->map(fn ($stat) => [
                 'time' => $stat->recorded_at->format('H:i:s'),
                 'count' => $stat->viewer_count,
             ]),

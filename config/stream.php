@@ -34,16 +34,6 @@ return [
         ],
     ],
 
-    // Auto-scaling thresholds
-    'autoscale' => [
-        'enabled' => env('STREAM_AUTOSCALE_ENABLED', false),
-        'min_servers' => env('STREAM_AUTOSCALE_MIN_SERVERS', 1),
-        'max_servers' => env('STREAM_AUTOSCALE_MAX_SERVERS', 10),
-        'scale_up_threshold' => env('STREAM_AUTOSCALE_UP_THRESHOLD', 80), // % capacity
-        'scale_down_threshold' => env('STREAM_AUTOSCALE_DOWN_THRESHOLD', 20), // % capacity
-        'cooldown_minutes' => env('STREAM_AUTOSCALE_COOLDOWN', 5),
-    ],
-
     // Stream quality settings (bitrates in kbps)
     'qualities' => [
         'fhd' => [
@@ -72,8 +62,70 @@ return [
         'hls_port' => env('DOCKER_HLS_PORT', 80),
     ],
 
+    // Container images baked into the generated provisioning scripts. Built
+    // from docker/ in this repo; set the full reference including the registry
+    // namespace an operator publishes them under.
+    'images' => [
+        'ffmpeg_hls' => env('STREAM_IMAGE_FFMPEG_HLS', 'ffmpeg-hls:latest'),
+        'dvr_uploader' => env('STREAM_IMAGE_DVR_UPLOADER', 'dvr-uploader:latest'),
+    ],
+
+    // Filesystem disk holding the segment archive and the generated recording
+    // playlists. Must be the same bucket archive_uploader.py writes to on the origin.
+    //
+    // Production uses the dedicated `dvr` disk. Locally there is one versitygw bucket
+    // for everything, so point this at `s3` rather than configuring DVR_AWS_* twice.
+    'archive_disk' => env('ARCHIVE_DISK', 'dvr'),
+
+    // How segment URLs inside a recording playlist are produced.
+    //
+    // 'signed'  Presigned S3 URLs, straight from the bucket to the player. Production.
+    //           The bucket MUST send CORS headers or hls.js cannot fetch the segments:
+    //           it reads them over XHR, so a missing Access-Control-Allow-Origin fails
+    //           playback even though the URL itself is valid.
+    //
+    // 'proxy'   Streamed through the app on its own origin. Local only. The dev S3
+    //           (versitygw) sends no CORS headers and speaks plain HTTP, which a page
+    //           served over TLS blocks as mixed content; a presigned URL cannot be put
+    //           behind a proxy to fix either, because the signature covers the Host.
+    //           Never use this in production: it puts PHP in the media path for every
+    //           two second segment.
+    'archive_url_mode' => env('ARCHIVE_URL_MODE', 'signed'),
+
+    // Lifetime of a presigned segment URL. A VOD playlist is fetched once at the start
+    // of a session rather than refreshed, so this only has to outlast a viewing; the
+    // trade is that a leaked playlist stays usable until the signatures lapse.
+    'archive_url_ttl' => (int) env('ARCHIVE_URL_TTL', 86400),
+
     // System streamkey for internal operations (thumbnails, monitoring, etc.)
     'system_streamkey' => env('STREAM_SYSTEM_STREAMKEY', ''),
+
+    // Playback tokens. Short-lived HMAC-signed capabilities that replace the
+    // permanent per-user streamkey, verified locally on the edges so PHP stays
+    // out of the media path. See docs/streaming-auth-redesign.md.
+    'token' => [
+        // Separate secrets per token type, so leaking the viewer secret cannot
+        // be used to mint long-lived embed keys. Both are shared with the edges.
+        'viewer_secret' => env('HLS_VIEWER_SECRET'),
+        'embed_secret' => env('HLS_EMBED_SECRET'),
+
+        // Viewer token lifetime. Expiry is the revocation mechanism, so a ban
+        // takes effect within this window at worst.
+        'ttl' => (int) env('HLS_TOKEN_TTL', 900),
+
+        // Seconds a token is still accepted past its expiry, to absorb clock
+        // drift between app and edges and a refresh that lands late.
+        'leeway' => (int) env('HLS_TOKEN_LEEWAY', 60),
+
+        // How long before expiry the server pushes a fresh token to the player.
+        // The remainder is the budget for the 403 recovery path.
+        'refresh_margin' => (int) env('HLS_TOKEN_REFRESH_MARGIN', 180),
+    ],
+
+    // Local dev loops: with DEV_STREAMS=true, sources play the HLS that
+    // scripts/dev-streams.sh writes into public/dev-streams/<slug> instead of
+    // being proxied to an edge server that does not exist on a laptop.
+    'dev_streams' => env('DEV_STREAMS', false),
 
     // Local streaming server override configuration
     // When client IPs match these subnets, force use of the specified hostname

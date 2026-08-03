@@ -2,19 +2,17 @@
 
 namespace App\Console\Commands\Chat;
 
-use App\Events\Chat\Broadcasts\BroadcastMessageDeletionIdsEvent;
-use App\Models\Message;
 use App\Models\User;
-use Carbon\Carbon;
-use Illuminate\Support\Facades\Log;
+use App\Services\Chat\ChatModerationService;
+use Illuminate\Auth\Access\AuthorizationException;
 
 class DeleteCommand extends AbstractChatCommand
 {
     protected string $name = 'delete';
 
-    protected array $aliases = ['del', 'remove', 'purge'];
+    protected array $aliases = ['del', 'remove'];
 
-    protected string $description = 'Delete all messages from a user within a time period';
+    protected string $description = "Delete a user's messages from the last N minutes";
 
     protected string $signature = '/delete <username> <duration>';
 
@@ -33,142 +31,51 @@ class DeleteCommand extends AbstractChatCommand
 
     public function authorize(User $user): bool
     {
-        return $user->hasPermission('chat.moderate') ||
-               $user->hasRole('admin') ||
-               $user->hasRole('moderator');
+        return $user->canModerateChat();
     }
 
     protected function execute(User $user, array $parameters): void
     {
-        $username = $parameters['username'];
-        $duration = $parameters['duration'];
+        $moderation = app(ChatModerationService::class);
 
-        // Find the target user
-        $targetUser = User::where('name', $username)->first();
+        $targetUser = User::where('name', $parameters['username'])->first();
 
         if (! $targetUser) {
-            $this->feedback($user, "User '{$username}' not found.", 'error');
+            $this->feedback($user, "User '{$parameters['username']}' not found.", 'error');
 
             return;
         }
 
-        // Parse duration to get the time range
-        $cutoffTime = $this->parseDurationToTime($duration);
-        if (! $cutoffTime) {
-            $this->feedback($user, "Invalid duration format. Use formats like '5m', '1h', '1d'.", 'error');
+        $seconds = ChatModerationService::parseDuration((string) $parameters['duration']);
+
+        if (! $seconds) {
+            $this->feedback($user, "Invalid duration. Use formats like '5m', '1h', '1d'.", 'error');
 
             return;
         }
 
-        // Find all messages from the user within the time period
-        $messages = Message::where('user_id', $targetUser->id)
-            ->where('created_at', '>=', $cutoffTime)
-            ->whereNull('deleted_at')
-            ->get();
-
-        if ($messages->isEmpty()) {
-            $this->feedback($user, "No messages found from '{$username}' in the last {$duration}.", 'info');
+        try {
+            $count = $moderation->purgeUser($user, $targetUser, $this->sourceId, $seconds);
+        } catch (AuthorizationException $e) {
+            $this->feedback($user, $e->getMessage(), 'error');
 
             return;
         }
 
-        // Group messages by source_id for broadcasting
-        $messagesBySource = $messages->groupBy('source_id');
-        $messageCount = $messages->count();
-
-        // Log the IDs being deleted for debugging
-        Log::info('Deleting messages with IDs', [
-            'message_ids' => $messages->pluck('id')->toArray(),
-            'count' => $messageCount,
-            'target_user' => $username,
-        ]);
-
-        // Soft delete all messages
-        Message::whereIn('id', $messages->pluck('id'))->update([
-            'deleted_at' => now(),
-            'deleted_by_user_id' => $user->id,
-        ]);
-
-        // Broadcast deletion event to each source channel
-        foreach ($messagesBySource as $sourceId => $sourceMessages) {
-            broadcast(new BroadcastMessageDeletionIdsEvent(
-                $sourceMessages->pluck('id')->toArray(),
-                $sourceId
-            ));
-        }
-
-        // Calculate human-readable duration
-        $durationText = $this->humanizeDuration($duration);
-
-        // Send feedback to moderator
-        $this->feedback($user, "Deleted {$messageCount} messages from '{$username}' from the last {$durationText}.", 'success');
-
-        // Notify the target user
-        $this->feedback($targetUser, "{$messageCount} of your messages from the last {$durationText} have been deleted by a moderator.", 'warning');
-
-        // Log the deletion
-        Log::info('Bulk message deletion by moderator', [
-            'moderator_id' => $user->id,
-            'target_user_id' => $targetUser->id,
-            'message_count' => $messageCount,
-            'duration' => $duration,
-            'cutoff_time' => $cutoffTime,
-        ]);
-
-        // Broadcast system message to chat
-        $this->broadcastSystemMessage(
-            "Messages from {$username} in the last {$durationText} have been deleted",
-            'moderation'
+        $this->feedback(
+            $user,
+            $count === 0
+                ? "No messages from {$targetUser->name} in the last ".$moderation->humanizeSeconds($seconds).'.'
+                : "Deleted {$count} message".($count === 1 ? '' : 's')." from {$targetUser->name}.",
+            $count === 0 ? 'info' : 'success',
         );
-    }
-
-    private function parseDurationToTime(string $duration): ?Carbon
-    {
-        $matches = [];
-        if (! preg_match('/^(\d+)([smhd])$/i', $duration, $matches)) {
-            return null;
-        }
-
-        $value = (int) $matches[1];
-        $unit = strtolower($matches[2]);
-
-        $now = now();
-
-        return match ($unit) {
-            's' => $now->subSeconds($value),
-            'm' => $now->subMinutes($value),
-            'h' => $now->subHours($value),
-            'd' => $now->subDays($value),
-            default => null,
-        };
-    }
-
-    private function humanizeDuration(string $duration): string
-    {
-        $matches = [];
-        if (! preg_match('/^(\d+)([smhd])$/i', $duration, $matches)) {
-            return $duration;
-        }
-
-        $value = (int) $matches[1];
-        $unit = strtolower($matches[2]);
-
-        return match ($unit) {
-            's' => $value.' second'.($value > 1 ? 's' : ''),
-            'm' => $value.' minute'.($value > 1 ? 's' : ''),
-            'h' => $value.' hour'.($value > 1 ? 's' : ''),
-            'd' => $value.' day'.($value > 1 ? 's' : ''),
-            default => $duration,
-        };
     }
 
     public function examples(): array
     {
         return [
             '/delete JohnDoe 5m' => 'Delete all messages from JohnDoe in the last 5 minutes',
-            '/delete JohnDoe 1h' => 'Delete all messages from JohnDoe in the last hour',
-            '/delete JohnDoe 1d' => 'Delete all messages from JohnDoe in the last day',
-            '/purge SpamUser 30m' => 'Using alias to purge messages from last 30 minutes',
+            '/del SpamUser 30m' => 'Using alias to delete messages from the last 30 minutes',
         ];
     }
 }

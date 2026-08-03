@@ -17,7 +17,7 @@ class ServerProvisioningService
         $sharedSecret = $server->shared_secret ?: Str::random(32);
 
         // Update server with shared secret if not set
-        if (!$server->shared_secret) {
+        if (! $server->shared_secret) {
             $server->update(['shared_secret' => $sharedSecret]);
         }
 
@@ -35,12 +35,12 @@ class ServerProvisioningService
     {
         $serverUrl = config('app.url');
         $sharedSecret = $server->shared_secret ?: Str::random(32);
-        
+
         // Update server with shared secret if not set
-        if (!$server->shared_secret) {
+        if (! $server->shared_secret) {
             $server->update(['shared_secret' => $sharedSecret]);
         }
-        
+
         // Simple cloud-init that just downloads and runs the install script
         $cloudInit = <<<YAML
 #cloud-config
@@ -54,9 +54,9 @@ packages:
 runcmd:
   - curl -fsSL '{$serverUrl}/api/server/scripts/install?shared_secret={$sharedSecret}' -o /opt/install.sh
   - chmod +x /opt/install.sh
-  - /opt/install.sh > /var/log/ef-streaming-install.log 2>&1
+  - /opt/install.sh > /var/log/streaming-install.log 2>&1
 
-final_message: "EF Streaming server setup completed after \$UPTIME seconds"
+final_message: "Streaming server setup completed after \$UPTIME seconds"
 YAML;
 
         return $cloudInit;
@@ -70,15 +70,26 @@ YAML;
         $serverUrl = config('app.url');
         $sharedSecret = $server->shared_secret ?: Str::random(32);
 
-        $viewName = match($type) {
+        // The edge token verifier and its Dockerfile are shipped verbatim from
+        // docker/edge-nginx so there is a single source of truth: the file the
+        // edges run is the same file that is tested here.
+        if ($type === 'hls-auth-js') {
+            return $this->edgeFile('hls-auth.js');
+        }
+
+        if ($type === 'edge-dockerfile') {
+            return $this->edgeFile('Dockerfile');
+        }
+
+        $viewName = match ($type) {
             'docker-compose' => "server-provisioning.{$server->type->value}.docker-compose",
             'nginx' => "server-provisioning.{$server->type->value}.nginx-config",
             'caddy' => "server-provisioning.{$server->type->value}.caddyfile",
-            'srs' => "server-provisioning.origin.srs-config",
+            'srs' => 'server-provisioning.origin.srs-config',
             default => null,
         };
 
-        if (!$viewName || !View::exists($viewName)) {
+        if (! $viewName || ! View::exists($viewName)) {
             return '';
         }
 
@@ -94,31 +105,33 @@ YAML;
         $parsedUrl = parse_url($serverUrl);
         $nginxUpstreamHost = $parsedUrl['host'] ?? 'localhost';
         $nginxUpstreamScheme = $parsedUrl['scheme'] ?? 'http';
-        
+
         // For HTTPS, use the URL directly without port. For HTTP, use host:port
         if ($nginxUpstreamScheme === 'https') {
             $nginxUpstream = $serverUrl; // Use full HTTPS URL
         } else {
             $nginxUpstreamPort = $parsedUrl['port'] ?? 80;
-            $nginxUpstream = 'http://' . $nginxUpstreamHost . ':' . $nginxUpstreamPort;
+            $nginxUpstream = 'http://'.$nginxUpstreamHost.':'.$nginxUpstreamPort;
         }
 
-        // For edge server, we need to connect to origin
-        // Use a sensible default if no origin server is found
-        $originHost = $originServer ? $originServer->hostname : 'origin.stream.eurofurence.org';
+        // For edge server, we need to connect to origin. With no origin on
+        // record, fall back to origin.<dns zone> so the config is still valid.
+        $originHost = $originServer
+            ? $originServer->hostname
+            : trim('origin.'.config('dns.zone'), '.');
         // For nginx upstream block - just hostname:port, no protocol
-        $originUpstream = $originHost . ':443';
-        
+        $originUpstream = $originHost.':443';
+
         // Determine if we can use internal networking
         $useInternalNetwork = false;
         $originInternalUpstream = null;
-        
+
         if ($server->type->value === 'edge' && $originServer) {
             // Check if both servers are Hetzner servers with internal IPs
             if ($server->canUseInternalNetworkWith($originServer)) {
                 $useInternalNetwork = true;
                 // Internal network uses HTTPS on port 443 to Caddy (using internal IP)
-                $originInternalUpstream = $originServer->internal_ip . ':443';
+                $originInternalUpstream = $originServer->internal_ip.':443';
             }
         }
 
@@ -131,7 +144,23 @@ YAML;
             'originServer' => $originServer,
             'useInternalNetwork' => $useInternalNetwork,
             'originInternalUpstream' => $originInternalUpstream,
+            // Edges verify playback tokens locally, so they need the same
+            // secrets and the same expiry leeway as the app.
+            'hlsViewerSecret' => config('stream.token.viewer_secret') ?? '',
+            'hlsEmbedSecret' => config('stream.token.embed_secret') ?? '',
+            'hlsTokenLeeway' => (int) config('stream.token.leeway'),
+            'systemStreamkey' => config('stream.system_streamkey') ?? '',
         ])->render();
+    }
+
+    /**
+     * Read a file that edges run unmodified out of docker/edge-nginx.
+     */
+    private function edgeFile(string $name): string
+    {
+        $path = base_path("docker/edge-nginx/{$name}");
+
+        return is_readable($path) ? (string) file_get_contents($path) : '';
     }
 
     // Legacy methods for backward compatibility

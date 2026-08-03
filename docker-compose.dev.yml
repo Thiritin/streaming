@@ -1,0 +1,227 @@
+# Local mirror of the production streaming path.
+#
+#   publisher -> SRS (ingress) -> ffmpeg ABR -> origin nginx -> origin caddy
+#             -> edge nginx -> edge caddy -> browser
+#   SRS DVR   -> dvr-uploader -> S3 (versitygw) -> recordings + thumbnails
+#
+# The Laravel app itself stays native under Yerd; containers reach it through the
+# app-bridge service, and SRS webhooks hit it exactly as they do in production.
+#
+# Start with: ./scripts/dev-stack.sh up
+
+name: streaming-dev
+
+services:
+  # ------------------------------------------------------------- app bridge
+  # Plain HTTP entry point to the host-served Laravel app; see
+  # docker/dev/app-bridge.conf for why this exists.
+  app-bridge:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./docker/dev/app-bridge.conf:/etc/nginx/conf.d/default.conf:ro
+    extra_hosts:
+      - "streaming.test:host-gateway"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------- ingress
+  origin-srs:
+    image: ossrs/srs:5
+    command: ./objs/srs -c /usr/local/srs/conf/origin.conf
+    volumes:
+      - ./docker/dev/origin-srs.conf:/usr/local/srs/conf/origin.conf:ro
+      - dvr:/dvr/recordings
+    ports:
+      - "1935:1935"   # RTMP ingress (point OBS here)
+      - "1985:1985"   # SRS HTTP API
+    depends_on:
+      - app-bridge
+    restart: unless-stopped
+
+  # ------------------------------------------------------- ABR transcoding
+  hls-transcoder:
+    build: ./docker/ffmpeg-hls
+    environment:
+      SRS_API_URL: http://origin-srs:1985/api/v1
+      SRS_RTMP_URL: rtmp://origin-srs:1935
+      OUTPUT_BASE_DIR: /var/www/hls/live
+      CHECK_INTERVAL: "5"
+      # copy is the local default: the ladder is remuxed rather than encoded, so
+      # a laptop can hold several channels at once. Set DEV_ABR_MODE=transcode
+      # when you are actually working on the ladder itself.
+      ABR_MODE: ${DEV_ABR_MODE:-copy}
+      # Production runs a 60 minute rewind window (1800 segments). That is ~5GB of
+      # disk per source, which is not something a laptop wants, so dev defaults to
+      # 5 minutes. Raise it when you are actually working on the DVR window itself.
+      DVR_WINDOW_SEGMENTS: ${DEV_DVR_WINDOW_SEGMENTS:-150}
+    volumes:
+      - hls:/var/www/hls
+    depends_on:
+      - origin-srs
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------- origin
+  origin-nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./docker/dev/origin-nginx.conf:/etc/nginx/nginx.conf:ro
+      - hls:/var/www/hls
+    depends_on:
+      - hls-transcoder
+      - app-bridge
+    restart: unless-stopped
+
+  origin-caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./docker/dev/origin-Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-logs:/var/log/caddy
+    ports:
+      - "8070:8070"   # origin, mostly for debugging
+    depends_on:
+      - origin-nginx
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------- edge
+  # Built rather than pulled: the image adds the njs module and hls-auth.js, so
+  # playback tokens are verified locally here exactly as they are in production.
+  edge-nginx:
+    build: ./docker/edge-nginx
+    environment:
+      HLS_VIEWER_SECRET: ${HLS_VIEWER_SECRET:-}
+      HLS_EMBED_SECRET: ${HLS_EMBED_SECRET:-}
+      HLS_TOKEN_LEEWAY: ${HLS_TOKEN_LEEWAY:-60}
+      STREAM_SYSTEM_STREAMKEY: ${STREAM_SYSTEM_STREAMKEY:-}
+    volumes:
+      - ./docker/dev/edge-nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - origin-caddy
+      - app-bridge
+    restart: unless-stopped
+
+  edge-caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./docker/dev/edge-Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-logs:/var/log/caddy
+    ports:
+      # 8085 matches the edge server row that LocalDevelopmentServersSeeder creates.
+      # 8080 is Yerd's and 8081 is Reverb's, so the edge stays off both.
+      - "8085:8080"
+    depends_on:
+      - edge-nginx
+    restart: unless-stopped
+
+  # --------------------------------------------------------------- storage
+  # versitygw exposes a plain directory over the S3 API: recordings, DVR
+  # uploads and thumbnails all behave like they do against real object storage.
+  s3:
+    image: ghcr.io/versity/versitygw:latest
+    command: >
+      --access ${DEV_S3_KEY:-devkey}
+      --secret ${DEV_S3_SECRET:-devsecret123}
+      --region ${AWS_DEFAULT_REGION:-eu-central-1}
+      --port :7070
+      posix /buckets
+    volumes:
+      - s3-data:/buckets
+    ports:
+      # Host side only. 7070 is AnyDesk's default listener, which silently wins the
+      # bind and takes the whole stack down with it, so the host port is both moved
+      # and overridable. Inside the compose network this is still :7070, which is
+      # why S3_ENDPOINT below does not change.
+      - "${DEV_S3_PORT:-7075}:7070"
+    restart: unless-stopped
+
+  s3-init:
+    image: alpine:3
+    # versitygw's posix backend treats top-level directories as buckets.
+    command: sh -c "mkdir -p /buckets/${AWS_BUCKET:-streaming} && echo 'bucket ready'"
+    volumes:
+      - s3-data:/buckets
+    depends_on:
+      - s3
+    restart: "no"
+
+  # ------------------------------------------------------------ DVR upload
+  dvr-uploader:
+    build: ./docker/dvr-uploader
+    environment:
+      S3_BUCKET: ${AWS_BUCKET:-streaming}
+      S3_REGION: ${AWS_DEFAULT_REGION:-eu-central-1}
+      S3_ACCESS_KEY: ${DEV_S3_KEY:-devkey}
+      S3_SECRET_KEY: ${DEV_S3_SECRET:-devsecret123}
+      S3_ENDPOINT: http://s3:7070
+      RECORDINGS_PATH: /dvr/recordings
+      DELETE_AFTER_UPLOAD: "false"
+      FILE_AGE_SECONDS: "15"
+      WEBHOOK_URL: http://app-bridge/api/srs/dvr
+    volumes:
+      - dvr:/dvr/recordings
+    depends_on:
+      - s3
+      - app-bridge
+    restart: unless-stopped
+
+  # --------------------------------------------------------- segment archive
+  # Mirrors the transcoder's HLS segments to S3 and maintains the per-hour index
+  # playlists that recordings are later cut from. Separate container from
+  # dvr-uploader on purpose: that one still handles the SRS MP4 DVR as a cold
+  # backup, and the two watch different volumes.
+  archive-uploader:
+    build: ./docker/dvr-uploader
+    command: ["python", "-u", "archive_uploader.py"]
+    environment:
+      S3_BUCKET: ${AWS_BUCKET:-streaming}
+      S3_REGION: ${AWS_DEFAULT_REGION:-eu-central-1}
+      S3_ACCESS_KEY: ${DEV_S3_KEY:-devkey}
+      S3_SECRET_KEY: ${DEV_S3_SECRET:-devsecret123}
+      S3_ENDPOINT: http://s3:7070
+      HLS_PATH: /var/www/hls/live
+      # Matches DVR_WINDOW_SEGMENTS on the transcoder (150 segments x 2s = 5 min).
+      # The reaper must never delete inside the window the player can still seek to.
+      DVR_WINDOW_SECONDS: ${DEV_DVR_WINDOW_SECONDS:-300}
+      REAP_INTERVAL: "30"
+      INDEX_UPLOAD_INTERVAL: "20"
+      # Unlimited locally; S3 is a container on the same host. Set this low
+      # (e.g. 10, well under the ~11.5 Mbps per source the ladder produces) to
+      # watch the backlog guard fire.
+      MAX_UPLOAD_RATE_MBPS: ${DEV_MAX_UPLOAD_RATE_MBPS:-0}
+    volumes:
+      - hls:/var/www/hls
+      - archive-state:/var/lib/dvr-archive
+    depends_on:
+      - s3
+      - hls-transcoder
+    restart: unless-stopped
+
+  # -------------------------------------------------------- fake broadcasters
+  # Stands in for OBS: one ffmpeg per channel, pushing a distinct animated
+  # pattern into the ingress app with the channel's stream key.
+  publisher:
+    image: linuxserver/ffmpeg:latest
+    entrypoint: ["/bin/bash", "/publish.sh"]
+    environment:
+      RTMP_URL: rtmp://origin-srs:1935/ingress
+      CHANNELS: ${DEV_PUBLISH_CHANNELS:-}
+      SIZE: ${DEV_PUBLISH_SIZE:-1280x720}
+      FPS: ${DEV_PUBLISH_FPS:-30}
+      # loop encodes one short clip per channel and then pushes it with -c copy,
+      # so the publishers stop costing CPU once the clips are cached in the
+      # volume below. Set DEV_PUBLISH_MODE=live for a moving on-screen clock.
+      MODE: ${DEV_PUBLISH_MODE:-loop}
+      CLIP_SECONDS: ${DEV_PUBLISH_CLIP_SECONDS:-20}
+      CLIP_DIR: /clips
+    volumes:
+      - ./docker/dev/publish.sh:/publish.sh:ro
+      - publisher-clips:/clips
+    depends_on:
+      - origin-srs
+    restart: unless-stopped
+
+volumes:
+  hls:
+  dvr:
+  archive-state:
+  s3-data:
+  caddy-logs:
+  publisher-clips:

@@ -13,7 +13,7 @@ const props = defineProps({
 </script>
 
 <template>
-  <div :class="['w-full', noPadding ? '' : padding]">
+  <div :class="['w-full mx-auto max-w-page', noPadding ? '' : padding]">
     <slot />
   </div>
 </template>

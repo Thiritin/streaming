@@ -20,6 +20,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Mandatory login
+    |--------------------------------------------------------------------------
+    |
+    | When true (the default) every page except the login screen is behind the
+    | identity provider. When false the browse, schedule, archive and player
+    | pages are open to guests and signing in is only required for chat, which
+    | needs an identity to attribute, rate limit and moderate.
+    |
+    | Restricted shows and recordings stay hidden from guests either way; the
+    | role check in `accessibleBy()` fails closed without a user.
+    |
+    */
+
+    'required' => (bool) env('AUTH_REQUIRED', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Authentication Guards
     |--------------------------------------------------------------------------
     |
@@ -111,5 +128,20 @@ return [
     */
 
     'password_timeout' => 10800,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Remember Me Duration
+    |--------------------------------------------------------------------------
+    |
+    | How long, in minutes, the "remember me" cookie issued at sign-in stays
+    | valid. Attendees sign in once and are expected to stay signed in for the
+    | run-up to the convention and the event itself, so this defaults to four
+    | weeks rather than Laravel's five years. Applied to the session guard in
+    | AuthServiceProvider.
+    |
+    */
+
+    'remember_lifetime' => (int) env('AUTH_REMEMBER_LIFETIME', 40320),
 
 ];

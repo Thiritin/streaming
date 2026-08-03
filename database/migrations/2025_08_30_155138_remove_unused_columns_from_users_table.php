@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::table('users', function (Blueprint $table) {
             $columnsToRemove = [];
-            
+
             if (Schema::hasColumn('users', 'level')) {
                 $columnsToRemove[] = 'level';
             }
@@ -26,8 +26,8 @@ return new class extends Migration
             if (Schema::hasColumn('users', 'badge_type')) {
                 $columnsToRemove[] = 'badge_type';
             }
-            
-            if (!empty($columnsToRemove)) {
+
+            if (! empty($columnsToRemove)) {
                 $table->dropColumn($columnsToRemove);
             }
         });

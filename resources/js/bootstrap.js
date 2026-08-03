@@ -20,12 +20,18 @@ import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 window.Pusher = Pusher;
 
+// Emitted by app.blade.php from the server's broadcasting config. Taking the
+// host at runtime keeps a deployment's own domain out of the built bundle, so
+// one image serves any installation. The VITE_* values stay as the fallback for
+// `npm run dev`, where there is no rendered page yet.
+const broadcasting = window.__broadcasting ?? {};
+
 window.Echo = new Echo({
     broadcaster: 'reverb',
-    key: import.meta.env.VITE_REVERB_APP_KEY,
-    wsHost: import.meta.env.VITE_REVERB_HOST,
-    wsPort: import.meta.env.VITE_REVERB_PORT ?? 80,
-    wssPort: import.meta.env.VITE_REVERB_PORT ?? 443,
-    forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
+    key: broadcasting.key || import.meta.env.VITE_REVERB_APP_KEY,
+    wsHost: broadcasting.host || import.meta.env.VITE_REVERB_HOST,
+    wsPort: broadcasting.port ?? import.meta.env.VITE_REVERB_PORT ?? 80,
+    wssPort: broadcasting.port ?? import.meta.env.VITE_REVERB_PORT ?? 443,
+    forceTLS: (broadcasting.scheme || import.meta.env.VITE_REVERB_SCHEME || 'https') === 'https',
     enabledTransports: ['ws', 'wss'],
 });

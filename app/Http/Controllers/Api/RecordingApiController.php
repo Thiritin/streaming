@@ -11,16 +11,22 @@ use Illuminate\Support\Str;
 class RecordingApiController extends Controller
 {
     /**
-     * Get shows that need to be recorded.
-     * Returns shows where recordable=true, actual_start and actual_end are set, and no recording exists.
+     * Shows still awaiting a published recording.
+     *
+     * Legacy: this was the work queue for an external processing server, back when
+     * producing a recording meant extracting and re-encoding MP4s. Cutting is now
+     * internal and instant (see ArchivePlaylistService), so nothing consumes this to do
+     * work any more. Kept because the endpoint is an external API contract, and narrowed
+     * to the honest question it can still answer: which announced shows have not been
+     * published yet.
      */
     public function shows()
     {
         $shows = Show::with('source')
-            ->where('recordable', true)
+            ->where('announce_recording', true)
             ->whereNotNull('actual_start')
             ->whereNotNull('actual_end')
-            ->whereDoesntHave('recording')
+            ->whereDoesntHave('recordings', fn ($q) => $q->where('is_published', true))
             ->get()
             ->map(function ($show) {
                 return [
@@ -31,13 +37,14 @@ class RecordingApiController extends Controller
                     'end' => $show->actual_end->toIso8601String(),
                     'title' => $show->title,
                     'description' => $show->description,
+                    'description_html' => $show->description_html,
                 ];
             });
 
         return response()->json([
             'success' => true,
             'data' => $shows,
-            'count' => $shows->count()
+            'count' => $shows->count(),
         ]);
     }
 
@@ -58,7 +65,7 @@ class RecordingApiController extends Controller
         ]);
 
         // If show_id is provided, get the show details
-        if (!empty($validated['show_id'])) {
+        if (! empty($validated['show_id'])) {
             $show = Show::find($validated['show_id']);
 
             // Use show details if not provided
@@ -84,7 +91,7 @@ class RecordingApiController extends Controller
             $count = 1;
 
             while (Recording::where('slug', $slug)->exists()) {
-                $slug = $baseSlug . '-' . $count;
+                $slug = $baseSlug.'-'.$count;
                 $count++;
             }
 
@@ -92,7 +99,7 @@ class RecordingApiController extends Controller
         }
 
         // Default to published
-        if (!isset($validated['is_published'])) {
+        if (! isset($validated['is_published'])) {
             $validated['is_published'] = true;
         }
 
@@ -107,7 +114,7 @@ class RecordingApiController extends Controller
         return response()->json([
             'success' => true,
             'data' => $recording,
-            'message' => 'Recording created successfully'
+            'message' => 'Recording created successfully',
         ], 201);
     }
 
@@ -122,7 +129,7 @@ class RecordingApiController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $recording
+            'data' => $recording,
         ]);
     }
 }

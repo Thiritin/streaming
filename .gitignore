@@ -26,3 +26,19 @@ frankenphp-worker.php
 
 # Logs
 logs
+# Local dev stream loops (scripts/dev-streams.sh)
+/public/dev-streams
+
+# Generated per-server install script (contains a live shared secret)
+/install.sh
+
+# Python bytecode from the DVR uploader image build
+__pycache__/
+
+# Playwright MCP session artefacts (console logs, snapshots, screenshots)
+.playwright-mcp/
+
+# Throwaway screenshots dropped in the working directory. The ones the README
+# uses live in .github/screenshots.
+/*.png
+/*.jpg

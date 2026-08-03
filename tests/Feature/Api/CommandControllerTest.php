@@ -2,25 +2,26 @@
 
 namespace Tests\Feature\Api;
 
-use Tests\TestCase;
-use App\Models\User;
-use App\Models\Role;
 use App\Events\CommandFeedbackEvent;
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
+use Tests\TestCase;
 
 class CommandControllerTest extends TestCase
 {
     use RefreshDatabase;
 
     protected User $user;
+
     protected User $admin;
 
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Create roles
         Role::create([
             'name' => 'Admin',
@@ -28,14 +29,14 @@ class CommandControllerTest extends TestCase
             'chat_color' => '#ff0000',
             'is_staff' => true,
         ]);
-        
+
         Role::create([
             'name' => 'Moderator',
             'slug' => 'moderator',
             'chat_color' => '#00ff00',
             'is_staff' => true,
         ]);
-        
+
         $this->user = User::factory()->create();
         $this->admin = User::factory()->create();
         $this->admin->assignRole('admin');
@@ -44,27 +45,27 @@ class CommandControllerTest extends TestCase
     public function test_execute_command_requires_authentication()
     {
         $response = $this->postJson('/api/command/execute', [
-            'command' => '/help'
+            'command' => '/help',
         ]);
-        
+
         $response->assertStatus(401);
     }
 
     public function test_execute_help_command_as_regular_user()
     {
         Event::fake();
-        
+
         $response = $this->actingAs($this->user, 'sanctum')
             ->postJson('/api/command/execute', [
-                'command' => '/help'
+                'command' => '/help',
             ]);
-        
+
         $response->assertStatus(200)
             ->assertJson([
                 'success' => true,
-                'command' => 'help'
+                'command' => 'help',
             ]);
-        
+
         Event::assertDispatched(CommandFeedbackEvent::class);
     }
 
@@ -72,33 +73,33 @@ class CommandControllerTest extends TestCase
     {
         $response = $this->actingAs($this->user, 'sanctum')
             ->postJson('/api/command/execute', [
-                'command' => '/timeout testuser 5m'
+                'command' => '/timeout testuser 5m',
             ]);
-        
+
         $response->assertStatus(403)
             ->assertJson([
                 'success' => false,
-                'error' => 'You do not have permission to use this command.'
+                'error' => 'You do not have permission to use this command.',
             ]);
     }
 
     public function test_execute_admin_command_as_admin_succeeds()
     {
         Event::fake();
-        
+
         $targetUser = User::factory()->create(['name' => 'testuser']);
-        
+
         $response = $this->actingAs($this->admin, 'sanctum')
             ->postJson('/api/command/execute', [
-                'command' => '/timeout testuser 5m Testing'
+                'command' => '/timeout testuser 5m Testing',
             ]);
-        
+
         $response->assertStatus(200)
             ->assertJson([
                 'success' => true,
-                'command' => 'timeout'
+                'command' => 'timeout',
             ]);
-        
+
         Event::assertDispatched(CommandFeedbackEvent::class);
     }
 
@@ -106,42 +107,42 @@ class CommandControllerTest extends TestCase
     {
         $response = $this->actingAs($this->user, 'sanctum')
             ->postJson('/api/command/execute', [
-                'command' => '/unknowncommand'
+                'command' => '/unknowncommand',
             ]);
-        
+
         $response->assertStatus(404)
             ->assertJson([
                 'success' => false,
-                'error' => 'Command not found. Type /help for available commands.'
+                'error' => 'Command not found. Type /help for available commands.',
             ]);
     }
 
     public function test_command_rate_limiting()
     {
         // Clear rate limiter
-        RateLimiter::clear('command-execute:' . $this->user->id);
-        
+        RateLimiter::clear('command-execute:'.$this->user->id);
+
         // Make 10 requests (the limit)
         for ($i = 0; $i < 10; $i++) {
             $response = $this->actingAs($this->user, 'sanctum')
                 ->postJson('/api/command/execute', [
-                    'command' => '/help'
+                    'command' => '/help',
                 ]);
-            
+
             $response->assertStatus(200);
         }
-        
+
         // 11th request should be rate limited
         $response = $this->actingAs($this->user, 'sanctum')
             ->postJson('/api/command/execute', [
-                'command' => '/help'
+                'command' => '/help',
             ]);
-        
+
         $response->assertStatus(429)
             ->assertJsonStructure([
                 'success',
                 'error',
-                'retry_after'
+                'retry_after',
             ]);
     }
 
@@ -149,7 +150,7 @@ class CommandControllerTest extends TestCase
     {
         $response = $this->actingAs($this->admin, 'sanctum')
             ->getJson('/api/command/suggestions?query=ti');
-        
+
         $response->assertStatus(200)
             ->assertJsonStructure([
                 'suggestions' => [
@@ -157,11 +158,11 @@ class CommandControllerTest extends TestCase
                         'name',
                         'signature',
                         'description',
-                        'aliases'
-                    ]
-                ]
+                        'aliases',
+                    ],
+                ],
             ]);
-        
+
         $suggestions = $response->json('suggestions');
         $this->assertCount(1, $suggestions);
         $this->assertEquals('timeout', $suggestions[0]['name']);
@@ -171,13 +172,13 @@ class CommandControllerTest extends TestCase
     {
         $response = $this->actingAs($this->user, 'sanctum')
             ->getJson('/api/command/list');
-        
+
         $response->assertStatus(200)
             ->assertJsonStructure([
                 'commands',
-                'grouped'
+                'grouped',
             ]);
-        
+
         $commands = $response->json('commands');
         $this->assertArrayHasKey('help', $commands);
         $this->assertArrayNotHasKey('timeout', $commands); // Regular user shouldn't see admin commands
@@ -187,12 +188,12 @@ class CommandControllerTest extends TestCase
     {
         $response = $this->actingAs($this->admin, 'sanctum')
             ->getJson('/api/command/search?query=slow');
-        
+
         $response->assertStatus(200)
             ->assertJsonStructure([
-                'results'
+                'results',
             ]);
-        
+
         $results = $response->json('results');
         $this->assertArrayHasKey('slowmode', $results);
     }
@@ -201,7 +202,7 @@ class CommandControllerTest extends TestCase
     {
         $response = $this->actingAs($this->user, 'sanctum')
             ->getJson('/api/command/help?command=help');
-        
+
         $response->assertStatus(200)
             ->assertJsonStructure([
                 'command' => [
@@ -209,9 +210,9 @@ class CommandControllerTest extends TestCase
                     'signature',
                     'description',
                     'aliases',
-                    'parameters'
+                    'parameters',
                 ],
-                'examples'
+                'examples',
             ]);
     }
 
@@ -219,10 +220,10 @@ class CommandControllerTest extends TestCase
     {
         $response = $this->actingAs($this->user, 'sanctum')
             ->getJson('/api/command/help?command=timeout');
-        
+
         $response->assertStatus(403)
             ->assertJson([
-                'error' => 'You do not have permission to view this command.'
+                'error' => 'You do not have permission to view this command.',
             ]);
     }
 
@@ -230,10 +231,10 @@ class CommandControllerTest extends TestCase
     {
         $response = $this->actingAs($this->user, 'sanctum')
             ->getJson('/api/command/help?command=nonexistent');
-        
+
         $response->assertStatus(404)
             ->assertJson([
-                'error' => 'Command not found.'
+                'error' => 'Command not found.',
             ]);
     }
 
@@ -241,23 +242,24 @@ class CommandControllerTest extends TestCase
     {
         $response = $this->actingAs($this->admin, 'sanctum')
             ->postJson('/api/command/execute', [
-                'command' => '/timeout' // Missing required parameters
+                'command' => '/timeout', // Missing required parameters
             ]);
-        
-        $response->assertStatus(500); // Command will fail during execution
+
+        // Missing arguments are caught by the command's own validation rules.
+        $response->assertStatus(422);
     }
 
     public function test_command_execution_is_logged()
     {
         $this->actingAs($this->admin, 'sanctum')
             ->postJson('/api/command/execute', [
-                'command' => '/help'
+                'command' => '/help',
             ]);
-        
+
         $this->assertDatabaseHas('activity_log', [
             'subject_type' => 'App\Models\User',
             'subject_id' => $this->admin->id,
-            'description' => 'Command executed'
+            'description' => 'Command executed',
         ]);
     }
 }
