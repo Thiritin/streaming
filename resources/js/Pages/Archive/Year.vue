@@ -13,7 +13,7 @@
           <p class="text-xs font-semibold uppercase tracking-[0.14em] text-primary-300">Collection</p>
           <h1 class="text-4xl font-bold tracking-tight text-white tabular-nums">{{ year }}</h1>
           <p class="text-sm text-primary-300 tabular-nums">
-            {{ recordings.length }} {{ recordings.length === 1 ? 'recording' : 'recordings' }}
+            {{ publishedCount }} {{ publishedCount === 1 ? 'recording' : 'recordings' }}
             <span aria-hidden="true">·</span> {{ hours }}h runtime
             <span aria-hidden="true">·</span> {{ formatViews(totalViews) }} views
           </p>
@@ -53,24 +53,13 @@
       <p v-else class="py-16 text-center text-primary-400">
         {{ search ? `Nothing in ${year} matches that search.` : `Nothing published for ${year} yet.` }}
       </p>
-
-      <!-- Shows that ended but have no published recording yet -->
-      <div v-if="pendingShows.length" class="mt-12">
-        <h2 class="pb-4 text-sm font-semibold uppercase tracking-[0.12em] text-primary-300">Still processing</h2>
-        <ul class="pending-list">
-          <li v-for="show in pendingShows" :key="show.id" class="pending-row">
-            <span class="truncate text-sm font-medium text-primary-100">{{ show.title }}</span>
-            <span class="text-xs text-primary-400 tabular-nums">{{ formatDate(show.actual_end ?? show.scheduled_end) }}</span>
-          </li>
-        </ul>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import RecordingTile from '@/Components/Recordings/RecordingTile.vue';
 import FaArrowLeftIcon from '@/Components/Icons/FaArrowLeftIcon.vue';
@@ -82,14 +71,17 @@ defineOptions({
 const props = defineProps({
   year: { type: Number, required: true },
   years: { type: Array, default: () => [] },
+  // Published recordings plus, mixed in by date, the shows that ended but have not
+  // been published yet (flagged `is_pending`, rendered as dimmed tiles).
   recordings: { type: Array, default: () => [] },
-  pendingShows: { type: Array, default: () => [] },
   totalViews: { type: Number, default: 0 },
   hours: { type: Number, default: 0 },
   search: { type: String, default: null },
 });
 
 const searchQuery = ref(props.search ?? '');
+
+const publishedCount = computed(() => props.recordings.filter((recording) => !recording.is_pending).length);
 
 const submitSearch = () => {
   router.get(
@@ -104,10 +96,6 @@ const formatViews = (views) => {
   if (views >= 1000) return `${(views / 1000).toFixed(1)}K`;
   return String(views ?? 0);
 };
-
-const formatDate = (value) => (value
-  ? new Date(value).toLocaleDateString([], { day: 'numeric', month: 'short' })
-  : '');
 </script>
 
 <style scoped>
@@ -138,14 +126,6 @@ const formatDate = (value) => (value
 .year-chip:focus-visible,
 .back-link:focus-visible {
   @apply outline-none ring-2 ring-primary-400 ring-offset-2 ring-offset-primary-900;
-}
-
-.pending-list {
-  @apply m-0 flex list-none flex-col gap-1 p-0;
-}
-
-.pending-row {
-  @apply flex items-center justify-between gap-4 rounded-lg bg-primary-950/45 px-4 py-2.5 ring-1 ring-white/5;
 }
 
 .search-input {

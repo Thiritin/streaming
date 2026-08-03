@@ -7,7 +7,7 @@
  * Every field shows whether it is overriding the shipped default and can be put back
  * individually, which is safer than the all-or-nothing reset at the bottom.
  */
-import { computed, onBeforeUnmount, reactive, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { clearAccentPreview, previewAccent } from '@/Components/Manage/colorRamp';
 import ManageLayout from '@/Layouts/ManageLayout.vue';
@@ -19,9 +19,18 @@ import PageHeader from '@/Components/Manage/PageHeader.vue';
 
 const props = defineProps({
   groups: { type: Array, required: true },
+  /** Events the last connection test saw, so the slug can be picked rather than typed. */
+  pretalxEvents: { type: Array, default: () => [] },
 });
 
 const fields = computed(() => props.groups.flatMap((group) => group.fields));
+
+/*
+ * Secrets are write-only: the page is told whether one is stored, never what it is, so a
+ * blank field means "keep it". Removing one therefore needs a word of its own, which is
+ * this sentinel; it matches Settings::CLEAR_SECRET.
+ */
+const CLEAR_SECRET = '__clear__';
 
 /** A repeater arrives as rows and posts as rows; everything else is a string. */
 const initial = (field) => (field.type === 'links'
@@ -98,6 +107,52 @@ const resetAll = () => {
 
 const accept = (type) => (type === 'video' ? 'video/mp4,video/webm' : 'image/*');
 
+/*
+ * Pretalx: the connection can be proven before it is saved, and a successful test brings
+ * back the events those credentials can see. The request is a partial reload of
+ * `pretalxEvents` only, so the values being tested survive it - a full response would
+ * re-seed the form from the saved settings and throw the typing away.
+ */
+const testing = ref(false);
+
+const eventOptions = computed(() => {
+  const options = props.pretalxEvents.map((event) => ({
+    value: event.slug,
+    label: event.date_from ? `${event.name} (${event.slug}, ${event.date_from})` : `${event.name} (${event.slug})`,
+  }));
+
+  const current = form.values.pretalx_event;
+
+  // A slug saved before the list was fetched must stay selected rather than silently
+  // switch to the first event in the dropdown.
+  if (current && !options.some((option) => option.value === current)) {
+    options.unshift({ value: current, label: `${current} (not in the list)` });
+  }
+
+  return [{ value: '', label: 'No event chosen' }, ...options];
+});
+
+const testPretalx = () => {
+  testing.value = true;
+
+  router.post(
+    route('manage.settings.pretalx.test'),
+    {
+      url: form.values.pretalx_url,
+      event: form.values.pretalx_event,
+      token: form.values.pretalx_token,
+    },
+    {
+      preserveScroll: true,
+      preserveState: true,
+      only: ['pretalxEvents', 'flash', 'errors'],
+      onFinish: () => {
+        testing.value = false;
+      },
+    },
+  );
+};
+
 /**
  * Hex comparison is case-insensitive: the native picker writes lowercase while the
  * presets are stored as authored. The built-in swatch stores nothing, so it is the
@@ -142,8 +197,8 @@ onBeforeUnmount(clearAccentPreview);
     <Head title="Settings" />
 
     <PageHeader
-      title="Branding & texts"
-      subtitle="What makes this installation this convention's. Saved values override the shipped defaults."
+      title="Settings"
+      subtitle="What makes this installation this convention's, and what it connects to. Saved values override the shipped defaults."
     />
 
     <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="submit">
@@ -327,6 +382,57 @@ onBeforeUnmount(clearAccentPreview);
             </FormField>
 
             <FormField
+              v-else-if="field.key === 'pretalx_event' && pretalxEvents.length"
+              v-model="form.values[field.key]"
+              :label="field.label"
+              type="select"
+              :options="eventOptions"
+              :helper="field.helper"
+              :error="form.errors[`values.${field.key}`]"
+            />
+
+            <FormField
+              v-else-if="field.type === 'password'"
+              :label="field.label"
+              :helper="field.helper"
+              :error="form.errors[`values.${field.key}`]"
+              :class="field.full ? 'md:col-span-full' : ''"
+            >
+              <div class="flex items-center gap-2">
+                <input
+                  v-if="form.values[field.key] !== CLEAR_SECRET"
+                  v-model="form.values[field.key]"
+                  type="password"
+                  autocomplete="new-password"
+                  :placeholder="field.hasValue ? 'Saved' : 'Not set'"
+                  class="h-8 min-w-0 flex-1 rounded border border-hairline bg-surface-2 px-2 font-mono text-[13px] text-fg-1 outline-none transition-colors focus:border-state-live/50"
+                  :aria-label="field.label"
+                  @focus="$event.target.select()"
+                />
+                <p v-else class="flex h-8 min-w-0 flex-1 items-center text-[13px] text-state-danger">
+                  Removed when you save.
+                </p>
+
+                <button
+                  v-if="field.hasValue && form.values[field.key] !== CLEAR_SECRET"
+                  type="button"
+                  class="h-8 shrink-0 rounded border border-hairline px-3 text-[13px] text-fg-1 transition-colors hover:bg-surface-3"
+                  @click="form.values[field.key] = CLEAR_SECRET"
+                >
+                  Clear
+                </button>
+                <button
+                  v-else-if="form.values[field.key] === CLEAR_SECRET"
+                  type="button"
+                  class="h-8 shrink-0 rounded border border-hairline px-3 text-[13px] text-fg-1 transition-colors hover:bg-surface-3"
+                  @click="form.values[field.key] = ''"
+                >
+                  Keep it
+                </button>
+              </div>
+            </FormField>
+
+            <FormField
               v-else
               v-model="form.values[field.key]"
               :label="field.label"
@@ -338,6 +444,23 @@ onBeforeUnmount(clearAccentPreview);
               :class="field.full ? 'md:col-span-full' : ''"
             />
           </template>
+
+          <!-- Proving the connection is worth doing before saving it, and it is what
+               fills the event dropdown. -->
+          <div v-if="group.key === 'pretalx'" class="flex flex-wrap items-center gap-3 py-2">
+            <button
+              type="button"
+              class="h-8 rounded border border-hairline px-3 text-[13px] text-fg-1 transition-colors hover:bg-surface-3 disabled:opacity-40"
+              :disabled="testing || !form.values.pretalx_url"
+              @click="testPretalx"
+            >
+              {{ testing ? 'Testing…' : 'Test connection' }}
+            </button>
+            <p class="text-[11px] text-fg-3">
+              Uses the values above as they stand, saved or not, and loads the event list.
+              A blank token falls back to the stored one.
+            </p>
+          </div>
         </FormSection>
 
         <div class="flex items-center justify-between rounded border border-hairline bg-surface-2 px-3 py-2.5">

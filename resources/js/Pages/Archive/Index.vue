@@ -106,10 +106,6 @@
         <div class="stream-grid">
           <RecordingTile v-for="recording in recentRecordings" :key="recording.id" :recording="recording" />
         </div>
-
-        <p v-if="pendingCount" class="pt-6 text-xs text-primary-400">
-          {{ pendingCount }} {{ pendingCount === 1 ? 'show is' : 'shows are' }} still being processed.
-        </p>
       </div>
     </template>
   </div>
@@ -128,10 +124,11 @@ defineOptions({
 
 const props = defineProps({
   collections: { type: Array, default: () => [] },
+  // Published recordings plus the shows still processing, flagged `is_pending` and
+  // rendered as dimmed tiles in the same grid.
   recentRecordings: { type: Array, default: () => [] },
   searchResults: { type: Array, default: null },
   totalRecordings: { type: Number, default: 0 },
-  pendingCount: { type: Number, default: 0 },
   search: { type: String, default: null },
 });
 

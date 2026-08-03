@@ -113,6 +113,7 @@ const submit = () => {
             v-model="form.description"
             label="Description"
             type="textarea"
+            helper="Markdown: **bold**, _italics_, lists, links. Imported sessions keep the abstract as pretalx wrote it."
             :error="form.errors.description"
           />
         </FormSection>

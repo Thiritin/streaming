@@ -176,11 +176,45 @@ return [
             ],
         ],
 
+        [
+            'key' => 'pretalx',
+            'label' => 'Pretalx',
+            'description' => 'Where the programme comes from. With these set, /manage > Shows can import sessions from the published schedule.',
+            'columns' => 2,
+            'fields' => [
+                [
+                    'key' => 'pretalx_url',
+                    'label' => 'Instance URL',
+                    'type' => 'url',
+                    'store' => 'pretalx',
+                    'helper' => 'Root of the pretalx instance, for example https://cfp.example.org.',
+                    'rules' => ['nullable', 'url', 'max:2048'],
+                ],
+                [
+                    'key' => 'pretalx_event',
+                    'label' => 'Event slug',
+                    'type' => 'text',
+                    'store' => 'pretalx',
+                    'helper' => 'The slug in the pretalx URL, for example my-con-2026.',
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+                [
+                    'key' => 'pretalx_token',
+                    'label' => 'API token',
+                    'type' => 'password',
+                    'store' => 'pretalx',
+                    'full' => true,
+                    'helper' => 'From the pretalx user account, under API tokens. Only needed while the schedule is unpublished or the event is private.',
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+            ],
+        ],
+
     ],
 
     /*
      | Config namespace every group falls back to unless a field overrides it with
-     | its own `store`. Today all editable settings are branding.
+     | its own `store`. Branding is the bulk of it; the pretalx group names its own.
      */
     'store' => 'branding',
 

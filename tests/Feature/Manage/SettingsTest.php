@@ -4,6 +4,7 @@ namespace Tests\Feature\Manage;
 
 use App\Models\BrandingSetting;
 use App\Services\BrandingService;
+use App\Support\Manage\Settings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\CreatesManageUsers;
@@ -255,6 +256,57 @@ class SettingsTest extends TestCase
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'login_tagline']);
         $this->assertSame(config('branding.login_tagline'), BrandingSetting::getValue('login_tagline'));
+    }
+
+    public function test_a_secret_is_never_sent_to_the_browser(): void
+    {
+        BrandingSetting::setValue('pretalx_token', 'secret-token');
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings'))
+            ->assertSuccessful()
+            ->assertDontSee('secret-token')
+            ->assertInertia(function (Assert $page) {
+                $field = collect($page->toArray()['props']['groups'])
+                    ->flatMap(fn (array $group) => $group['fields'])
+                    ->firstWhere('key', 'pretalx_token');
+
+                // Masked rather than empty, so the field shows that something is stored.
+                $this->assertSame(Settings::MASK_SECRET, $field['value']);
+                $this->assertTrue($field['hasValue']);
+            });
+    }
+
+    public function test_a_blank_or_masked_secret_keeps_the_stored_one(): void
+    {
+        // The page never receives the token, so an untouched form must not wipe it -
+        // neither when it posts nothing nor when it posts the mask back.
+        BrandingSetting::setValue('pretalx_token', 'secret-token');
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['pretalx_token' => '']));
+
+        $this->assertSame('secret-token', BrandingSetting::getValue('pretalx_token'));
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['pretalx_token' => Settings::MASK_SECRET]));
+
+        $this->assertSame('secret-token', BrandingSetting::getValue('pretalx_token'));
+    }
+
+    public function test_a_secret_is_replaced_when_one_is_typed_and_cleared_on_request(): void
+    {
+        BrandingSetting::setValue('pretalx_token', 'secret-token');
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['pretalx_token' => 'new-token']));
+
+        $this->assertSame('new-token', BrandingSetting::getValue('pretalx_token'));
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['pretalx_token' => Settings::CLEAR_SECRET]));
+
+        $this->assertDatabaseMissing('branding_settings', ['key' => 'pretalx_token']);
     }
 
     public function test_only_administrators_can_read_or_change_the_settings(): void

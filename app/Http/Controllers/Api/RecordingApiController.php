@@ -37,6 +37,7 @@ class RecordingApiController extends Controller
                     'end' => $show->actual_end->toIso8601String(),
                     'title' => $show->title,
                     'description' => $show->description,
+                    'description_html' => $show->description_html,
                 ];
             });
 

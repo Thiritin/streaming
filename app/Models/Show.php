@@ -290,6 +290,18 @@ class Show extends Model
     }
 
     /**
+     * The description as HTML.
+     *
+     * Descriptions are markdown - that is what pretalx abstracts are written in, and what
+     * the form accepts - and the stored value stays markdown so it can be edited. This is
+     * the rendered, sanitised form for display.
+     */
+    public function getDescriptionHtmlAttribute(): ?string
+    {
+        return \App\Support\Markdown::render($this->description);
+    }
+
+    /**
      * Get the full URL for the thumbnail path stored in database.
      * Returns a signed URL for S3 access.
      */

@@ -147,6 +147,7 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
 `/manage` covers:
 - Dashboard: capacity, server health, alerts, live viewers, the next few hours of programme
 - Sources, Shows, the Show planner and Stream Control
+- Import: pulls sessions from pretalx into shows; see docs/admin/pretalx-import.md
 - Servers, including the generated install script
 - Users, Roles, Emotes and Recordings
 - Settings: branding, login copy, accent colour and footer links

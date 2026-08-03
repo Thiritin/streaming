@@ -9,13 +9,13 @@
       class="group block"
     >
       <!-- Thumbnail Container -->
-      <div class="relative aspect-video rounded-xl overflow-hidden bg-primary-800 ring-1 ring-white/5 group-hover:ring-2 group-hover:ring-primary-500/60 group-hover:shadow-lg group-hover:shadow-primary-500/20 transition-all duration-300">
+      <div class="relative aspect-video rounded-xl overflow-hidden bg-primary-800 ring-1 ring-white/5 group-hover:ring-2 group-hover:ring-primary-500/60 group-hover:shadow-lg group-hover:shadow-primary-500/20 transition-all duration-(--dur-base)">
         <!-- Video Preview (only for live shows) -->
         <Transition
-          enter-active-class="transition-all duration-700 ease-out"
+          enter-active-class="transition-all duration-(--dur-slower) ease-(--ease-out-expo)"
           enter-from-class="opacity-0 blur-xl scale-105"
           enter-to-class="opacity-100 blur-0 scale-100"
-          leave-active-class="transition-all duration-300 ease-in"
+          leave-active-class="transition-all duration-(--dur-base) ease-(--ease-in-quart)"
           leave-from-class="opacity-100 blur-0 scale-100"
           leave-to-class="opacity-0 blur-md scale-105"
         >
@@ -29,22 +29,28 @@
           />
         </Transition>
 
-        <!-- Thumbnail Image -->
+        <!-- Thumbnail. The wrapper animates the swap to the live preview; the
+             <img> owns its own fade, driven by `load`, so a still that arrives
+             late eases in instead of popping into a settled grid. -->
         <Transition
-          enter-active-class="transition-all duration-500 ease-out"
-          enter-from-class="opacity-0 blur-md"
-          enter-to-class="opacity-100 blur-0"
-          leave-active-class="transition-all duration-500 ease-in"
-          leave-from-class="opacity-100 blur-0"
-          leave-to-class="opacity-0 blur-lg"
+          enter-active-class="transition-opacity duration-(--dur-slow) ease-(--ease-out-expo)"
+          enter-from-class="opacity-0"
+          leave-active-class="transition-opacity duration-(--dur-slow) ease-(--ease-in-quart)"
+          leave-to-class="opacity-0"
         >
-          <img
-            v-if="currentThumbnail && !showVideoPreview"
-            :src="currentThumbnail"
-            :alt="show.title"
-            class="w-full h-full object-cover absolute inset-0 transition-transform duration-500 group-hover:scale-105"
-            @error="handleImageError"
-          />
+          <div v-if="currentThumbnail && !showVideoPreview" class="absolute inset-0">
+            <img
+              :src="currentThumbnail"
+              :alt="show.title"
+              :loading="priority ? 'eager' : 'lazy'"
+              :fetchpriority="priority ? 'high' : 'auto'"
+              decoding="async"
+              class="w-full h-full object-cover transition-[opacity,filter,transform] duration-(--dur-slow) ease-(--ease-out-expo) group-hover:scale-105"
+              :class="thumbnailLoaded ? 'opacity-100 blur-0' : 'opacity-0 blur-md'"
+              @load="thumbnailLoaded = true"
+              @error="handleImageError"
+            />
+          </div>
         </Transition>
 
         <!-- Placeholder when no thumbnail -->
@@ -87,9 +93,9 @@
         </div>
 
         <!-- Hover Overlay with play icon -->
-        <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10" />
+        <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-(--dur-base) z-10" />
         <div class="absolute inset-0 flex items-center justify-center z-10">
-          <div class="w-14 h-14 rounded-full bg-primary-500/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-300 shadow-lg shadow-primary-500/30">
+          <div class="w-14 h-14 rounded-full bg-primary-500/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-(--dur-base) ease-(--ease-spring) shadow-lg shadow-primary-500/30">
             <FaPlayIcon class="w-6 h-6 text-white ml-0.5" />
           </div>
         </div>
@@ -125,11 +131,18 @@ const props = defineProps({
   show: {
     type: Object,
     required: true,
+  },
+  // Set on the tiles the first screen shows. Everything below the fold loads
+  // lazily, so a 40-tile grid does not open 40 image requests on navigation.
+  priority: {
+    type: Boolean,
+    default: false,
   }
 });
 
 // Reactive state
 const currentThumbnail = ref(props.show.thumbnail_url);
+const thumbnailLoaded = ref(false);
 const showVideoPreview = ref(false);
 const videoPreview = ref(null);
 let hoverTimeout = null;
@@ -165,6 +178,7 @@ const streamUrl = computed(() => {
 // Methods
 const handleImageError = () => {
   currentThumbnail.value = null;
+  thumbnailLoaded.value = false;
 };
 
 const handleVideoError = () => {
@@ -315,6 +329,9 @@ const formatScheduledTime = (scheduledTime) => {
 // opened 20 of them. The page updates the prop; this keeps the local copy in step.
 watch(() => props.show.thumbnail_url, (url) => {
   currentThumbnail.value = url;
+  // A refreshed still is a new request, so hand it back its fade rather than
+  // swapping pixels under a thumbnail that is already at full opacity.
+  thumbnailLoaded.value = false;
 });
 
 onUnmounted(() => {

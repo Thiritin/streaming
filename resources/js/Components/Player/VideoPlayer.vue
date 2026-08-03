@@ -196,6 +196,15 @@ defineExpose({
 }
 
 /*
+ * The stock theme makes media-player `inline-flex`, so it sits on a text
+ * baseline and leaves a few px of descender space under it. The wrapper's
+ * container is black, so that gap reads as a black bar below the video.
+ */
+.video-player {
+    display: flex;
+}
+
+/*
  * These three are read by [data-media-player][data-layout='video'], i.e. the
  * media-player element itself, so they have to be set here and not on the
  * .vds-video-layout child: custom properties only inherit downward.

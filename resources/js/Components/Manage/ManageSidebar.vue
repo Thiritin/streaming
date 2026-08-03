@@ -10,26 +10,39 @@
  * route does not exist yet - that is how rebuild phases add modules without touching
  * this component.
  */
+import { computed } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import ManageIcon from './ManageIcon.vue';
 import { resolve, toneBadge } from './tones.js';
 
-defineProps({
+const props = defineProps({
   groups: { type: Array, default: () => [] },
 });
 
 const page = usePage();
 
+const path = (url) => new URL(url, window.location.origin).pathname.replace(/\/+$/, '') || '/';
+
+const matches = (current, target) => current === target
+  || current.startsWith(target === '/' ? '/' : `${target}/`);
+
 /**
- * Prefix match so a detail page keeps its section lit, e.g. /manage/servers/3 still
+ * Only the deepest matching item lights up. A plain prefix match lit every ancestor
+ * too, so /manage/shows/planner also highlighted Shows and Dashboard (/manage). The
+ * longest match still keeps a detail page on its section, e.g. /manage/servers/3
  * highlights Servers.
  */
-const isActive = (item) => {
-  const current = page.url.split('?')[0];
-  const target = new URL(item.url, window.location.origin).pathname;
+const activeRoute = computed(() => {
+  const current = path(page.url.split('?')[0]);
 
-  return current === target || current.startsWith(`${target}/`);
-};
+  return props.groups
+    .flatMap((group) => group.items)
+    .map((item) => ({ route: item.route, target: path(item.url) }))
+    .filter((item) => matches(current, item.target))
+    .sort((a, b) => b.target.length - a.target.length)[0]?.route ?? null;
+});
+
+const isActive = (item) => item.route === activeRoute.value;
 </script>
 
 <template>

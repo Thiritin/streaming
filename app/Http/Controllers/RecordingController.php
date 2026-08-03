@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Recording;
 use App\Models\Show;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 
@@ -49,12 +50,16 @@ class RecordingController extends Controller
             ->sortByDesc('year')
             ->values();
 
+        // Shows still processing sit in the same grid as everything else, newest first,
+        // as dimmed tiles. They are not their own section: a viewer looking for a show
+        // should find it where they expect it, told it is not ready yet.
+        $withPending = $this->withPendingTiles($recordings, $this->pendingTiles($search));
+
         return Inertia::render('Archive/Index', [
             'collections' => $collections,
-            'recentRecordings' => $recordings->take(8)->values(),
-            'searchResults' => $search ? $recordings->values() : null,
+            'recentRecordings' => $withPending->take(8)->values(),
+            'searchResults' => $search ? $withPending->values() : null,
             'totalRecordings' => $recordings->count(),
-            'pendingCount' => $this->pendingShows($search)->count(),
             'search' => $search,
         ]);
     }
@@ -72,7 +77,11 @@ class RecordingController extends Controller
             ->orderBy('date', 'desc')
             ->get();
 
-        if ($recordings->isEmpty() && ! $search) {
+        // Shows that ended but whose recording has not been published yet, so the
+        // year does not look like it is missing something without explanation.
+        $pending = $this->pendingTiles($search, $year);
+
+        if ($recordings->isEmpty() && $pending->isEmpty() && ! $search) {
             abort(404);
         }
 
@@ -86,17 +95,10 @@ class RecordingController extends Controller
             ->sortDesc()
             ->values();
 
-        // Shows that ended but whose recording has not been published yet, so the
-        // year does not look like it is missing something without explanation.
-        $pendingShows = $this->pendingShows($search)
-            ->filter(fn (Show $show) => ($show->actual_end ?? $show->scheduled_end)?->year === $year)
-            ->values();
-
         return Inertia::render('Archive/Year', [
             'year' => $year,
             'years' => $years,
-            'recordings' => $recordings->values(),
-            'pendingShows' => $pendingShows,
+            'recordings' => $this->withPendingTiles($recordings, $pending)->values(),
             'totalViews' => (int) $recordings->sum('views'),
             'hours' => (int) round($recordings->sum('duration') / 3600),
             'search' => $search,
@@ -137,6 +139,43 @@ class RecordingController extends Controller
             ->orderBy('actual_end', 'desc')
             ->orderBy('scheduled_end', 'desc')
             ->get();
+    }
+
+    /**
+     * Pending shows shaped like recordings, so the same tile renders both. `is_pending`
+     * is what the tile keys off to dim itself and drop its link.
+     */
+    private function pendingTiles(?string $search, ?int $year = null): Collection
+    {
+        return $this->pendingShows($search)
+            ->filter(fn (Show $show) => $year === null
+                || ($show->actual_end ?? $show->scheduled_end)?->year === $year)
+            // Dates go out as ISO strings, matching how the models serialise theirs, so
+            // the merged list sorts on one comparable type.
+            ->map(fn (Show $show) => [
+                'id' => 'pending-'.$show->id,
+                'title' => $show->title,
+                'description' => $show->description,
+                'description_html' => $show->description_html,
+                'date' => ($show->actual_end ?? $show->scheduled_end)?->toJSON(),
+                'thumbnail_url' => null,
+                'duration' => null,
+                'views' => 0,
+                'is_pending' => true,
+            ])
+            ->values();
+    }
+
+    /**
+     * One date-ordered list of published recordings and pending tiles.
+     */
+    private function withPendingTiles(Collection $recordings, Collection $pending): Collection
+    {
+        return $recordings
+            ->map(fn (Recording $recording) => $recording->toArray() + ['is_pending' => false])
+            ->concat($pending)
+            ->sortByDesc('date')
+            ->values();
     }
 
     public function show(Recording $recording)

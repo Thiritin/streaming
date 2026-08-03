@@ -4,6 +4,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import StreamPlayer from "@/Components/Livestream/StreamPlayer.vue";
 import ChatPanel from "@/Components/Chat/ChatPanel.vue";
+import MarkdownText from "@/Components/MarkdownText.vue";
 import StreamOfflineStatusPage from "@/Components/Livestream/StatusPages/StreamOfflineStatusPage.vue";
 import StreamProvisioningStatusPage from "@/Components/Livestream/StatusPages/StreamProvisioningStatusPage.vue";
 import StreamOtherDeviceStatusPage from "@/Components/Livestream/StatusPages/StreamOtherDeviceStatusPage.vue";
@@ -536,7 +537,12 @@ onUnmounted(() => {
                     <!-- Stream Information -->
                     <Container class="bg-primary-800 border-t-2 border-primary-700" padding="p-6">
                         <h2 class="text-2xl font-bold text-white mb-3">{{ activeShow?.title || 'Stream' }}</h2>
-                        <p v-if="activeShow?.description" class="text-primary-200 text-lg leading-relaxed mb-4">{{ activeShow.description }}</p>
+                        <MarkdownText
+                            v-if="activeShow?.description"
+                            :html="activeShow.description_html"
+                            :text="activeShow.description"
+                            class="text-primary-200 text-lg leading-relaxed mb-4"
+                        />
                         <div v-if="activeShow?.source" class="flex items-center gap-2 text-sm">
                             <span class="font-semibold text-primary-300">Source:</span>
                             <span class="text-primary-400">{{ activeShow.source.name || activeShow.source }}</span>
@@ -602,7 +608,12 @@ onUnmounted(() => {
                     <!-- Stream Information for non-player states -->
                     <Container v-if="!showPlayer && activeShow" class="bg-primary-800 border-t-2 border-primary-700" padding="p-6">
                         <h2 class="text-2xl font-bold text-white mb-3">{{ activeShow.title }}</h2>
-                        <p v-if="activeShow.description" class="text-primary-200 text-lg leading-relaxed mb-4">{{ activeShow.description }}</p>
+                        <MarkdownText
+                            v-if="activeShow.description"
+                            :html="activeShow.description_html"
+                            :text="activeShow.description"
+                            class="text-primary-200 text-lg leading-relaxed mb-4"
+                        />
                         <div v-if="activeShow.source" class="flex items-center gap-2 text-sm">
                             <span class="font-semibold text-primary-300">Source:</span>
                             <span class="text-primary-400">{{ activeShow.source.name || activeShow.source }}</span>

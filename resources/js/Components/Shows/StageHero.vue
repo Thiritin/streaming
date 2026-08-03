@@ -96,9 +96,12 @@
               {{ show.title }}
             </h1>
 
-            <p v-if="show.description" class="text-sm leading-relaxed text-primary-200/80">
-              {{ show.description }}
-            </p>
+            <MarkdownText
+              v-if="show.description"
+              :html="show.description_html"
+              :text="show.description"
+              class="text-sm leading-relaxed text-primary-200/80"
+            />
 
             <ChatExcerpt v-if="chat?.source_id" :chat="chat" :show-slug="show.slug" />
           </div>
@@ -114,6 +117,7 @@ import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue';
 import Hls from 'hls.js';
 import TilePlaceholder from '../TilePlaceholder.vue';
 import ChatExcerpt from './ChatExcerpt.vue';
+import MarkdownText from '@/Components/MarkdownText.vue';
 import { useNow } from '@/composables/useNow';
 
 const props = defineProps({
