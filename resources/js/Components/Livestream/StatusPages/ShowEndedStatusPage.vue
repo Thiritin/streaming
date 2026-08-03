@@ -50,15 +50,15 @@
             </div>
             
             <!-- Main Stream Link -->
-            <div v-else-if="mainStreamUrl" class="mt-8">
+            <div v-else-if="promotedUrl" class="mt-8">
                 <a 
-                    :href="mainStreamUrl"
+                    :href="promotedUrl"
                     class="inline-flex items-center px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
                 >
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
                     </svg>
-                    Watch Main Stream
+                    {{ promotedLabel }}
                 </a>
             </div>
         </div>
@@ -86,7 +86,28 @@ const props = defineProps({
     mainStreamUrl: {
         type: String,
         default: '/stream'
+    },
+    /**
+     * Where to send someone whose show has ended: the primary channel if it is on air,
+     * otherwise the busiest live show, otherwise what is on next. Resolved server side
+     * by StreamController::resolvePromotedShow().
+     */
+    promoted: {
+        type: Object,
+        default: null
     }
+});
+
+const promotedUrl = computed(() => (props.promoted?.slug ? `/show/${props.promoted.slug}` : props.mainStreamUrl));
+
+const promotedLabel = computed(() => {
+    if (!props.promoted) return 'Watch Main Stream';
+    if (props.promoted.is_live) {
+        return props.promoted.is_primary_channel
+            ? `Watch ${props.promoted.source} now`
+            : `Watch ${props.promoted.title} now`;
+    }
+    return `Up next: ${props.promoted.title}`;
 });
 
 const streamDuration = computed(() => {

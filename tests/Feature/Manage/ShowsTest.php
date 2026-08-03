@@ -30,7 +30,14 @@ class ShowsTest extends TestCase
         $this->createManageUsers();
 
         // goLive() and endLivestream() broadcast; the transport is not what these assert.
-        Event::fake();
+        //
+        // Named rather than blanket: Event::fake() with no arguments also fakes Eloquent's
+        // model events, which silently stops ShowObserver from running at all.
+        Event::fake([
+            \App\Events\ShowWentLive::class,
+            \App\Events\ShowEnded::class,
+            \App\Events\ShowCancelled::class,
+        ]);
 
         $this->source = Source::factory()->create(['name' => 'Main Stage']);
     }

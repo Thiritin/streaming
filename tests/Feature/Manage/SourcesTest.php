@@ -286,7 +286,9 @@ class SourcesTest extends TestCase
 
     public function test_updating_the_status_from_the_row_action(): void
     {
-        Event::fake();
+        // Named: a blanket fake would also fake Eloquent's model events and stop
+        // SourceObserver from running, so the broadcast under test would never happen.
+        Event::fake([\App\Events\SourceStatusChangedEvent::class]);
 
         $source = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE, 'name' => 'Main Stage']);
 
@@ -313,7 +315,9 @@ class SourcesTest extends TestCase
 
     public function test_bulk_status_updates_every_selected_source(): void
     {
-        Event::fake();
+        // Named: a blanket fake would also fake Eloquent's model events and stop
+        // SourceObserver from running, so the broadcast under test would never happen.
+        Event::fake([\App\Events\SourceStatusChangedEvent::class]);
 
         $first = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE]);
         $second = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE]);
