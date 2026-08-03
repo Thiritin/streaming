@@ -15,6 +15,11 @@ use Illuminate\Support\Facades\Schema;
  *
  * The flag is single-valued, enforced in Source::booted(): promoting one channel demotes
  * the rest, so there is never an ambiguous "which one is featured".
+ *
+ * Database constraint: MySQL 8.0 (production) has no partial/filtered unique index, so it
+ * gets a generated column that is NULL for non-featured rows (NULLs don't collide in a
+ * unique index) plus a unique index on that column. PostgreSQL (local dev) and SQLite
+ * (tests) both support partial unique indexes directly, so they use that instead.
  */
 return new class extends Migration
 {
@@ -35,10 +40,26 @@ return new class extends Migration
         if ($current) {
             DB::table('sources')->where('id', $current->id)->update(['is_featured' => true]);
         }
+
+        // Add a database constraint for at-most-one featured source, backing up the
+        // application-level enforcement in Source::booted().
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE sources ADD COLUMN featured_marker TINYINT GENERATED ALWAYS AS (IF(is_featured, 1, NULL)) STORED');
+            DB::statement('CREATE UNIQUE INDEX sources_featured_unique ON sources (featured_marker)');
+        } else {
+            DB::statement('CREATE UNIQUE INDEX sources_featured_unique ON sources (is_featured) WHERE is_featured');
+        }
     }
 
     public function down(): void
     {
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('DROP INDEX sources_featured_unique ON sources');
+            DB::statement('ALTER TABLE sources DROP COLUMN featured_marker');
+        } else {
+            DB::statement('DROP INDEX sources_featured_unique');
+        }
+
         Schema::table('sources', function (Blueprint $table) {
             $table->dropColumn('is_featured');
         });

@@ -624,7 +624,8 @@ class StreamController extends Controller
             ],
             'availableShows' => $availableShows,
             // Somewhere to go when this show is not watchable. See resolvePromotedShow().
-            'promoted' => $this->resolvePromotedShow($user, $show),
+            // Live shows skip this entirely: the player is working, so don't run promotion queries.
+            'promoted' => $show->status === 'live' ? null : $this->resolvePromotedShow($user, $show),
             'initialHlsUrl' => $hlsUrl,
             'playback' => $this->playbackProps($user, $show),
             'initialStatus' => $show->isLive() ? 'online' : \Cache::get('stream.status', static fn () => StreamStatusEnum::OFFLINE->value),

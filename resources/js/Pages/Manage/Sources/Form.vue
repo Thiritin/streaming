@@ -31,12 +31,14 @@ const form = useForm(
         name: props.source.name,
         priority: props.source.priority,
         description: props.source.description ?? '',
+        is_featured: props.source.is_featured,
       }
     : {
         name: '',
         slug: '',
         priority: 0,
         description: '',
+        is_featured: false,
         ...props.defaults,
       },
 );

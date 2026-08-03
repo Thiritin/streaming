@@ -62,11 +62,19 @@ class Source extends Model
         // Featuring a channel demotes the others. Without this the flag silently
         // becomes "one of the featured ones", and which one wins depends on insertion
         // order, which is exactly the ambiguity the flag replaced.
+        //
+        // Wrapped in a transaction with row locking to prevent concurrent promotions from
+        // leaving no explicit featured source (race condition where both transactions see
+        // the other source as featured and demote it).
         static::saved(function ($source) {
             if ($source->is_featured && $source->wasChanged('is_featured')) {
-                static::where('id', '!=', $source->id)
-                    ->where('is_featured', true)
-                    ->update(['is_featured' => false]);
+                \DB::transaction(function () use ($source) {
+                    static::where('id', '!=', $source->id)
+                        ->where('is_featured', true)
+                        ->lockForUpdate()
+                        ->get()
+                        ->each(fn ($other) => $other->update(['is_featured' => false]));
+                });
             }
         });
 

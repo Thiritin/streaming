@@ -2,9 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\Role;
 use App\Models\Server;
-use App\Models\User;
+use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -12,11 +11,9 @@ class SrsWebhookAuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
-    private User $userWithStreamkey;
-
-    private User $userWithoutStreamkey;
-
     private Server $server;
+
+    private Source $source;
 
     protected function setUp(): void
     {
@@ -33,51 +30,51 @@ class SrsWebhookAuthenticationTest extends TestCase
             'immutable' => false,
         ]);
 
-        // Create admin role with stream.publish permission
-        $adminRole = Role::create([
-            'slug' => 'admin',
-            'name' => 'Admin',
-            'priority' => 1000,
-            'permissions' => ['stream.view', 'stream.publish', 'admin.access'],
-        ]);
-
-        // Create user role without stream.publish permission
-        $userRole = Role::create([
-            'slug' => 'user',
-            'name' => 'User',
+        // Create a source with slug 'livestream' for authentication tests
+        $this->source = Source::create([
+            'name' => 'Test Stream',
+            'slug' => 'livestream',
+            'stream_key' => 'valid_source_key_123',
             'priority' => 10,
-            'permissions' => ['stream.view'],
+            'status' => \App\Enum\SourceStatusEnum::OFFLINE,
         ]);
-
-        // Create user with streamkey and admin role
-        $this->userWithStreamkey = User::factory()->create([
-            'streamkey' => 'valid_test_streamkey_123',
-            'server_id' => $this->server->id,
-        ]);
-        $this->userWithStreamkey->assignRole($adminRole);
-
-        // Create user without streamkey
-        $this->userWithoutStreamkey = User::factory()->create([
-            'streamkey' => null,
-            'server_id' => null,
-        ]);
-        $this->userWithoutStreamkey->assignRole($userRole);
     }
 
     /**
      * Publisher authentication is per source, not per user.
      *
-     * Two tests were removed here: one asserting a user's `streamkey` authenticated a
-     * publish, and one asserting `?streamkey=` and `?secret=` were interchangeable.
-     * Neither is true any more. `/api/srs/auth` compares `?secret=` against the source's
-     * own `stream_key`, or `?shared_secret=` for edge-to-origin forwards; a user's
-     * streamkey is only read on the playback path. See docs/dev-stack.md.
+     * User-based authentication tests have been removed. `/api/srs/auth` compares `?secret=`
+     * against the source's own `stream_key`, or `?shared_secret=` for edge-to-origin forwards.
+     * A user's streamkey is only used for HLS playback (onHls), not publishing.
+     * See docs/dev-stack.md.
      */
 
     /**
-     * Test authentication fails with invalid streamkey
+     * Test source authentication succeeds with valid stream key
      */
-    public function test_auth_fails_with_invalid_streamkey()
+    public function test_source_auth_succeeds_with_valid_key()
+    {
+        $response = $this->postJson('/api/srs/auth', [
+            'app' => 'ingress',
+            'stream' => 'livestream',
+            'tcUrl' => 'rtmp://localhost/ingress',
+            'pageUrl' => '',
+            'param' => '?secret='.$this->source->stream_key,
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'code' => 0,
+                'client' => [
+                    'id' => (string) $this->source->id,
+                ],
+            ]);
+    }
+
+    /**
+     * Test authentication fails with invalid source key
+     */
+    public function test_auth_fails_with_invalid_source_key()
     {
         $response = $this->postJson('/api/srs/auth', [
             'app' => 'ingress',
@@ -92,7 +89,7 @@ class SrsWebhookAuthenticationTest extends TestCase
     }
 
     /**
-     * Test authentication fails when no streamkey provided
+     * Test authentication fails when no stream key provided
      */
     public function test_auth_fails_without_streamkey()
     {
@@ -109,48 +106,16 @@ class SrsWebhookAuthenticationTest extends TestCase
     }
 
     /**
-     * Test authentication fails for user without server assignment
+     * Test authentication fails when source does not exist
      */
-    public function test_auth_fails_for_user_without_server_assignment()
+    public function test_auth_fails_for_nonexistent_source()
     {
-        $userWithoutServer = User::factory()->create([
-            'streamkey' => 'test_streamkey_no_server',
-            'server_id' => null, // No server assigned
-        ]);
-
         $response = $this->postJson('/api/srs/auth', [
             'app' => 'ingress',
-            'stream' => 'livestream',
+            'stream' => 'nonexistent',
             'tcUrl' => 'rtmp://localhost/ingress',
             'pageUrl' => '',
-            'param' => '?secret='.$userWithoutServer->streamkey,
-        ]);
-
-        $response->assertStatus(403)
-            ->assertJson(['code' => 403]);
-    }
-
-    /**
-     * Test authentication fails for user without stream.publish permission
-     */
-    public function test_auth_fails_for_user_without_publish_permission()
-    {
-        // Create a user with streamkey but no stream.publish permission
-        $userWithoutPermission = User::factory()->create([
-            'streamkey' => 'test_streamkey_no_permission',
-            'server_id' => $this->server->id,
-        ]);
-
-        // Assign user role (which doesn't have stream.publish permission)
-        $userRole = Role::where('slug', 'user')->first();
-        $userWithoutPermission->assignRole($userRole);
-
-        $response = $this->postJson('/api/srs/auth', [
-            'app' => 'ingress',
-            'stream' => 'livestream',
-            'tcUrl' => 'rtmp://localhost/ingress',
-            'pageUrl' => '',
-            'param' => '?secret='.$userWithoutPermission->streamkey,
+            'param' => '?secret=any_key',
         ]);
 
         $response->assertStatus(403)
@@ -210,7 +175,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://localhost/ingress',
             'pageUrl' => '',
-            'param' => '?secret='.$this->userWithStreamkey->streamkey,
+            'param' => '?secret='.$this->source->stream_key,
         ]);
 
         $response->assertStatus(200)
@@ -258,5 +223,4 @@ class SrsWebhookAuthenticationTest extends TestCase
         $response->assertStatus(403)
             ->assertJson(['code' => 403]);
     }
-
 }
