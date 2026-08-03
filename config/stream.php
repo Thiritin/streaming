@@ -77,6 +77,21 @@ return [
     // for everything, so point this at `s3` rather than configuring DVR_AWS_* twice.
     'archive_disk' => env('ARCHIVE_DISK', 'dvr'),
 
+    // How segment URLs inside a recording playlist are produced.
+    //
+    // 'signed'  Presigned S3 URLs, straight from the bucket to the player. Production.
+    //           The bucket MUST send CORS headers or hls.js cannot fetch the segments:
+    //           it reads them over XHR, so a missing Access-Control-Allow-Origin fails
+    //           playback even though the URL itself is valid.
+    //
+    // 'proxy'   Streamed through the app on its own origin. Local only. The dev S3
+    //           (versitygw) sends no CORS headers and speaks plain HTTP, which a page
+    //           served over TLS blocks as mixed content; a presigned URL cannot be put
+    //           behind a proxy to fix either, because the signature covers the Host.
+    //           Never use this in production: it puts PHP in the media path for every
+    //           two second segment.
+    'archive_url_mode' => env('ARCHIVE_URL_MODE', 'signed'),
+
     // Lifetime of a presigned segment URL. A VOD playlist is fetched once at the start
     // of a session rather than refreshed, so this only has to outlast a viewing; the
     // trade is that a leaked playlist stays usable until the signatures lapse.

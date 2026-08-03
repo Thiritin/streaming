@@ -142,26 +142,33 @@ const submit = () => {
           />
         </FormSection>
 
+        <!-- Deliberately not inside a labelled FormField: the editor needs the full width
+             of the section, and a label column would push the picture off centre. -->
         <FormSection v-if="isCut" title="Cut" :columns="1">
-          <FormField
-            label="In and out markers"
-            :error="form.errors.starts_at || form.errors.ends_at"
-            helper="The archive is one continuous timeline per source, so a recording is a window onto it. Saving rewrites the playlist rather than re-encoding anything, which is why this can be adjusted again later."
-          >
+          <div class="md:col-span-full space-y-2">
+            <p class="text-xs text-fg-3">
+              The archive is one continuous timeline per source, so a recording is a window
+              onto it. Saving rewrites the playlist rather than re-encoding anything, which
+              is why the markers can be adjusted again at any time.
+            </p>
+
             <CutEditor
               v-model:starts-at="form.starts_at"
               v-model:ends-at="form.ends_at"
               :available="available"
               :recording-id="recording.id"
             />
-          </FormField>
-          <p v-if="recording?.build_error" class="text-xs text-danger-500">
-            Last build failed: {{ recording.build_error }}
-          </p>
-          <p v-else-if="recording?.segment_count" class="text-xs text-fg-3">
-            {{ recording.segment_count }} segments, built
-            {{ recording.playlist_built_at }}.
-          </p>
+
+            <p v-if="form.errors.starts_at || form.errors.ends_at" class="text-xs text-danger-500">
+              {{ form.errors.starts_at || form.errors.ends_at }}
+            </p>
+            <p v-if="recording?.build_error" class="text-xs text-danger-500">
+              Last build failed: {{ recording.build_error }}
+            </p>
+            <p v-else-if="recording?.segment_count" class="text-xs text-fg-3">
+              {{ recording.segment_count }} segments, built {{ recording.playlist_built_at }}.
+            </p>
+          </div>
         </FormSection>
 
         <FormSection title="Media" :columns="1">

@@ -335,10 +335,13 @@ watch(
         </div>
 
         <template v-else>
-            <div class="relative overflow-hidden rounded border border-hairline bg-black">
+            <!-- Height-capped rather than width-driven: the timeline and the picture have
+                 to be on screen together, or setting a marker means scrolling away from
+                 the frame you are setting it against. -->
+            <div class="relative flex max-h-[46vh] w-full max-w-3xl items-center justify-center overflow-hidden rounded border border-hairline bg-black">
                 <video
                     ref="video"
-                    class="aspect-video w-full"
+                    class="max-h-[46vh] w-full object-contain"
                     playsinline
                     muted
                     @timeupdate="onTimeUpdate"
@@ -430,6 +433,9 @@ watch(
 </template>
 
 <style scoped>
+/* Tailwind v4 compiles each scoped block on its own, so @apply needs the theme in scope. */
+@reference "../../../css/app.css";
+
 .cut-btn {
     @apply rounded border border-hairline px-2 py-1 text-xs text-fg-2 transition hover:bg-surface-3;
 }

@@ -399,9 +399,15 @@ class ArchivePlaylistService
     {
         $name = str_replace('%v', $rendition, $segment['name']);
         $hour = $segment['pdt']->format('Ymd/H');
+        $path = self::ARCHIVE_PREFIX."/{$source}/{$hour}/{$name}";
+
+        // See config/stream.php for why local development cannot use signed URLs.
+        if (config('stream.archive_url_mode') === 'proxy') {
+            return route('archive.segment', ['path' => $path]);
+        }
 
         return Storage::disk($this->disk)->temporaryUrl(
-            self::ARCHIVE_PREFIX."/{$source}/{$hour}/{$name}",
+            $path,
             now()->addSeconds(self::signedUrlLifetime()),
         );
     }
