@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class CommandControllerTest extends TestCase
@@ -249,17 +250,28 @@ class CommandControllerTest extends TestCase
         $response->assertStatus(422);
     }
 
+    /**
+     * Command execution is written to the application log, not to a database table.
+     *
+     * This asserted rows in `activity_log` from spatie/activitylog, which is not a
+     * dependency of this project and never has been: there is no such table, no
+     * migration, and nothing that writes one. CommandController logs through the Log
+     * facade, so that is what is asserted.
+     */
     public function test_command_execution_is_logged()
     {
+        Log::shouldReceive('info')
+            ->once()
+            ->with('Command executed', \Mockery::on(fn ($context) => $context['user_id'] === $this->admin->id
+                && $context['command'] === 'help'));
+
+        Log::shouldReceive('warning')->zeroOrMoreTimes();
+        Log::shouldReceive('error')->zeroOrMoreTimes();
+
         $this->actingAs($this->admin, 'sanctum')
             ->postJson('/api/command/execute', [
                 'command' => '/help',
-            ]);
-
-        $this->assertDatabaseHas('activity_log', [
-            'subject_type' => 'App\Models\User',
-            'subject_id' => $this->admin->id,
-            'description' => 'Command executed',
-        ]);
+            ])
+            ->assertOk();
     }
 }
