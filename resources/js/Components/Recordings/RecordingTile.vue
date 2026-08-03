@@ -6,7 +6,8 @@
     :class="[{ 'is-pending': isPending }, isPending ? '' : 'media-tile']"
     :aria-disabled="isPending ? 'true' : undefined"
     :prefetch="isPending ? undefined : true"
-    @pointerdown="isPending || claimMediaHero(thumbnail)"
+    @pointerdown="claimHero"
+    @keydown.enter="claimHero"
   >
     <!-- Thumbnail Container. Also the origin of the shared-element morph into the
          recording player, which is why it carries the ref. -->
@@ -141,6 +142,15 @@ const isPending = computed(() => Boolean(props.recording.is_pending));
 const recordingYear = computed(() =>
   props.recording.date ? String(new Date(props.recording.date).getFullYear()) : null
 );
+
+// Both activation paths, because Enter on a focused link fires `click` without
+// ever firing `pointerdown`: without the keydown the old page would be captured
+// with nothing named, and keyboard users would lose the morph.
+const claimHero = () => {
+  if (isPending.value) return;
+
+  claimMediaHero(thumbnail.value);
+};
 
 // Methods
 const handleImageError = () => {

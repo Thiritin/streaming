@@ -11,7 +11,8 @@
       :href="route('show.view', show.slug)"
       class="group block"
       prefetch
-      @pointerdown="claimMediaHero(thumbnail)"
+      @pointerdown="claimHero"
+      @keydown.enter="claimHero"
     >
       <!-- Thumbnail Container. Also the origin of the shared-element morph into
            the player, which is why it carries the ref. -->
@@ -195,6 +196,11 @@ const streamUrl = computed(() => {
 });
 
 // Methods
+// Both activation paths, because Enter on a focused link fires `click` without
+// ever firing `pointerdown`: without the keydown the old page would be captured
+// with nothing named, and keyboard users would lose the morph.
+const claimHero = () => claimMediaHero(thumbnail.value);
+
 const handleImageError = () => {
   currentThumbnail.value = null;
   thumbnailLoaded.value = false;
