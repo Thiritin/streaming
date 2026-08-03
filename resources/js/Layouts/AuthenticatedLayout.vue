@@ -272,7 +272,6 @@ const chatEnabled = computed(() => page.props.features?.chat !== false);
             </div>
 
             <div class="flex flex-col items-center gap-1 text-sm text-primary-500 sm:items-end">
-              <span>Made with <span class="text-red-500">&#9829;</span> by the Video Team</span>
               <!-- Credits the software rather than the installation, which is why it is
                    not one of the branding links. Turned off in /manage > Settings. -->
               <span v-if="source" class="text-primary-500">

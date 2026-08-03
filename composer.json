@@ -5,7 +5,7 @@
     "keywords": ["laravel", "framework"],
     "license": "MIT",
     "require": {
-        "php": "^8.2",
+        "php": "^8.4",
         "doctrine/dbal": "^4.3",
         "flowframe/laravel-trend": "^0.4.0",
         "guzzlehttp/guzzle": "^7.9",
@@ -65,6 +65,9 @@
         }
     },
     "config": {
+        "platform": {
+            "php": "8.4"
+        },
         "optimize-autoloader": true,
         "preferred-install": "dist",
         "sort-packages": true,
