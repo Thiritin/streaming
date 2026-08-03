@@ -482,8 +482,7 @@ watch(
         <!-- Guarded on the window rather than the archive, because the template
              dereferences the window and the two are not set at the same moment. -->
         <div v-if="!window_" class="rounded border border-hairline bg-surface-2 p-4 text-sm text-fg-3">
-            No archive is available for this source yet, so there is nothing to cut.
-            Segments appear a few seconds behind live.
+            No archive available for this source yet.
         </div>
 
         <template v-else>
@@ -647,16 +646,9 @@ watch(
                 </div>
             </div>
 
-            <p class="text-[11px] leading-relaxed text-fg-3">
-                <span class="font-mono">K</span>/space play,
-                <span class="font-mono">J</span>/<span class="font-mono">L</span> back/forward 1s
-                (shift 5s), <span class="font-mono">arrows</span> one segment,
-                <span class="font-mono">I</span>/<span class="font-mono">O</span> set in/out at the
-                playhead, <span class="font-mono">[</span> <span class="font-mono">]</span> nudge in,
-                <span class="font-mono">{</span> <span class="font-mono">}</span> nudge out,
-                <span class="font-mono">Home</span>/<span class="font-mono">End</span> preview
-                start/end. Drag anywhere on the track to scrub; drag a handle to move a
-                marker. Markers snap to {{ segmentSeconds }}s because segments are never split.
+            <p class="font-mono text-[11px] text-fg-3">
+                space play &middot; J/L &plusmn;1s &middot; &larr;/&rarr; &plusmn;{{ segmentSeconds }}s
+                &middot; I/O set in/out &middot; [ ] in &middot; { } out &middot; Home/End preview
             </p>
         </template>
     </div>

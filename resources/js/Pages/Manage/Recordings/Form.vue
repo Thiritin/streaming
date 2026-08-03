@@ -146,12 +146,6 @@ const submit = () => {
              of the section, and a label column would push the picture off centre. -->
         <FormSection v-if="isCut" title="Cut" :columns="1">
           <div class="md:col-span-full space-y-2">
-            <p class="text-xs text-fg-3">
-              The archive is one continuous timeline per source, so a recording is a window
-              onto it. Saving rewrites the playlist rather than re-encoding anything, which
-              is why the markers can be adjusted again at any time.
-            </p>
-
             <CutEditor
               v-model:starts-at="form.starts_at"
               v-model:ends-at="form.ends_at"
@@ -179,9 +173,7 @@ const submit = () => {
             :disabled="isCut"
             mono
             :error="form.errors.m3u8_url"
-            :helper="isCut
-              ? 'Generated from the cut above. The app renders this playlist per request and signs the segment URLs, so it is not a file you can edit.'
-              : 'The HLS playlist the player loads.'"
+            :helper="isCut ? 'Generated from the cut.' : 'The HLS playlist the player loads.'"
           />
           <FormField
             v-model="form.duration"

@@ -208,7 +208,7 @@ const submit = () => {
             label="Announce as available later"
             type="checkbox"
             :error="form.errors.announce_recording"
-            helper="Shows a badge on the schedule so viewers know they can watch this afterwards. Capture is not affected: every source is archived continuously, and whether a recording is actually visible is decided by publishing it."
+            helper="Shows an 'Available later' badge on the schedule."
           />
           <FormField v-if="isEdit" label="Live thumbnail">
             <div class="flex items-center gap-3">
