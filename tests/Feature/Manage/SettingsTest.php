@@ -309,6 +309,31 @@ class SettingsTest extends TestCase
         $this->assertDatabaseMissing('branding_settings', ['key' => 'pretalx_token']);
     }
 
+    public function test_turning_the_source_credit_off_stores_it_and_hides_it_from_the_frontend(): void
+    {
+        $this->assertTrue(app(BrandingService::class)->showSourceLink());
+        $this->assertNotNull(app(BrandingService::class)->forFrontend()['source']);
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['show_source_link' => false]));
+
+        // Stored as a string, because that is what the settings table holds.
+        $this->assertSame('0', BrandingSetting::getValue('show_source_link'));
+        $this->assertFalse(app(BrandingService::class)->showSourceLink());
+        $this->assertNull(app(BrandingService::class)->forFrontend()['source']);
+    }
+
+    public function test_turning_the_source_credit_back_on_hands_the_key_back_to_the_default(): void
+    {
+        BrandingSetting::setValue('show_source_link', '0');
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['show_source_link' => true]));
+
+        $this->assertDatabaseMissing('branding_settings', ['key' => 'show_source_link']);
+        $this->assertTrue(app(BrandingService::class)->showSourceLink());
+    }
+
     public function test_only_administrators_can_read_or_change_the_settings(): void
     {
         // The moderator holds the manage gate but not admin.access.

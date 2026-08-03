@@ -112,6 +112,23 @@ final class Settings
                 $value = $this->cleanRows($value, array_keys($field['itemRules'] ?? []));
             }
 
+            // A toggle is stored as '1' or '0', because the settings table holds
+            // strings; false has to survive matchesDefault as a real value rather
+            // than as the empty string it would otherwise look like.
+            if (($field['type'] ?? null) === 'toggle') {
+                $value = (bool) $value;
+
+                if ($value === (bool) config(($field['store'] ?? config('settings.store', 'branding')).'.'.$field['key'])) {
+                    BrandingSetting::where('key', $field['key'])->get()->each->delete();
+
+                    continue;
+                }
+
+                BrandingSetting::setValue($field['key'], $value ? '1' : '0', $field['helper'] ?? null);
+
+                continue;
+            }
+
             $store = $field['store'] ?? config('settings.store', 'branding');
 
             if ($this->matchesDefault($value, config("{$store}.{$field['key']}"))) {
@@ -243,6 +260,12 @@ final class Settings
             $default = self::decodeRows($default);
         }
 
+        // Toggles come back from the table as '1' or '0' and are edited as booleans.
+        if ($field['type'] === 'toggle') {
+            $value = self::toBool($value);
+            $default = (bool) $default;
+        }
+
         // A secret is never sent to the browser: a stored one is represented by the mask,
         // which the save side reads back as "unchanged".
         if ($field['type'] === 'password') {
@@ -306,6 +329,19 @@ final class Settings
         $decoded = json_decode($value, true);
 
         return is_array($decoded) ? array_values($decoded) : [];
+    }
+
+    /**
+     * A stored toggle, which the table holds as a string, as a boolean. '0' is
+     * off; anything else that is set is on.
+     */
+    public static function toBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? (bool) $value;
     }
 
     /**

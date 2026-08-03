@@ -32,10 +32,21 @@ const fields = computed(() => props.groups.flatMap((group) => group.fields));
  */
 const CLEAR_SECRET = '__clear__';
 
-/** A repeater arrives as rows and posts as rows; everything else is a string. */
-const initial = (field) => (field.type === 'links'
-  ? (field.value ?? []).map((row) => ({ label: row.label ?? '', url: row.url ?? '' }))
-  : field.value ?? '');
+/**
+ * A repeater arrives as rows and posts as rows, a toggle as a boolean, everything
+ * else as a string.
+ */
+const initial = (field) => {
+  if (field.type === 'links') {
+    return (field.value ?? []).map((row) => ({ label: row.label ?? '', url: row.url ?? '' }));
+  }
+
+  if (field.type === 'toggle') {
+    return field.value === true;
+  }
+
+  return field.value ?? '';
+};
 
 const form = useForm({
   values: Object.fromEntries(fields.value.map((field) => [field.key, initial(field)])),
@@ -390,6 +401,21 @@ onBeforeUnmount(clearAccentPreview);
               :helper="field.helper"
               :error="form.errors[`values.${field.key}`]"
             />
+
+            <FormField
+              v-else-if="field.type === 'toggle'"
+              :label="field.label"
+              :helper="field.helper"
+              :error="form.errors[`values.${field.key}`]"
+              :class="field.full ? 'md:col-span-full' : ''"
+            >
+              <input
+                v-model="form.values[field.key]"
+                type="checkbox"
+                class="size-4 accent-state-live"
+                :aria-label="field.label"
+              />
+            </FormField>
 
             <FormField
               v-else-if="field.type === 'password'"

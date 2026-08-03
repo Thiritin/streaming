@@ -173,6 +173,13 @@ return [
                         'url' => ['required', 'url', 'max:2048'],
                     ],
                 ],
+                [
+                    'key' => 'show_source_link',
+                    'label' => 'Source and licence credit',
+                    'type' => 'toggle',
+                    'helper' => 'Show "Open source, GPL-3.0" in the footer, linking to the project on GitHub.',
+                    'rules' => ['boolean'],
+                ],
             ],
         ],
 
