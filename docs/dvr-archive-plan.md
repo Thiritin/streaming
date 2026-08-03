@@ -559,13 +559,24 @@ number nobody can pin down before the event.
 
 ## Open questions
 
-1. **Upload throttling.** `UPLOAD_DELAY_SECONDS` and `MAX_UPLOAD_RATE_MBPS` were set in
-   the origin compose but never read by `uploader.py`; they have been removed rather than
-   left as decoration. The intent behind them was real, though: the origin uploads
-   ~1.44 MB/s per source continuously while also feeding the edge. Either implement a real
-   cap (wrap the read side of the upload in a token bucket, which `upload_fileobj` accepts
-   directly) or decide explicitly that the origin's link can carry both. Needs a number
-   from the production link budget.
+1. ~~**Upload throttling.**~~ Resolved. `MAX_UPLOAD_RATE_MBPS` is now a real token bucket
+   over the read side of the upload, defaulting to **200 Mbps** on the origin.
+
+   The cap exists so archive traffic cannot starve origin-to-edge egress, which shares the
+   same uplink and is the larger consumer (`sources x ladder x edges`, roughly 370 Mbps at
+   8 sources and 4 edges). 200 Mbps is 20% of a 1 Gbps link.
+
+   The binding constraint is the floor, not the ceiling. Sustained upload must exceed
+   `sources x 11.5 Mbps` or uploads fall permanently behind and the origin disk fills;
+   200 Mbps carries 8 sources at 2x headroom. Raise it with the source count, never lower
+   it to save bandwidth.
+
+   Because that failure is silent and surfaces hours later, the uploader watches its own
+   backlog and logs an error once it has grown for five consecutive minutes, naming the
+   source count, the required rate and the configured cap. Verified in the dev stack: at a
+   deliberately low 10 Mbps against ~69 Mbps of ingest, throughput fell from 534 to ~32
+   segments a minute, the backlog climbed 525 -> 2635, and the guard fired with the correct
+   diagnosis. Restoring the cap drained the backlog to zero with `failed=0`.
 2. ~~**PDT drift magnitude.**~~ Resolved by removing the dependency rather than by pinning
    the number down: every index entry carries both `pdt` and `#EXT-X-ARCHIVE-OBSERVED`, so
    drift is measurable from the archive after the fact and correctable without
