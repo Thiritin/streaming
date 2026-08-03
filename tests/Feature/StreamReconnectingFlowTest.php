@@ -17,7 +17,7 @@ class StreamReconnectingFlowTest extends TestCase
 
     public function test_reconnecting_state_triggers_when_source_goes_from_offline_to_online()
     {
-        Event::fake();
+        Event::fake([SourceStatusChangedEvent::class]);
 
         // Create a source that's initially offline
         $source = Source::factory()->create([
@@ -53,13 +53,14 @@ class StreamReconnectingFlowTest extends TestCase
         // Verify the event is dispatched
         Event::assertDispatched(SourceStatusChangedEvent::class, function ($event) use ($source) {
             return $event->source->id === $source->id &&
-                   $event->status === 'online';
+                   $event->source->status->value === 'online' &&
+                   $event->previousStatus === 'offline';
         });
     }
 
     public function test_reconnecting_state_triggers_when_source_goes_from_error_to_online()
     {
-        Event::fake();
+        Event::fake([SourceStatusChangedEvent::class]);
 
         // Create a source that's in error state
         $source = Source::factory()->create([
@@ -95,7 +96,8 @@ class StreamReconnectingFlowTest extends TestCase
         // Verify the event is dispatched
         Event::assertDispatched(SourceStatusChangedEvent::class, function ($event) use ($source) {
             return $event->source->id === $source->id &&
-                   $event->status === 'online';
+                   $event->source->status->value === 'online' &&
+                   $event->previousStatus === 'error';
         });
     }
 
@@ -133,7 +135,7 @@ class StreamReconnectingFlowTest extends TestCase
 
     public function test_no_reconnecting_for_offline_to_error_transition()
     {
-        Event::fake();
+        Event::fake([SourceStatusChangedEvent::class]);
 
         // Create a source that's offline
         $source = Source::factory()->create([
@@ -155,7 +157,8 @@ class StreamReconnectingFlowTest extends TestCase
         // Verify the event is dispatched but with error status
         Event::assertDispatched(SourceStatusChangedEvent::class, function ($event) use ($source) {
             return $event->source->id === $source->id &&
-                   $event->status === 'error';
+                   $event->source->status->value === 'error' &&
+                   $event->previousStatus === 'offline';
         });
     }
 }
