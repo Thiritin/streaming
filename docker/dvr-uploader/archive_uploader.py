@@ -368,6 +368,7 @@ class Indexer:
 
         source = fresh[0].source
         seq = self.manifest.next_seq(source, len(fresh))
+        observed = datetime.now(timezone.utc)
 
         written = 0
         for entry in fresh:
@@ -381,6 +382,23 @@ class Indexer:
                     fh.write('#EXT-X-DISCONTINUITY\n')
                     fh.write(f'#EXT-X-ARCHIVE-SESSION:{entry.session}\n')
                 fh.write(f'#EXT-X-ARCHIVE-SEQ:{seq}\n')
+                # Our own wall clock at the moment this segment was first seen
+                # complete, independent of the PDT FFmpeg derived from the
+                # publisher's timeline.
+                #
+                # PDT is anchored once at session start and then advances with the
+                # incoming stream, so it tracks the publisher's crystal rather than
+                # real time. Two independent clocks at typical +/-50ppm tolerance can
+                # separate by several seconds a day, and a con-long session never
+                # reconnects to re-anchor. Recording observed time costs ~45 bytes an
+                # entry in a file that is read once per cut, and it means the drift
+                # can be measured and corrected after the fact instead of having to
+                # be known in advance.
+                fh.write(
+                    '#EXT-X-ARCHIVE-OBSERVED:'
+                    + observed.strftime('%Y-%m-%dT%H:%M:%S.')
+                    + f'{observed.microsecond // 1000:03d}+0000\n'
+                )
                 fh.write(f'#EXTINF:{entry.duration:.6f},\n')
                 fh.write(
                     '#EXT-X-PROGRAM-DATE-TIME:'

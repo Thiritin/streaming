@@ -482,8 +482,8 @@ rest is headroom for upload lag and for an S3 outage that stalls the reaper.
    `%06d`, scoped `stop_ffmpeg` cleanup, orphan reaper, stall watchdog, and the `$!`
    process-substitution fix. Compose knobs in `docker-compose.dev.yml` (5 min window
    locally) and the origin provisioning blade (60 min). Ships the 60 minute rewind alone.
-2. Measure PDT drift (see *Prerequisite* below). Cheap, and it decides whether `pdt` can
-   be the cut-selection field at all.
+2. **Done.** PDT drift measured and designed around: index entries carry both `pdt` and
+   `#EXT-X-ARCHIVE-OBSERVED`, so drift is correctable after the fact.
 3. Uploader rewrite, indexing included: mount `hls-content`, `.ts` support, playlist-based
    completion, manifest, verified reaper, upload throttle, hour-playlist index.
 4. `ArchivePlaylistService` plus schema migration; generate VOD playlists for one show
@@ -498,19 +498,44 @@ rest is headroom for upload lag and for an S3 outage that stalls the reaper.
 Keep the SRS MP4 DVR running as a cold backup through the next event. It costs disk and
 nothing else, and it is the fallback if the segment archive misses something.
 
-### Prerequisite: measure PDT drift
+### PDT drift: measured, then designed around
 
-Every cut point is a PDT, and PDT tracks the encoder's timeline from a single anchor taken
-at session start, not real time. Over a session that runs for days without a reconnect,
-that can drift from wall clock by an unknown amount.
+Every cut point is a PDT, and PDT is anchored once at session start and then advances with
+the incoming stream, so it tracks the publisher's clock rather than real time.
 
-Leave a dev stream running, then compare each segment's PDT against the observation time
-the indexer stamps on it. Drift is the slope. If it is seconds per day, ignore it. If it
-is minutes, the indexer must re-anchor periodically and `ArchivePlaylistService` must
-select by observation time rather than raw PDT.
+**Measured in the dev stack:** 245 samples over 41 minutes, no re-anchor steps. Slope
+-21.3 s/day (95% CI -35.0 to -7.6), PDT running ahead of wall clock, which extrapolates to
+-106s over a 5-day con.
 
-Doing this before the uploader work means the index carries the right ordering field from
-the first byte written, rather than needing a migration over a con's worth of archive.
+**That number should not be trusted.** The dev publisher runs
+`-fflags +genpts -re -stream_loop -1` over a 20s clip (`docker/dev/publish.sh:102`), so it
+crosses ~123 loop boundaries in that window, each one regenerating timestamps. A few
+milliseconds lost per boundary accumulates to precisely the ~0.6s total shift observed. It
+measures the dev publisher, not the HLS muxer.
+
+**And no dev measurement can answer the real question.** Drift is the publisher's crystal
+against the origin's. Two independent clocks at a typical +/-50ppm tolerance can separate
+by several seconds a day each, and whichever encoder is on the con floor decides the
+figure. A con-long session never reconnects, so nothing re-anchors it.
+
+So the design stops depending on the answer. Every index entry carries
+`#EXT-X-ARCHIVE-OBSERVED`, the uploader's own wall clock at the moment it first saw that
+segment complete:
+
+- `pdt` — the publisher's timeline. What an operator recognises, and what a cut is
+  expressed in.
+- `observed` — the origin's wall clock. Independent of the publisher entirely.
+
+Drift is then the slope of `observed - pdt`, computable from the archive itself, after the
+fact, per session. If it turns out to be negligible, nothing changes. If it is material,
+`ArchivePlaylistService` corrects using a fit over that pair without re-archiving a byte.
+
+The constant offset between the two (a few seconds, since a segment is only indexed once
+it is complete and no longer last in the playlist) carries no information. Only the slope
+does.
+
+Cost is roughly 45 bytes per entry in a file read once per cut. Cheap insurance against a
+number nobody can pin down before the event.
 
 ## Decisions
 
@@ -541,6 +566,7 @@ the first byte written, rather than needing a migration over a con's worth of ar
    cap (wrap the read side of the upload in a token bucket, which `upload_fileobj` accepts
    directly) or decide explicitly that the origin's link can carry both. Needs a number
    from the production link budget.
-2. **PDT drift magnitude.** Unmeasured; see *Prerequisite* above. Everything else is
-   designed to survive whatever the answer is, but the answer decides whether
-   `ArchivePlaylistService` selects on `pdt` or on observation time.
+2. ~~**PDT drift magnitude.**~~ Resolved by removing the dependency rather than by pinning
+   the number down: every index entry carries both `pdt` and `#EXT-X-ARCHIVE-OBSERVED`, so
+   drift is measurable from the archive after the fact and correctable without
+   re-archiving. See *PDT drift* above.
