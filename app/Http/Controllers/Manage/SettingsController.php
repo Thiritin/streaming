@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Manage;
 
 use App\Http\Controllers\Controller;
+use App\Services\PretalxService;
 use App\Support\Manage\Settings;
 use App\Support\Manage\Toast;
 use Illuminate\Http\RedirectResponse;
@@ -18,12 +19,17 @@ use Inertia\Response;
  */
 class SettingsController extends Controller
 {
-    public function edit(Settings $settings): Response
+    public function edit(Settings $settings, PretalxService $pretalx): Response
     {
         $this->authorizeSettings();
 
         return inertia('Manage/Settings', [
             'groups' => $settings->groups(),
+            // Filled by the last successful connection test, so the event slug can be
+            // picked rather than typed. Empty until then, and the field stays free text.
+            // A test that just ran names the instance it used, which is normally still
+            // unsaved at that point.
+            'pretalxEvents' => $pretalx->rememberedEvents(session('pretalx.tested_url')),
         ]);
     }
 

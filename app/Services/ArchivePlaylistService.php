@@ -308,6 +308,16 @@ class ArchivePlaylistService
 
     protected function renderMediaPlaylist(array $segments, string $source, string $rendition): string
     {
+        // Reachable from the request path, not just from build(): a cut whose hours have
+        // since expired out of the archive resolves to nothing. Raise something that says
+        // so, rather than letting max() fail on an empty array.
+        if ($segments === []) {
+            throw new \RuntimeException(
+                'No archived segments cover this recording any more. The archive it was '
+                .'cut from has most likely expired.'
+            );
+        }
+
         $target = (int) ceil(max(array_column($segments, 'duration')));
 
         $lines = [

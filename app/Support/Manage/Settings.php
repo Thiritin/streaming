@@ -16,6 +16,19 @@ use Illuminate\Support\Facades\Storage;
 final class Settings
 {
     /**
+     * What a secret field posts to mean "delete the saved value". A blank secret means
+     * "keep what is stored", because the page never receives the stored value to send
+     * back, so an untouched form would otherwise wipe the token on every save.
+     */
+    public const CLEAR_SECRET = '__clear__';
+
+    /**
+     * What a stored secret looks like on the page. The field is filled so it is obvious
+     * that something is saved; posting it back unchanged means "keep it".
+     */
+    public const MASK_SECRET = '••••••••';
+
+    /**
      * Groups with every field resolved to its current value, default and preview URL.
      *
      * @return array<int, array<string, mixed>>
@@ -89,6 +102,12 @@ final class Settings
             $value = $values[$field['key']];
             $value = is_string($value) ? trim($value) : $value;
 
+            if (($field['type'] ?? null) === 'password') {
+                $this->saveSecret($field, $value);
+
+                continue;
+            }
+
             if (($field['type'] ?? null) === 'links') {
                 $value = $this->cleanRows($value, array_keys($field['itemRules'] ?? []));
             }
@@ -107,6 +126,28 @@ final class Settings
                 $field['helper'] ?? null,
             );
         }
+    }
+
+    /**
+     * A secret is write-only: blank keeps the stored value, the clear sentinel deletes
+     * it, and anything else replaces it.
+     *
+     * @param  array<string, mixed>  $field
+     */
+    private function saveSecret(array $field, mixed $value): void
+    {
+        // Blank, or the mask the page was given, both mean "leave the stored one alone".
+        if ($value === null || $value === '' || $value === self::MASK_SECRET) {
+            return;
+        }
+
+        if ($value === self::CLEAR_SECRET) {
+            BrandingSetting::where('key', $field['key'])->get()->each->delete();
+
+            return;
+        }
+
+        BrandingSetting::setValue($field['key'], $value, $field['helper'] ?? null);
     }
 
     /**
@@ -200,6 +241,28 @@ final class Settings
         if ($field['type'] === 'links') {
             $value = self::decodeRows($value);
             $default = self::decodeRows($default);
+        }
+
+        // A secret is never sent to the browser: a stored one is represented by the mask,
+        // which the save side reads back as "unchanged".
+        if ($field['type'] === 'password') {
+            $stored = is_string($value) && trim($value) !== '';
+
+            return [
+                'key' => $field['key'],
+                'label' => $field['label'],
+                'type' => 'password',
+                'helper' => $field['helper'] ?? null,
+                'purpose' => null,
+                'full' => $field['full'] ?? false,
+                'presets' => null,
+                'required' => in_array('required', $field['rules'] ?? [], true),
+                'value' => $stored ? self::MASK_SECRET : '',
+                'default' => '',
+                'hasValue' => $stored,
+                'overridden' => $stored,
+                'previewUrl' => null,
+            ];
         }
 
         return [

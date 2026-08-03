@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Manage\ShowRequest;
 use App\Models\Show;
 use App\Models\Source;
+use App\Services\PretalxService;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
 use App\Support\Manage\Filter;
@@ -342,6 +343,25 @@ class ShowController extends Controller
                 );
         }
 
+        // Cutting a recording deliberately does not wait for the show to end. The archive
+        // is a continuous per-source timeline, so any range can be cut while the show is
+        // still running, which is the only workable option for a source that stays online
+        // for the whole event. What it does need is an end marker, so the action is only
+        // offered once one exists.
+        if ($user->can('create', \App\Models\Recording::class) && $show->actual_start) {
+            $actions[] = Action::post('create_recording', 'Create Recording', route('manage.shows.recording.store', $show))
+                ->icon('film')
+                ->disabled($show->actual_end
+                    ? null
+                    : 'Still live. End the show, or set an end marker on the recording.')
+                ->confirm(
+                    'Create recording',
+                    "Cuts '{$show->title}' from the archive as an unpublished draft. "
+                    .'The markers can be adjusted afterwards and the playlist is rebuilt each time.',
+                    'Create draft',
+                );
+        }
+
         $actions[] = Action::link('statistics', 'View Statistics', route('manage.shows.statistics', $show))
             ->icon('bar-chart');
 
@@ -385,8 +405,13 @@ class ShowController extends Controller
         $actions = [];
 
         if (request()->user()->can('create', Show::class)) {
-            $actions[] = Action::link('import', 'Import from pretalx', route('manage.shows.import'))
-                ->icon('download');
+            // Only offered once there is an instance and an event to import from;
+            // otherwise the button leads to a screen that can only say "not configured".
+            if (app(PretalxService::class)->isConfigured()) {
+                $actions[] = Action::link('import', 'Import from pretalx', route('manage.shows.import'))
+                    ->icon('download');
+            }
+
             $actions[] = Action::link('create', 'New Show', route('manage.shows.create'))->icon('plus');
         }
 

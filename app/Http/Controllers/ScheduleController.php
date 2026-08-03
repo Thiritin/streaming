@@ -62,6 +62,11 @@ class ScheduleController extends Controller
                                 'scheduled_end' => ($show->scheduled_end ?? $show->scheduled_start->copy()->addHour())->toIso8601String(),
                                 'viewer_count' => $show->viewer_count,
                                 'is_restricted' => $show->hasAccessRestriction(),
+                                // Tells a viewer they can catch this later if they miss
+                                // it. Purely a promise: capture happens for every source
+                                // regardless, and whether a recording actually appears is
+                                // decided by publishing it.
+                                'will_be_available' => (bool) $show->announce_recording,
                             ])
                             ->values(),
                     ])

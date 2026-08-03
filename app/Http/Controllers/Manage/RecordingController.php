@@ -124,7 +124,19 @@ class RecordingController extends Controller
                 'is_published' => (bool) $recording->is_published,
                 'required_roles' => $recording->required_roles ?? [],
                 'views' => $recording->views,
+                // A cut carries these; a recording registered from outside does not, and
+                // the form uses their presence to decide which fields it owns.
+                'starts_at' => $recording->starts_at?->toIso8601String(),
+                'ends_at' => $recording->ends_at?->toIso8601String(),
+                'status' => $recording->status,
+                'build_error' => $recording->build_error,
+                'segment_count' => $recording->segment_count,
+                'playlist_built_at' => $recording->playlist_built_at?->diffForHumans(),
             ],
+            // Bounds the scrubber. Without it a cut can run past the end of the archive
+            // (segments not uploaded yet) or before its start (already expired), and the
+            // resulting empty range reads as data loss rather than a range mistake.
+            'available' => $this->archiveBounds($recording),
             'options' => [
                 'shows' => $this->showOptions(),
                 'roles' => $this->roleOptions(),
@@ -250,6 +262,28 @@ class RecordingController extends Controller
         Toast::flashSuccess('Playlist rebuilt', "{$fresh->segment_count} segments, {$fresh->formatted_duration}.");
 
         return back();
+    }
+
+    /**
+     * How much of the source's archive is still cuttable.
+     *
+     * Bounded at both ends for different reasons: the uploader runs a few seconds behind
+     * live, and old hours eventually expire out of the archive.
+     */
+    protected function archiveBounds(Recording $recording): array
+    {
+        $source = $recording->archiveSourceSlug();
+
+        if (! $source) {
+            return ['from' => null, 'to' => null];
+        }
+
+        $range = app(ArchivePlaylistService::class)->availableRange($source);
+
+        return [
+            'from' => $range['from']?->toIso8601String(),
+            'to' => $range['to']?->toIso8601String(),
+        ];
     }
 
     protected function uniqueSlug(string $title): string

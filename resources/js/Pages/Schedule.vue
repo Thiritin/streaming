@@ -50,6 +50,11 @@
                   </span>
                   <span class="tabular-nums">{{ entry.durationLabel }}</span>
                   <span v-if="entry.is_restricted" class="agenda-restricted">Restricted</span>
+                  <span
+                    v-if="entry.will_be_available"
+                    class="agenda-available"
+                    title="This show is planned to be published afterwards, so you can watch it later if you miss it live."
+                  >Available later</span>
                 </span>
               </span>
 
@@ -235,6 +240,11 @@ const formatClock = (value) => new Date(value).toLocaleTimeString([], {
 
 .agenda-restricted {
   @apply rounded border border-primary-700 px-1.5 py-0.5;
+}
+
+/* Softer than the restricted badge: this one is reassurance, not a warning. */
+.agenda-available {
+  @apply rounded border border-primary-800 px-1.5 py-0.5 text-primary-300;
 }
 
 .agenda-status {

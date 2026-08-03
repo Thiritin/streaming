@@ -45,6 +45,8 @@ final class Navigation
                 $this->item('Sources', 'video', 'manage.sources.index', $badges['sources'] ?? null),
                 $this->item('Shows', 'play-circle', 'manage.shows.index', $badges['shows'] ?? null),
                 $this->item('Planner', 'calendar', 'manage.shows.planner'),
+                // Import has no rail entry on purpose: it is reached from the Shows
+                // table, next to the programme it adds to.
                 $this->item('Recordings', 'film', 'manage.recordings.index'),
             ]],
             ['label' => 'Infrastructure', 'items' => [
@@ -54,7 +56,7 @@ final class Navigation
                 $this->item('Users', 'users', 'manage.users.index'),
                 $this->item('Roles', 'shield-check', 'manage.roles.index', $badges['roles'] ?? null),
                 $this->item('Emotes', 'smile', 'manage.emotes.index', $badges['emotes'] ?? null),
-                $this->item('Branding & texts', 'paintbrush', 'manage.settings'),
+                $this->item('Settings', 'paintbrush', 'manage.settings'),
             ]],
         ];
 

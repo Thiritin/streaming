@@ -205,10 +205,10 @@ const submit = () => {
         <FormSection title="Recording">
           <FormField
             v-model="form.announce_recording"
-            label="Recordable"
+            label="Announce as available later"
             type="checkbox"
             :error="form.errors.announce_recording"
-            helper="Makes this show available for recording processing"
+            helper="Shows a badge on the schedule so viewers know they can watch this afterwards. Capture is not affected: every source is archived continuously, and whether a recording is actually visible is decided by publishing it."
           />
           <FormField v-if="isEdit" label="Live thumbnail">
             <div class="flex items-center gap-3">

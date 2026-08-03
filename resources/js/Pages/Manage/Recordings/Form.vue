@@ -9,6 +9,7 @@ import FormActions from '@/Components/Manage/FormActions.vue';
 import FormField from '@/Components/Manage/FormField.vue';
 import FormSection from '@/Components/Manage/FormSection.vue';
 import PageHeader from '@/Components/Manage/PageHeader.vue';
+import CutEditor from '@/Components/Manage/CutEditor.vue';
 
 const props = defineProps({
   /** null when creating */
@@ -16,7 +17,16 @@ const props = defineProps({
   options: { type: Object, required: true },
   defaults: { type: Object, default: () => ({}) },
   actions: { type: Array, default: () => [] },
+  /** Bounds of the source archive, { from, to }. Absent for recordings that are not cuts. */
+  available: { type: Object, default: () => ({ from: null, to: null }) },
 });
+
+/**
+ * A cut reads its media out of the source archive by time range, so the playlist URL is
+ * generated rather than entered and the media fields below are read-only for it. A
+ * recording registered from outside still carries its own playlist and keeps them.
+ */
+const isCut = computed(() => Boolean(props.recording?.starts_at));
 
 const isEdit = computed(() => Boolean(props.recording));
 
@@ -33,6 +43,8 @@ const form = useForm(
         thumbnail_path: props.recording.thumbnail_path ?? '',
         is_published: props.recording.is_published,
         required_roles: [...props.recording.required_roles],
+        starts_at: props.recording.starts_at ?? null,
+        ends_at: props.recording.ends_at ?? null,
       }
     : {
         show_id: '',
@@ -130,14 +142,39 @@ const submit = () => {
           />
         </FormSection>
 
+        <FormSection v-if="isCut" title="Cut" :columns="1">
+          <FormField
+            label="In and out markers"
+            :error="form.errors.starts_at || form.errors.ends_at"
+            helper="The archive is one continuous timeline per source, so a recording is a window onto it. Saving rewrites the playlist rather than re-encoding anything, which is why this can be adjusted again later."
+          >
+            <CutEditor
+              v-model:starts-at="form.starts_at"
+              v-model:ends-at="form.ends_at"
+              :available="available"
+              :preview-url="recording?.m3u8_url"
+            />
+          </FormField>
+          <p v-if="recording?.build_error" class="text-xs text-danger-500">
+            Last build failed: {{ recording.build_error }}
+          </p>
+          <p v-else-if="recording?.segment_count" class="text-xs text-fg-3">
+            {{ recording.segment_count }} segments, built
+            {{ recording.playlist_built_at }}.
+          </p>
+        </FormSection>
+
         <FormSection title="Media" :columns="1">
           <FormField
             v-model="form.m3u8_url"
             label="M3U8 URL"
-            required
+            :required="!isCut"
+            :disabled="isCut"
             mono
             :error="form.errors.m3u8_url"
-            helper="The HLS playlist the player loads."
+            :helper="isCut
+              ? 'Generated from the cut above. The app renders this playlist per request and signs the segment URLs, so it is not a file you can edit.'
+              : 'The HLS playlist the player loads.'"
           />
           <FormField
             v-model="form.duration"
