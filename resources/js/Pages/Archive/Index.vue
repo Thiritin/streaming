@@ -57,7 +57,8 @@
             v-for="(collection, index) in collections"
             :key="collection.year"
             :href="route('recordings.year', collection.year)"
-            class="collection-card group"
+            class="collection-card group reveal"
+            prefetch
           >
             <div class="collection-art">
               <img
@@ -67,9 +68,17 @@
                 :loading="index < 4 ? 'eager' : 'lazy'"
                 :fetchpriority="index < 4 ? 'high' : 'auto'"
                 decoding="async"
-                class="absolute inset-0 h-full w-full object-cover transition-transform duration-(--dur-slow) ease-(--ease-out-expo) group-hover:scale-105"
+                class="absolute inset-0 h-full w-full object-cover transition-[opacity,transform] duration-(--dur-slow) ease-(--ease-out-expo) group-hover:scale-105"
+                :class="loadedArt[collection.year] ? 'opacity-100' : 'opacity-0'"
+                @load="loadedArt[collection.year] = true"
               />
               <TilePlaceholder v-else />
+
+              <div
+                v-if="collection.thumbnail_url && !loadedArt[collection.year]"
+                class="media-skeleton"
+                aria-hidden="true"
+              />
 
               <div class="collection-scrim" />
 
@@ -128,7 +137,7 @@
 
 <script setup>
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { reactive, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import RecordingTile from '@/Components/Recordings/RecordingTile.vue';
 import TilePlaceholder from '@/Components/TilePlaceholder.vue';
@@ -148,6 +157,9 @@ const props = defineProps({
 });
 
 const searchQuery = ref(props.search ?? '');
+
+// Keyed by year: collection art fades in when its own bytes land, same as a tile.
+const loadedArt = reactive({});
 
 const submitSearch = () => {
   router.get(

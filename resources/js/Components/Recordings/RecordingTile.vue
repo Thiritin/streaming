@@ -3,11 +3,15 @@
     :is="isPending ? 'div' : Link"
     :href="isPending ? undefined : route('recordings.show', recording.id)"
     class="group block"
-    :class="{ 'is-pending': isPending }"
+    :class="[{ 'is-pending': isPending }, isPending ? '' : 'media-tile']"
     :aria-disabled="isPending ? 'true' : undefined"
+    :prefetch="isPending ? undefined : true"
+    @pointerdown="isPending || claimMediaHero(thumbnail)"
   >
-    <!-- Thumbnail Container -->
+    <!-- Thumbnail Container. Also the origin of the shared-element morph into the
+         recording player, which is why it carries the ref. -->
     <div
+      ref="thumbnail"
       class="aspect-video relative bg-primary-900 rounded-xl overflow-hidden ring-1 ring-white/5 transition-all duration-(--dur-base)"
       :class="isPending
         ? 'ring-white/10'
@@ -31,6 +35,14 @@
 
       <!-- Placeholder when no thumbnail -->
       <TilePlaceholder v-if="isPending || !recording.thumbnail_url || thumbnailError" :label="isPending ? null : recordingYear" />
+
+      <!-- Loading art for a lazy thumbnail that has not decoded yet. Distinct from
+           the pending shimmer below, which means the recording itself is not ready. -->
+      <div
+        v-else-if="!thumbnailLoaded"
+        class="media-skeleton"
+        aria-hidden="true"
+      />
 
       <!-- Pending: the art is a slow shimmer instead of a spinner, so a grid of
            unprocessed shows reads as one calm surface rather than a wall of spinners. -->
@@ -98,6 +110,7 @@ import { computed, ref } from 'vue';
 import TilePlaceholder from '../TilePlaceholder.vue';
 import FaPlayIcon from '../Icons/FaPlayIcon.vue';
 import FaEyeIcon from '../Icons/FaEyeIcon.vue';
+import { claimMediaHero } from '@/composables/useMediaHero';
 
 // Props
 const props = defineProps({
@@ -116,6 +129,7 @@ const props = defineProps({
 // State
 const thumbnailError = ref(false);
 const thumbnailLoaded = ref(false);
+const thumbnail = ref(null);
 
 // A show that has ended but has no published recording yet. It sits in the same grid
 // as everything else, dimmed and unclickable, so the year does not look like it is

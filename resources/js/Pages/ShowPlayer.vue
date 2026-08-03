@@ -504,7 +504,11 @@ onUnmounted(() => {
                 <!-- Scrollable Content Area -->
                 <div class="flex-1 overflow-auto">
                     <div v-if="showPlayer">
+                        <!-- Landing half of the shared-element morph: the tile that
+                             was clicked on the browse grid tweens into this box.
+                             See composables/useMediaHero.js. -->
                         <StreamPlayer ref="streamPlayer"
+                                      v-media-hero
                                       :hls-url="hlsUrl"
                                       :show-info="activeShow"
                                       class="z-10 relative w-full bg-black mx-auto"

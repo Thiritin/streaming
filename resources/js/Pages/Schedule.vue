@@ -35,7 +35,9 @@
             <span class="now-marker-label tabular-nums">{{ nowClock }}</span>
           </li>
 
-          <li>
+          <!-- `reveal` is a scroll-driven fade handled entirely in CSS; a full day's
+               programme is a long list and this gives it a sense of arriving. -->
+          <li class="reveal">
             <Link :href="route('show.view', entry.slug)" class="agenda-row" :class="rowClass(entry)">
               <span class="agenda-time">
                 <span class="agenda-start tabular-nums">{{ formatClock(entry.scheduled_start) }}</span>
