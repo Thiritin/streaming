@@ -121,7 +121,7 @@ class StreamReconnectingFlowTest extends TestCase
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
             ->component('ShowPlayer')
-            ->has('initialHlsUrls')
+            ->has('initialHlsUrl')
             ->has('currentShow', fn ($page) => $page
                 ->where('id', $show->id)
                 ->where('status', 'live')
