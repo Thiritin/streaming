@@ -35,8 +35,8 @@ return new class extends Migration
             // The cut. Distinct from shows.actual_start/actual_end on purpose: those
             // record when the show aired, these record what the viewer sees. They start
             // equal and diverge as an operator trims.
-            $table->timestampTz('starts_at')->nullable()->after('date');
-            $table->timestampTz('ends_at')->nullable()->after('starts_at');
+            $table->timestamp('starts_at')->nullable()->after('date');
+            $table->timestamp('ends_at')->nullable()->after('starts_at');
 
             // Where the segments live, e.g. archive/prime. Stored rather than derived so
             // a recording still resolves if a source is later renamed.
@@ -48,7 +48,7 @@ return new class extends Migration
             // Publication stays on is_published; this is about the artefact, not access.
             $table->string('status')->default('draft')->after('archive_prefix');
             $table->text('build_error')->nullable()->after('status');
-            $table->timestampTz('playlist_built_at')->nullable()->after('build_error');
+            $table->timestamp('playlist_built_at')->nullable()->after('build_error');
 
             $table->unsignedInteger('segment_count')->nullable()->after('playlist_built_at');
 

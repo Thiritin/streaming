@@ -25,33 +25,57 @@ use Illuminate\Support\Facades\DB;
  */
 return new class extends Migration
 {
+    /**
+     * Corrective only. The creating migration now declares these as plain `timestamp`, so
+     * a fresh database never has the wrong type and this finds nothing to do. It exists
+     * for databases that already ran that migration while it still said `timestampTz`.
+     *
+     * `ALTER COLUMN ... TYPE ... USING` is Postgres-specific, and SQLite has no real
+     * timestamp types for it to correct, so both the driver and the current column type
+     * are checked before touching anything.
+     */
     public function up(): void
     {
-        // Values written since the previous migration were stored with their digits taken
-        // as UTC rather than as app-local time. Converting the column with USING keeps the
-        // instant Postgres currently believes in, then the offset is removed so the digits
-        // read back as the local time they were always meant to be.
-        DB::statement(
-            'ALTER TABLE recordings ALTER COLUMN starts_at TYPE timestamp without time zone '
-            ."USING starts_at AT TIME ZONE 'UTC'"
-        );
-        DB::statement(
-            'ALTER TABLE recordings ALTER COLUMN ends_at TYPE timestamp without time zone '
-            ."USING ends_at AT TIME ZONE 'UTC'"
-        );
-        DB::statement(
-            'ALTER TABLE recordings ALTER COLUMN playlist_built_at TYPE timestamp without time zone '
-            ."USING playlist_built_at AT TIME ZONE 'UTC'"
-        );
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        foreach (['starts_at', 'ends_at', 'playlist_built_at'] as $column) {
+            if (! $this->isTimestampTz($column)) {
+                continue;
+            }
+
+            // USING keeps the instant Postgres currently holds; dropping the offset then
+            // leaves the digits reading as the local time they were always meant to be.
+            DB::statement(
+                "ALTER TABLE recordings ALTER COLUMN {$column} TYPE timestamp without time zone "
+                ."USING {$column} AT TIME ZONE 'UTC'"
+            );
+        }
     }
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
         foreach (['starts_at', 'ends_at', 'playlist_built_at'] as $column) {
             DB::statement(
                 "ALTER TABLE recordings ALTER COLUMN {$column} TYPE timestamp with time zone "
                 ."USING {$column} AT TIME ZONE 'UTC'"
             );
         }
+    }
+
+    protected function isTimestampTz(string $column): bool
+    {
+        $type = DB::selectOne(
+            'SELECT data_type FROM information_schema.columns '
+            .'WHERE table_name = ? AND column_name = ?',
+            ['recordings', $column],
+        );
+
+        return $type && str_contains($type->data_type, 'with time zone');
     }
 };
