@@ -23,8 +23,11 @@
                         </button>
                     </div>
 
+                    <!-- Landing half of the shared-element morph from the archive
+                         tile. See composables/useMediaHero.js. -->
                     <VideoPlayer
                         :key="playerKey"
+                        v-media-hero
                         :src="recording.m3u8_url"
                         :title="recording.title"
                         :poster="recording.thumbnail_url"

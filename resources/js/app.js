@@ -7,6 +7,8 @@ import {resolvePageComponent} from 'laravel-vite-plugin/inertia-helpers';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import VueCookies from 'vue-cookies'
 import VueAxios from "vue-axios";
+import { installViewTransitions } from './viewTransitions';
+import { mediaHeroDirective } from './composables/useMediaHero';
 
 // Read the shared branding off the initial Inertia payload so the tab title and
 // progress bar follow whatever this installation is branded as, rather than a
@@ -26,6 +28,7 @@ createInertiaApp({
             .use(ZiggyVue, Ziggy)
             .use(VueCookies, {})
             .use(VueAxios, axios)
+            .directive('media-hero', mediaHeroDirective)
             .provide('axios', {
                 get: axios.get,
                 post: axios.post,
@@ -38,3 +41,8 @@ createInertiaApp({
         color: progressColor,
     },
 });
+
+// Registered after the app so the router exists. A no-op in a browser without the
+// View Transitions API, and for anyone who has asked for reduced motion;
+// navigation falls back to the plain Inertia swap.
+installViewTransitions();

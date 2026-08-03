@@ -57,19 +57,32 @@
             v-for="(collection, index) in collections"
             :key="collection.year"
             :href="route('recordings.year', collection.year)"
-            class="collection-card group"
+            class="collection-card group reveal"
+            prefetch
           >
             <div class="collection-art">
               <img
-                v-if="collection.thumbnail_url"
+                v-if="collection.thumbnail_url && artState[collection.year] !== 'failed'"
                 :src="collection.thumbnail_url"
                 :alt="`${collection.year} collection`"
                 :loading="index < 4 ? 'eager' : 'lazy'"
                 :fetchpriority="index < 4 ? 'high' : 'auto'"
                 decoding="async"
-                class="absolute inset-0 h-full w-full object-cover transition-transform duration-(--dur-slow) ease-(--ease-out-expo) group-hover:scale-105"
+                class="absolute inset-0 h-full w-full object-cover transition-[opacity,transform] duration-(--dur-slow) ease-(--ease-out-expo) group-hover:scale-105"
+                :class="artState[collection.year] === 'loaded' ? 'opacity-100' : 'opacity-0'"
+                @load="artState[collection.year] = 'loaded'"
+                @error="artState[collection.year] = 'failed'"
               />
               <TilePlaceholder v-else />
+
+              <!-- Only while the art is genuinely in flight. A failed request sets
+                   `failed` too, so the sweep stops and the placeholder takes over
+                   rather than shimmering at an image that is never coming. -->
+              <div
+                v-if="collection.thumbnail_url && !artState[collection.year]"
+                class="media-skeleton"
+                aria-hidden="true"
+              />
 
               <div class="collection-scrim" />
 
@@ -128,7 +141,7 @@
 
 <script setup>
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { reactive, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import RecordingTile from '@/Components/Recordings/RecordingTile.vue';
 import TilePlaceholder from '@/Components/TilePlaceholder.vue';
@@ -148,6 +161,10 @@ const props = defineProps({
 });
 
 const searchQuery = ref(props.search ?? '');
+
+// Keyed by year, 'loaded' | 'failed': collection art fades in when its own bytes
+// land, same as a tile, and falls back to the placeholder when they never do.
+const artState = reactive({});
 
 const submitSearch = () => {
   router.get(

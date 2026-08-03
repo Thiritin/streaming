@@ -2,14 +2,24 @@
   <div
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave"
-    class="show-tile-wrapper"
+    class="show-tile-wrapper media-tile"
   >
+    <!-- `prefetch` is what makes the view transition worth having: the response is
+         usually already cached by the time the click lands, so the morph starts
+         immediately instead of after a round trip spent frozen. -->
     <Link
       :href="route('show.view', show.slug)"
       class="group block"
+      prefetch
+      @pointerdown="claimHero"
+      @keydown.enter="claimHero"
     >
-      <!-- Thumbnail Container -->
-      <div class="relative aspect-video rounded-xl overflow-hidden bg-primary-800 ring-1 ring-white/5 group-hover:ring-2 group-hover:ring-primary-500/60 group-hover:shadow-lg group-hover:shadow-primary-500/20 transition-all duration-(--dur-base)">
+      <!-- Thumbnail Container. Also the origin of the shared-element morph into
+           the player, which is why it carries the ref. -->
+      <div
+        ref="thumbnail"
+        class="relative aspect-video rounded-xl overflow-hidden bg-primary-800 ring-1 ring-white/5 group-hover:ring-2 group-hover:ring-primary-500/60 group-hover:shadow-lg group-hover:shadow-primary-500/20 transition-all duration-(--dur-base)"
+      >
         <!-- Video Preview (only for live shows) -->
         <Transition
           enter-active-class="transition-all duration-(--dur-slower) ease-(--ease-out-expo)"
@@ -57,6 +67,14 @@
         <TilePlaceholder
           v-if="!currentThumbnail && !showVideoPreview"
           :label="show.source"
+        />
+
+        <!-- Loading art for a lazy thumbnail that has not decoded yet, so a grid
+             scrolled into view sweeps instead of showing flat boxes. -->
+        <div
+          v-else-if="currentThumbnail && !thumbnailLoaded && !showVideoPreview"
+          class="media-skeleton"
+          aria-hidden="true"
         />
 
         <!-- Top badges row -->
@@ -125,6 +143,7 @@ import FaPlayIcon from '../Icons/FaPlayIcon.vue';
 import FaUsersIcon from '../Icons/FaUsersIcon.vue';
 import Hls from 'hls.js';
 import { useNow } from '@/composables/useNow';
+import { claimMediaHero } from '@/composables/useMediaHero';
 
 // Props
 const props = defineProps({
@@ -143,6 +162,7 @@ const props = defineProps({
 // Reactive state
 const currentThumbnail = ref(props.show.thumbnail_url);
 const thumbnailLoaded = ref(false);
+const thumbnail = ref(null);
 const showVideoPreview = ref(false);
 const videoPreview = ref(null);
 let hoverTimeout = null;
@@ -176,6 +196,11 @@ const streamUrl = computed(() => {
 });
 
 // Methods
+// Both activation paths, because Enter on a focused link fires `click` without
+// ever firing `pointerdown`: without the keydown the old page would be captured
+// with nothing named, and keyboard users would lose the morph.
+const claimHero = () => claimMediaHero(thumbnail.value);
+
 const handleImageError = () => {
   currentThumbnail.value = null;
   thumbnailLoaded.value = false;

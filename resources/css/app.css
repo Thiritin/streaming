@@ -195,6 +195,113 @@
     transition: transform var(--dur-base) var(--ease-out-quart);
 }
 
+/* Tile hover. The card lifts and takes a stacking context so it sits over its
+   neighbours; the thumbnail inside scales a little further, which is what reads
+   as "looking into" the tile rather than just enlarging it. `focus-within` is
+   here so keyboard users get the same affordance as the mouse. */
+.media-tile {
+    transition: transform var(--dur-base) var(--ease-out-quart);
+}
+
+.media-tile:hover,
+.media-tile:focus-within {
+    position: relative;
+    z-index: 20;
+    transform: scale(1.03);
+}
+
+/* Loading art for a thumbnail whose image has not arrived. The same slow sweep
+   the archive already uses for a still-processing recording, so "loading" and
+   "processing" read as one family rather than two inventions. */
+.media-skeleton {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        100deg,
+        transparent 35%,
+        color-mix(in oklch, var(--color-primary-200) 10%, transparent) 50%,
+        transparent 65%
+    );
+    background-size: 250% 100%;
+    animation: media-sweep 2.8s ease-in-out infinite;
+}
+
+@keyframes media-sweep {
+    0% { background-position: 150% 0; }
+    100% { background-position: -50% 0; }
+}
+
+/* Scroll reveal, CSS-only via a view timeline: no IntersectionObserver, no JS on
+   the scroll path. Gated on @supports because Firefox has no view() timeline yet,
+   where the rule simply never applies and content is visible as normal.
+   Deliberately not used on `.stream-grid` tiles: they already animate in through
+   <TransitionGroup>, and two systems animating one element fight. */
+@supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+        .reveal {
+            animation: reveal-rise linear both;
+            animation-timeline: view();
+            animation-range: entry 0% entry 55%;
+        }
+    }
+}
+
+@keyframes reveal-rise {
+    from {
+        opacity: 0;
+        transform: translateY(24px);
+    }
+}
+
+/* Page transitions (View Transitions API, wired up in resources/js/viewTransitions.js).
+   The root cross-fade is short on purpose: its job is to stop an Inertia visit
+   reading as a hard cut, not to be an effect anyone notices. */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: var(--dur-base);
+    animation-timing-function: var(--ease-out-quart);
+}
+
+::view-transition-old(root) {
+    animation-name: vt-page-out;
+}
+
+::view-transition-new(root) {
+    animation-name: vt-page-in;
+}
+
+@keyframes vt-page-out {
+    to { opacity: 0; }
+}
+
+@keyframes vt-page-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}
+
+/* Shared element: the tile a visit started from morphs into the player it lands
+   on. Both ends claim `view-transition-name: media-hero` (see
+   composables/useMediaHero.js), so the browser tweens one box between two pages
+   instead of cross-fading two unrelated rectangles. Both ends are 16:9, so the
+   default crossfade inside the morphing group is enough. */
+::view-transition-group(media-hero) {
+    animation-duration: var(--dur-slow);
+    animation-timing-function: var(--ease-out-expo);
+}
+
+/* The `*` reduced-motion rule below cannot reach view-transition pseudo-elements,
+   so they are turned off explicitly. The JS side also declines to start a
+   transition at all when the setting is on; this is the belt to that braces. */
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation: none !important;
+    }
+}
+
 /* One gate for every animation in the app. Components no longer carry their own
    media query, and motion added later cannot ship without honouring the setting.
    Durations collapse to ~0 rather than to `none` so Vue's <Transition> still gets
