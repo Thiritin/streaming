@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
@@ -67,6 +69,37 @@ class Recording extends Model
                 }
             }
         });
+    }
+
+    /**
+     * Cut markers are normalised to the app timezone before they are stored.
+     *
+     * starts_at and ends_at are `timestamp without time zone`, matching the rest of the
+     * schema, and Laravel writes them with `Y-m-d H:i:s` and no offset. The digits that
+     * reach Postgres are therefore whatever timezone the Carbon happened to be in, and a
+     * UTC one lands as local time on read: the instant silently moves by the offset.
+     *
+     * It only shows up later, as a cut that resolves to zero segments and reports the
+     * archive as expired, so normalise here rather than expecting every caller to
+     * remember. Callers passing app-local values are unaffected.
+     */
+    protected function startsAt(): Attribute
+    {
+        return $this->localDateTime();
+    }
+
+    protected function endsAt(): Attribute
+    {
+        return $this->localDateTime();
+    }
+
+    protected function localDateTime(): Attribute
+    {
+        return Attribute::make(
+            set: fn ($value) => $value === null
+                ? null
+                : Carbon::parse($value)->setTimezone(config('app.timezone')),
+        );
     }
 
     /**
