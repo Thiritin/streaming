@@ -225,6 +225,35 @@ const seekTo = (ms) => {
     }
 };
 
+/**
+ * Seeks are coalesced to one per frame.
+ *
+ * A pointermove can fire far more often than the video can seek, and driving hls.js at
+ * that rate makes scrubbing lurch as it cancels and refetches segments. Taking only the
+ * latest position each frame keeps the picture tracking the cursor smoothly.
+ */
+let pendingSeekMs = null;
+let seekFrame = null;
+let resumeAfterScrub = false;
+
+const flushSeek = () => {
+    seekFrame = null;
+    if (pendingSeekMs === null) return;
+    seekTo(pendingSeekMs);
+    pendingSeekMs = null;
+};
+
+const queueSeek = (ms) => {
+    pendingSeekMs = ms;
+    seekFrame ??= requestAnimationFrame(flushSeek);
+};
+
+const beginDrag = (what) => {
+    dragging.value = what;
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp, { once: true });
+};
+
 const onTrackPointerDown = (event) => {
     const ms = msFromClientX(event.clientX);
     if (ms === null) return;
@@ -235,32 +264,55 @@ const onTrackPointerDown = (event) => {
     const grabbable = window_.value.span * 0.02;
 
     if (Math.min(near(inMs.value), near(outMs.value)) < grabbable) {
-        dragging.value = near(inMs.value) <= near(outMs.value) ? 'in' : 'out';
-        window.addEventListener('pointermove', onPointerMove);
-        window.addEventListener('pointerup', onPointerUp, { once: true });
+        beginDrag(near(inMs.value) <= near(outMs.value) ? 'in' : 'out');
         return;
     }
 
+    // Anywhere else scrubs, and keeps scrubbing while the button is held. Playback pauses
+    // for the duration and resumes afterwards if it was running, which is what every
+    // editor does: hearing audio stutter through a scrub is worse than silence.
     stopAtMs.value = null;
+    resumeAfterScrub = video.value ? !video.value.paused : false;
+    video.value?.pause();
+
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    beginDrag('playhead');
     seekTo(ms);
 };
 
 const onPointerMove = (event) => {
     if (!dragging.value) return;
     const ms = msFromClientX(event.clientX);
-    if (ms !== null) setMarker(dragging.value, ms);
+    if (ms === null) return;
+
+    if (dragging.value === 'playhead') {
+        queueSeek(ms);
+        return;
+    }
+
+    setMarker(dragging.value, ms);
 };
 
 const onPointerUp = () => {
+    const was = dragging.value;
     dragging.value = null;
     window.removeEventListener('pointermove', onPointerMove);
+
+    if (was === 'playhead') {
+        if (seekFrame !== null) {
+            cancelAnimationFrame(seekFrame);
+            seekFrame = null;
+        }
+        flushSeek();
+
+        if (resumeAfterScrub) video.value?.play();
+        resumeAfterScrub = false;
+    }
 };
 
 const grabHandle = (which, event) => {
     event.stopPropagation();
-    dragging.value = which;
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp, { once: true });
+    beginDrag(which);
 };
 
 const nudge = (which, segments) => {
@@ -305,6 +357,14 @@ const onTimeUpdate = () => {
         stopAtMs.value = null;
     }
 };
+
+/**
+ * Shortcuts are scoped to the editor, so clicking anywhere in it claims focus.
+ *
+ * Without this the keys only worked once something inside happened to be focused, which
+ * from the outside looks like space simply not working.
+ */
+const focusEditor = () => root.value?.focus({ preventScroll: true });
 
 const onKeydown = (event) => {
     // Never hijack typing in the surrounding form.
@@ -418,7 +478,7 @@ watch(
 </script>
 
 <template>
-    <div ref="root" tabindex="-1" class="space-y-3 outline-none">
+    <div ref="root" tabindex="-1" class="space-y-3 outline-none" @pointerdown="focusEditor">
         <!-- Guarded on the window rather than the archive, because the template
              dereferences the window and the two are not set at the same moment. -->
         <div v-if="!window_" class="rounded border border-hairline bg-surface-2 p-4 text-sm text-fg-3">
@@ -595,7 +655,8 @@ watch(
                 playhead, <span class="font-mono">[</span> <span class="font-mono">]</span> nudge in,
                 <span class="font-mono">{</span> <span class="font-mono">}</span> nudge out,
                 <span class="font-mono">Home</span>/<span class="font-mono">End</span> preview
-                start/end. Markers snap to {{ segmentSeconds }}s because segments are never split.
+                start/end. Drag anywhere on the track to scrub; drag a handle to move a
+                marker. Markers snap to {{ segmentSeconds }}s because segments are never split.
             </p>
         </template>
     </div>
