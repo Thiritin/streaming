@@ -7,8 +7,9 @@
  * Every field shows whether it is overriding the shipped default and can be put back
  * individually, which is safer than the all-or-nothing reset at the bottom.
  */
-import { computed, reactive } from 'vue';
+import { computed, onBeforeUnmount, reactive, watch } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
+import { clearAccentPreview, previewAccent } from '@/Components/Manage/colorRamp';
 import ManageLayout from '@/Layouts/ManageLayout.vue';
 import FileUploadField from '@/Components/Manage/FileUploadField.vue';
 import FormActions from '@/Components/Manage/FormActions.vue';
@@ -34,6 +35,26 @@ const form = useForm({
 /** Defaults keyed by field, so "use the default" needs no round trip. */
 const defaults = reactive(
   Object.fromEntries(fields.value.map((field) => [field.key, field.default ?? ''])),
+);
+
+/*
+ * "Reset to defaults" deletes the saved rows and comes back through the same
+ * component, so Inertia hands us fresh props while `useForm` is still holding
+ * what the operator typed. Re-seeding from the new props is what makes the reset
+ * visible without a reload.
+ */
+watch(
+  () => props.groups,
+  (groups) => {
+    const next = groups.flatMap((group) => group.fields);
+
+    next.forEach((field) => {
+      defaults[field.key] = field.default ?? '';
+    });
+
+    form.defaults({ values: Object.fromEntries(next.map((field) => [field.key, initial(field)])) });
+    form.reset();
+  },
 );
 
 const isDefault = (field) => (field.type === 'links'
@@ -84,6 +105,36 @@ const accept = (type) => (type === 'video' ? 'video/mp4,video/webm' : 'image/*')
  */
 const isSelectedPreset = (field, preset) =>
   (form.values[field.key] ?? '').toLowerCase() === (preset.value ?? '').toLowerCase();
+
+/** The swatch a preset row paints for "no accent saved". */
+const builtInHex = (field) => field.presets?.find((preset) => !preset.value)?.hex ?? '#6a7282';
+
+/*
+ * A native colour input has no empty state: given "" it shows black, and the
+ * first click on it writes #000000. Feeding it the built-in swatch instead keeps
+ * "nothing saved" looking like what actually renders, and only a real pick
+ * reaches the form.
+ */
+const swatchValue = (field) => ({
+  get: () => form.values[field.key] || builtInHex(field),
+  set: (value) => {
+    form.values[field.key] = value;
+  },
+});
+
+/*
+ * Repaint the panel as the colour changes, so the ramp can be judged against real
+ * UI rather than a 24px circle. The preview is undone on the way out: an edit
+ * that is never saved should not follow the operator to the next screen.
+ */
+const accentField = computed(() => fields.value.find((field) => field.type === 'color') ?? null);
+
+watch(
+  () => (accentField.value ? form.values[accentField.value.key] : null),
+  (hex) => previewAccent(hex),
+);
+
+onBeforeUnmount(clearAccentPreview);
 </script>
 
 <template>
@@ -139,10 +190,11 @@ const isSelectedPreset = (field, preset) =>
               <div class="flex flex-col gap-2">
                 <div class="flex items-center gap-2">
                   <input
-                    v-model="form.values[field.key]"
+                    :value="swatchValue(field).get()"
                     type="color"
                     class="size-8 shrink-0 cursor-pointer rounded border border-hairline bg-surface-2"
                     :aria-label="`${field.label} swatch`"
+                    @input="swatchValue(field).set($event.target.value)"
                   />
                   <input
                     v-model="form.values[field.key]"

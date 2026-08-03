@@ -32,7 +32,9 @@
              when an installation has set one, otherwise app.css stays in charge. --}}
         @php($brandPalette = app(\App\Services\BrandingService::class)->paletteVariables())
         @if (! empty($brandPalette))
-            <style>
+            {{-- Identified so the settings screen can switch it off while it
+                 previews a colour that has not been saved yet. --}}
+            <style id="brand-palette">
                 :root {
                     @foreach ($brandPalette as $property => $value)
                         {{ $property }}: {{ $value }};
