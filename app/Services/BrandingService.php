@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\BrandingSetting;
 use App\Support\ColorRamp;
+use App\Support\Manage\Settings;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -30,13 +31,11 @@ class BrandingService
         'identity_name' => 'Name of the identity provider people sign in with.',
         'identity_register_url' => 'Where people register a new identity account.',
         'identity_logout_url' => 'Identity provider logout endpoint.',
-        'support_url' => 'Support link in the footer.',
-        'imprint_url' => 'Legal Notice link in the footer.',
-        'privacy_url' => 'Privacy link in the footer.',
-        'logo_path' => 'Logo image. Leave empty to use the built-in mark.',
+        'footer_links' => 'Title and address for each footer link, in the order they are shown.',
+        'logo_path' => 'Logo image. Leave empty to show the site name as text instead.',
         'login_background_image' => 'Background image for the login screen.',
         'login_background_video' => 'Background video for the login screen. Left empty, the bundled clip is used.',
-        'primary_color' => 'Base accent colour. A full 50-950 ramp is derived from it. Empty keeps the built-in palette.',
+        'primary_color' => 'Pick a preset or a custom hex. A full 50-950 ramp is derived from it; empty keeps the palette in the stylesheet.',
     ];
 
     /**
@@ -87,12 +86,34 @@ class BrandingService
                 'backgroundImage' => $this->assetUrl($values['login_background_image']),
                 'backgroundVideo' => $this->assetUrl($values['login_background_video']),
             ],
-            'links' => [
-                'support' => $values['support_url'],
-                'imprint' => $values['imprint_url'],
-                'privacy' => $values['privacy_url'],
-            ],
+            // A list, not a fixed set of slots: an installation names its own
+            // footer links and has as many as it likes. Empty means the footer
+            // renders no link row at all.
+            'links' => $this->footerLinks(),
         ];
+    }
+
+    /**
+     * Footer links as {label, url}, in order, with unusable rows dropped.
+     *
+     * @return array<int, array{label: string, url: string}>
+     */
+    public function footerLinks(): array
+    {
+        $links = [];
+
+        foreach (Settings::decodeRows($this->get('footer_links')) as $row) {
+            $label = is_array($row) ? trim((string) ($row['label'] ?? '')) : '';
+            $url = is_array($row) ? trim((string) ($row['url'] ?? '')) : '';
+
+            if ($label === '' || $url === '') {
+                continue;
+            }
+
+            $links[] = ['label' => $label, 'url' => $url];
+        }
+
+        return $links;
     }
 
     /**
@@ -103,15 +124,17 @@ class BrandingService
      */
     public function paletteVariables(): array
     {
-        $ramp = ColorRamp::fromHex($this->get('primary_color'));
+        $accent = $this->get('primary_color');
 
         $variables = [];
 
-        foreach ($ramp as $stop => $value) {
+        foreach (ColorRamp::fromHex($accent) as $stop => $value) {
             $variables["--color-primary-{$stop}"] = $value;
         }
 
-        return $variables;
+        // The /manage chrome has its own tokens, so it needs re-tinting too or
+        // the panel keeps the shipped hue while the public site changes.
+        return $variables + ColorRamp::chromeFromHex($accent);
     }
 
     /**

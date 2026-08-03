@@ -72,6 +72,57 @@ class ColorRamp
     }
 
     /**
+     * The /manage chrome, re-tinted to the accent hue.
+     *
+     * The panel does not use the primary ramp: it has its own surface, text and
+     * hairline tokens, tuned for a dark control room and hardcoded to one hue. So
+     * setting an accent repainted the public site and left the panel looking like
+     * it belonged to a different installation.
+     *
+     * Only the hue moves. The lightness steps are what make a card read against
+     * the page, and the chroma is deliberately tiny — enough that the greys do
+     * not look dead, not enough to be a colour. `--state-live` is the exception:
+     * it is the active/focus accent, so it keeps its designed strength and takes
+     * the hue with it.
+     *
+     * Semantic states are left alone on purpose. Ok, warn, danger and info mean
+     * something, and a red brand must not repaint "healthy" red.
+     *
+     * @return array<string, string> empty for a greyscale accent, which has no
+     *                               hue worth spreading and would flatten the
+     *                               live indicator into the background
+     */
+    public static function chromeFromHex(?string $hex): array
+    {
+        $rgb = self::hexToRgb($hex);
+
+        if ($rgb === null) {
+            return [];
+        }
+
+        [, $chroma, $hue] = self::rgbToOklch($rgb);
+
+        if ($chroma < 0.002) {
+            return [];
+        }
+
+        $hue = round($hue, 2);
+
+        return [
+            '--surface-0' => "oklch(0.16 0.008 {$hue})",
+            '--surface-1' => "oklch(0.19 0.009 {$hue})",
+            '--surface-2' => "oklch(0.22 0.01 {$hue})",
+            '--surface-3' => "oklch(0.26 0.012 {$hue})",
+            '--fg-1' => "oklch(0.97 0.005 {$hue})",
+            '--fg-2' => "oklch(0.75 0.01 {$hue})",
+            '--fg-3' => "oklch(0.58 0.012 {$hue})",
+            '--hairline' => "oklch(0.28 0.012 {$hue})",
+            '--state-live' => "oklch(0.75 0.12 {$hue})",
+            '--state-idle' => "oklch(0.58 0.012 {$hue})",
+        ];
+    }
+
+    /**
      * @return array{0: float, 1: float, 2: float}|null 0-1 sRGB components
      */
     private static function hexToRgb(?string $hex): ?array

@@ -116,6 +116,45 @@ export const rampFromHex = (hex) => {
   return ramp;
 };
 
+/**
+ * The /manage chrome, re-tinted to the accent hue. Port of
+ * App\Support\ColorRamp::chromeFromHex — see the docblock there for why only the
+ * hue moves and why the semantic states are left alone.
+ *
+ * @returns {Record<string, string>} empty for a greyscale or unparseable accent
+ */
+export const chromeFromHex = (hex) => {
+  const rgb = hexToRgb(hex);
+
+  if (rgb === null) {
+    return {};
+  }
+
+  const [, chroma, rawHue] = rgbToOklch(rgb);
+
+  if (chroma < 0.002) {
+    return {};
+  }
+
+  const hue = round(rawHue, 2);
+
+  return {
+    '--surface-0': `oklch(0.16 0.008 ${hue})`,
+    '--surface-1': `oklch(0.19 0.009 ${hue})`,
+    '--surface-2': `oklch(0.22 0.01 ${hue})`,
+    '--surface-3': `oklch(0.26 0.012 ${hue})`,
+    '--fg-1': `oklch(0.97 0.005 ${hue})`,
+    '--fg-2': `oklch(0.75 0.01 ${hue})`,
+    '--fg-3': `oklch(0.58 0.012 ${hue})`,
+    '--hairline': `oklch(0.28 0.012 ${hue})`,
+    '--state-live': `oklch(0.75 0.12 ${hue})`,
+    '--state-idle': `oklch(0.58 0.012 ${hue})`,
+  };
+};
+
+/** Every chrome token, so a preview can take them all back off again. */
+const CHROME_PROPERTIES = Object.keys(chromeFromHex('#ff0000'));
+
 /** The :root block app.blade.php emits for the saved colour, if there is one. */
 const savedPalette = () => document.getElementById('brand-palette');
 
@@ -148,6 +187,18 @@ export const previewAccent = (hex) => {
       root.style.removeProperty(property);
     }
   }
+
+  // Repaint the panel itself, so the sidebar and cards being previewed against
+  // are the preview rather than a fixed backdrop.
+  const chrome = chromeFromHex(hex);
+
+  for (const property of CHROME_PROPERTIES) {
+    if (chrome[property]) {
+      root.style.setProperty(property, chrome[property]);
+    } else {
+      root.style.removeProperty(property);
+    }
+  }
 };
 
 /**
@@ -160,6 +211,10 @@ export const clearAccentPreview = () => {
 
   for (const stop of Object.keys(STOPS)) {
     root.style.removeProperty(`--color-primary-${stop}`);
+  }
+
+  for (const property of CHROME_PROPERTIES) {
+    root.style.removeProperty(property);
   }
 
   if (saved) {
