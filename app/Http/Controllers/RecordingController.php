@@ -119,9 +119,12 @@ class RecordingController extends Controller
 
     private function pendingShows(?string $search)
     {
-        $query = Show::where('recordable', true)
+        // Shows the audience was promised would be available afterwards, but which have
+        // not been published yet. `announce_recording` is the promise; it says nothing
+        // about capture, which happens for every source unconditionally.
+        $query = Show::where('announce_recording', true)
             ->where('status', 'ended')
-            ->doesntHave('recording');
+            ->whereDoesntHave('recordings', fn ($q) => $q->where('is_published', true));
 
         if ($search) {
             $query->where(function ($query) use ($search) {

@@ -13,10 +13,15 @@ class Recording extends Model
 
     protected $fillable = [
         'show_id',
+        'source_id',
         'title',
         'slug',
         'description',
         'date',
+        'starts_at',
+        'ends_at',
+        'archive_prefix',
+        'status',
         'duration',
         'm3u8_url',
         'thumbnail_path',
@@ -29,7 +34,11 @@ class Recording extends Model
 
     protected $casts = [
         'date' => 'datetime',
+        'starts_at' => 'datetime',
+        'ends_at' => 'datetime',
+        'playlist_built_at' => 'datetime',
         'duration' => 'integer',
+        'segment_count' => 'integer',
         'views' => 'integer',
         'is_published' => 'boolean',
         'thumbnail_updated_at' => 'datetime',
@@ -66,6 +75,42 @@ class Recording extends Model
     public function show()
     {
         return $this->belongsTo(Show::class);
+    }
+
+    /**
+     * The source whose archive this recording is a view of.
+     */
+    public function source()
+    {
+        return $this->belongsTo(Source::class);
+    }
+
+    /**
+     * Slug of the archive this cut reads from.
+     *
+     * Prefers the stored prefix so an existing recording keeps resolving if its source is
+     * later renamed, and falls back to the live relation for recordings created before
+     * the prefix was recorded.
+     */
+    public function archiveSourceSlug(): ?string
+    {
+        if ($this->archive_prefix) {
+            return str_contains($this->archive_prefix, '/')
+                ? substr(strrchr($this->archive_prefix, '/'), 1)
+                : $this->archive_prefix;
+        }
+
+        return $this->source?->slug ?? $this->show?->source?->slug;
+    }
+
+    /**
+     * Whether the cut is fully specified. An end marker is required: the archive is a
+     * continuous timeline with no natural end for a source that stays online for the
+     * whole event, so something has to say where the recording stops.
+     */
+    public function hasCut(): bool
+    {
+        return $this->starts_at !== null && $this->ends_at !== null;
     }
 
     /**

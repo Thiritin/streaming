@@ -11,16 +11,22 @@ use Illuminate\Support\Str;
 class RecordingApiController extends Controller
 {
     /**
-     * Get shows that need to be recorded.
-     * Returns shows where recordable=true, actual_start and actual_end are set, and no recording exists.
+     * Shows still awaiting a published recording.
+     *
+     * Legacy: this was the work queue for an external processing server, back when
+     * producing a recording meant extracting and re-encoding MP4s. Cutting is now
+     * internal and instant (see ArchivePlaylistService), so nothing consumes this to do
+     * work any more. Kept because the endpoint is an external API contract, and narrowed
+     * to the honest question it can still answer: which announced shows have not been
+     * published yet.
      */
     public function shows()
     {
         $shows = Show::with('source')
-            ->where('recordable', true)
+            ->where('announce_recording', true)
             ->whereNotNull('actual_start')
             ->whereNotNull('actual_end')
-            ->whereDoesntHave('recording')
+            ->whereDoesntHave('recordings', fn ($q) => $q->where('is_published', true))
             ->get()
             ->map(function ($show) {
                 return [

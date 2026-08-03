@@ -228,7 +228,7 @@ class ShowPlannerTest extends TestCase
         $show = $this->show([
             'title' => 'Keep me',
             'auto_mode' => true,
-            'recordable' => true,
+            'announce_recording' => true,
             'required_roles' => [],
             'scheduled_start' => '2026-08-01 10:00:00',
             'scheduled_end' => '2026-08-01 11:00:00',
@@ -248,7 +248,7 @@ class ShowPlannerTest extends TestCase
         $this->assertSame('Keep me', $show->title);
         $this->assertSame('scheduled', $show->status);
         $this->assertTrue($show->auto_mode);
-        $this->assertTrue($show->recordable);
+        $this->assertTrue($show->announce_recording);
     }
 
     public function test_an_end_before_the_start_is_refused(): void

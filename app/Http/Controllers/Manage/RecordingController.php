@@ -8,12 +8,14 @@ use App\Jobs\ProcessRecordingJob;
 use App\Models\Recording;
 use App\Models\Role;
 use App\Models\Show;
+use App\Services\ArchivePlaylistService;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
 use App\Support\Manage\Filter;
 use App\Support\Manage\Status;
 use App\Support\Manage\Table;
 use App\Support\Manage\Toast;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Response;
@@ -140,9 +142,127 @@ class RecordingController extends Controller
 
         $recording->update($request->validated());
 
+        // A cut is derived state: the archive is truth and the playlist is generated
+        // from the markers, so every save rebuilds rather than mutating media. That is
+        // what makes trimming repeatable and non-destructive, months after the fact.
+        if ($recording->hasCut()) {
+            if (! app(ArchivePlaylistService::class)->rebuild($recording->fresh())) {
+                Toast::flashError('Playlist not built', $recording->fresh()->build_error);
+
+                return back();
+            }
+        }
+
         Toast::flashSuccess('Recording updated');
 
         return back();
+    }
+
+    /**
+     * Cut a draft recording from a show, copying its title and markers.
+     *
+     * Deliberately does not require the show to have ended. The archive is a continuous
+     * per-source timeline, so a range can be cut, published and re-cut while the show is
+     * still running; the main source stays online for the whole event and never produces
+     * an end to wait for. What it does require is an explicit end marker, since there is
+     * no natural one.
+     */
+    public function storeFromShow(Request $request, Show $show): RedirectResponse
+    {
+        $this->authorize('create', Recording::class);
+
+        if (! $show->source) {
+            Toast::flashError('No source', 'That show has no source, so there is no archive to cut from.');
+
+            return back();
+        }
+
+        if (! $show->actual_start) {
+            Toast::flashError('Not started', 'That show has not gone live yet, so there is nothing to cut.');
+
+            return back();
+        }
+
+        $endsAt = $request->filled('ends_at')
+            ? CarbonImmutable::parse($request->string('ends_at')->toString())
+            : $show->actual_end;
+
+        if (! $endsAt) {
+            Toast::flashError(
+                'End marker needed',
+                'That show is still live. Set an end marker to cut a recording from it.'
+            );
+
+            return back();
+        }
+
+        $recording = Recording::create([
+            'show_id' => $show->id,
+            'source_id' => $show->source->id,
+            'title' => $show->title,
+            'slug' => $this->uniqueSlug($show->title),
+            'description' => $show->description,
+            'date' => $show->actual_start,
+            'starts_at' => $show->actual_start,
+            'ends_at' => $endsAt,
+            'archive_prefix' => "archive/{$show->source->slug}",
+            'status' => 'draft',
+            'is_published' => false,
+        ]);
+
+        // Building reads a couple of hour indexes and writes four playlists, so it runs
+        // inline and the operator lands on a finished recording rather than a spinner.
+        $built = app(ArchivePlaylistService::class)->rebuild($recording);
+
+        if (! $built) {
+            Toast::flashError('Draft created, playlist not built', $recording->fresh()->build_error);
+        } else {
+            Toast::flashSuccess('Recording drafted', "Cut from '{$show->title}'. Adjust the markers before publishing.");
+        }
+
+        return to_route('manage.recordings.edit', $recording);
+    }
+
+    /**
+     * Rebuild without changing the markers.
+     *
+     * Useful when the archive has caught up since the last build: the uploader runs a few
+     * seconds behind live, so a cut whose end was at the live edge will have been short
+     * by a segment or two.
+     */
+    public function rebuild(Recording $recording): RedirectResponse
+    {
+        $this->authorize('update', $recording);
+
+        if (! $recording->hasCut()) {
+            Toast::flashError('Nothing to rebuild', 'This recording has no cut markers.');
+
+            return back();
+        }
+
+        if (! app(ArchivePlaylistService::class)->rebuild($recording)) {
+            Toast::flashError('Playlist not built', $recording->fresh()->build_error);
+
+            return back();
+        }
+
+        $fresh = $recording->fresh();
+        Toast::flashSuccess('Playlist rebuilt', "{$fresh->segment_count} segments, {$fresh->formatted_duration}.");
+
+        return back();
+    }
+
+    protected function uniqueSlug(string $title): string
+    {
+        $base = \Illuminate\Support\Str::slug($title);
+        $slug = $base;
+        $i = 1;
+
+        while (Recording::where('slug', $slug)->exists()) {
+            $slug = $base.'-'.$i++;
+        }
+
+        return $slug;
     }
 
     public function destroy(Recording $recording): RedirectResponse

@@ -98,7 +98,7 @@ class ShowSeeder extends Seeder
                 // The dance is the case auto mode exists for: nobody is awake to end it.
                 'auto_mode' => $source->is($dance),
                 'auto_stop_at' => $source->is($dance) ? $end : null,
-                'recordable' => true,
+                'announce_recording' => true,
                 'required_roles' => [],
                 'thumbnail_path' => null,
             ]);

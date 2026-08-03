@@ -125,7 +125,7 @@ class ShowPlannerController extends Controller
         $show = Show::create($validated + [
             'status' => 'scheduled',
             'auto_mode' => false,
-            'recordable' => false,
+            'announce_recording' => false,
             'required_roles' => [],
         ]);
 

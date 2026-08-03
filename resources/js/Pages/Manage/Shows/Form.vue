@@ -204,10 +204,10 @@ const submit = () => {
 
         <FormSection title="Recording">
           <FormField
-            v-model="form.recordable"
+            v-model="form.announce_recording"
             label="Recordable"
             type="checkbox"
-            :error="form.errors.recordable"
+            :error="form.errors.announce_recording"
             helper="Makes this show available for recording processing"
           />
           <FormField v-if="isEdit" label="Live thumbnail">

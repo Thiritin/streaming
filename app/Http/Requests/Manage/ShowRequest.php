@@ -39,7 +39,7 @@ class ShowRequest extends FormRequest
 
             'auto_mode' => ['boolean'],
             'auto_stop_at' => ['nullable', 'date'],
-            'recordable' => ['boolean'],
+            'announce_recording' => ['boolean'],
 
             'visibility' => ['required', Rule::in(['public', 'private'])],
             // Only read when visibility is private; required then, because a private show
@@ -68,7 +68,7 @@ class ShowRequest extends FormRequest
         }
 
         $data['auto_mode'] = (bool) ($data['auto_mode'] ?? false);
-        $data['recordable'] = (bool) ($data['recordable'] ?? false);
+        $data['announce_recording'] = (bool) ($data['announce_recording'] ?? false);
 
         // Public is stored as an empty role list, which is what canBeAccessedBy() reads.
         $data['required_roles'] = $data['visibility'] === 'private'

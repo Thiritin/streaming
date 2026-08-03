@@ -24,7 +24,7 @@ class Show extends Model
         'status',
         'auto_mode',
         'auto_stop_at',
-        'recordable',
+        'announce_recording',
         'thumbnail_path',
         'thumbnail_updated_at',
         'thumbnail_capture_error',
@@ -35,6 +35,8 @@ class Show extends Model
         'metadata',
         'required_roles',
         'server_id',
+        // Set by the pretalx import; its presence is what stops a slot being imported twice.
+        'pretalx_slot_id',
     ];
 
     protected $casts = [
@@ -45,7 +47,7 @@ class Show extends Model
         'thumbnail_updated_at' => 'datetime',
         'auto_stop_at' => 'datetime',
         'auto_mode' => 'boolean',
-        'recordable' => 'boolean',
+        'announce_recording' => 'boolean',
         'tags' => 'array',
         'metadata' => 'array',
         'required_roles' => 'array',
@@ -118,11 +120,23 @@ class Show extends Model
     }
 
     /**
-     * Get the recording for this show.
+     * Recordings cut from this show's slot.
+     *
+     * hasMany rather than hasOne: a recording is a time range over the source's archive,
+     * so a long block can be sliced into several published pieces without re-recording
+     * anything. `recording()` stays as the convenience accessor for the common 1:1 case.
+     */
+    public function recordings()
+    {
+        return $this->hasMany(Recording::class);
+    }
+
+    /**
+     * The primary recording for this show, if one has been cut.
      */
     public function recording()
     {
-        return $this->hasOne(Recording::class);
+        return $this->hasOne(Recording::class)->latestOfMany();
     }
 
     /**

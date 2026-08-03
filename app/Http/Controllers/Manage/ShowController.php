@@ -90,7 +90,7 @@ class ShowController extends Controller
                 'actual_end' => null,
                 'auto_mode' => false,
                 'auto_stop_at' => null,
-                'recordable' => false,
+                'announce_recording' => false,
                 'visibility' => 'public',
                 'required_roles' => [],
             ],
@@ -126,7 +126,7 @@ class ShowController extends Controller
                 'actual_end' => $show->actual_end?->format('Y-m-d\TH:i:s'),
                 'auto_mode' => (bool) $show->auto_mode,
                 'auto_stop_at' => $show->auto_stop_at?->format('Y-m-d\TH:i'),
-                'recordable' => (bool) $show->recordable,
+                'announce_recording' => (bool) $show->announce_recording,
                 'visibility' => $show->isPrivate() ? 'private' : 'public',
                 'required_roles' => $show->required_roles ?? [],
                 // Captured off the stream while it runs; never set by hand here. A
@@ -385,6 +385,8 @@ class ShowController extends Controller
         $actions = [];
 
         if (request()->user()->can('create', Show::class)) {
+            $actions[] = Action::link('import', 'Import from pretalx', route('manage.shows.import'))
+                ->icon('download');
             $actions[] = Action::link('create', 'New Show', route('manage.shows.create'))->icon('plus');
         }
 

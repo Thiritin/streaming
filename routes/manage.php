@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Manage\DashboardController;
 use App\Http\Controllers\Manage\EmoteController;
+use App\Http\Controllers\Manage\PretalxImportController;
 use App\Http\Controllers\Manage\RecordingController;
 use App\Http\Controllers\Manage\RoleController;
 use App\Http\Controllers\Manage\ServerController;
@@ -72,6 +73,14 @@ Route::get('sources/{source}', [SourceController::class, 'edit'])->name('sources
 Route::put('sources/{source}', [SourceController::class, 'update'])->name('sources.update');
 Route::delete('sources/{source}', [SourceController::class, 'destroy'])->name('sources.destroy');
 
+/*
+ * Programme import. Sits before the `shows/{show}` routes so `shows/import` is not read
+ * as a show id.
+ */
+Route::get('shows/import', [PretalxImportController::class, 'index'])->name('shows.import');
+Route::post('shows/import', [PretalxImportController::class, 'store'])->name('shows.import.store');
+Route::post('shows/import/refresh', [PretalxImportController::class, 'refresh'])->name('shows.import.refresh');
+
 Route::get('shows/planner', [ShowPlannerController::class, 'index'])->name('shows.planner');
 Route::post('shows/planner', [ShowPlannerController::class, 'store'])->name('shows.planner.store');
 Route::patch('shows/{show}/schedule', [ShowPlannerController::class, 'reschedule'])->name('shows.reschedule');
@@ -129,6 +138,17 @@ Route::post('recordings/bulk/thumbnail', [RecordingController::class, 'bulkRegen
 Route::delete('recordings/bulk', [RecordingController::class, 'bulkDestroy'])->name('recordings.bulk.destroy');
 Route::post('recordings/{recording}/thumbnail', [RecordingController::class, 'regenerateThumbnail'])
     ->name('recordings.thumbnail');
+
+/*
+ * Cutting. A recording is a time range over its source's continuous archive, so these
+ * never wait for a show to end: the main source stays online for the whole event.
+ * Rebuild regenerates the playlist from the current markers, which is also how a cut
+ * made at the live edge picks up the segments the uploader had not caught up with yet.
+ */
+Route::post('shows/{show}/recording', [RecordingController::class, 'storeFromShow'])
+    ->name('shows.recording.store');
+Route::post('recordings/{recording}/rebuild', [RecordingController::class, 'rebuild'])
+    ->name('recordings.rebuild');
 Route::get('recordings', [RecordingController::class, 'index'])->name('recordings.index');
 Route::get('recordings/create', [RecordingController::class, 'create'])->name('recordings.create');
 Route::post('recordings', [RecordingController::class, 'store'])->name('recordings.store');

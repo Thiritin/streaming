@@ -70,6 +70,13 @@ return [
         'dvr_uploader' => env('STREAM_IMAGE_DVR_UPLOADER', 'dvr-uploader:latest'),
     ],
 
+    // Filesystem disk holding the segment archive and the generated recording
+    // playlists. Must be the same bucket archive_uploader.py writes to on the origin.
+    //
+    // Production uses the dedicated `dvr` disk. Locally there is one versitygw bucket
+    // for everything, so point this at `s3` rather than configuring DVR_AWS_* twice.
+    'archive_disk' => env('ARCHIVE_DISK', 'dvr'),
+
     // System streamkey for internal operations (thumbnails, monitoring, etc.)
     'system_streamkey' => env('STREAM_SYSTEM_STREAMKEY', ''),
 
