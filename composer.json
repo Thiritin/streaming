@@ -3,7 +3,7 @@
     "type": "project",
     "description": "The skeleton application for the Laravel framework.",
     "keywords": ["laravel", "framework"],
-    "license": "MIT",
+    "license": "LicenseRef-PolyForm-Noncommercial-1.0.0-with-Convention-Rider",
     "require": {
         "php": "^8.2",
         "doctrine/dbal": "^4.3",

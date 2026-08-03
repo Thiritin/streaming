@@ -125,8 +125,20 @@ The root `Dockerfile` builds the app image. `docker/` holds the images for the v
 
 ## Contributing
 
-Issues and pull requests are welcome. For anything larger, or for help running this at your own convention, contact @Thiritin on Telegram.
+Issues and pull requests are welcome. For anything larger, or for help running this at your own convention, contact @Thiritin on Telegram. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## Licence
 
-GPL-3.0. See [LICENSE](LICENSE).
+Source-available, not open source: [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) plus a rider that spells out who may run it. See [LICENSE](LICENSE).
+
+Free to use, modify and run for:
+
+- conventions and community events, whatever the fandom and whatever the size
+- non-profit organisers, including registered associations such as a German `e.V.`, and volunteer groups with no legal form
+- schools, universities and other teaching institutions
+
+Ticket sales, merchandise, bar takings, sponsorship and paid staff do not change that. You are not required to publish your changes.
+
+Anything else, in particular running it as a commercial service, needs written permission first. Open an issue and ask; it costs nothing.
+
+Releases before the licence changed remain available under GPL-3.0.
