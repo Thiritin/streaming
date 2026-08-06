@@ -19,11 +19,13 @@ class Source extends Model
         'description',
         'stream_key',
         'priority',
+        'is_featured',
     ];
 
     protected $casts = [
         'status' => SourceStatusEnum::class,
         'stream_key' => 'encrypted',
+        'is_featured' => 'boolean',
     ];
 
     protected $hidden = [
@@ -54,6 +56,25 @@ class Source extends Model
             if (empty($source->stream_key)) {
                 // Generate a secure random key for the secret parameter
                 $source->stream_key = Str::random(32);
+            }
+        });
+
+        // Featuring a channel demotes the others. Without this the flag silently
+        // becomes "one of the featured ones", and which one wins depends on insertion
+        // order, which is exactly the ambiguity the flag replaced.
+        //
+        // Wrapped in a transaction with row locking to prevent concurrent promotions from
+        // leaving no explicit featured source (race condition where both transactions see
+        // the other source as featured and demote it).
+        static::saved(function ($source) {
+            if ($source->is_featured && $source->wasChanged('is_featured')) {
+                \DB::transaction(function () use ($source) {
+                    static::where('id', '!=', $source->id)
+                        ->where('is_featured', true)
+                        ->lockForUpdate()
+                        ->get()
+                        ->each(fn ($other) => $other->update(['is_featured' => false]));
+                });
             }
         });
 
@@ -134,10 +155,25 @@ class Source extends Model
 
     /**
      * Get sources ordered by priority (descending) then by name.
+     *
+     * This is display order for the schedule grid and channel lists. It is deliberately
+     * not how the featured channel is chosen: see featured().
      */
     public function scopeOrdered($query)
     {
         return $query->orderBy('priority', 'desc')->orderBy('name');
+    }
+
+    /**
+     * The channel the site promotes: the stage hero, and where an ended show sends people.
+     *
+     * Falls back to display order when nothing is flagged, so a fresh install still has a
+     * sensible hero rather than none.
+     */
+    public static function featured(): ?self
+    {
+        return static::where('is_featured', true)->first()
+            ?? static::ordered()->first();
     }
 
     /**

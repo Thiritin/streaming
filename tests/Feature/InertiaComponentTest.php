@@ -146,7 +146,7 @@ class InertiaComponentTest extends TestCase
             ->where('show.id', $show->id)
             ->where('show.title', 'External Show')
             ->has('show.source')
-            ->has('show.hls_urls')
+            ->has('show.hls_url')
             ->where('show.can_watch', true)
         );
     }
@@ -266,9 +266,9 @@ class InertiaComponentTest extends TestCase
     }
 
     /**
-     * Test that ended shows redirect properly
+     * An ended show renders its own page rather than redirecting to the grid.
      */
-    public function test_ended_show_redirects()
+    public function test_ended_show_renders_ended_status()
     {
         $source = Source::create([
             'name' => 'Source',
@@ -290,6 +290,10 @@ class InertiaComponentTest extends TestCase
         $response = $this->actingAs($this->user)
             ->get(route('show.view', $show));
 
-        $response->assertRedirect(route('shows.grid'));
+        $response->assertOk();
+        $response->assertInertia(fn ($page) => $page
+            ->component('ShowPlayer')
+            ->where('currentShow.status', 'ended')
+        );
     }
 }

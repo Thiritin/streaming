@@ -121,7 +121,7 @@ class AutoModeEndToEndTest extends TestCase
 
         // Run the scheduled command
         $this->artisan('shows:check-auto-mode')
-            ->expectsOutput("Starting auto mode show: {$show->title}")
+            ->expectsOutput("Started '{$show->title}'")
             ->assertExitCode(0);
 
         $show->refresh();
@@ -269,7 +269,7 @@ class AutoModeEndToEndTest extends TestCase
 
         // Run the scheduled command
         $this->artisan('shows:check-auto-mode')
-            ->expectsOutput("Ending auto mode show: {$show->title}")
+            ->expectsOutput("Ended '{$show->title}' (hard stop reached)")
             ->assertExitCode(0);
 
         $show->refresh();

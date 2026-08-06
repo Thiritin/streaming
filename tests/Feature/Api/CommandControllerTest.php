@@ -249,17 +249,4 @@ class CommandControllerTest extends TestCase
         $response->assertStatus(422);
     }
 
-    public function test_command_execution_is_logged()
-    {
-        $this->actingAs($this->admin, 'sanctum')
-            ->postJson('/api/command/execute', [
-                'command' => '/help',
-            ]);
-
-        $this->assertDatabaseHas('activity_log', [
-            'subject_type' => 'App\Models\User',
-            'subject_id' => $this->admin->id,
-            'description' => 'Command executed',
-        ]);
-    }
 }

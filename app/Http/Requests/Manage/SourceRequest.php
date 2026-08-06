@@ -26,6 +26,7 @@ class SourceRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             // Higher first on the public grid; the ceiling matches the Filament form.
             'priority' => ['required', 'integer', 'min:0', 'max:999'],
+            'is_featured' => ['boolean'],
             'description' => ['nullable', 'string'],
         ];
 
@@ -57,5 +58,19 @@ class SourceRequest extends FormRequest
         return [
             'slug' => 'stream name',
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function validated($key = null, $default = null): array
+    {
+        $data = parent::validated();
+
+        // An unchecked box posts nothing, so without this the flag could be set but
+        // never cleared: un-featuring a channel from the form would silently do nothing.
+        $data['is_featured'] = (bool) ($data['is_featured'] ?? false);
+
+        return $data;
     }
 }

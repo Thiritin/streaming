@@ -88,7 +88,7 @@ class ScheduleController extends Controller
 
         return Inertia::render('Schedule', [
             'days' => $days,
-            'primaryChannel' => Source::ordered()->first()?->name,
+            'primaryChannel' => Source::featured()?->name,
             'currentTime' => now()->toIso8601String(),
         ]);
     }

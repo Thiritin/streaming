@@ -15,6 +15,13 @@ use Illuminate\Support\Facades\Storage;
  */
 class BrandingService
 {
+    /** Where this software lives, and under what terms. Not per-installation. */
+    public const SOURCE_URL = 'https://github.com/Thiritin/streaming';
+
+    public const LICENCE = 'GPL-3.0';
+
+    public const LICENCE_URL = 'https://github.com/Thiritin/streaming/blob/main/LICENSE';
+
     /**
      * Keys editable from the admin panel, with the help text shown there.
      *
@@ -32,6 +39,7 @@ class BrandingService
         'identity_register_url' => 'Where people register a new identity account.',
         'identity_logout_url' => 'Identity provider logout endpoint.',
         'footer_links' => 'Title and address for each footer link, in the order they are shown.',
+        'show_source_link' => 'Whether the footer credits the project and links to its source. 1 or 0.',
         'logo_path' => 'Logo image. Leave empty to show the site name as text instead.',
         'login_background_image' => 'Background image for the login screen.',
         'login_background_video' => 'Background video for the login screen. Left empty, the bundled clip is used.',
@@ -90,7 +98,19 @@ class BrandingService
             // footer links and has as many as it likes. Empty means the footer
             // renders no link row at all.
             'links' => $this->footerLinks(),
+            // The project credit in the footer. Separate from `links`, which an
+            // installation owns: this one is about the software, not the event.
+            'source' => $this->showSourceLink() ? [
+                'url' => self::SOURCE_URL,
+                'licence' => self::LICENCE,
+                'licenceUrl' => self::LICENCE_URL,
+            ] : null,
         ];
+    }
+
+    public function showSourceLink(): bool
+    {
+        return Settings::toBool($this->get('show_source_link'));
     }
 
     /**

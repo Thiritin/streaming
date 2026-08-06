@@ -13,7 +13,6 @@ services:
       SRS_HTTP_PORT: 8082
     volumes:
       - ./srs.conf:/usr/local/srs/conf/custom.conf:ro
-      - dvr-recordings:/dvr/recordings
     command: ./objs/srs -c /usr/local/srs/conf/custom.conf
     restart: unless-stopped
     networks:
@@ -77,36 +76,13 @@ services:
     networks:
       - streaming
   
-  # DVR S3 Uploader Service
-  dvr-uploader:
-    image: {{ config('stream.images.dvr_uploader') }}
-    container_name: dvr-uploader
-    environment:
-      S3_BUCKET: ${DVR_AWS_BUCKET:-streaming-recordings}
-      S3_REGION: ${DVR_AWS_DEFAULT_REGION:-eu-central-1}
-      S3_ACCESS_KEY: ${DVR_AWS_ACCESS_KEY_ID}
-      S3_SECRET_KEY: ${DVR_AWS_SECRET_ACCESS_KEY}
-      S3_ENDPOINT: ${DVR_AWS_ENDPOINT}
-      RECORDINGS_PATH: /dvr/recordings
-      DELETE_AFTER_UPLOAD: 'true'
-      WEBHOOK_URL: '{{ $serverUrl }}/api/dvr/upload-webhook'
-      FILE_AGE_SECONDS: '30'
-    volumes:
-      - dvr-recordings:/dvr/recordings
-    restart: unless-stopped
-    depends_on:
-      - origin-srs
-    networks:
-      - streaming
-
   # HLS Segment Archive Uploader
   #
   # Mirrors the transcoder's segments to S3 and maintains the per-hour index
-  # playlists that recordings are cut from. Separate container from dvr-uploader
-  # above, which keeps handling the SRS MP4 DVR as a cold backup: the two watch
-  # different volumes and share only the image. See docs/dvr-archive-plan.md.
+  # playlists that recordings are cut from. This is the only recording path:
+  # SRS DVR is off and the MP4 uploader is gone. See docs/dvr-archive-plan.md.
   archive-uploader:
-    image: {{ config('stream.images.dvr_uploader') }}
+    image: {{ config('stream.images.archive_uploader') }}
     container_name: archive-uploader
     command: ["python", "-u", "archive_uploader.py"]
     environment:
@@ -143,7 +119,6 @@ networks:
 
 volumes:
   hls-content:
-  dvr-recordings:
   archive-state:
   caddy-data:
   caddy-config:

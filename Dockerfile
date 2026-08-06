@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7-labs
-FROM dunglas/frankenphp:php8.4 as base
+FROM dunglas/frankenphp:php8.5 as base
 WORKDIR /app
 
 ENV COMPOSER_MEMORY_LIMIT=-1

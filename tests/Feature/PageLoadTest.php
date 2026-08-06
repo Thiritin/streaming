@@ -78,7 +78,7 @@ class PageLoadTest extends TestCase
             ->component('ShowPlayer')
             ->has('currentShow')
             ->has('availableShows')
-            ->has('initialHlsUrls')
+            ->has('initialHlsUrl')
             ->has('initialStatus')
             ->has('initialListeners')
             ->has('chatMessages')
@@ -156,7 +156,11 @@ class PageLoadTest extends TestCase
     }
 
     /**
-     * Test that show with ended status can still be viewed
+     * An ended show keeps its own page rather than bouncing to the grid.
+     *
+     * It used to redirect. ShowPlayer now renders ShowEndedStatusPage in place of the
+     * video, which keeps the title, description and any recording link on a URL people
+     * have already shared.
      */
     public function test_ended_show_page_loads()
     {
@@ -165,14 +169,17 @@ class PageLoadTest extends TestCase
         $response = $this->actingAs($this->user)
             ->get(route('show.view', $this->show));
 
-        // Should redirect because show is ended and user can't watch
-        $response->assertRedirect(route('shows.grid'));
+        $response->assertOk();
+        $response->assertInertia(fn ($page) => $page
+            ->component('ShowPlayer')
+            ->where('currentShow.status', 'ended')
+        );
     }
 
     /**
-     * Test that show with scheduled status redirects if not viewable
+     * Same for a show that has not started: the page explains when it will.
      */
-    public function test_scheduled_show_redirects_if_not_viewable()
+    public function test_scheduled_show_page_loads_with_scheduled_status()
     {
         $this->show->update([
             'status' => 'scheduled',
@@ -182,8 +189,11 @@ class PageLoadTest extends TestCase
         $response = $this->actingAs($this->user)
             ->get(route('show.view', $this->show));
 
-        // Should redirect because scheduled show far in future can't be watched
-        $response->assertRedirect(route('shows.grid'));
+        $response->assertOk();
+        $response->assertInertia(fn ($page) => $page
+            ->component('ShowPlayer')
+            ->where('currentShow.status', 'scheduled')
+        );
     }
 
     /**

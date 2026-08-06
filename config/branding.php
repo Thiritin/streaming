@@ -59,6 +59,14 @@ return [
     'footer_links' => [],
 
     /*
+     | Whether the footer credits the project and links to its source. On by
+     | default: this is GPL software, and an installation that keeps the credit
+     | costs nothing. Turn it off in the panel for a footer that carries only
+     | the installation's own links.
+     */
+    'show_source_link' => true,
+
+    /*
      | Path on the public disk to a logo image. When empty nothing is rendered
      | in its place and callers fall back to the site name in text.
      */

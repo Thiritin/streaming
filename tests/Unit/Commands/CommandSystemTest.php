@@ -184,11 +184,12 @@ class CommandSystemTest extends TestCase
         $this->assertIsArray($rules);
         $this->assertArrayHasKey('action', $rules);
         $this->assertArrayHasKey('username', $rules);
-        $this->assertArrayHasKey('badge_type', $rules);
+        $this->assertArrayHasKey('role', $rules);
 
         // Check rule format
         $this->assertStringContainsString('required', $rules['action']);
         $this->assertStringContainsString('in:grant,revoke', $rules['action']);
+        $this->assertStringContainsString('exists:roles,slug', $rules['role']);
     }
 
     /**

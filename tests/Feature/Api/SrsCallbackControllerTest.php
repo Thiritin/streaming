@@ -76,9 +76,9 @@ class SrsCallbackControllerTest extends TestCase
     public function test_auth_succeeds_with_valid_source_stream_key()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '?secret='.$this->source->stream_key,
         ]);
 
@@ -104,14 +104,58 @@ class SrsCallbackControllerTest extends TestCase
     }
 
     /**
-     * Test authentication fails with invalid stream key
+     * Publishers use the `ingress` app; `live` is the transcoder's output.
+     *
+     * Untested until now, and its absence hid a suite-wide failure: every test here
+     * published to `live` and got a 403, which the negative tests happily accepted
+     * because 403 was what they expected. Asserting the rejection explicitly means a
+     * future change to the app split fails loudly instead of turning the positive
+     * tests into false negatives.
      */
-    public function test_auth_fails_with_invalid_stream_key()
+    public function test_auth_rejects_external_publishing_to_the_live_app()
     {
         $response = $this->postJson('/api/srs/auth', [
             'app' => 'live',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/live',
+            'param' => '?secret='.$this->source->stream_key,
+            'ip' => '203.0.113.10',
+        ]);
+
+        $response->assertStatus(403);
+
+        // A valid key must not be enough: the app itself is what is refused.
+        $this->source->refresh();
+        $this->assertEquals(SourceStatusEnum::OFFLINE, $this->source->status);
+    }
+
+    /**
+     * The transcoder republishes into `live` from inside the origin, so that path stays
+     * open for loopback callers.
+     */
+    public function test_auth_allows_internal_transcoding_into_the_live_app()
+    {
+        $response = $this->postJson('/api/srs/auth', [
+            'app' => 'live',
+            'stream' => 'test-source',
+            'tcUrl' => 'rtmp://localhost/live',
+            'param' => '',
+            'ip' => '127.0.0.1',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJson(['code' => 0]);
+    }
+
+    /**
+     * Test authentication fails with invalid stream key
+     */
+    public function test_auth_fails_with_invalid_stream_key()
+    {
+        $response = $this->postJson('/api/srs/auth', [
+            'app' => 'ingress',
+            'stream' => 'test-source',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '?secret=invalid_key',
         ]);
 
@@ -129,9 +173,9 @@ class SrsCallbackControllerTest extends TestCase
     public function test_auth_fails_with_unknown_stream_name()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'non-existent-stream',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '?secret='.$this->source->stream_key,
         ]);
 
@@ -145,9 +189,9 @@ class SrsCallbackControllerTest extends TestCase
     public function test_auth_fails_without_stream_key()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '',
         ]);
 
@@ -161,7 +205,7 @@ class SrsCallbackControllerTest extends TestCase
     public function test_server_auth_succeeds_with_valid_shared_secret()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
             'param' => '?shared_secret='.$this->edgeServer->shared_secret,
@@ -190,7 +234,7 @@ class SrsCallbackControllerTest extends TestCase
     public function test_server_auth_fails_with_invalid_shared_secret()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
             'param' => '?shared_secret=invalid_secret',
@@ -210,7 +254,7 @@ class SrsCallbackControllerTest extends TestCase
         $this->edgeServer->save();
 
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
             'param' => '?shared_secret='.$this->edgeServer->shared_secret,
@@ -226,7 +270,7 @@ class SrsCallbackControllerTest extends TestCase
     public function test_shared_secret_takes_precedence_over_stream_key()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
             'param' => '?shared_secret='.$this->edgeServer->shared_secret.'&secret='.$this->source->stream_key,
@@ -258,9 +302,9 @@ class SrsCallbackControllerTest extends TestCase
         $this->show->save();
 
         $response = $this->postJson('/api/srs/unpublish', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '?secret='.$this->source->stream_key,
         ]);
 
@@ -290,9 +334,9 @@ class SrsCallbackControllerTest extends TestCase
         $this->show->save();
 
         $response = $this->postJson('/api/srs/unpublish', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '?secret='.$this->source->stream_key,
         ]);
 
@@ -310,9 +354,9 @@ class SrsCallbackControllerTest extends TestCase
     public function test_unpublish_handles_unknown_stream_gracefully()
     {
         $response = $this->postJson('/api/srs/unpublish', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'non-existent-stream',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '',
         ]);
 
@@ -327,9 +371,9 @@ class SrsCallbackControllerTest extends TestCase
     public function test_play_webhook_returns_success()
     {
         $response = $this->postJson('/api/srs/play', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'pageUrl' => 'http://example.com',
             'param' => '',
         ]);
@@ -344,9 +388,9 @@ class SrsCallbackControllerTest extends TestCase
     public function test_stop_webhook_returns_success()
     {
         $response = $this->postJson('/api/srs/stop', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '',
         ]);
 
@@ -360,9 +404,9 @@ class SrsCallbackControllerTest extends TestCase
     public function test_auth_handles_malformed_param_string()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => 'malformed&&&==param',
         ]);
 
@@ -387,9 +431,9 @@ class SrsCallbackControllerTest extends TestCase
         ]);
 
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '?secret='.$this->source->stream_key,
         ]);
 
@@ -433,9 +477,9 @@ class SrsCallbackControllerTest extends TestCase
         ]);
 
         $response = $this->postJson('/api/srs/unpublish', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '',
         ]);
 
@@ -459,9 +503,9 @@ class SrsCallbackControllerTest extends TestCase
     public function test_auth_generates_correct_signature_format()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '?secret='.$this->source->stream_key,
         ]);
 
@@ -484,7 +528,7 @@ class SrsCallbackControllerTest extends TestCase
     public function test_server_auth_generates_correct_signature_format()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
             'param' => '?shared_secret='.$this->edgeServer->shared_secret,
@@ -523,9 +567,9 @@ class SrsCallbackControllerTest extends TestCase
 
         // But authentication should still work with the plain key
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'encrypted-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '?secret=super_secret_key_456',
         ]);
 
@@ -548,9 +592,9 @@ class SrsCallbackControllerTest extends TestCase
 
         for ($i = 0; $i < 3; $i++) {
             $responses[] = $this->postJson('/api/srs/auth', [
-                'app' => 'live',
+                'app' => 'ingress',
                 'stream' => 'test-source',
-                'tcUrl' => 'rtmp://localhost/live',
+                'tcUrl' => 'rtmp://localhost/ingress',
                 'param' => '?secret='.$this->source->stream_key,
             ]);
         }
@@ -572,9 +616,9 @@ class SrsCallbackControllerTest extends TestCase
     public function test_auth_fails_with_empty_stream_name()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => '',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '?secret='.$this->source->stream_key,
         ]);
 
@@ -604,7 +648,7 @@ class SrsCallbackControllerTest extends TestCase
     public function test_server_auth_with_nonexistent_source_still_succeeds()
     {
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'non-existent-stream',
             'tcUrl' => 'rtmp://origin.server/live',
             'param' => '?shared_secret='.$this->edgeServer->shared_secret,
@@ -630,9 +674,9 @@ class SrsCallbackControllerTest extends TestCase
 
         // Authenticate to go online
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '?secret='.$this->source->stream_key,
         ]);
         $response->assertStatus(200);
@@ -646,9 +690,9 @@ class SrsCallbackControllerTest extends TestCase
 
         // Unpublish while show is live -> goes to ERROR
         $response = $this->postJson('/api/srs/unpublish', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '',
         ]);
         $response->assertStatus(200);
@@ -658,9 +702,9 @@ class SrsCallbackControllerTest extends TestCase
 
         // Reconnect (auth again) to recover from error
         $response = $this->postJson('/api/srs/auth', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '?secret='.$this->source->stream_key,
         ]);
         $response->assertStatus(200);
@@ -674,9 +718,9 @@ class SrsCallbackControllerTest extends TestCase
 
         // Unpublish with no live show -> goes to OFFLINE
         $response = $this->postJson('/api/srs/unpublish', [
-            'app' => 'live',
+            'app' => 'ingress',
             'stream' => 'test-source',
-            'tcUrl' => 'rtmp://localhost/live',
+            'tcUrl' => 'rtmp://localhost/ingress',
             'param' => '',
         ]);
         $response->assertStatus(200);

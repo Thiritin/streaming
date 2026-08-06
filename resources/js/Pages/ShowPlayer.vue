@@ -35,6 +35,15 @@ const props = defineProps({
         required: false,
         default: () => []
     },
+    /**
+     * Where to send a viewer whose show is not watchable: the primary channel if live,
+     * otherwise the busiest live show, otherwise what is on next.
+     */
+    promoted: {
+        type: Object,
+        required: false,
+        default: null
+    },
     initialHlsUrl: {
         type: String,
         required: false,
@@ -570,12 +579,13 @@ onUnmounted(() => {
                     </div>
                     <!-- Show Status Pages -->
                     <div v-else-if="activeShow?.status === 'scheduled'">
-                        <ShowScheduledStatusPage :show="activeShow" />
+                        <ShowScheduledStatusPage :show="activeShow" :promoted="promoted" />
                     </div>
                     <div v-else-if="activeShow?.status === 'ended'">
                         <ShowEndedStatusPage 
                             :show="activeShow" 
                             :other-live-shows="otherLiveShows"
+                            :promoted="promoted"
                             main-stream-url="/" />
                     </div>
                     <div v-else-if="activeShow?.status === 'cancelled'">
@@ -583,6 +593,7 @@ onUnmounted(() => {
                             :show="activeShow" 
                             :other-live-shows="otherLiveShows"
                             :upcoming-shows="upcomingShows"
+                            :promoted="promoted"
                             main-stream-url="/schedule" />
                     </div>
                     <!-- Stream Status Pages -->

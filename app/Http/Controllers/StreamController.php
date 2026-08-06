@@ -246,7 +246,7 @@ class StreamController extends Controller
             ->where('is_published', true)
             ->count();
 
-        $primarySource = Source::ordered()->first();
+        $primarySource = Source::featured();
         $featured = $this->resolveFeaturedShow($user, $primarySource);
 
         // Channel chips: only sources that actually have something in the grid.
@@ -269,6 +269,74 @@ class StreamController extends Controller
             'channels' => $channels,
             'currentTime' => now()->toIso8601String(),
         ]);
+    }
+
+    /**
+     * What to point a viewer at when the show they opened is not watchable.
+     *
+     * An ended or scheduled show keeps its own page rather than redirecting, so the page
+     * has to offer somewhere to go. The order matches how an event is actually watched:
+     *
+     *  1. The primary channel if it is live. It runs for the whole event, so it is almost
+     *     always the right answer and is worth promoting over anything else.
+     *  2. Otherwise the busiest live show, since something on air beats something later.
+     *  3. Otherwise the next scheduled show, so the page still says what is coming.
+     *
+     * The show being viewed is excluded throughout: promoting a viewer back to the page
+     * they are already on is worse than showing nothing.
+     */
+    private function resolvePromotedShow(?User $user, Show $current): ?array
+    {
+        $exclude = fn ($query) => $query->where('id', '!=', $current->id);
+
+        $primarySource = Source::featured();
+
+        $show = null;
+
+        if ($primarySource) {
+            $show = Show::with('source')
+                ->accessibleBy($user)
+                ->where($exclude)
+                ->where('source_id', $primarySource->id)
+                ->where('status', 'live')
+                ->orderByDesc('viewer_count')
+                ->first();
+        }
+
+        $show ??= Show::with('source')
+            ->accessibleBy($user)
+            ->where($exclude)
+            ->where('status', 'live')
+            ->orderByDesc('viewer_count')
+            ->first();
+
+        $show ??= Show::with('source')
+            ->accessibleBy($user)
+            ->where($exclude)
+            ->scheduled()
+            ->where('scheduled_start', '>=', now())
+            ->orderBy('scheduled_start')
+            ->first();
+
+        if (! $show) {
+            return null;
+        }
+
+        return [
+            'id' => $show->id,
+            'title' => $show->title,
+            'slug' => $show->slug,
+            'source' => $show->source?->name,
+            'status' => $show->status,
+            'scheduled_start' => $show->scheduled_start,
+            'thumbnail_url' => $show->thumbnail_url,
+            'viewer_count' => $show->viewer_count,
+            'can_watch' => $show->canWatch(),
+            // Drives the copy: "watch the main stage now" reads differently from
+            // "up next on stage b".
+            'is_primary_channel' => $primarySource && $show->source_id === $primarySource->id,
+            'is_live' => $show->status === 'live',
+        ];
     }
 
     /**
@@ -555,6 +623,9 @@ class StreamController extends Controller
                 'actual_end' => $show->actual_end,
             ],
             'availableShows' => $availableShows,
+            // Somewhere to go when this show is not watchable. See resolvePromotedShow().
+            // Live shows skip this entirely: the player is working, so don't run promotion queries.
+            'promoted' => $show->status === 'live' ? null : $this->resolvePromotedShow($user, $show),
             'initialHlsUrl' => $hlsUrl,
             'playback' => $this->playbackProps($user, $show),
             'initialStatus' => $show->isLive() ? 'online' : \Cache::get('stream.status', static fn () => StreamStatusEnum::OFFLINE->value),

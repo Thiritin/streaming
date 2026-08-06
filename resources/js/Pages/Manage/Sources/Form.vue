@@ -31,12 +31,14 @@ const form = useForm(
         name: props.source.name,
         priority: props.source.priority,
         description: props.source.description ?? '',
+        is_featured: props.source.is_featured,
       }
     : {
         name: '',
         slug: '',
         priority: 0,
         description: '',
+        is_featured: false,
         ...props.defaults,
       },
 );
@@ -135,6 +137,13 @@ const submit = () => {
             required
             :error="form.errors.priority"
             helper="Higher sorts first on the public grid"
+          />
+          <FormField
+            v-model="form.is_featured"
+            label="Featured channel"
+            type="checkbox"
+            :error="form.errors.is_featured"
+            helper="Owns the hero on the landing page, and is where an ended show sends viewers. Only one source can be featured; turning this on turns it off elsewhere."
           />
           <FormField
             v-model="form.description"
