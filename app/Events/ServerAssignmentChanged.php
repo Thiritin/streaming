@@ -22,26 +22,23 @@ class ServerAssignmentChanged implements ShouldBroadcast
         ];
     }
 
+    /**
+     * Announces only whether an edge has been assigned yet.
+     *
+     * It used to carry an `hlsUrls` map built by `User::getUserStreamUrls()`. Those
+     * URLs could never have worked: the stream name was hardcoded to `livestream`
+     * rather than a source slug, and four of the seven qualities listed (`ld`,
+     * `audio_hd`, `audio_sd`, and a bare `original`) have not existed since SRS
+     * stopped transcoding. Nothing subscribed to them either. Playback URLs come
+     * from the `hls.*` routes, which resolve the viewer's edge per request.
+     */
     public function broadcastWith()
     {
-        // Only get stream URLs if user has server assignment
-        if ($this->user->server_id && $this->user->streamkey) {
-            $data = $this->user->getUserStreamUrls();
+        $assigned = (bool) ($this->user->server_id && $this->user->streamkey);
 
-            return [
-                'hlsUrls' => $data['hls_urls'] ?? null,
-                'clientId' => $data['client_id'] ?? null,
-                'provisioning' => false,
-                'hasAssignment' => true,
-            ];
-        }
-
-        // User is waiting for provisioning
         return [
-            'hlsUrls' => null,
-            'clientId' => null,
-            'provisioning' => $this->provisioning,
-            'hasAssignment' => false,
+            'provisioning' => $assigned ? false : $this->provisioning,
+            'hasAssignment' => $assigned,
         ];
     }
 

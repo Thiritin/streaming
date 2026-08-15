@@ -18,24 +18,29 @@ edge and the same playback token, with no special casing.
 
 | Piece | File | Role |
 |---|---|---|
-| Transcoder | `docker/ffmpeg-hls/stream-manager.sh` | ABR ladder, 2s segments, 60-segment sliding window |
-| SRS DVR | `docker/origin-srs/origin.conf` | writes segmented MP4 to `/dvr/recordings` |
-| Uploader | `docker/dvr-uploader/uploader.py` | watchdog on `.mp4`/`.flv`, upload, delete |
-| Trim | `dvr-extract.sh`, `app/Services/DvrExtractorService.php` | concat demuxer + `-ss`/`-t` copy |
-| Convert | `dvr-process.sh` | second ABR encode from the trimmed MP4 |
-| Model | `app/Models/Recording.php` | `m3u8_url`, `duration`, `thumbnail_path`, `show_id`, `slug` |
+| Transcoder | `docker/ffmpeg-hls/stream-manager.sh` | ABR ladder plus the source mirror, 2s segments, 60 minute sliding window |
+| Archive uploader | `docker/dvr-uploader/archive_uploader.py` | index, upload, verify, reap |
+| Cut | `app/Services/ArchivePlaylistService.php` | PDT range over the hour indexes, rendered per request |
+| SRS DVR | `docker/origin-srs/origin.conf` | writes segmented MP4 to `/dvr/recordings`; cold backup only |
+| MP4 uploader | `docker/dvr-uploader/uploader.py` | watchdog on `.mp4`/`.flv`, upload, delete; serves the cold backup |
+| Model | `app/Models/Recording.php` | cut markers, `archive_prefix`, `status`, `segment_count` |
 | Disks | `config/filesystems.php` | `s3` (app assets, thumbnails) and `dvr` (recordings bucket) |
 
-### Why the current cuts are rough
+### Why the old MP4 cuts were rough
+
+Kept here because it is the argument for never going back to them. The pipeline
+itself is gone: `dvr-extract.sh`, `dvr-process.sh`, `dvr-convert.sh`,
+`DvrExtractorService` and the `dvr:extract` command were deleted once cuts came from
+the segment archive.
 
 - SRS writes each `dvr_duration` chunk with its own timestamp base. `concat` with
-  `-c copy` splices those bases, so every chunk boundary is a timestamp discontinuity.
+  `-c copy` splices those bases, so every chunk boundary was a timestamp discontinuity.
 - `-ss` after `-i` with `-c copy` keeps original timestamps and starts at the nearest
-  preceding keyframe, which gives a frozen head and A/V skew.
-- `dvr_wait_keyframe` aligns video only. AAC priming at each splice accumulates drift.
-- The copy -> re-encode -> `filter_complex concat` fallback chain in
-  `DvrExtractorService` means recordings are not all processed the same way.
-- Everything is encoded twice: the live ladder, then a second ladder in `dvr-process.sh`.
+  preceding keyframe, which gave a frozen head and A/V skew.
+- `dvr_wait_keyframe` aligns video only. AAC priming at each splice accumulated drift.
+- The copy -> re-encode -> `filter_complex concat` fallback chain meant recordings
+  were not all processed the same way.
+- Everything was encoded twice: the live ladder, then a second ladder for the cut.
 
 ## Target design
 
@@ -126,6 +131,55 @@ log prefixer and left FFmpeg encoding indefinitely; only the `pgrep -f` fallback
 that ended for good leaked its encoder. Replaced with process substitution
 (`> >(sed ...) 2>&1 &`), which makes `$!` FFmpeg's own PID and lets the sed exit when the
 pipe closes.
+
+### 1b. Origin: the source rendition
+
+The ladder tops out at 6 Mbps. A contribution feed is routinely two to three times
+that, so everything above the fhd rung was being thrown away at ingest and could never
+be recovered for an archive cut. The transcoder now mirrors the publisher's own
+bitstream alongside the ladder:
+
+```
+-map 0:v -map 0:a -c copy -f hls ... "$SOURCE_OUTPUT_DIR/${stream}_source.m3u8"
+```
+
+Same FFmpeg process, second output. One process rather than a second RTMP pull, so SRS
+sees one player and the two outputs cannot disagree about where the session started.
+Remux only, so the cost is disk and upload bandwidth, not CPU.
+
+**It is never served live.** Both nginx configs serve `root /var/www/hls` under
+`location ~ ^/live/`, and the edge proxies any `/live/*.ts` behind a token that is
+scoped to the source slug, not the rendition — so anything written next to the ladder
+is fetchable by a viewer who guesses a filename. `SOURCE_OUTPUT_DIR` is therefore
+`/var/www/hls/source`, a *sibling* of the ladder's directory: neither location block
+matches it and the default `location /` returns 404. "Archived, never served" holds by
+construction rather than by a deny rule someone has to remember to keep.
+
+**It gets its own hour index.** `-c copy` can only split on a keyframe the publisher
+already sent, so segment boundaries follow their GOP rather than the ladder's forced 2s
+marks. The one-entry-describes-all-renditions trick that `index.m3u8` relies on is
+exactly what does not hold here, so the source rendition is indexed separately in
+`index-source.m3u8`, in its own `{source}#source` ordering namespace, with concrete
+filenames instead of `%v`. Segments still land in the same hour prefix; the filename
+already carries `_source_`, so nothing collides.
+
+Each source entry also carries `#EXT-X-ARCHIVE-BYTES`. The ladder's bitrates are
+constants the transcoder was told to hit; the publisher's is whatever the encoder on
+the con floor was set to, and the master playlist has to advertise a `BANDWIDTH` for
+it. Measuring it from the archive is the only honest option.
+
+**Advertising it is opt-in** (`ARCHIVE_SOURCE_IN_MASTER`, default off). Putting a
+17 Mbps rung in a recording's master means every viewer on a fast connection pulls the
+full contribution bitrate out of S3, which is a bandwidth bill rather than a feature.
+It is always playable explicitly at `/archive/{slug}/source.m3u8`, which is the path
+for pulling a master to edit from, and the trim editor can preview it via
+`?rendition=source`.
+
+**Capacity changes.** Per source, at a 17 Mbps feed: the 60 minute window grows by
+~7.6 GB on origin disk, the archive by ~7.6 GB/hour, and `MAX_UPLOAD_RATE_MBPS` must
+clear `sources x (11.5 + contribution)` rather than `sources x 11.5`. 200 Mbps carried
+8 sources at 2x headroom before; at 28.5 Mbps per source it carries 7 at none. Raise
+it, or set `ARCHIVE_SOURCE: 0` on sources where the ladder is enough.
 
 ### 2. Indexing (part of the uploader, not a separate process)
 
@@ -335,8 +389,16 @@ as live. Discontinuity flags from the index become `#EXT-X-DISCONTINUITY`.
 playlists, so duration comes for free. Thumbnails keep working: `captureFrameAtTime`
 against the generated VOD playlist.
 
-`DvrExtractorService`, `dvr-extract.sh`, `dvr-process.sh`, `ExtractDvrSegments` and the
-SRS `dvr` config all retire once this is proven.
+One thing that is *not* free, and was broken for a while: a cut's `m3u8_url` is an app
+route, because playlists are rendered per request. That route needs a session and a
+queue worker has none, so ffmpeg fetching it got 404 on an unpublished draft — which is
+every cut at the moment the observer first dispatches the job. `RecordingService` now
+renders the playlist to a temp file and points ffmpeg at that; the segment URLs inside
+are absolute and signed, so it still fetches the media itself.
+
+`DvrExtractorService`, `dvr-extract.sh`, `dvr-process.sh`, `dvr-convert.sh` and
+`ExtractDvrSegments` are **deleted**. The SRS `dvr` block stays until after the next
+event; see Sequencing.
 
 ### 6. Manage UI: preview and trim
 
@@ -516,11 +578,27 @@ rest is headroom for upload lag and for an S3 outage that stalls the reaper.
 6. Manage UI: index, then the trim editor.
 7. **Done.** Player: `live:dvr` wired through `StreamPlayer.vue`, stream-type-aware
    `backBufferLength`.
-8. Retire `DvrExtractorService`, `dvr-extract.sh`, `dvr-process.sh`, `ExtractDvrSegments`,
-   and the SRS `dvr` block.
+8. **Half done.** `DvrExtractorService`, `dvr-extract.sh`, `dvr-process.sh`,
+   `dvr-convert.sh` and `ExtractDvrSegments` are deleted: nothing referenced them but
+   each other, and cuts have come from the segment archive since step 4.
 
-Keep the SRS MP4 DVR running as a cold backup through the next event. It costs disk and
-nothing else, and it is the fallback if the segment archive misses something.
+   The SRS `dvr` block and `uploader.py` stay. Keep the MP4 DVR running as a cold
+   backup through the next event; it is the fallback if the segment archive misses
+   something. Note that it is no longer free now that `ARCHIVE_SOURCE` is on: origin
+   disk carries the ladder window, the source window and the MP4 chunks at once.
+   Retiring it is the first thing to do after the event.
+
+Deleted alongside those, as stale rather than as part of this plan: repo-root
+`origin.conf`, `custom.conf` and `nginx-hls-proxy.conf`,
+`docker/origin-srs/origin.old.conf`, `config/nginx-hls-auth.conf`, the two placeholder
+blades under `server-provisioning/common/`, `RecordingService::getFirstSegmentUrl()`,
+the unread `stream.qualities` config, and `User::getUserStreamUrls()` with the
+`hlsUrls` payload on `ServerAssignmentChanged`.
+
+Still standing, and worth a decision: `Api\ServerFileController` (`/api/file/{file}`)
+is a second, older provisioning path that is still routed. The `origin-conf` view it
+serves configures SRS-side transcoding and RTMP fan-out, which contradicts the
+passthrough + FFmpeg-ladder design this document describes.
 
 ### PDT drift: measured, then designed around
 
