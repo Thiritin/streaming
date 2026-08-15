@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Laravel-based streaming system for conventions that manages live video streaming infrastructure. It includes server provisioning, client management, real-time chat, and auto-scaling capabilities.
+This is a Laravel-based streaming system for conventions that manages live video streaming infrastructure. It includes server provisioning, viewer session tracking, real-time chat, and a segment archive that recordings are cut from.
 
 Nothing convention-specific is hardcoded. Names, copy, links, logo, login background and accent colour resolve through `App\Services\BrandingService`, backed by the `branding_settings` table with neutral fallbacks in `config/branding.php`. Never reintroduce a convention name, domain, or logo as a literal or a config default.
 
@@ -32,7 +32,7 @@ Branding has exactly one source: the `branding_settings` table, edited at `/mana
 2. **Models & Relationships**
    - `User`: Attendees with authentication via OpenID
    - `Server`: Streaming servers (origin/edge types)
-   - `Client`: Active streaming connections
+   - `SourceUser`: Viewer sessions, one row per viewer per source
    - `Message`: Chat messages with moderation features
 
 3. **Real-time Features**
@@ -40,9 +40,15 @@ Branding has exactly one source: the `branding_settings` table, edited at `/mana
    - Stream status updates (offline, provisioning, live)
    - Rate limiting and slow mode for chat
 
-4. **Auto-scaling**
-   - `AutoscalerService` monitors capacity and provisions/deprovisions servers
-   - Jobs handle async server lifecycle (creation, DNS, deletion)
+4. **Capacity and scaling**
+   - **There is no autoscaler.** Servers are provisioned by hand from `/manage` >
+     Servers. Jobs under `app/Jobs/Server/` handle the async lifecycle once a
+     provision is requested (VM creation, DNS, readiness, deletion).
+   - Viewer-to-edge assignment is least-loaded-first and sticky, not a load
+     balancer: `User::assignServerToUser()` for signed-in viewers, the
+     `source_users` row for guests. `UpdateServerViewerCountsJob` refreshes
+     `servers.viewer_count` every 30s from active sessions.
+   - Edges are bandwidth-bound, not CPU-bound. `max_clients` is the capacity gate.
 
 ## Development Commands
 
@@ -134,11 +140,16 @@ Root `Dockerfile` builds the main Laravel app image (built via `.github/workflow
 ## Job Queue Architecture
 
 Critical background jobs for server management:
-- `CreateServerJob`: Provisions new Hetzner server
-- `DeleteServerJob`: Deprovisions server
-- `ScalingJob`: Auto-scaling decisions
-- `ServerAssignmentJob`: Assigns users to servers
+- `Server\CreateServerJob` / `Server\DeleteServerJob`: Hetzner provision and teardown
+- `Server\Provision\*` / `Server\Deprovision\*`: the async lifecycle steps (VM, DNS, readiness)
+- `Server\ServerHealthCheckJob`: GETs `/health` on each active edge, every minute
+- `ServerAssignmentJob`: backfills viewers with no edge assignment, every 15s
+- `UpdateServerViewerCountsJob`: recomputes `servers.viewer_count`, every 30s
+- `CleanupStaleViewerSessionsJob`: closes sessions idle 3+ minutes, every minute
 - Chat command jobs for moderation
+
+The schedule lives in `app/Console/Kernel.php`. There is no scaling job; see
+Capacity and scaling above.
 
 ## Admin Interface
 
