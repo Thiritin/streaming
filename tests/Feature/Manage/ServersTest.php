@@ -12,6 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Inertia\SessionKey;
 use Inertia\Testing\AssertableInertia as Assert;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CreatesManageUsers;
 use Tests\TestCase;
 
@@ -427,9 +428,7 @@ class ServersTest extends TestCase
         $this->assertSame(1000, Server::sole()->max_clients);
     }
 
-    /**
-     * @dataProvider blockingOriginStatuses
-     */
+    #[DataProvider('blockingOriginStatuses')]
     public function test_a_second_origin_server_is_refused(ServerStatusEnum $status): void
     {
         Bus::fake();

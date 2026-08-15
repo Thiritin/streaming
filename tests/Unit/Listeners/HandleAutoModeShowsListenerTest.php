@@ -8,6 +8,7 @@ use App\Listeners\HandleAutoModeShowsListener;
 use App\Models\Show;
 use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class HandleAutoModeShowsListenerTest extends TestCase
@@ -28,7 +29,7 @@ class HandleAutoModeShowsListenerTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_starts_scheduled_show_when_source_goes_online_after_scheduled_start()
     {
         // Arrange: Create an auto mode show that should have started 5 minutes ago
@@ -53,7 +54,7 @@ class HandleAutoModeShowsListenerTest extends TestCase
         $this->assertNotNull($show->actual_start);
     }
 
-    /** @test */
+    #[Test]
     public function it_does_not_start_show_when_source_goes_online_before_scheduled_start()
     {
         // Arrange: Create an auto mode show scheduled for the future
@@ -78,7 +79,7 @@ class HandleAutoModeShowsListenerTest extends TestCase
         $this->assertNull($show->actual_start);
     }
 
-    /** @test */
+    #[Test]
     public function it_ends_live_show_when_source_goes_offline_after_scheduled_end()
     {
         // Arrange: Create an auto mode show that is live and past its scheduled end
@@ -107,7 +108,7 @@ class HandleAutoModeShowsListenerTest extends TestCase
         $this->assertNotNull($show->actual_end);
     }
 
-    /** @test */
+    #[Test]
     public function it_keeps_show_live_when_source_goes_offline_during_scheduled_time()
     {
         // Arrange: Create an auto mode show that is live and within scheduled time
@@ -136,7 +137,7 @@ class HandleAutoModeShowsListenerTest extends TestCase
         $this->assertNull($show->actual_end);
     }
 
-    /** @test */
+    #[Test]
     public function it_does_nothing_when_source_goes_to_error_during_scheduled_time()
     {
         // Arrange: Create an auto mode show that is live and within scheduled time
@@ -165,7 +166,7 @@ class HandleAutoModeShowsListenerTest extends TestCase
         $this->assertNull($show->actual_end);
     }
 
-    /** @test */
+    #[Test]
     public function it_ends_show_when_source_goes_to_error_after_scheduled_end()
     {
         // Arrange: Create an auto mode show that is live and past its scheduled end
@@ -194,7 +195,7 @@ class HandleAutoModeShowsListenerTest extends TestCase
         $this->assertNotNull($show->actual_end);
     }
 
-    /** @test */
+    #[Test]
     public function it_ignores_manual_mode_shows()
     {
         // Arrange: Create a manual mode show (auto_mode = false)
@@ -219,7 +220,7 @@ class HandleAutoModeShowsListenerTest extends TestCase
         $this->assertNull($show->actual_start);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_multiple_auto_mode_shows_for_same_source()
     {
         // Arrange: Create multiple auto mode shows for the same source

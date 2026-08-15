@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Models\Server;
+use App\Services\PlaybackTokenService;
 use App\Services\ServerProvisioningService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
@@ -119,7 +120,7 @@ class EdgeTokenEnforcementTest extends TestCase
         $verifier = file_get_contents(base_path('docker/edge-nginx/hls-auth.js'));
 
         $this->assertStringContainsString(
-            "const TOKEN_VERSION = '".\App\Services\PlaybackTokenService::VERSION."';",
+            "const TOKEN_VERSION = '".PlaybackTokenService::VERSION."';",
             $verifier,
             'The edge verifier and PlaybackTokenService must agree on the token version.'
         );
@@ -147,14 +148,21 @@ class EdgeTokenEnforcementTest extends TestCase
     }
 
     /**
-     * CheckSharedSecretMiddleware throws AuthenticationException, which renders
-     * as a redirect to the login page unless the client asks for JSON. curl -L
-     * would follow that and save the HTML login page as hls-auth.js, so the
-     * install script sends Accept: application/json to get a clean 401 instead.
+     * A bad secret must fail, not hand back something that looks like a file.
+     *
+     * `CheckSharedSecretMiddleware` throws `AuthenticationException`. Under Laravel 12
+     * that rendered as a 302 to the login page even on an API route, so `curl -L` in the
+     * install script would follow the redirect and write the HTML login page to disk as
+     * `hls-auth.js` - a broken edge with no error anywhere. The install script works
+     * around it by sending `Accept: application/json` to force a clean 401.
+     *
+     * Laravel 13 answers 401 directly here, so the hazard is gone at the source and the
+     * header is now belt-and-braces rather than load-bearing. Both halves are asserted:
+     * the status, and the header that would still save us if this ever regressed.
      */
-    public function test_a_non_json_request_redirects_rather_than_failing_cleanly(): void
+    public function test_an_unauthenticated_request_fails_rather_than_redirecting(): void
     {
-        $this->get('/api/server/config/hls-auth-js')->assertStatus(302);
+        $this->get('/api/server/config/hls-auth-js')->assertStatus(401);
 
         $this->assertStringContainsString(
             'Accept: application/json',

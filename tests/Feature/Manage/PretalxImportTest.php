@@ -9,6 +9,7 @@ use App\Models\Source;
 use App\Support\Manage\Settings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Inertia\SessionKey;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\CreatesManageUsers;
 use Tests\TestCase;
@@ -72,7 +73,7 @@ class PretalxImportTest extends TestCase
      */
     private function toast(): array
     {
-        return session(\Inertia\SessionKey::FlashData->value)['toast'] ?? [];
+        return session(SessionKey::FlashData->value)['toast'] ?? [];
     }
 
     /**

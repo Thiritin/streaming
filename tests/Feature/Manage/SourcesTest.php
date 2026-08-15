@@ -3,6 +3,8 @@
 namespace Tests\Feature\Manage;
 
 use App\Enum\SourceStatusEnum;
+use App\Events\SourceStatusChangedEvent;
+use App\Models\Server;
 use App\Models\Show;
 use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -288,7 +290,7 @@ class SourcesTest extends TestCase
     {
         // Named: a blanket fake would also fake Eloquent's model events and stop
         // SourceObserver from running, so the broadcast under test would never happen.
-        Event::fake([\App\Events\SourceStatusChangedEvent::class]);
+        Event::fake([SourceStatusChangedEvent::class]);
 
         $source = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE, 'name' => 'Main Stage']);
 
@@ -317,7 +319,7 @@ class SourcesTest extends TestCase
     {
         // Named: a blanket fake would also fake Eloquent's model events and stop
         // SourceObserver from running, so the broadcast under test would never happen.
-        Event::fake([\App\Events\SourceStatusChangedEvent::class]);
+        Event::fake([SourceStatusChangedEvent::class]);
 
         $first = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE]);
         $second = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE]);
@@ -480,7 +482,7 @@ class SourcesTest extends TestCase
             ->assertSuccessful()
             ->assertInertia(fn (Assert $page) => $page->where('source.rtmp_url', null));
 
-        \App\Models\Server::factory()->origin()->create(['hostname' => 'origin.test']);
+        Server::factory()->origin()->create(['hostname' => 'origin.test']);
 
         $this->actingAs($this->admin)
             ->get(route('manage.sources.edit', $source))

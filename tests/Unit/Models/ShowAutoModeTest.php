@@ -5,27 +5,28 @@ namespace Tests\Unit\Models;
 use App\Models\Show;
 use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class ShowAutoModeTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function is_auto_mode_returns_true_when_auto_mode_is_enabled()
     {
         $show = Show::factory()->create(['auto_mode' => true]);
         $this->assertTrue($show->isAutoMode());
     }
 
-    /** @test */
+    #[Test]
     public function is_auto_mode_returns_false_when_auto_mode_is_disabled()
     {
         $show = Show::factory()->create(['auto_mode' => false]);
         $this->assertFalse($show->isAutoMode());
     }
 
-    /** @test */
+    #[Test]
     public function is_within_scheduled_time_returns_true_when_current_time_is_between_start_and_end()
     {
         $show = Show::factory()->create([
@@ -36,7 +37,7 @@ class ShowAutoModeTest extends TestCase
         $this->assertTrue($show->isWithinScheduledTime());
     }
 
-    /** @test */
+    #[Test]
     public function is_within_scheduled_time_returns_false_when_current_time_is_before_start()
     {
         $show = Show::factory()->create([
@@ -47,7 +48,7 @@ class ShowAutoModeTest extends TestCase
         $this->assertFalse($show->isWithinScheduledTime());
     }
 
-    /** @test */
+    #[Test]
     public function is_within_scheduled_time_returns_false_when_current_time_is_after_end()
     {
         $show = Show::factory()->create([
@@ -58,7 +59,7 @@ class ShowAutoModeTest extends TestCase
         $this->assertFalse($show->isWithinScheduledTime());
     }
 
-    /** @test */
+    #[Test]
     public function is_within_scheduled_time_includes_boundaries()
     {
         // Use Carbon's setTestNow to freeze time for this test
@@ -83,7 +84,7 @@ class ShowAutoModeTest extends TestCase
         $this->travelBack();
     }
 
-    /** @test */
+    #[Test]
     public function is_past_scheduled_end_returns_true_when_current_time_is_after_scheduled_end()
     {
         $show = Show::factory()->create([
@@ -94,7 +95,7 @@ class ShowAutoModeTest extends TestCase
         $this->assertTrue($show->isPastScheduledEnd());
     }
 
-    /** @test */
+    #[Test]
     public function is_past_scheduled_end_returns_false_when_current_time_is_before_scheduled_end()
     {
         $show = Show::factory()->create([
@@ -105,7 +106,7 @@ class ShowAutoModeTest extends TestCase
         $this->assertFalse($show->isPastScheduledEnd());
     }
 
-    /** @test */
+    #[Test]
     public function is_past_scheduled_end_returns_false_when_current_time_equals_scheduled_end()
     {
         // Use Carbon's setTestNow to freeze time for this test
@@ -123,7 +124,7 @@ class ShowAutoModeTest extends TestCase
         $this->travelBack();
     }
 
-    /** @test */
+    #[Test]
     public function auto_mode_scope_returns_only_auto_mode_shows()
     {
         // Create mixed shows
@@ -143,7 +144,7 @@ class ShowAutoModeTest extends TestCase
         $this->assertFalse($autoModeShows->contains($manualShow2));
     }
 
-    /** @test */
+    #[Test]
     public function auto_mode_scope_can_be_chained_with_other_scopes()
     {
         $source = Source::factory()->create();
@@ -176,7 +177,7 @@ class ShowAutoModeTest extends TestCase
         $this->assertEquals('live', $autoModeLiveShows->first()->status);
     }
 
-    /** @test */
+    #[Test]
     public function go_live_method_works_with_auto_mode_shows()
     {
         $show = Show::factory()->create([
@@ -192,7 +193,7 @@ class ShowAutoModeTest extends TestCase
         $this->assertTrue($show->auto_mode); // Auto mode should remain unchanged
     }
 
-    /** @test */
+    #[Test]
     public function end_livestream_method_works_with_auto_mode_shows()
     {
         $show = Show::factory()->create([

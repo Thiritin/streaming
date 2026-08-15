@@ -6,13 +6,14 @@ use App\Enum\SourceStatusEnum;
 use App\Models\Show;
 use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class CheckAutoModeShowsTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function command_starts_scheduled_shows_when_source_is_online()
     {
         // Arrange: Create sources and shows
@@ -66,7 +67,7 @@ class CheckAutoModeShowsTest extends TestCase
         $this->assertEquals('scheduled', $manualShow->status);
     }
 
-    /** @test */
+    #[Test]
     public function command_ends_live_shows_at_scheduled_end_time_regardless_of_source_status()
     {
         // Arrange
@@ -125,7 +126,7 @@ class CheckAutoModeShowsTest extends TestCase
         $this->assertNull($showStillScheduled->actual_end);
     }
 
-    /** @test */
+    #[Test]
     public function command_keeps_shows_live_during_scheduled_time()
     {
         // Arrange
@@ -169,7 +170,7 @@ class CheckAutoModeShowsTest extends TestCase
         $this->assertNull($showWithOnlineSource->actual_end);
     }
 
-    /** @test */
+    #[Test]
     public function command_handles_no_shows_to_process()
     {
         // Arrange: Create only manual mode shows or future shows
@@ -197,7 +198,7 @@ class CheckAutoModeShowsTest extends TestCase
         $this->artisan('shows:check-auto-mode')->assertExitCode(0);
     }
 
-    /** @test */
+    #[Test]
     public function command_processes_multiple_shows_correctly()
     {
         // Arrange: Create multiple shows with different conditions
@@ -260,7 +261,7 @@ class CheckAutoModeShowsTest extends TestCase
         $this->assertNotNull($showWithOnlineSourceToEnd->actual_end);
     }
 
-    /** @test */
+    #[Test]
     public function command_does_not_start_already_live_shows()
     {
         // Arrange: Create a show that is already live
@@ -289,9 +290,8 @@ class CheckAutoModeShowsTest extends TestCase
     /**
      * The dance case: the slot ends at 01:00 but recording may run to 02:00. Nothing may
      * stop the show before its hard stop, and nothing may leave it running after.
-     *
-     * @test
      */
+    #[Test]
     public function an_explicit_hard_stop_overrides_the_scheduled_end()
     {
         $source = Source::factory()->create(['status' => SourceStatusEnum::ONLINE]);
@@ -325,7 +325,7 @@ class CheckAutoModeShowsTest extends TestCase
         $this->assertNotNull($overdue->fresh()->actual_end);
     }
 
-    /** @test */
+    #[Test]
     public function a_manual_show_is_never_stopped_by_a_hard_stop()
     {
         $source = Source::factory()->create(['status' => SourceStatusEnum::ONLINE]);
@@ -345,7 +345,7 @@ class CheckAutoModeShowsTest extends TestCase
         $this->assertEquals('live', $show->fresh()->status);
     }
 
-    /** @test */
+    #[Test]
     public function auto_mode_never_cancels_a_show_whose_source_never_arrives()
     {
         $source = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE]);
