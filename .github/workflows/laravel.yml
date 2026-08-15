@@ -38,4 +38,7 @@ jobs:
           DB_DATABASE: identity
           DB_USERNAME: root
           DB_PASSWORD: ""
-        run: vendor/bin/pest
+        # Not `vendor/bin/pest`: Pest is not a dependency of this project and never has
+        # been, so this step had exited 127 on every run since the workflow was added.
+        # The suite is PHPUnit, as the step name already said.
+        run: php artisan test
