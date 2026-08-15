@@ -30,6 +30,22 @@ class ArchivePlaylistService
         'fhd' => ['bandwidth' => 6_000_000, 'resolution' => '1920x1080'],
     ];
 
+    /**
+     * The publisher's own bitstream, archived but never served live.
+     *
+     * Not part of RENDITIONS because almost nothing about it is shared with the
+     * ladder. It is cut on the publisher's keyframes rather than the ladder's
+     * forced 2s marks, so it has its own hour index; its bitrate and resolution are
+     * whatever the encoder on the con floor was set to, so they are measured from
+     * the index rather than declared here; and it is deliberately absent from the
+     * master unless an operator asks for it, because handing hls.js a 17 Mbps rung
+     * means every viewer on a fast connection pulls the archive's full contribution
+     * bitrate out of S3.
+     *
+     * It is always reachable explicitly at /archive/{slug}/source.m3u8.
+     */
+    public const SOURCE_RENDITION = 'source';
+
     protected const ARCHIVE_PREFIX = 'archive';
 
     protected const RECORDINGS_PREFIX = 'recordings';
@@ -113,7 +129,60 @@ class ArchivePlaylistService
             $lines[] = route('recordings.playlist.media', [$recording->slug, $rendition]);
         }
 
+        // Opt-in, and last, so a player that ignores BANDWIDTH ordering still starts
+        // on the ladder. RESOLUTION is omitted rather than guessed: it is optional in
+        // RFC 8216, and a wrong value is worse than none because players use it to
+        // pick a rung.
+        if ($this->sourceInMaster() && ($bandwidth = $this->sourceBandwidth($recording)) !== null) {
+            $lines[] = sprintf('#EXT-X-STREAM-INF:BANDWIDTH=%d', $bandwidth);
+            $lines[] = route('recordings.playlist.media', [$recording->slug, self::SOURCE_RENDITION]);
+        }
+
         return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * Whether the original-quality rendition is advertised in the master playlist.
+     *
+     * Off by default. The archive holds it either way and it can always be played
+     * explicitly; what this controls is whether ABR is allowed to select it, which
+     * is a bandwidth bill rather than an availability question.
+     */
+    public function sourceInMaster(): bool
+    {
+        return (bool) config('stream.archive_source_in_master', false);
+    }
+
+    /**
+     * Average bitrate of the source rendition over this cut, from the byte counts
+     * the uploader records per segment.
+     *
+     * Measured rather than configured: the whole point of the rendition is that
+     * nobody here decided what the publisher would send. Null when the archive
+     * holds no source segments for the range, which is also the signal not to
+     * advertise the rung at all.
+     */
+    public function sourceBandwidth(Recording $recording): ?int
+    {
+        if (! $recording->hasCut()) {
+            return null;
+        }
+
+        $segments = $this->segmentsInRange(
+            $recording->archiveSourceSlug(),
+            CarbonImmutable::parse($recording->starts_at)->utc(),
+            CarbonImmutable::parse($recording->ends_at)->utc(),
+            self::SOURCE_RENDITION,
+        );
+
+        $duration = array_sum(array_column($segments, 'duration'));
+        $bytes = array_sum(array_column($segments, 'bytes'));
+
+        if ($duration <= 0 || $bytes <= 0) {
+            return null;
+        }
+
+        return (int) round($bytes * 8 / $duration);
     }
 
     /**
@@ -121,9 +190,7 @@ class ArchivePlaylistService
      */
     public function renderMedia(Recording $recording, string $rendition): string
     {
-        if (! array_key_exists($rendition, self::RENDITIONS)) {
-            throw new \InvalidArgumentException("Unknown rendition [{$rendition}].");
-        }
+        $this->assertRendition($rendition);
 
         $source = $recording->archiveSourceSlug();
 
@@ -131,6 +198,7 @@ class ArchivePlaylistService
             $source,
             CarbonImmutable::parse($recording->starts_at)->utc(),
             CarbonImmutable::parse($recording->ends_at)->utc(),
+            $rendition,
         );
 
         return $this->renderMediaPlaylist($segments, $source, $rendition);
@@ -138,7 +206,14 @@ class ArchivePlaylistService
 
     public function renditions(): array
     {
-        return array_keys(self::RENDITIONS);
+        return [...array_keys(self::RENDITIONS), self::SOURCE_RENDITION];
+    }
+
+    protected function assertRendition(string $rendition): void
+    {
+        if (! in_array($rendition, $this->renditions(), true)) {
+            throw new \InvalidArgumentException("Unknown rendition [{$rendition}].");
+        }
     }
 
     /**
@@ -155,11 +230,9 @@ class ArchivePlaylistService
         CarbonImmutable $to,
         string $rendition,
     ): string {
-        if (! array_key_exists($rendition, self::RENDITIONS)) {
-            throw new \InvalidArgumentException("Unknown rendition [{$rendition}].");
-        }
+        $this->assertRendition($rendition);
 
-        $segments = $this->segmentsInRange($source, $from->utc(), $to->utc());
+        $segments = $this->segmentsInRange($source, $from->utc(), $to->utc(), $rendition);
 
         return $this->renderMediaPlaylist($segments, $source, $rendition);
     }
@@ -209,12 +282,16 @@ class ArchivePlaylistService
      * overshoot its end marker by up to one segment, which is far cheaper than the frame
      * accuracy it buys back.
      */
-    public function segmentsInRange(string $source, CarbonImmutable $from, CarbonImmutable $to): array
-    {
+    public function segmentsInRange(
+        string $source,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        string $rendition = 'hd',
+    ): array {
         $segments = [];
 
         foreach ($this->hoursBetween($from, $to) as $hour) {
-            foreach ($this->readHourIndex($source, $hour) as $segment) {
+            foreach ($this->readHourIndex($source, $hour, $rendition) as $segment) {
                 if ($segment['pdt'] >= $from && $segment['pdt'] < $to) {
                     $segments[] = $segment;
                 }
@@ -235,22 +312,50 @@ class ArchivePlaylistService
      */
     public function availableRange(string $source): array
     {
-        $hours = collect(Storage::disk($this->disk)->allFiles(self::ARCHIVE_PREFIX."/{$source}"))
-            ->filter(fn ($p) => str_ends_with($p, 'index.m3u8'))
-            ->sort()
-            ->values();
+        // Deliberately walks the day/hour prefixes rather than listing the source's
+        // objects: `allFiles()` is a recursive listing, and a con-long stream puts
+        // ~650k segments under this prefix, so filtering that down to two index
+        // files costs hundreds of round trips on a page load. Delimiter listings
+        // touch four prefixes regardless of how much is archived.
+        $first = $this->edgeHour($source, last: false);
+        $last = $this->edgeHour($source, last: true);
 
-        if ($hours->isEmpty()) {
+        if ($first === null || $last === null) {
             return ['from' => null, 'to' => null];
         }
 
-        $first = $this->parseHourIndex(Storage::disk($this->disk)->get($hours->first()));
-        $last = $this->parseHourIndex(Storage::disk($this->disk)->get($hours->last()));
+        $firstIndex = $this->readHourIndex($source, $first);
+        $lastIndex = $this->readHourIndex($source, $last);
 
         return [
-            'from' => $first === [] ? null : $first[0]['pdt'],
-            'to' => $last === [] ? null : end($last)['pdt']->addSeconds((int) end($last)['duration']),
+            'from' => $firstIndex === [] ? null : $firstIndex[0]['pdt'],
+            'to' => $lastIndex === []
+                ? null
+                : end($lastIndex)['pdt']->addSeconds((int) end($lastIndex)['duration']),
         ];
+    }
+
+    /** Earliest or latest `YYYYMMDD/HH` bucket a source has, or null when it has none. */
+    protected function edgeHour(string $source, bool $last): ?string
+    {
+        $pick = function (array $paths) use ($last): ?string {
+            if ($paths === []) {
+                return null;
+            }
+            sort($paths);
+
+            return basename($last ? end($paths) : $paths[0]);
+        };
+
+        $day = $pick(Storage::disk($this->disk)->directories(self::ARCHIVE_PREFIX."/{$source}"));
+
+        if ($day === null) {
+            return null;
+        }
+
+        $hour = $pick(Storage::disk($this->disk)->directories(self::ARCHIVE_PREFIX."/{$source}/{$day}"));
+
+        return $hour === null ? null : "{$day}/{$hour}";
     }
 
     /** Hour buckets touched by a range, as YYYYMMDD/HH. */
@@ -268,9 +373,15 @@ class ArchivePlaylistService
         return $hours;
     }
 
-    protected function readHourIndex(string $source, string $hour): array
+    /**
+     * The ladder shares one index because its three renditions are cut at identical
+     * instants; the source rendition is cut on the publisher's keyframes and so has
+     * its own. Everything downstream is the same shape.
+     */
+    protected function readHourIndex(string $source, string $hour, string $rendition = 'hd'): array
     {
-        $path = self::ARCHIVE_PREFIX."/{$source}/{$hour}/index.m3u8";
+        $name = $rendition === self::SOURCE_RENDITION ? 'index-source.m3u8' : 'index.m3u8';
+        $path = self::ARCHIVE_PREFIX."/{$source}/{$hour}/{$name}";
 
         if (! Storage::disk($this->disk)->exists($path)) {
             return [];
@@ -294,6 +405,7 @@ class ArchivePlaylistService
         $pdt = null;
         $observed = null;
         $seq = null;
+        $bytes = null;
         $discontinuity = false;
 
         foreach (preg_split('/\R/', $contents) as $line) {
@@ -307,6 +419,10 @@ class ArchivePlaylistService
                 $seq = (int) substr($line, 19);
             } elseif (str_starts_with($line, '#EXT-X-ARCHIVE-OBSERVED:')) {
                 $observed = $this->parseTimestamp(substr($line, 24));
+            } elseif (str_starts_with($line, '#EXT-X-ARCHIVE-BYTES:')) {
+                // Only the source rendition carries this. The ladder's bitrates are
+                // constants the transcoder was told to hit; the publisher's is not.
+                $bytes = (int) substr($line, 21);
             } elseif (str_starts_with($line, '#EXTINF:')) {
                 $duration = (float) strtok(substr($line, 8), ',');
             } elseif (str_starts_with($line, '#EXT-X-PROGRAM-DATE-TIME:')) {
@@ -321,6 +437,7 @@ class ArchivePlaylistService
                         'pdt' => $pdt,
                         'observed' => $observed,
                         'seq' => $seq ?? count($segments),
+                        'bytes' => $bytes,
                         'discontinuity' => $discontinuity,
                     ];
                 }
@@ -328,6 +445,7 @@ class ArchivePlaylistService
                 $pdt = null;
                 $observed = null;
                 $seq = null;
+                $bytes = null;
                 $discontinuity = false;
             }
         }

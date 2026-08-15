@@ -37,6 +37,24 @@ STARTUP_GRACE_SECONDS="${STARTUP_GRACE_SECONDS:-30}"
 #            wise; everything around it still behaves the same.
 ABR_MODE="${ABR_MODE:-transcode}"
 
+# Mirror of the publisher's own bitstream, remuxed rather than re-encoded, so the
+# archive keeps whatever quality was actually sent instead of topping out at the
+# fhd rung. A 17 Mbps contribution feed stays 17 Mbps here while viewers still get
+# the 6 Mbps ladder.
+#
+# It is written OUTSIDE $OUTPUT_BASE_DIR on purpose. Both nginx configs serve
+# `root /var/www/hls` under `location ~ ^/live/`, and the edge proxies any
+# /live/*.ts, so anything dropped next to the ladder is reachable by a viewer who
+# guesses the filename. A sibling directory is not matched by either location
+# block, which is what keeps "archive it, never serve it live" true by
+# construction rather than by a deny rule someone has to remember.
+#
+# Segment boundaries here land on the *publisher's* keyframes, not on the ladder's
+# forced 2s marks, so this rendition is indexed separately by the archive uploader
+# (index-source.m3u8) rather than sharing the ladder's index entries.
+ARCHIVE_SOURCE="${ARCHIVE_SOURCE:-1}"
+SOURCE_OUTPUT_DIR="${SOURCE_OUTPUT_DIR:-$(dirname "$OUTPUT_BASE_DIR")/source}"
+
 # Associative array to track running FFmpeg processes
 declare -A FFMPEG_PIDS
 declare -A STREAM_APPS
@@ -116,6 +134,11 @@ echo "Check interval: ${CHECK_INTERVAL}s"
 echo "DVR window: ${DVR_WINDOW_SEGMENTS} segments (+${HLS_DELETE_THRESHOLD} retained)"
 echo "Orphan retention: ${ORPHAN_RETENTION_MINUTES}m"
 echo "Stall watchdog: ${SEGMENT_STALL_SECONDS}s (grace ${STARTUP_GRACE_SECONDS}s)"
+if [[ "$ARCHIVE_SOURCE" == "1" ]]; then
+    echo "Source archive: on, writing to $SOURCE_OUTPUT_DIR (never served under /live)"
+else
+    echo "Source archive: off"
+fi
 
 # Function to start FFmpeg for a stream
 start_ffmpeg() {
@@ -154,6 +177,10 @@ start_ffmpeg() {
     local output_dir="$OUTPUT_BASE_DIR"
     mkdir -p "$output_dir"
 
+    if [[ "$ARCHIVE_SOURCE" == "1" ]]; then
+        mkdir -p "$SOURCE_OUTPUT_DIR"
+    fi
+
     # No cleanup here on purpose. Segments from a previous session are the archive
     # until the S3 uploader has them, so they are left for the orphan reaper to age
     # out rather than deleted on sight. The playlists are overwritten by FFmpeg
@@ -173,11 +200,39 @@ start_ffmpeg() {
     #
     # Bump until the prefix is unused. Previous sessions' segments are still on disk
     # until the orphan reaper takes them, which is exactly what makes this check work.
+    #
+    # The source archive lives in its own directory but shares the prefix, so both
+    # trees have to be clear before the prefix can be reused.
     local timestamp_prefix=$(date +%s)
-    while compgen -G "$output_dir/${stream}_*_${timestamp_prefix}_*.ts" >/dev/null; do
+    while compgen -G "$output_dir/${stream}_*_${timestamp_prefix}_*.ts" >/dev/null \
+       || compgen -G "$SOURCE_OUTPUT_DIR/${stream}_source_${timestamp_prefix}_*.ts" >/dev/null; do
         timestamp_prefix=$((timestamp_prefix + 1))
     done
-    
+
+    # Second HLS output on the same process: the publisher's bitstream, remuxed.
+    # One process rather than a second RTMP pull, so SRS sees one player and the
+    # two outputs cannot disagree about where the stream started.
+    #
+    # -hls_time is advisory here because -c copy can only split on an existing
+    # keyframe; segments come out at the publisher's GOP length. That is exactly
+    # why this rendition gets its own index rather than sharing the ladder's.
+    local source_args=()
+    if [[ "$ARCHIVE_SOURCE" == "1" ]]; then
+        source_args=(
+            -map 0:v -map 0:a
+            -c copy
+            -f hls
+            -hls_time 2
+            -hls_list_size "$DVR_WINDOW_SEGMENTS"
+            -hls_delete_threshold "$HLS_DELETE_THRESHOLD"
+            -hls_flags independent_segments+delete_segments+program_date_time+discont_start
+            -hls_segment_type mpegts
+            -start_number 0
+            -hls_segment_filename "$SOURCE_OUTPUT_DIR/${stream}_source_${timestamp_prefix}_%06d.ts"
+            "$SOURCE_OUTPUT_DIR/${stream}_source.m3u8"
+        )
+    fi
+
     # The ladder itself: either three real encodes, or the same bitstream copied
     # into three renditions. Everything after this point is identical, so the
     # output layout does not depend on the mode.
@@ -232,6 +287,7 @@ start_ffmpeg() {
         -master_pl_name "${stream}_master.m3u8" \
         -var_stream_map "v:0,a:0,name:sd v:1,a:1,name:hd v:2,a:2,name:fhd" \
         "$output_dir/${stream}_%v.m3u8" \
+        "${source_args[@]}" \
         > >(sed "s/^/[FFmpeg $stream] /") 2>&1 &
 
     # Process substitution rather than `| sed`, because for a backgrounded pipeline
@@ -285,6 +341,10 @@ stop_ffmpeg() {
         # uploader has confirmed copies. The orphan reaper ages them out instead.
         local stream="${stream_key#*/}"
         rm -f "$OUTPUT_BASE_DIR/${stream}_"*.m3u8 "$OUTPUT_BASE_DIR/${stream}.m3u8" 2>/dev/null
+
+        # Same reasoning for the source archive playlist. Its segments stay for the
+        # reaper; only the playlist is retired.
+        rm -f "$SOURCE_OUTPUT_DIR/${stream}_source.m3u8" 2>/dev/null
 
         unset FFMPEG_PIDS[$stream_key]
         unset STREAM_APPS[$stream_key]
@@ -357,13 +417,18 @@ check_stalled() {
 reap_orphan_segments() {
     [[ "$ORPHAN_RETENTION_MINUTES" -gt 0 ]] || return 0
 
-    local orphans
-    orphans=$(find "$OUTPUT_BASE_DIR" -maxdepth 1 -name '*.ts' -mmin +"$ORPHAN_RETENTION_MINUTES" | wc -l)
+    local dir
+    for dir in "$OUTPUT_BASE_DIR" "$SOURCE_OUTPUT_DIR"; do
+        [[ -d "$dir" ]] || continue
 
-    [[ "$orphans" -gt 0 ]] || return 0
+        local orphans
+        orphans=$(find "$dir" -maxdepth 1 -name '*.ts' -mmin +"$ORPHAN_RETENTION_MINUTES" | wc -l)
 
-    find "$OUTPUT_BASE_DIR" -maxdepth 1 -name '*.ts' -mmin +"$ORPHAN_RETENTION_MINUTES" -delete
-    echo "[$(date)] Reaped $orphans orphaned segment(s) older than ${ORPHAN_RETENTION_MINUTES}m"
+        [[ "$orphans" -gt 0 ]] || continue
+
+        find "$dir" -maxdepth 1 -name '*.ts' -mmin +"$ORPHAN_RETENTION_MINUTES" -delete
+        echo "[$(date)] Reaped $orphans orphaned segment(s) in $dir older than ${ORPHAN_RETENTION_MINUTES}m"
+    done
 }
 
 # Function to check SRS API for active streams

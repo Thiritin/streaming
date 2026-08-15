@@ -36,6 +36,13 @@ services:
       # Restart FFmpeg if it stops advancing its playlists while SRS still reports
       # the stream as publishing.
       SEGMENT_STALL_SECONDS: 15
+      # Mirror the publisher's own bitstream, remuxed rather than re-encoded, so the
+      # archive keeps the contribution quality instead of topping out at the 6 Mbps
+      # fhd rung. Written to /var/www/hls/source, which is a sibling of the ladder's
+      # directory and therefore outside nginx's `location ~ ^/live/` - viewers cannot
+      # reach it even by guessing a filename. Set to 0 to turn it off.
+      ARCHIVE_SOURCE: 1
+      SOURCE_OUTPUT_DIR: /var/www/hls/source
     volumes:
       - hls-content:/var/www/hls
     restart: unless-stopped
@@ -116,6 +123,12 @@ services:
       S3_SECRET_KEY: ${DVR_AWS_SECRET_ACCESS_KEY}
       S3_ENDPOINT: ${DVR_AWS_ENDPOINT}
       HLS_PATH: /var/www/hls/live
+      # The archive-only source rendition. Same hour prefix in S3 as the ladder, but
+      # its own hour index (index-source.m3u8): it is cut on the publisher's
+      # keyframes rather than the ladder's forced 2s marks, so one index entry
+      # cannot describe both.
+      ARCHIVE_SOURCE: 1
+      SOURCE_HLS_PATH: /var/www/hls/source
       # Must match DVR_WINDOW_SEGMENTS on origin-ffmpeg-hls (1800 x 2s). The reaper
       # never deletes inside the window a viewer can still seek back into.
       DVR_WINDOW_SECONDS: '3600'
@@ -123,10 +136,13 @@ services:
       # egress on the same uplink. 20% of a 1 Gbps link.
       #
       # This must stay ABOVE total ingest or uploads fall permanently behind and
-      # the origin disk fills: the floor is sources x 11.5 Mbps (the ladder total),
-      # so 200 Mbps carries 8 sources at 2x headroom. Raise it alongside the source
-      # count, never lower it to "save bandwidth" - the uploader logs an error if
-      # the backlog grows, but by then it is already losing. 0 disables the cap.
+      # the origin disk fills. The floor is sources x (11.5 Mbps ladder + whatever
+      # the publisher actually sends, since ARCHIVE_SOURCE mirrors it verbatim), so
+      # a 17 Mbps contribution feed makes it ~28.5 Mbps per source and 200 Mbps
+      # carries 7 sources at no headroom at all. Raise it alongside the source count
+      # and the contribution bitrate, never lower it to "save bandwidth" - the
+      # uploader logs an error if the backlog grows, but by then it is already
+      # losing. 0 disables the cap.
       MAX_UPLOAD_RATE_MBPS: '200'
     volumes:
       - hls-content:/var/www/hls
