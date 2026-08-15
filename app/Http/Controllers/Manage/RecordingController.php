@@ -284,10 +284,22 @@ class RecordingController extends Controller
 
         abort_unless(in_array($rendition, $service->renditions(), true), 404);
 
-        $from = CarbonImmutable::parse($request->string('from')->toString());
-        $to = CarbonImmutable::parse($request->string('to')->toString());
+        $validated = $request->validate([
+            'from' => ['required', 'date'],
+            'to' => ['required', 'date'],
+        ]);
 
-        if ($to->diffInHours($from) > 4) {
+        $from = CarbonImmutable::parse($validated['from']);
+        $to = CarbonImmutable::parse($validated['to']);
+
+        // Carbon 3's diffInHours is signed, so `$to->diffInHours($from)` on a
+        // forward range is negative and the guard never fired: a single request
+        // could ask for the whole con as one playlist. Compare in the direction the
+        // range actually runs, and reject a reversed one outright rather than
+        // silently rendering nothing.
+        abort_if($to <= $from, 422, 'The preview range ends before it starts.');
+
+        if ($from->diffInHours($to) > 4) {
             $to = $from->addHours(4);
         }
 
