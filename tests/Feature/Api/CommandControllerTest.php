@@ -248,5 +248,4 @@ class CommandControllerTest extends TestCase
         // Missing arguments are caught by the command's own validation rules.
         $response->assertStatus(422);
     }
-
 }

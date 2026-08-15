@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class RecordingService
 {
@@ -31,26 +32,74 @@ class RecordingService
             return;
         }
 
-        // Extract duration if not set or if explicitly reprocessing
-        if (! $recording->duration || $recording->force_reprocess) {
-            $duration = $this->extractDuration($recording->m3u8_url);
-            if ($duration) {
-                // Always set the duration to the extracted value (don't accumulate)
-                $recording->duration = $duration;
-                $recording->save();
-                Log::info("Set duration for recording {$recording->id}: {$duration} seconds");
+        $playlist = $this->stagePlaylist($recording);
+
+        try {
+            $target = $playlist ?? $recording->m3u8_url;
+
+            // Extract duration if not set or if explicitly reprocessing
+            if (! $recording->duration || $recording->force_reprocess) {
+                $duration = $this->extractDuration($target);
+                if ($duration) {
+                    // Always set the duration to the extracted value (don't accumulate)
+                    $recording->duration = $duration;
+                    $recording->save();
+                    Log::info("Set duration for recording {$recording->id}: {$duration} seconds");
+                }
+            } else {
+                Log::info("Recording {$recording->id} already has duration: {$recording->duration} seconds, skipping extraction");
             }
-        } else {
-            Log::info("Recording {$recording->id} already has duration: {$recording->duration} seconds, skipping extraction");
+
+            // Generate thumbnail if not set
+            if (! $recording->thumbnail_path) {
+                $thumbnailPath = $this->generateThumbnail($recording, $target);
+                if ($thumbnailPath) {
+                    Log::info("Generated thumbnail for recording {$recording->id}: {$thumbnailPath}");
+                }
+            }
+        } finally {
+            if ($playlist) {
+                @unlink($playlist);
+            }
+        }
+    }
+
+    /**
+     * A local playlist file for a cut, or null for a recording registered from outside.
+     *
+     * A cut's `m3u8_url` is an app route, not an object: playlists are rendered per
+     * request because the segment URLs inside them are presigned and expire. That
+     * route requires a session, and a queue worker has none, so ffmpeg fetching it
+     * got 404 on an unpublished draft and 403 on a role-restricted one - which is
+     * every cut at the point the observer first dispatches this job. Rendering the
+     * playlist here and handing ffmpeg a file skips the round trip entirely; the
+     * segment URLs inside are absolute and signed, so it still fetches the media.
+     *
+     * The caller owns the file and must unlink it.
+     */
+    protected function stagePlaylist(Recording $recording): ?string
+    {
+        if (! $recording->hasCut() || ! $recording->archiveSourceSlug()) {
+            return null;
         }
 
-        // Generate thumbnail if not set
-        if (! $recording->thumbnail_path) {
-            $thumbnailPath = $this->generateThumbnail($recording);
-            if ($thumbnailPath) {
-                Log::info("Generated thumbnail for recording {$recording->id}: {$thumbnailPath}");
-            }
+        try {
+            $body = app(ArchivePlaylistService::class)->renderMedia($recording, 'hd');
+        } catch (\Throwable $e) {
+            Log::warning("Could not render playlist for recording {$recording->id}: ".$e->getMessage());
+
+            return null;
         }
+
+        $path = storage_path('app/temp/recording-'.$recording->id.'-'.Str::random(8).'.m3u8');
+
+        if (! is_dir(dirname($path))) {
+            mkdir(dirname($path), 0755, true);
+        }
+
+        file_put_contents($path, $body);
+
+        return $path;
     }
 
     /**
@@ -104,16 +153,28 @@ class RecordingService
     protected function extractDurationFromM3u8(string $url): ?int
     {
         try {
-            // Download the m3u8 playlist
-            $response = Http::timeout(10)->get($url);
+            // A staged playlist (see stagePlaylist) is a local file, not a URL.
+            if (! filter_var($url, FILTER_VALIDATE_URL)) {
+                $content = @file_get_contents($url);
 
-            if (! $response->successful()) {
-                Log::error('Failed to fetch m3u8 playlist: '.$response->status());
+                if ($content === false) {
+                    Log::error('Failed to read m3u8 playlist from disk: '.$url);
 
-                return null;
+                    return null;
+                }
+            } else {
+                // Download the m3u8 playlist
+                $response = Http::timeout(10)->get($url);
+
+                if (! $response->successful()) {
+                    Log::error('Failed to fetch m3u8 playlist: '.$response->status());
+
+                    return null;
+                }
+
+                $content = $response->body();
             }
 
-            $content = $response->body();
             $lines = explode("\n", $content);
             $totalDuration = 0.0;
             $segmentCount = 0;
@@ -196,9 +257,18 @@ class RecordingService
     /**
      * Generate thumbnail from video
      */
-    public function generateThumbnail(Recording $recording): ?string
+    public function generateThumbnail(Recording $recording, ?string $source = null): ?string
     {
-        if (! $recording->m3u8_url) {
+        // Falls back to staging its own playlist so the public entry point works on a
+        // cut too; see stagePlaylist for why the stored URL is not usable here.
+        $staged = null;
+
+        if ($source === null) {
+            $staged = $this->stagePlaylist($recording);
+            $source = $staged ?? $recording->m3u8_url;
+        }
+
+        if (! $source) {
             return null;
         }
 
@@ -219,7 +289,7 @@ class RecordingService
                 $captureTime = min($recording->duration / 2, 300); // Max 5 minutes in
             }
 
-            $result = $this->captureFrameAtTime($recording->m3u8_url, $tempPath, $captureTime);
+            $result = $this->captureFrameAtTime($source, $tempPath, $captureTime);
 
             if (! $result || ! file_exists($tempPath)) {
                 throw new \Exception('Failed to capture thumbnail');
@@ -265,6 +335,10 @@ class RecordingService
             @unlink($tempPath);
 
             return null;
+        } finally {
+            if ($staged) {
+                @unlink($staged);
+            }
         }
     }
 
@@ -304,68 +378,6 @@ class RecordingService
         }
 
         return true;
-    }
-
-    /**
-     * Get the URL of the first video segment from an m3u8 playlist
-     */
-    protected function getFirstSegmentUrl(string $m3u8Url): ?string
-    {
-        try {
-            $response = Http::timeout(10)->get($m3u8Url);
-
-            if (! $response->successful()) {
-                return null;
-            }
-
-            $content = $response->body();
-            $lines = explode("\n", $content);
-
-            // Check if it's a master playlist
-            if (str_contains($content, '#EXT-X-STREAM-INF')) {
-                // Get the first variant playlist
-                foreach ($lines as $i => $line) {
-                    if (str_starts_with($line, '#EXT-X-STREAM-INF')) {
-                        for ($j = $i + 1; $j < count($lines); $j++) {
-                            $nextLine = trim($lines[$j]);
-                            if ($nextLine && ! str_starts_with($nextLine, '#')) {
-                                // Make URL absolute if relative
-                                if (! filter_var($nextLine, FILTER_VALIDATE_URL)) {
-                                    $baseUrl = dirname($m3u8Url);
-                                    $nextLine = $baseUrl.'/'.$nextLine;
-                                }
-
-                                // Recursively get first segment from variant playlist
-                                return $this->getFirstSegmentUrl($nextLine);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Find the first .ts segment
-            foreach ($lines as $line) {
-                $line = trim($line);
-                if ($line && ! str_starts_with($line, '#')) {
-                    // This should be a segment URL
-                    if (str_contains($line, '.ts') || str_contains($line, '.m4s')) {
-                        // Make URL absolute if relative
-                        if (! filter_var($line, FILTER_VALIDATE_URL)) {
-                            $baseUrl = dirname($m3u8Url);
-                            $line = $baseUrl.'/'.$line;
-                        }
-
-                        return $line;
-                    }
-                }
-            }
-
-            return null;
-        } catch (\Exception $e) {
-            Log::error('Failed to get first segment from m3u8: '.$e->getMessage());
-
-            return null;
-        }
     }
 
     /**

@@ -34,27 +34,11 @@ return [
         ],
     ],
 
-    // Stream quality settings (bitrates in kbps)
-    'qualities' => [
-        'fhd' => [
-            'resolution' => '1920x1080',
-            'video_bitrate' => 6000,
-            'audio_bitrate' => 192,
-            'fps' => 30,
-        ],
-        'hd' => [
-            'resolution' => '1280x720',
-            'video_bitrate' => 3000,
-            'audio_bitrate' => 160,
-            'fps' => 30,
-        ],
-        'sd' => [
-            'resolution' => '854x480',
-            'video_bitrate' => 1500,
-            'audio_bitrate' => 128,
-            'fps' => 30,
-        ],
-    ],
+    // The ABR ladder is not configured here. It lives in one place, the
+    // -var_stream_map and -b:v arguments in docker/ffmpeg-hls/stream-manager.sh,
+    // because that is what actually produces the renditions. A 'qualities' array
+    // used to sit here, read by nothing, and had already drifted (it claimed 3000
+    // kbps for hd against the transcoder's 3500).
 
     // Docker internal networking configuration
     'docker' => [
@@ -96,6 +80,19 @@ return [
     // of a session rather than refreshed, so this only has to outlast a viewing; the
     // trade is that a leaked playlist stays usable until the signatures lapse.
     'archive_url_ttl' => (int) env('ARCHIVE_URL_TTL', 86400),
+
+    // Whether the archived original-quality rendition is advertised in a recording's
+    // master playlist.
+    //
+    // The transcoder mirrors the publisher's own bitstream (ARCHIVE_SOURCE on the
+    // origin), so the archive holds whatever was actually sent rather than topping
+    // out at the 6 Mbps fhd rung. It is never part of the live ladder.
+    //
+    // Off by default because advertising it hands hls.js a rung at the full
+    // contribution bitrate, which every viewer on a fast connection will then pull
+    // out of S3. It is always playable explicitly at /archive/{slug}/source.m3u8,
+    // which is the path for pulling a master for editing.
+    'archive_source_in_master' => (bool) env('ARCHIVE_SOURCE_IN_MASTER', false),
 
     // System streamkey for internal operations (thumbnails, monitoring, etc.)
     'system_streamkey' => env('STREAM_SYSTEM_STREAMKEY', ''),

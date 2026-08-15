@@ -12,11 +12,30 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class HlsController extends Controller
 {
+    /**
+     * Identifies a signed-out viewer across requests.
+     *
+     * A dedicated cookie rather than the session id, for two reasons. The session id
+     * is regenerated on login and on any other `session()->regenerate()`, which would
+     * silently re-pin the viewer to a different edge and double-count them for the
+     * length of the heartbeat window. And touching the session on every playlist
+     * refresh means a session write every two seconds per viewer, which the playlist
+     * path otherwise does not need at all.
+     *
+     * Encrypted and signed by the `web` group like any other cookie, so it cannot be
+     * pointed at another viewer's session row. Only its hash is ever stored.
+     */
+    private const VIEWER_COOKIE = 'viewer_id';
+
+    private const VIEWER_COOKIE_MINUTES = 60 * 24 * 7;
+
     /**
      * Serve the FFmpeg-generated master.m3u8 playlist for adaptive bitrate streaming
      * FFmpeg creates perfectly synchronized segments using var_stream_map
@@ -60,15 +79,17 @@ class HlsController extends Controller
             }
         }
 
-        $this->trackUserAccess($source, $user, $request);
+        $session = $this->trackUserAccess($source, $user, $request);
 
         // Check for IP-based server override
-        $server = $this->getServerForRequest($request, $user);
+        $server = $this->getServerForRequest($request, $user, $session);
 
         if (! $server) {
             return response('No server available', 503)
                 ->header('Content-Type', 'text/plain');
         }
+
+        $this->stampSession($session, $server);
 
         $port = $server->port ?? 8080;
 
@@ -205,15 +226,17 @@ class HlsController extends Controller
             $streamkey = $user?->streamkey;
         }
 
-        $this->trackUserAccess($source, $user, $request);
+        $session = $this->trackUserAccess($source, $user, $request);
 
         // Check for IP-based server override
-        $server = $this->getServerForRequest($request, $user);
+        $server = $this->getServerForRequest($request, $user, $session);
 
         if (! $server || ! $server->hostname) {
             return response('No server available', 503)
                 ->header('Content-Type', 'text/plain');
         }
+
+        $this->stampSession($session, $server);
 
         $hostname = $server->hostname;
         $port = $server->port ?? 8080;
@@ -326,67 +349,111 @@ class HlsController extends Controller
     }
 
     /**
-     * Track user access to streams
+     * Resolve this request's viewer session, creating it on first sight.
+     *
+     * Returns the row so the caller can read the edge it is pinned to and stamp it
+     * back once one is chosen. Null only for the system user, which is internal
+     * traffic (thumbnail capture, monitoring) and not a viewer.
+     *
+     * Guests get a row too, keyed by a hash of their session id. They did not used to,
+     * and the consequence was not a missing statistic: `UpdateServerViewerCountsJob`
+     * counts these rows, so a guest raised no edge's load, and the guest branch of
+     * `getServerForRequest` sends every guest to the least loaded edge. With nothing
+     * ever raising that number, all guest traffic converged on a single edge.
      */
-    private function trackUserAccess($source, $user, $request)
+    private function trackUserAccess($source, $user, Request $request): ?SourceUser
     {
-        // Skip tracking for the system user, and for signed-out viewers on an
-        // installation with optional login: SourceUser is keyed by user_id, so
-        // there is nothing to attribute a guest session to.
-        if (! $user || $user->id === 0) {
-            return;
+        if ($user && $user->id === 0) {
+            return null;
         }
 
-        // Build cache key for this user-source combination
-        $cacheKey = "hls_heartbeat:{$source->id}:{$user->id}";
+        $identity = $user
+            ? ['user_id' => $user->id]
+            : ['guest_key' => $this->guestKey($request)];
 
-        // Check if we should skip heartbeat update (cache key exists = updated recently)
-        if (Cache::has($cacheKey)) {
-            // Skip - heartbeat was updated recently
-            return;
-        }
-
-        // Set cache key for 60 seconds - prevents database updates for this duration
-        Cache::put($cacheKey, true, 60);
-
-        // Find or create viewer session
+        // The row is read on every request, because it carries the edge assignment and
+        // a stale one would send the viewer somewhere else mid-session. That is one
+        // indexed select per request; the write is what actually costs, so only the
+        // heartbeat is rate limited, below.
         $session = SourceUser::firstOrCreate(
-            [
-                'source_id' => $source->id,
-                'user_id' => $user->id,
-                'left_at' => null,
-            ],
+            $identity + ['source_id' => $source->id, 'left_at' => null],
             [
                 'joined_at' => now(),
                 'last_heartbeat_at' => now(),
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
-            ]
+            ],
         );
 
-        // Update heartbeat
-        $session->update([
-            'last_heartbeat_at' => now(),
-        ]);
+        $cacheKey = 'hls_heartbeat:'.$source->id.':'.($user?->id ?? $identity['guest_key']);
 
-        // Clean up stale sessions (heartbeat older than 3 minutes)
-        // This cleanup also runs only when we update heartbeat to reduce DB load
-        SourceUser::where('source_id', $source->id)
-            ->whereNull('left_at')
-            ->where('last_heartbeat_at', '<', now()->subMinutes(3))
-            ->update(['left_at' => now()]);
+        if (! Cache::has($cacheKey)) {
+            Cache::put($cacheKey, true, 60);
+            $session->forceFill(['last_heartbeat_at' => now()])->save();
+        }
 
-        Log::info('User heartbeat updated', [
-            'user_id' => $user->id,
-            'source_id' => $source->id,
-            'ip' => $request->ip(),
-        ]);
+        // Stale sessions used to be swept here, on the request path, with a table-wide
+        // update per heartbeat. CleanupStaleViewerSessionsJob already does exactly that
+        // every minute, so this was duplicated work in the hot path.
+
+        return $session;
+    }
+
+    /**
+     * The signed-out viewer's identity, issuing one on first sight.
+     *
+     * The freshly generated id is used immediately as well as queued, so the very
+     * first playlist request is tracked rather than being dropped while waiting for
+     * the cookie to come back around.
+     */
+    private function guestKey(Request $request): string
+    {
+        $id = $request->cookie(self::VIEWER_COOKIE);
+
+        if (! is_string($id) || strlen($id) !== 32) {
+            $id = Str::random(32);
+
+            Cookie::queue(cookie(
+                self::VIEWER_COOKIE,
+                $id,
+                self::VIEWER_COOKIE_MINUTES,
+                null,
+                null,
+                null,
+                true,     // httpOnly; nothing in the browser needs to read this
+                false,
+                'lax',
+            ));
+        }
+
+        // Hashed so a leak of source_users cannot be replayed as a viewer cookie.
+        return hash('sha256', $id);
+    }
+
+    /**
+     * Pin a resolved session to the edge it was actually served from.
+     *
+     * This is what makes the viewer count real: UpdateServerViewerCountsJob groups on
+     * source_users.server_id, so an edge's load is the number of sessions that say they
+     * are on it, whether or not those sessions belong to a signed-in user.
+     */
+    private function stampSession(?SourceUser $session, $server): void
+    {
+        // The subnet override hands back an unsaved Server standing in for an
+        // appliance on the venue network. It has no id and nothing to attribute to.
+        if (! $session || ! $server || ! $server->exists) {
+            return;
+        }
+
+        if ($session->server_id !== $server->id) {
+            $session->forceFill(['server_id' => $server->id])->save();
+        }
     }
 
     /**
      * Get the appropriate server for the request, checking for subnet-based overrides
      */
-    private function getServerForRequest(Request $request, $user)
+    private function getServerForRequest(Request $request, $user, ?SourceUser $session = null)
     {
         // Check if we should use a local override based on client IP subnet
         $clientIp = $request->ip();
@@ -407,16 +474,44 @@ class HlsController extends Controller
             return Server::getActiveEdges()->first();
         }
 
-        // Signed-out viewers have no stored assignment to reuse, so they get
-        // the least loaded edge on every request instead. Same ordering as
-        // User::assignServerToUser, minus the persistence.
         if (! $user) {
-            return Server::where('status', ServerStatusEnum::ACTIVE)
-                ->where('type', ServerTypeEnum::EDGE)
-                ->orderBy('viewer_count', 'asc')
-                ->first();
+            return $this->guestEdge($session);
         }
 
         return $user->getOrAssignServer($clientIp);
+    }
+
+    /**
+     * Edge for a signed-out viewer: chosen once, then kept.
+     *
+     * Signed-in viewers get stickiness from `users.server_id`; this is the same idea on
+     * the session row. Without it the choice is remade on every request against a
+     * viewer_count that refreshes every 30 seconds, so a whole show's worth of guests
+     * reads the same "least loaded" answer and lands together.
+     */
+    private function guestEdge(?SourceUser $session)
+    {
+        if ($session?->server_id) {
+            $pinned = Server::where('id', $session->server_id)
+                ->where('status', ServerStatusEnum::ACTIVE)
+                ->where('type', ServerTypeEnum::EDGE)
+                ->first();
+
+            // Falls through to a fresh pick when the pinned edge has gone away, which
+            // is what moves guests off an edge being deprovisioned.
+            if ($pinned) {
+                return $pinned;
+            }
+        }
+
+        // Same ordering as User::assignServerToUser: prefer an edge with headroom, and
+        // fall back to the least loaded one rather than refusing to serve.
+        $query = fn () => Server::where('status', ServerStatusEnum::ACTIVE)
+            ->where('type', ServerTypeEnum::EDGE);
+
+        return $query()->whereColumn('viewer_count', '<', 'max_clients')
+            ->orderBy('viewer_count', 'asc')
+            ->first()
+            ?? $query()->orderBy('viewer_count', 'asc')->first();
     }
 }

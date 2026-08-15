@@ -6,8 +6,10 @@ Mirrors the transcoder's HLS output to S3 and maintains a per-hour index, so tha
 recording can later be cut by selecting a range of segments and writing a playlist,
 rather than concatenating and re-encoding MP4s. See docs/dvr-archive-plan.md.
 
-This runs alongside uploader.py, which keeps handling the SRS MP4 DVR as a cold
-backup. The two watch different volumes and share nothing but the image.
+This is the only copy. The SRS MP4 DVR that used to sit behind it as a cold backup
+was retired once the segment path was verified frame-exact, so a segment lost before
+it reaches S3 is lost outright. That is what the verified reaper defends: it refuses
+to delete anything S3 has not confirmed.
 
 Three jobs, in one process because they all need the same view of the segment
 directory and the same parse of the playlists:
@@ -51,6 +53,18 @@ S3_ENDPOINT = os.environ.get('S3_ENDPOINT')
 
 # Where the transcoder writes. This is the hls-content volume, not the SRS DVR one.
 HLS_PATH = os.environ.get('HLS_PATH', '/var/www/hls/live')
+
+# Where the transcoder mirrors the publisher's own bitstream, remuxed rather than
+# re-encoded. A sibling of HLS_PATH rather than a subdirectory of it, because
+# nginx serves HLS_PATH's parent under `location ~ ^/live/` and anything inside it
+# is therefore reachable by a viewer. This rendition is archive-only.
+#
+# Its segments are cut on the publisher's keyframes, not on the ladder's forced 2s
+# marks, so it cannot share the ladder's index entries and gets its own hour
+# playlist (index-source.m3u8) alongside them.
+SOURCE_HLS_PATH = os.environ.get('SOURCE_HLS_PATH', '/var/www/hls/source')
+SOURCE_RENDITION = os.environ.get('SOURCE_RENDITION', 'source')
+ARCHIVE_SOURCE = os.environ.get('ARCHIVE_SOURCE', '1') not in ('0', 'false', 'False', '')
 
 # Prefix for raw segments and hour indexes.
 ARCHIVE_PREFIX = os.environ.get('ARCHIVE_PREFIX', 'archive')
@@ -98,6 +112,11 @@ if S3_ENDPOINT:
 s3 = boto3.client('s3', **_s3_kwargs)
 
 upload_semaphore = threading.Semaphore(MAX_CONCURRENT_UPLOADS)
+
+# Paths a worker thread currently owns. See dispatch_uploads.
+inflight = set()
+inflight_lock = threading.Lock()
+
 rate_limiter_lock = threading.Lock()
 _rate_tokens = {'bytes': 0.0, 'at': time.monotonic()}
 
@@ -353,11 +372,22 @@ class Indexer:
         self.dirty = set()
         self.lock = threading.Lock()
 
-    def local_path(self, source, hour):
-        return Path(INDEX_PATH) / source / hour / 'index.m3u8'
+    # The source rendition splits on the publisher's keyframes, so its segments can
+    # be any length the encoder's GOP happens to be. Nothing plays this file
+    # directly (ArchivePlaylistService recomputes TARGETDURATION per cut), but it
+    # should not claim 2s when it means 10.
+    SOURCE_HEADER = (
+        '#EXTM3U\n'
+        '#EXT-X-VERSION:6\n'
+        '#EXT-X-TARGETDURATION:10\n'
+        '#EXT-X-INDEPENDENT-SEGMENTS\n'
+    )
 
-    def s3_key(self, source, hour):
-        return f'{ARCHIVE_PREFIX}/{source}/{hour}/index.m3u8'
+    def local_path(self, source, hour, name='index.m3u8'):
+        return Path(INDEX_PATH) / source / hour / name
+
+    def s3_key(self, source, hour, name='index.m3u8'):
+        return f'{ARCHIVE_PREFIX}/{source}/{hour}/{name}'
 
     def add(self, entries):
         """Append entries not seen before. Ordering keys are assigned here, on first
@@ -415,7 +445,82 @@ class Indexer:
 
             self.manifest.record_indexed(source, entry.session, entry.n, seq, entry.hour)
             with self.lock:
-                self.dirty.add((source, entry.hour))
+                self.dirty.add((source, entry.hour, 'index.m3u8'))
+            seq += 1
+            written += 1
+
+        return written
+
+    def add_source(self, entries, directory):
+        """
+        Same job as add(), for the archive-only source rendition.
+
+        Kept separate rather than folded into add() because the two disagree on the
+        one thing add() relies on: the ladder's renditions are cut at identical
+        instants so a single entry with %v describes all three, while the source
+        rendition is cut wherever the publisher put a keyframe. Merging them would
+        mean an index entry that is right for three renditions and wrong for the
+        fourth.
+
+        Consequences of the split, both deliberate:
+          * Its own ordering namespace (`{source}#source`), so seq numbers and the
+            (session, n) dedupe key cannot collide with the ladder's.
+          * Segment size is recorded as #EXT-X-ARCHIVE-BYTES. The ladder's bitrates
+            are known constants; the publisher's is whatever they sent, and the
+            master playlist has to advertise a BANDWIDTH for it.
+        """
+        if not entries:
+            return 0
+
+        namespace = f'{entries[0].source}#{SOURCE_RENDITION}'
+
+        fresh = [
+            e for e in entries
+            if not self.manifest.already_indexed(namespace, e.session, e.n)
+        ]
+        if not fresh:
+            return 0
+
+        source = fresh[0].source
+        seq = self.manifest.next_seq(namespace, len(fresh))
+        observed = datetime.now(timezone.utc)
+
+        written = 0
+        for entry in fresh:
+            path = self.local_path(source, entry.hour, 'index-source.m3u8')
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.write_text(self.SOURCE_HEADER)
+
+            try:
+                size = (Path(directory) / entry.name).stat().st_size
+            except OSError:
+                size = 0
+
+            with path.open('a') as fh:
+                if entry.discontinuity:
+                    fh.write('#EXT-X-DISCONTINUITY\n')
+                    fh.write(f'#EXT-X-ARCHIVE-SESSION:{entry.session}\n')
+                fh.write(f'#EXT-X-ARCHIVE-SEQ:{seq}\n')
+                fh.write(
+                    '#EXT-X-ARCHIVE-OBSERVED:'
+                    + observed.strftime('%Y-%m-%dT%H:%M:%S.')
+                    + f'{observed.microsecond // 1000:03d}+0000\n'
+                )
+                if size:
+                    fh.write(f'#EXT-X-ARCHIVE-BYTES:{size}\n')
+                fh.write(f'#EXTINF:{entry.duration:.6f},\n')
+                fh.write(
+                    '#EXT-X-PROGRAM-DATE-TIME:'
+                    + entry.pdt.strftime('%Y-%m-%dT%H:%M:%S.')
+                    + f'{entry.pdt.microsecond // 1000:03d}+0000\n'
+                )
+                # Concrete name, not %v: this entry describes exactly one rendition.
+                fh.write(entry.name + '\n')
+
+            self.manifest.record_indexed(namespace, entry.session, entry.n, seq, entry.hour)
+            with self.lock:
+                self.dirty.add((source, entry.hour, 'index-source.m3u8'))
             seq += 1
             written += 1
 
@@ -428,22 +533,22 @@ class Indexer:
             pending = list(self.dirty)
             self.dirty.clear()
 
-        for source, hour in pending:
-            path = self.local_path(source, hour)
+        for source, hour, name in pending:
+            path = self.local_path(source, hour, name)
             if not path.exists():
                 continue
             try:
                 s3.put_object(
                     Bucket=S3_BUCKET,
-                    Key=self.s3_key(source, hour),
+                    Key=self.s3_key(source, hour, name),
                     Body=path.read_bytes(),
                     ContentType='application/vnd.apple.mpegurl',
                 )
             except ClientError as exc:
-                logger.error('Index upload failed for %s/%s: %s', source, hour, exc)
+                logger.error('Index upload failed for %s/%s/%s: %s', source, hour, name, exc)
                 # Put it back so the next flush retries.
                 with self.lock:
-                    self.dirty.add((source, hour))
+                    self.dirty.add((source, hour, name))
 
 
 def assert_renditions_aligned(source, canonical_entries, playlists):
@@ -639,10 +744,74 @@ def sweep(manifest, indexer):
                 key = f'{ARCHIVE_PREFIX}/{source}/{entry.hour}/{entry.name}'
                 manifest.record_pending(path, key, source)
 
+        sweep_source(manifest, indexer, source)
+
+    dispatch_uploads(manifest)
+
+
+def sweep_source(manifest, indexer, source):
+    """
+    The archive-only source rendition, from its own directory and its own index.
+
+    Segments land in the same hour prefix as the ladder's - the filename already
+    carries `_source_`, so nothing collides - and only the index is separate.
+    """
+    if not ARCHIVE_SOURCE:
+        return
+
+    path = Path(SOURCE_HLS_PATH) / f'{source}_{SOURCE_RENDITION}.m3u8'
+    if not path.exists():
+        return
+
+    entries, complete = parse_playlist(path)
+    entries = entries[:complete]
+    if not entries:
+        return
+
+    written = indexer.add_source(entries, SOURCE_HLS_PATH)
+    if written:
+        with metrics_lock:
+            metrics['indexed'] += written
+
+    for entry in entries:
+        local = Path(SOURCE_HLS_PATH) / entry.name
+        if manifest.known(local):
+            continue
+        manifest.record_pending(
+            local, f'{ARCHIVE_PREFIX}/{source}/{entry.hour}/{entry.name}', source
+        )
+
+
+def dispatch_uploads(manifest):
+    """
+    Hand pending segments to the upload workers, at most once each.
+
+    A row stays in pending_uploads until its upload finishes and verifies, and the
+    sweep runs every few seconds, so spawning a thread per pending row per sweep
+    both re-uploaded segments already in flight and grew the thread count without
+    bound whenever S3 was slower than the sweep interval - which is exactly the
+    situation the upload cap is designed to produce. The semaphore bounded
+    concurrency but not the number of threads waiting on it.
+
+    `inflight` is the missing piece: it is the set of paths some worker still owns.
+    """
     for path, key, _ in manifest.pending_uploads():
+        with inflight_lock:
+            if path in inflight:
+                continue
+            inflight.add(path)
+
         threading.Thread(
-            target=upload_segment, args=(manifest, path, key), daemon=True
+            target=_upload_and_release, args=(manifest, path, key), daemon=True
         ).start()
+
+
+def _upload_and_release(manifest, path, key):
+    try:
+        upload_segment(manifest, path, key)
+    finally:
+        with inflight_lock:
+            inflight.discard(path)
 
 
 def periodic(interval, fn, *args):
@@ -682,11 +851,15 @@ def report(manifest):
 
         if len(history) == 5 and all(b < a for b, a in zip(history, history[1:])):
             sources = len(discover_sources()) or 1
-            needed = sources * 11.5  # measured ladder total, Mbps per source
+            # Measured ladder total, Mbps per source. With ARCHIVE_SOURCE on, the
+            # publisher's own bitrate rides on top and is not knowable from here, so
+            # this is a floor on the floor rather than the real requirement.
+            needed = sources * 11.5
             logger.error(
                 'Upload backlog has grown for %d minutes straight (%s). The archive '
                 'is not keeping up with ingest and the origin disk will fill. %d '
-                'source(s) need ~%.0f Mbps sustained; cap is %s.',
+                'source(s) need at least ~%.0f Mbps sustained (plus the contribution '
+                'bitrate again, per source, while the source archive is on); cap is %s.',
                 len(history), ' -> '.join(str(h) for h in history), sources, needed,
                 f'{MAX_UPLOAD_RATE_MBPS} Mbps' if MAX_UPLOAD_RATE_MBPS > 0
                 else 'unlimited (so the link itself is the limit)',
@@ -697,6 +870,10 @@ def main():
     logger.info('HLS archive uploader starting')
     logger.info('Watching %s, archiving to s3://%s/%s', HLS_PATH, S3_BUCKET, ARCHIVE_PREFIX)
     logger.info('Renditions: %s (canonical %s)', ','.join(RENDITIONS), CANONICAL_RENDITION)
+    logger.info(
+        'Source archive: %s',
+        f'on, from {SOURCE_HLS_PATH} into index-source.m3u8' if ARCHIVE_SOURCE else 'off',
+    )
     logger.info('Rewind window held locally: %ds', DVR_WINDOW_SECONDS)
     logger.info(
         'Upload cap: %s',

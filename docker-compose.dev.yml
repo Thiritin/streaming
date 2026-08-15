@@ -51,6 +51,14 @@ services:
       # disk per source, which is not something a laptop wants, so dev defaults to
       # 5 minutes. Raise it when you are actually working on the DVR window itself.
       DVR_WINDOW_SEGMENTS: ${DEV_DVR_WINDOW_SEGMENTS:-150}
+      # Archive-only mirror of the publisher's bitstream. /var/www/hls/source is a
+      # sibling of the ladder's directory, so it falls outside nginx's
+      # `location ~ ^/live/` and is unreachable by a viewer. In the default
+      # ABR_MODE=copy dev stack the ladder is already a remux of the same
+      # bitstream, so this mostly exists to exercise the indexing path; set
+      # DEV_ARCHIVE_SOURCE=0 to save the disk.
+      ARCHIVE_SOURCE: ${DEV_ARCHIVE_SOURCE:-1}
+      SOURCE_OUTPUT_DIR: /var/www/hls/source
     volumes:
       - hls:/var/www/hls
     depends_on:
@@ -154,6 +162,8 @@ services:
       S3_SECRET_KEY: ${DEV_S3_SECRET:-devsecret123}
       S3_ENDPOINT: http://s3:7070
       HLS_PATH: /var/www/hls/live
+      ARCHIVE_SOURCE: ${DEV_ARCHIVE_SOURCE:-1}
+      SOURCE_HLS_PATH: /var/www/hls/source
       # Matches DVR_WINDOW_SEGMENTS on the transcoder (150 segments x 2s = 5 min).
       # The reaper must never delete inside the window the player can still seek to.
       DVR_WINDOW_SECONDS: ${DEV_DVR_WINDOW_SECONDS:-300}
