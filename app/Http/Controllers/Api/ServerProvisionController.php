@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
 use App\Http\Controllers\Controller;
 use App\Models\Server;
 use App\Services\ServerProvisioningService;
@@ -131,8 +133,8 @@ class ServerProvisionController extends Controller
         }
 
         // Check if this server can become origin (if it's an origin type)
-        if ($server->type === \App\Enum\ServerTypeEnum::ORIGIN &&
-            $data['status'] === \App\Enum\ServerStatusEnum::ACTIVE->value &&
+        if ($server->type === ServerTypeEnum::ORIGIN &&
+            $data['status'] === ServerStatusEnum::ACTIVE->value &&
             ! $server->canBecomeOrigin()) {
             Log::warning('Cannot activate origin server - another origin is already active', [
                 'server_id' => $server->id,
@@ -186,7 +188,7 @@ class ServerProvisionController extends Controller
         ];
 
         // Handle viewer count for edge servers
-        if ($server->type === \App\Enum\ServerTypeEnum::EDGE && $request->has('viewer_count')) {
+        if ($server->type === ServerTypeEnum::EDGE && $request->has('viewer_count')) {
             $updateData['viewer_count'] = $request->input('viewer_count', 0);
         }
 
@@ -207,7 +209,7 @@ class ServerProvisionController extends Controller
         return response()->json([
             'status' => 'ok',
             'type' => $server->type->value,
-            'total_viewers' => $server->type === \App\Enum\ServerTypeEnum::EDGE ? Server::getTotalViewers() : null,
+            'total_viewers' => $server->type === ServerTypeEnum::EDGE ? Server::getTotalViewers() : null,
         ]);
     }
 }

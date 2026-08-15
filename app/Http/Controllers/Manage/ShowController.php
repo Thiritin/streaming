@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Manage;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Manage\ShowRequest;
+use App\Models\Recording;
 use App\Models\Show;
 use App\Models\Source;
 use App\Services\PretalxService;
@@ -348,7 +349,7 @@ class ShowController extends Controller
         // still running, which is the only workable option for a source that stays online
         // for the whole event. What it does need is an end marker, so the action is only
         // offered once one exists.
-        if ($user->can('create', \App\Models\Recording::class) && $show->actual_start) {
+        if ($user->can('create', Recording::class) && $show->actual_start) {
             $actions[] = Action::post('create_recording', 'Create Recording', route('manage.shows.recording.store', $show))
                 ->icon('film')
                 ->disabled($show->actual_end

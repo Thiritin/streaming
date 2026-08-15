@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enum\ServerTypeEnum;
+use App\Enum\SourceStatusEnum;
 use App\Http\Controllers\Controller;
 use App\Models\Server;
 use App\Models\Source;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -67,7 +70,7 @@ class HlsSessionController extends Controller
             if ($paramName === 'streamkey' || $paramName === 'session_id') {
                 // Cache user lookup for 5 minutes to avoid database queries
                 $user = Cache::remember("user:streamkey:{$tokenValue}", 300, function () use ($tokenValue) {
-                    return \App\Models\User::where('streamkey', $tokenValue)->first();
+                    return User::where('streamkey', $tokenValue)->first();
                 });
                 if ($user) {
                     $userId = $user->id;
@@ -114,7 +117,7 @@ class HlsSessionController extends Controller
             return response()->json(['error' => 'Stream not found'], 404);
         }
 
-        if ($source->status !== \App\Enum\SourceStatusEnum::ONLINE) {
+        if ($source->status !== SourceStatusEnum::ONLINE) {
             Log::info('Source offline for HLS request', [
                 'slug' => $streamSlug,
                 'status' => $source->status->value,
@@ -163,7 +166,7 @@ class HlsSessionController extends Controller
             // Try to find by container name for local development
             if (str_contains($serverId, 'docker')) {
                 $server = Server::where('hetzner_id', 'manual')
-                    ->where('type', \App\Enum\ServerTypeEnum::EDGE)
+                    ->where('type', ServerTypeEnum::EDGE)
                     ->first();
             }
 

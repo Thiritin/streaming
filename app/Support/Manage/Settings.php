@@ -3,6 +3,7 @@
 namespace App\Support\Manage;
 
 use App\Models\BrandingSetting;
+use App\Support\ColorPresets;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -356,7 +357,7 @@ final class Settings
             return null;
         }
 
-        return \App\Support\ColorPresets::forFrontend();
+        return ColorPresets::forFrontend();
     }
 
     /**

@@ -2,6 +2,12 @@
 
 namespace App\Console;
 
+use App\Jobs\CleanupStaleViewerSessionsJob;
+use App\Jobs\SaveViewCountJob;
+use App\Jobs\Server\ServerHealthCheckJob;
+use App\Jobs\ServerAssignmentJob;
+use App\Jobs\UpdateListenerCountJob;
+use App\Jobs\UpdateServerViewerCountsJob;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 
@@ -13,20 +19,20 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         // $schedule->command('inspire')->hourly();
-        $schedule->job(new \App\Jobs\UpdateListenerCountJob)->everyMinute();
-        $schedule->job(new \App\Jobs\SaveViewCountJob)->everyMinute();
-        $schedule->job(new \App\Jobs\ServerAssignmentJob)->everyFifteenSeconds();
+        $schedule->job(new UpdateListenerCountJob)->everyMinute();
+        $schedule->job(new SaveViewCountJob)->everyMinute();
+        $schedule->job(new ServerAssignmentJob)->everyFifteenSeconds();
         // Disabled: CleanUpInactiveServerAssignmentsJob - clients table has been dropped
         // $schedule->job(new \App\Jobs\CleanUpInactiveServerAssignmentsJob)->everyFiveMinutes();
 
         // Update server viewer counts based on active source_users
-        $schedule->job(new \App\Jobs\UpdateServerViewerCountsJob)->everyThirtySeconds();
+        $schedule->job(new UpdateServerViewerCountsJob)->everyThirtySeconds();
 
         // Clean up stale viewer sessions that haven't been active for 3+ minutes
-        $schedule->job(new \App\Jobs\CleanupStaleViewerSessionsJob)->everyMinute();
+        $schedule->job(new CleanupStaleViewerSessionsJob)->everyMinute();
 
         // Health check for edge servers every minute
-        $schedule->job(new \App\Jobs\Server\ServerHealthCheckJob)->everyMinute();
+        $schedule->job(new ServerHealthCheckJob)->everyMinute();
 
         // Capture thumbnails for live streams every minute
         $schedule->command('thumbnails:capture')->everyMinute();

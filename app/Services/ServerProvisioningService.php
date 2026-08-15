@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
 use App\Models\Server;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
@@ -96,8 +98,8 @@ YAML;
         // Get origin server for edge configs (only active ones)
         $originServer = null;
         if ($server->type->value === 'edge') {
-            $originServer = Server::where('type', \App\Enum\ServerTypeEnum::ORIGIN)
-                ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
+            $originServer = Server::where('type', ServerTypeEnum::ORIGIN)
+                ->where('status', ServerStatusEnum::ACTIVE)
                 ->first();
         }
 

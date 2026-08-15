@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Events\StreamListenerChangeEvent;
 use App\Services\StreamInfoService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -19,6 +20,6 @@ class UpdateListenerCountJob implements ShouldQueue
 
     public function handle(): void
     {
-        event(new \App\Events\StreamListenerChangeEvent(StreamInfoService::getUserCount()));
+        event(new StreamListenerChangeEvent(StreamInfoService::getUserCount()));
     }
 }

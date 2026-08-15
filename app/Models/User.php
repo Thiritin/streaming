@@ -7,6 +7,7 @@ use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Helpers\IpSubnetHelper;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Log;
@@ -165,7 +166,7 @@ class User extends Authenticatable
         return true;
     }
 
-    public function messages(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function messages(): HasMany
     {
         return $this->hasMany(Message::class);
     }

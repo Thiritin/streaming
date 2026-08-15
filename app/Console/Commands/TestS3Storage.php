@@ -6,6 +6,7 @@ use Aws\S3\Exception\S3Exception;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use League\Flysystem\Config;
 
 class TestS3Storage extends Command
 {
@@ -97,7 +98,7 @@ class TestS3Storage extends Command
                 try {
                     // Method 2: Using Flysystem Config object
                     $adapter = $disk->getAdapter();
-                    $config = new \League\Flysystem\Config([]);
+                    $config = new Config([]);
                     $adapter->write($testFileName, $testContent, $config);
                     $uploaded = true;
                     $this->info('✅ File uploaded successfully using adapter');

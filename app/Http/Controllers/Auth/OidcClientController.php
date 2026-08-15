@@ -8,6 +8,8 @@ use App\Models\User;
 use App\Services\BrandingService;
 use App\Services\Hydra\Client;
 use App\Services\OpenIDService;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -235,7 +237,7 @@ class OidcClientController extends Controller
             ]);
 
             return $packages;
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+        } catch (ConnectionException $e) {
             // Registration system is offline/unreachable - this is expected in some environments
             Log::info('Registration system unreachable, continuing without packages', [
                 'user_id' => $userId,
@@ -243,7 +245,7 @@ class OidcClientController extends Controller
             ]);
 
             return [];
-        } catch (\Illuminate\Http\Client\RequestException $e) {
+        } catch (RequestException $e) {
             // Request failed (timeout, etc)
             Log::info('Registration system request failed, continuing without packages', [
                 'user_id' => $userId,

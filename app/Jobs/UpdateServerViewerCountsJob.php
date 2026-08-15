@@ -2,6 +2,8 @@
 
 namespace App\Jobs;
 
+use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
 use App\Models\Server;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -56,8 +58,8 @@ class UpdateServerViewerCountsJob implements ShouldQueue
 
         // Reset viewer count to 0 for servers with no active viewers
         Server::whereNotIn('id', $viewerCounts->keys()->toArray())
-            ->where('type', \App\Enum\ServerTypeEnum::EDGE)
-            ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
+            ->where('type', ServerTypeEnum::EDGE)
+            ->where('status', ServerStatusEnum::ACTIVE)
             ->update([
                 'viewer_count' => 0,
                 'last_heartbeat' => now(),

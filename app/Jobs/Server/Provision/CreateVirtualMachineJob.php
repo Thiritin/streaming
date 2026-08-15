@@ -7,11 +7,13 @@ use App\Enum\ServerTypeEnum;
 use App\Models\Server;
 use App\Services\Hetzner;
 use App\Services\ServerProvisioningService;
+use GuzzleHttp\Client;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 
 class CreateVirtualMachineJob implements ShouldQueue
@@ -76,7 +78,7 @@ class CreateVirtualMachineJob implements ShouldQueue
         ];
 
         // Make direct API call using Guzzle
-        $httpClient = new \GuzzleHttp\Client;
+        $httpClient = new Client;
         $response = $httpClient->post('https://api.hetzner.cloud/v1/servers', [
             'headers' => [
                 'Authorization' => 'Bearer '.config('services.hetzner.token'),
@@ -123,7 +125,7 @@ class CreateVirtualMachineJob implements ShouldQueue
         ]);
 
         // Chain the DNS creation and wait for ready jobs
-        \Illuminate\Support\Facades\Bus::chain([
+        Bus::chain([
             new CreateDnsRecordJob($this->server),
             new WaitUntilServerIsReadyJob($this->server),
         ])->dispatch();

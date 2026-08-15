@@ -2,12 +2,16 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enum\ServerStatusEnum;
 use App\Enum\SourceStatusEnum;
 use App\Events\SourceStatusChangedEvent;
 use App\Http\Controllers\Controller;
 use App\Models\Server;
+use App\Models\Show;
 use App\Models\Source;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class SrsCallbackController extends Controller
@@ -73,7 +77,7 @@ class SrsCallbackController extends Controller
         // First check if this is a server-to-server forward (edge to origin)
         if ($sharedSecret) {
             $server = Server::where('shared_secret', $sharedSecret)
-                ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
+                ->where('status', ServerStatusEnum::ACTIVE)
                 ->first();
 
             if ($server) {
@@ -232,7 +236,7 @@ class SrsCallbackController extends Controller
             $previousStatus = $source->status->value;
 
             // Check if there's still a live show for this source
-            $hasLiveShow = \App\Models\Show::where(function ($query) use ($source) {
+            $hasLiveShow = Show::where(function ($query) use ($source) {
                 $query->where('source_id', $source->id)
                     ->orWhere('source_id', $source->slug);
             })
@@ -357,11 +361,11 @@ class SrsCallbackController extends Controller
 
         // Validate streamkey if provided
         if ($streamkey) {
-            $user = \App\Models\User::where('streamkey', $streamkey)->first();
+            $user = User::where('streamkey', $streamkey)->first();
 
             if ($user) {
                 // Store user info with client_id for tracking
-                \Illuminate\Support\Facades\Cache::put("srs_client:{$clientId}", [
+                Cache::put("srs_client:{$clientId}", [
                     'user_id' => $user->id,
                     'user_name' => $user->name,
                     'stream' => $stream,
