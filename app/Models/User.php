@@ -79,7 +79,25 @@ class User extends Authenticatable
             }
         }
 
-        $server = $this->server;
+        // Queried rather than read off the `server` relation.
+        //
+        // The relation caches, including a cached null. Any flow that reuses one User
+        // instance across requests - actingAs in tests, a long-lived worker - would
+        // resolve `server` to null once before assignment and then keep answering null
+        // afterwards. getOrAssignServer then calls assignServerToUser on every later
+        // request, which excludes the currently assigned edge by design, finds nothing
+        // else, and *clears* server_id and streamkey before returning false. So the
+        // second request threw away a perfectly good assignment and answered 503.
+        //
+        // The status and type filters are new: a pinned edge that is being
+        // deprovisioned should be given up on the next request rather than held until
+        // something else notices, which is how the signed-out path behaves too.
+        $server = $this->server_id
+            ? Server::where('id', $this->server_id)
+                ->where('status', ServerStatusEnum::ACTIVE)
+                ->where('type', ServerTypeEnum::EDGE)
+                ->first()
+            : null;
 
         if (is_null($server) || is_null($this->streamkey)) {
             if ($this->assignServerToUser()) {
@@ -90,37 +108,6 @@ class User extends Authenticatable
         }
 
         return $server;
-    }
-
-    public function getUserStreamUrls(): array
-    {
-        $server = $this->getOrAssignServer();
-        if (is_null($server)) {
-            return [
-                'hls_urls' => null,
-            ];
-        }
-
-        $hostname = $server->getHostWithPort();
-
-        // Determine protocol based on port
-        $protocol = 'https';
-        if ($server->port === 80 || app()->isLocal()) {
-            $protocol = 'http';
-        } elseif ($server->port === 443) {
-            $protocol = 'https';
-        }
-
-        $data['hls_urls'] = [];
-
-        // HLS URLs only
-        $data['hls_urls']['master'] = $protocol."://$hostname/live/livestream.m3u8?streamkey=".$this->streamkey;
-        foreach (['original', 'fhd', 'hd', 'sd', 'ld', 'audio_hd', 'audio_sd'] as $quality) {
-            $qualityUrl = ($quality !== 'original') ? '_'.$quality : '';
-            $data['hls_urls'][$quality] = $protocol."://$hostname/live/livestream$qualityUrl.m3u8?streamkey=".$this->streamkey;
-        }
-
-        return $data;
     }
 
     public function assignServerToUser(): bool

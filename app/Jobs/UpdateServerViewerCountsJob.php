@@ -19,14 +19,26 @@ class UpdateServerViewerCountsJob implements ShouldQueue
 
     public function handle(): void
     {
-        // Get viewer counts per server by joining source_users with users
-        // Count users who are actively watching (left_at is null) and have a server assigned
+        // Sessions carry their own edge now, so this is a group-by with no join.
+        //
+        // It used to join out to `users.server_id`, which meant a session could only be
+        // counted if it belonged to a signed-in viewer. Guests were therefore invisible
+        // to every edge's load, and since the guest branch of HlsController picks the
+        // least loaded edge, they all went to the same one and nothing ever said so.
+        //
+        // COUNT(*) rather than COUNT(DISTINCT user): one row is one player pulling one
+        // ladder, and capacity here is bandwidth. A viewer with two sources open costs
+        // twice as much and should count twice.
+        //
+        // The heartbeat window matches SourceUser::scopeActive. Without it this counts
+        // rows that CleanupStaleViewerSessionsJob has not reached yet, which inflates
+        // every edge and is worse now that guests are in the table.
         $viewerCounts = DB::table('source_users')
-            ->join('users', 'source_users.user_id', '=', 'users.id')
-            ->whereNull('source_users.left_at')
-            ->whereNotNull('users.server_id')
-            ->groupBy('users.server_id')
-            ->select('users.server_id', DB::raw('COUNT(DISTINCT users.id) as viewer_count'))
+            ->whereNull('left_at')
+            ->whereNotNull('server_id')
+            ->where('last_heartbeat_at', '>', now()->subMinutes(3))
+            ->groupBy('server_id')
+            ->select('server_id', DB::raw('COUNT(*) as viewer_count'))
             ->pluck('viewer_count', 'server_id');
 
         // Update each server with its viewer count

@@ -10,6 +10,8 @@ class SourceUser extends Model
     protected $fillable = [
         'source_id',
         'user_id',
+        'guest_key',
+        'server_id',
         'joined_at',
         'left_at',
         'last_heartbeat_at',
@@ -32,11 +34,35 @@ class SourceUser extends Model
     }
 
     /**
-     * Get the user for this viewer session.
+     * Get the user for this viewer session. Null for a signed-out viewer.
      */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * The edge this session is pinned to.
+     *
+     * Recorded here rather than read off the user, so that a guest gets the same
+     * stickiness a signed-in viewer gets and so that counting viewers per edge is a
+     * group-by on this table instead of a join through `users`.
+     */
+    public function server(): BelongsTo
+    {
+        return $this->belongsTo(Server::class);
+    }
+
+    /**
+     * Scope to sessions still counted as watching.
+     *
+     * The same window UpdateServerViewerCountsJob uses, so what an edge reports and
+     * what the panel shows cannot drift apart.
+     */
+    public function scopeCounted($query)
+    {
+        return $query->whereNull('left_at')
+            ->where('last_heartbeat_at', '>', now()->subMinutes(3));
     }
 
     /**
