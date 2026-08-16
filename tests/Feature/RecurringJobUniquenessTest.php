@@ -10,6 +10,7 @@ use App\Jobs\UpdateListenerCountJob;
 use App\Jobs\UpdateServerViewerCountsJob;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Support\Facades\Queue;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -40,7 +41,7 @@ class RecurringJobUniquenessTest extends TestCase
         ];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('recurringJobs')]
+    #[DataProvider('recurringJobs')]
     public function test_a_recurring_job_declares_itself_unique(string $job): void
     {
         $this->assertInstanceOf(
@@ -51,7 +52,7 @@ class RecurringJobUniquenessTest extends TestCase
         );
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('recurringJobs')]
+    #[DataProvider('recurringJobs')]
     public function test_the_uniqueness_lock_expires(string $job): void
     {
         // A job that dies without releasing its lock would otherwise never be

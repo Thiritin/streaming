@@ -192,7 +192,7 @@ class ArchivePlaylistService
     {
         $this->assertRendition($rendition);
 
-        $source = $recording->archiveSourceSlug();
+        $source = $this->assertArchiveSource($recording);
 
         $segments = $this->segmentsInRange(
             $source,
@@ -214,6 +214,30 @@ class ArchivePlaylistService
         if (! in_array($rendition, $this->renditions(), true)) {
             throw new \InvalidArgumentException("Unknown rendition [{$rendition}].");
         }
+    }
+
+    /**
+     * The archive a recording reads from, or a clear refusal.
+     *
+     * Recordings registered from outside carry a hand-entered `m3u8_url` and no source,
+     * so `archiveSourceSlug()` is null for them and they have no archive to render. That
+     * used to fall through to `segmentsInRange(string $source, ...)` and die on a
+     * TypeError - which `RecordingPlaylistController` then handed to the client as the
+     * body of a 410, absolute server path included. Refuse here, in the vocabulary of
+     * the problem, so the caller has something safe to say.
+     */
+    protected function assertArchiveSource(Recording $recording): string
+    {
+        $source = $recording->archiveSourceSlug();
+
+        if (! $source) {
+            throw new \RuntimeException(
+                'This recording is not a cut from a source archive, so it has no '
+                .'generated playlist. Its media is at the URL it was registered with.'
+            );
+        }
+
+        return $source;
     }
 
     /**
