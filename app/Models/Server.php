@@ -254,6 +254,29 @@ class Server extends Model
         return true;
     }
 
+    /**
+     * Whether the box is serving yet.
+     *
+     * Every part of this used to be wrong, and it failed silently because the only
+     * caller retries and then gives up:
+     *
+     *   - It asked for `/ready`. Nothing serves that. Both nginx configs expose
+     *     `/health`, which is the endpoint the install script itself waits on.
+     *   - It expected `json('code') === 0`. `/health` answers `healthy` in plain text,
+     *     so the check could not have passed even against the right path.
+     *   - For origins it targeted `{ip}:1985`, the SRS admin API. That port is not in
+     *     the `Origin Server` firewall - correctly, since it can manipulate streams -
+     *     so the request could never connect at all.
+     *
+     * Now one path for both roles: `/health` over 443, which Caddy proxies to nginx and
+     * which is the only HTTP port the firewall permits. Plain 2xx is the signal; the
+     * body is checked loosely so a future change to its wording does not break
+     * provisioning.
+     *
+     * Note this is a belt to the install script's braces. A finished box registers
+     * itself as active over `/api/server/register`, and that is the path servers have
+     * actually become available by.
+     */
     public function isReady(): bool
     {
         // For manual/local servers (null hetzner_id), assume they're ready if active
@@ -261,31 +284,21 @@ class Server extends Model
             return true;
         }
 
-        $proto = 'https';
-        $hostname = $this->hostname;
+        $url = 'https://'.$this->hostname.'/health';
 
-        if ($this->type === ServerTypeEnum::ORIGIN) {
-            // Origin servers run SRS with API on port 1985
-            $proto = 'http';
-            $hostname = $this->ip.':1985';
-        }
-
-        // For local Docker containers (null hetzner_id), use http
+        // Local Docker containers have no TLS and no public hostname.
         if (! $this->hetzner_id) {
-            $proto = 'http';
-            // Use the hostname directly for Docker containers
-            if ($this->type === ServerTypeEnum::EDGE) {
-                $hostname = $this->hostname.':'.$this->port;
-            }
+            $url = 'http://'.$this->hostname.':'.$this->port.'/health';
         }
 
         try {
-            $request = Http::timeout(5)->get($proto.'://'.$hostname.'/ready');
+            $response = Http::timeout(5)->get($url);
         } catch (ClientException|ServerException|ConnectionException $e) {
             return false;
         }
 
-        return $request->successful() && $request->json('code') === 0;
+        return $response->successful()
+            && str_contains(strtolower($response->body()), 'health');
     }
 
     public function isInUse(): bool

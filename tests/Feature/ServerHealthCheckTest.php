@@ -241,4 +241,71 @@ class ServerHealthCheckTest extends TestCase
             return str_starts_with($request->url(), 'https://');
         });
     }
+
+    // ---------------------------------------------------------------- readiness
+
+    /**
+     * Provisioning readiness, which is a different check from the recurring health
+     * check above and used to be broken in three separate ways at once.
+     *
+     * It asked for `/ready`, which nothing serves; it required `json('code') === 0`,
+     * where `/health` answers plain text; and for origins it targeted `{ip}:1985`, the
+     * SRS admin API, which the `Origin Server` firewall does not permit and should not.
+     * The only caller retries thirty times and then fails, so all of that presented as
+     * a server stuck in `provisioning` with no explanation.
+     */
+    public function test_readiness_probes_health_over_443_for_an_origin(): void
+    {
+        Http::fake(['*' => Http::response('healthy', 200)]);
+
+        $origin = Server::factory()->origin()->create([
+            'hostname' => 'origin-1.example.test',
+            'ip' => '203.0.113.10',
+            'hetzner_id' => '12345',
+        ]);
+
+        $this->assertTrue($origin->isReady());
+
+        Http::assertSent(fn ($request) => $request->url() === 'https://origin-1.example.test/health');
+
+        // The port that used to be probed is the SRS admin API. It must not be touched:
+        // it is not in the firewall, and opening it would expose stream control.
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), ':1985'));
+    }
+
+    public function test_readiness_probes_the_same_endpoint_for_an_edge(): void
+    {
+        Http::fake(['*' => Http::response('healthy', 200)]);
+
+        $edge = Server::factory()->create([
+            'hostname' => 'edge-1.example.test',
+            'hetzner_id' => '12346',
+        ]);
+
+        $this->assertTrue($edge->isReady());
+
+        Http::assertSent(fn ($request) => $request->url() === 'https://edge-1.example.test/health');
+    }
+
+    public function test_a_server_that_is_not_serving_yet_is_not_ready(): void
+    {
+        Http::fake(['*' => Http::response('', 502)]);
+
+        $origin = Server::factory()->origin()->create(['hetzner_id' => '12347']);
+
+        $this->assertFalse($origin->isReady());
+    }
+
+    /**
+     * A 200 from something that is not the health endpoint - a captive portal, a parked
+     * page, a misrouted proxy - must not count as ready.
+     */
+    public function test_a_200_from_something_else_is_not_ready(): void
+    {
+        Http::fake(['*' => Http::response('<html>hello</html>', 200)]);
+
+        $origin = Server::factory()->origin()->create(['hetzner_id' => '12348']);
+
+        $this->assertFalse($origin->isReady());
+    }
 }
