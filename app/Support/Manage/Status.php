@@ -61,7 +61,14 @@ final class Status
 
         return match ($value) {
             SourceStatusEnum::ONLINE->value => self::make('Online', self::LIVE, 'signal'),
-            SourceStatusEnum::OFFLINE->value => self::make('Offline', self::IDLE, 'signal-zero'),
+            // Not lucide's `signal-zero`, which is the obvious pair for `signal` and
+            // is unusable here: it is a single path, `M2 20h.01`, so its only ink is a
+            // hairline dot in the bottom-left corner of a 24x24 box. At the 12px a
+            // badge renders, that is a speck floating below the baseline, detached
+            // from its own label. `signal` gets away with the same dot because its
+            // bars fill the rest of the box. `minus` is `M5 12h14` - centred, neutral,
+            // and reads as "nothing coming in" rather than as an error.
+            SourceStatusEnum::OFFLINE->value => self::make('Offline', self::IDLE, 'minus'),
             SourceStatusEnum::ERROR->value => self::make('Error', self::DANGER, 'triangle-alert'),
             default => self::make((string) $value, self::IDLE, null),
         };
@@ -122,7 +129,8 @@ final class Status
             StreamStatusEnum::STARTING_SOON->value => self::make('Starting soon', self::WARN, 'clock'),
             StreamStatusEnum::PROVISIONING->value => self::make('Provisioning', self::WARN, 'loader'),
             StreamStatusEnum::TECHNICAL_ISSUE->value => self::make('Technical issue', self::DANGER, 'triangle-alert'),
-            StreamStatusEnum::OFFLINE->value => self::make('Offline', self::IDLE, 'signal-zero'),
+            // See the note on source() above for why this is not `signal-zero`.
+            StreamStatusEnum::OFFLINE->value => self::make('Offline', self::IDLE, 'minus'),
             default => self::make((string) $value, self::IDLE, null),
         };
     }
