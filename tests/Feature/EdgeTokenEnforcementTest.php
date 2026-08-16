@@ -78,6 +78,42 @@ class EdgeTokenEnforcementTest extends TestCase
         }
     }
 
+    /**
+     * Nothing throttles by client address.
+     *
+     * A convention NATs its whole audience onto one public IP, so any limit keyed on
+     * `$binary_remote_addr` is shared by every on-site viewer at once: the old
+     * `limit_conn 10` meant ten people, and `limit_req 30r/s` was split between
+     * hundreds. At `hls_time 2` one viewer makes about one request a second, so
+     * neither ceiling ever shaped real load - they only ever blocked the venue.
+     *
+     * Re-keying on the playback token was tried and dropped: it needed an njs
+     * `js_set` on the request path, which fails at nginx *startup* rather than
+     * degrading, and could not be validated before the event.
+     *
+     * Access control is `auth_request /auth`, asserted above, not throughput limits.
+     */
+    public function test_the_edge_does_not_throttle_by_client_address(): void
+    {
+        // Comments only, with the reasoning in them, would otherwise match every one of
+        // these strings. Directives are what matter.
+        $directives = preg_replace('/^\s*#.*$/m', '', $this->provisioning->generateConfig($this->edge, 'nginx'));
+
+        foreach (['limit_req', 'limit_conn', 'js_set'] as $directive) {
+            $this->assertStringNotContainsString(
+                $directive,
+                $directives,
+                "The edge config declares {$directive}. A limit keyed on the client "
+                .'address throttles a whole NATed venue as if it were one viewer, and '
+                .'js_set was dropped because it fails at nginx startup.'
+            );
+        }
+
+        // The gate that remains, restated here so removing the limits can never be
+        // mistaken for removing access control.
+        $this->assertStringContainsString('auth_request /auth;', $directives);
+    }
+
     public function test_the_legacy_streamkey_path_still_reaches_laravel(): void
     {
         $config = $this->provisioning->generateConfig($this->edge, 'nginx');
