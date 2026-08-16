@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services;
 
+use App\Console\Commands\Chat\AbstractChatCommand;
 use App\Console\Commands\Chat\HelpCommand;
 use App\Console\Commands\Chat\TimeoutCommand;
 use App\Models\Role;
@@ -137,7 +138,7 @@ class CommandRegistryTest extends TestCase
 
     public function test_it_can_register_command_manually()
     {
-        $mockCommand = new class extends \App\Console\Commands\Chat\AbstractChatCommand
+        $mockCommand = new class extends AbstractChatCommand
         {
             protected string $name = 'test';
 
@@ -145,7 +146,7 @@ class CommandRegistryTest extends TestCase
 
             protected string $description = 'Test command';
 
-            protected function execute(\App\Models\User $user, array $parameters): void
+            protected function execute(User $user, array $parameters): void
             {
                 // Test implementation
             }

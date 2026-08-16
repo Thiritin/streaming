@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
 use App\Enum\SourceStatusEnum;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -186,8 +188,8 @@ class Source extends Model
      */
     public function getRtmpServerUrl(): ?string
     {
-        $originServer = \App\Models\Server::where('type', \App\Enum\ServerTypeEnum::ORIGIN)
-            ->where('status', \App\Enum\ServerStatusEnum::ACTIVE)
+        $originServer = Server::where('type', ServerTypeEnum::ORIGIN)
+            ->where('status', ServerStatusEnum::ACTIVE)
             ->first();
 
         if (! $originServer) {

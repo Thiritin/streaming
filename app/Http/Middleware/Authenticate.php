@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Illuminate\Auth\Middleware\Authenticate as Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class Authenticate extends Middleware
 {
@@ -12,7 +13,7 @@ class Authenticate extends Middleware
      */
     protected function redirectTo(Request $request): ?string
     {
-        \Illuminate\Support\Facades\Log::info('AUTH DEBUG unauthenticated redirect', [
+        Log::info('AUTH DEBUG unauthenticated redirect', [
             'url' => $request->fullUrl(),
             'session_id' => $request->hasSession() ? $request->session()->getId() : null,
             'session_keys' => $request->hasSession() ? array_keys($request->session()->all()) : [],

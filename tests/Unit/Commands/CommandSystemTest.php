@@ -7,6 +7,7 @@ use App\Console\Commands\Chat\HelpCommand;
 use App\Console\Commands\Chat\SlowModeCommand;
 use App\Console\Commands\Chat\TimeoutCommand;
 use App\Events\CommandFeedbackEvent;
+use App\Models\User;
 use App\Services\CommandRegistry;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
@@ -92,7 +93,7 @@ class CommandSystemTest extends TestCase
     {
         Event::fake();
 
-        $user = new \App\Models\User;
+        $user = new User;
         $user->id = 1;
         $user->name = 'TestUser';
 
@@ -118,7 +119,7 @@ class CommandSystemTest extends TestCase
         $registry = new CommandRegistry;
 
         // Mock user with permissions
-        $user = $this->createMock(\App\Models\User::class);
+        $user = $this->createMock(User::class);
         $user->method('can')->willReturn(true);
         $user->method('hasRole')->willReturn(true);
         $user->method('hasPermission')->willReturn(true);

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Timeout;
 use App\Services\CommandRegistry;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -134,7 +135,7 @@ class CommandController extends Controller
                 'success' => false,
                 'error' => $e->getMessage(),
             ], 422);
-        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+        } catch (AuthorizationException $e) {
             Log::warning('Command authorization failed', [
                 'user_id' => $user->id,
                 'command' => $command->name(),

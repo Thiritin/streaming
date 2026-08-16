@@ -8,13 +8,14 @@ use App\Models\Show;
 use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class AutoModeEndToEndTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function complete_auto_mode_show_lifecycle()
     {
         // Setup: Create a source and an auto mode show
@@ -93,7 +94,7 @@ class AutoModeEndToEndTest extends TestCase
         $this->assertEquals('ended', $show->status); // Show remains ended
     }
 
-    /** @test */
+    #[Test]
     public function auto_mode_show_starts_via_scheduled_command_when_source_already_online()
     {
         // Setup: Source is already online before scheduled start
@@ -129,7 +130,7 @@ class AutoModeEndToEndTest extends TestCase
         $this->assertNotNull($show->actual_start);
     }
 
-    /** @test */
+    #[Test]
     public function manual_mode_show_is_not_affected_by_source_status_changes()
     {
         // Setup: Create a manual mode show
@@ -180,7 +181,7 @@ class AutoModeEndToEndTest extends TestCase
         $this->assertEquals('ended', $show->status);
     }
 
-    /** @test */
+    #[Test]
     public function multiple_auto_mode_shows_on_same_source_are_handled_correctly()
     {
         // Setup: One source with multiple scheduled shows
@@ -241,7 +242,7 @@ class AutoModeEndToEndTest extends TestCase
         $this->assertEquals('live', $eveningShow->status);
     }
 
-    /** @test */
+    #[Test]
     public function auto_mode_show_ends_at_scheduled_time_even_with_online_source()
     {
         // Setup: Source is online and show is live
@@ -281,7 +282,7 @@ class AutoModeEndToEndTest extends TestCase
         $this->assertEquals(SourceStatusEnum::ONLINE, $source->status); // Source remains online
     }
 
-    /** @test */
+    #[Test]
     public function auto_mode_respects_show_status_transitions()
     {
         $source = Source::factory()->create([

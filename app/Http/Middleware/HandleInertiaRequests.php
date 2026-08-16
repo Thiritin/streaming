@@ -5,7 +5,9 @@ namespace App\Http\Middleware;
 use App\Services\BrandingService;
 use App\Services\ChatMessageSanitizer;
 use App\Services\CommandRegistry;
+use App\Services\EmoteService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -61,7 +63,7 @@ class HandleInertiaRequests extends Middleware
                 'bufferSize' => (int) config('chat.history.buffer', 300),
             ];
 
-            $emotes = app(\App\Services\EmoteService::class)->clientPayload($user);
+            $emotes = app(EmoteService::class)->clientPayload($user);
 
             $chatPermissions = [
                 'moderate' => $user->canModerateChat(),
@@ -94,7 +96,7 @@ class HandleInertiaRequests extends Middleware
                         'badges' => $user->chatBadges(),
                     ]
                 ) : null,
-                'can_access_manage' => $user ? \Illuminate\Support\Facades\Gate::forUser($user)->allows('access-manage') : false,
+                'can_access_manage' => $user ? Gate::forUser($user)->allows('access-manage') : false,
                 // Kept until /admin is removed; see docs/admin/rebuild-plan.md part 5.
                 'can_access_filament' => $user?->can('filament.access'),
                 'has_server_assignment' => $user ? ($user->server_id && $user->streamkey ? true : false) : false,

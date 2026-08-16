@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Enum\ServerStatusEnum;
+use App\Enum\ServerTypeEnum;
+use App\Enum\SourceStatusEnum;
 use App\Models\Server;
 use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -23,8 +26,8 @@ class SrsWebhookAuthenticationTest extends TestCase
         $this->server = Server::create([
             'hostname' => 'localhost:8080',
             'ip' => 1,
-            'status' => \App\Enum\ServerStatusEnum::ACTIVE,
-            'type' => \App\Enum\ServerTypeEnum::EDGE,
+            'status' => ServerStatusEnum::ACTIVE,
+            'type' => ServerTypeEnum::EDGE,
             'shared_secret' => 'test_shared_secret_123',
             'max_clients' => 100,
             'immutable' => false,
@@ -36,7 +39,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'slug' => 'livestream',
             'stream_key' => 'valid_source_key_123',
             'priority' => 10,
-            'status' => \App\Enum\SourceStatusEnum::OFFLINE,
+            'status' => SourceStatusEnum::OFFLINE,
         ]);
     }
 

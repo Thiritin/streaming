@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
+use App\Enum\SourceStatusEnum;
 use App\Jobs\Server\DeleteServerJob;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ServerException;
@@ -271,7 +272,7 @@ class Server extends Model
     {
         if ($this->type === ServerTypeEnum::ORIGIN) {
             // Origin is in use if any streams are live
-            return \App\Models\Source::where('status', \App\Enum\SourceStatusEnum::ONLINE)->exists();
+            return Source::where('status', SourceStatusEnum::ONLINE)->exists();
         }
 
         // Edge is in use if it has viewers

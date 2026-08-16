@@ -6,8 +6,11 @@ use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Jobs\UpdateServerViewerCountsJob;
 use App\Models\Server;
+use App\Models\Show;
 use App\Models\Source;
 use App\Models\SourceUser;
+use App\Models\User;
+use App\Services\StreamInfoService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
@@ -112,16 +115,16 @@ class GuestEdgeBalancingTest extends TestCase
         }
 
         // Last, because actingAs applies to every request that follows it.
-        $signedIn = \App\Models\User::factory()->create();
+        $signedIn = User::factory()->create();
         $this->actingAs($signedIn)->get('/hls/main-stage/master.m3u8')->assertOk();
 
         Cache::forget('stream.listeners');
 
         // COUNT(user_id) skips NULLs, so the guests used to vanish from this entirely
         // and the site reported one viewer while five were watching.
-        $this->assertSame(5, \App\Services\StreamInfoService::getUserCount());
+        $this->assertSame(5, StreamInfoService::getUserCount());
 
-        $show = \App\Models\Show::factory()->create([
+        $show = Show::factory()->create([
             'source_id' => $this->source->id,
             'status' => 'live',
         ]);
@@ -173,7 +176,7 @@ class GuestEdgeBalancingTest extends TestCase
     public function test_a_signed_in_viewer_keeps_their_edge_on_the_next_request(): void
     {
         $edge = $this->edge('a.example.com');
-        $user = \App\Models\User::factory()->create(['server_id' => null, 'streamkey' => null]);
+        $user = User::factory()->create(['server_id' => null, 'streamkey' => null]);
 
         $this->actingAs($user)->get('/hls/main-stage/master.m3u8')->assertOk();
         $this->assertSame($edge->id, $user->fresh()->server_id);

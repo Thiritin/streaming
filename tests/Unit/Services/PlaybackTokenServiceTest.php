@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\PlaybackTokenService;
 use App\Support\PlaybackToken;
 use Illuminate\Support\Facades\Config;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -176,9 +177,7 @@ class PlaybackTokenServiceTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider malformedTokens
-     */
+    #[DataProvider('malformedTokens')]
     public function test_it_rejects_malformed_tokens(string $encoded): void
     {
         $this->expectException(InvalidPlaybackTokenException::class);

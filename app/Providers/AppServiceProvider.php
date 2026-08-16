@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Observers\RecordingObserver;
 use App\Observers\ShowObserver;
 use App\Observers\SourceObserver;
+use App\Observers\UserObserver;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\ServiceProvider;
@@ -39,7 +40,7 @@ class AppServiceProvider extends ServiceProvider
                 ->baseUrl(config('services.attsrv.url'));
         });
 
-        User::observe(\App\Observers\UserObserver::class);
+        User::observe(UserObserver::class);
         Source::observe(SourceObserver::class);
         Show::observe(ShowObserver::class);
         Recording::observe(RecordingObserver::class);

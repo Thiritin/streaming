@@ -6,6 +6,7 @@ use App\Models\Recording;
 use App\Services\ArchivePlaylistService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -42,9 +43,21 @@ class RecordingPlaylistController extends Controller
 
         try {
             $body = $this->playlists->renderMedia($recording, $rendition);
-        } catch (\Throwable $e) {
-            // A cut whose segments have expired out of the archive, most likely.
+        } catch (\RuntimeException $e) {
+            // The service's own vocabulary: the archive expired, or this recording was
+            // never a cut. Both are worth telling the caller verbatim.
             abort(Response::HTTP_GONE, $e->getMessage());
+        } catch (\Throwable $e) {
+            // Anything else is a fault, and its message is not ours to hand out - a
+            // TypeError here used to answer 410 with an absolute server path in the
+            // body. Log the detail, tell the caller nothing.
+            Log::error("Recording playlist render failed for {$recording->slug}: ".$e->getMessage(), [
+                'recording' => $recording->id,
+                'rendition' => $rendition,
+                'exception' => $e,
+            ]);
+
+            abort(Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
         return $this->playlist($body);

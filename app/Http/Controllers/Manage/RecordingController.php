@@ -18,6 +18,7 @@ use App\Support\Manage\Toast;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Inertia\Response;
 
 /**
@@ -340,7 +341,7 @@ class RecordingController extends Controller
 
     protected function uniqueSlug(string $title): string
     {
-        $base = \Illuminate\Support\Str::slug($title);
+        $base = Str::slug($title);
         $slug = $base;
         $i = 1;
 

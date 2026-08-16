@@ -2,11 +2,16 @@
 
 namespace Tests\Feature\Manage;
 
+use App\Events\ShowCancelled;
+use App\Events\ShowEnded;
+use App\Events\ShowWentLive;
 use App\Models\Role;
 use App\Models\Show;
+use App\Models\ShowStatistic;
 use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Route;
 use Inertia\SessionKey;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\CreatesManageUsers;
@@ -34,9 +39,9 @@ class ShowsTest extends TestCase
         // Named rather than blanket: Event::fake() with no arguments also fakes Eloquent's
         // model events, which silently stops ShowObserver from running at all.
         Event::fake([
-            \App\Events\ShowWentLive::class,
-            \App\Events\ShowEnded::class,
-            \App\Events\ShowCancelled::class,
+            ShowWentLive::class,
+            ShowEnded::class,
+            ShowCancelled::class,
         ]);
 
         $this->source = Source::factory()->create(['name' => 'Main Stage']);
@@ -548,7 +553,7 @@ class ShowsTest extends TestCase
         $this->show(['status' => 'live']);
 
         // The live thumbnail is captured off the stream; there is nothing to press.
-        $this->assertFalse(\Illuminate\Support\Facades\Route::has('manage.shows.screenshot'));
+        $this->assertFalse(Route::has('manage.shows.screenshot'));
 
         $this->actingAs($this->admin)
             ->get(route('manage.shows.index'))
@@ -687,7 +692,7 @@ class ShowsTest extends TestCase
 
         // Peak, average and the chart come from the recorded samples, not the show row.
         foreach ([4, 12, 8] as $offset => $count) {
-            \App\Models\ShowStatistic::create([
+            ShowStatistic::create([
                 'show_id' => $show->id,
                 'viewer_count' => $count,
                 'unique_viewers' => $count + 1,
@@ -716,7 +721,7 @@ class ShowsTest extends TestCase
     {
         $show = $this->show(['status' => 'live', 'actual_start' => now()->subMinutes(10), 'viewer_count' => 9]);
 
-        \App\Models\ShowStatistic::create([
+        ShowStatistic::create([
             'show_id' => $show->id,
             'viewer_count' => 9,
             'unique_viewers' => 11,
@@ -740,7 +745,7 @@ class ShowsTest extends TestCase
 
         // 300 samples, five hours of minute ticks, against a 120 point cap.
         for ($minute = 0; $minute < 300; $minute++) {
-            \App\Models\ShowStatistic::create([
+            ShowStatistic::create([
                 'show_id' => $show->id,
                 'viewer_count' => 100,
                 'unique_viewers' => 100,

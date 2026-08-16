@@ -2,6 +2,11 @@
 
 namespace App\Models;
 
+use App\Events\ShowCancelled;
+use App\Events\ShowEnded;
+use App\Events\ShowWentLive;
+use App\Services\ThumbnailService;
+use App\Support\Markdown;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -163,7 +168,7 @@ class Show extends Model
         ]);
 
         // Dispatch event for notifications
-        event(new \App\Events\ShowWentLive($this));
+        event(new ShowWentLive($this));
     }
 
     /**
@@ -184,7 +189,7 @@ class Show extends Model
         }
 
         // Dispatch event for notifications
-        event(new \App\Events\ShowEnded($this));
+        event(new ShowEnded($this));
     }
 
     /**
@@ -196,7 +201,7 @@ class Show extends Model
             'status' => 'cancelled',
         ]);
 
-        event(new \App\Events\ShowCancelled($this));
+        event(new ShowCancelled($this));
     }
 
     /**
@@ -298,7 +303,7 @@ class Show extends Model
      */
     public function getDescriptionHtmlAttribute(): ?string
     {
-        return \App\Support\Markdown::render($this->description);
+        return Markdown::render($this->description);
     }
 
     /**
@@ -349,7 +354,7 @@ class Show extends Model
 
         // Use the ThumbnailService to capture the screenshot
         // This ensures proper URL handling for Docker environments
-        $thumbnailService = app(\App\Services\ThumbnailService::class);
+        $thumbnailService = app(ThumbnailService::class);
         $result = $thumbnailService->captureFromHls($this);
 
         if (! $result) {

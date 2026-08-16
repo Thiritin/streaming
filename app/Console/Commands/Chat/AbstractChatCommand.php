@@ -3,9 +3,11 @@
 namespace App\Console\Commands\Chat;
 
 use App\Contracts\CommandInterface;
+use App\Events\Chat\Broadcasts\ChatNoticeEvent;
 use App\Events\CommandFeedbackEvent;
 use App\Models\User;
 use App\Support\Chat\Broadcast;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -258,7 +260,7 @@ abstract class AbstractChatCommand implements CommandInterface
         // Check authorization
         if (! $this->authorize($user)) {
             $this->feedback($user, 'You do not have permission to use this command.', 'error');
-            throw new \Illuminate\Auth\Access\AuthorizationException('You do not have permission to use this command.');
+            throw new AuthorizationException('You do not have permission to use this command.');
         }
 
         // Execute the command
@@ -285,7 +287,7 @@ abstract class AbstractChatCommand implements CommandInterface
      */
     protected function broadcastSystemMessage(string $message, string $type = 'info'): void
     {
-        Broadcast::send(new \App\Events\Chat\Broadcasts\ChatNoticeEvent($message, $this->sourceId, $type));
+        Broadcast::send(new ChatNoticeEvent($message, $this->sourceId, $type));
     }
 
     /**

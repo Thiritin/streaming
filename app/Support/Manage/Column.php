@@ -4,6 +4,7 @@ namespace App\Support\Manage;
 
 use Closure;
 use Illuminate\Contracts\Support\Arrayable;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Declares one column of a manage table.
@@ -127,7 +128,7 @@ final class Column implements Arrayable
     /**
      * Custom sort, required for columns that sort across a relation.
      *
-     * @param  Closure(\Illuminate\Database\Eloquent\Builder, string): void  $callback
+     * @param  Closure(Builder, string): void  $callback
      */
     public function sortUsing(Closure $callback): self
     {

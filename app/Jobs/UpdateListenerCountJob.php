@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Events\StreamListenerChangeEvent;
 use App\Services\StreamInfoService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -35,6 +36,6 @@ class UpdateListenerCountJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(): void
     {
-        event(new \App\Events\StreamListenerChangeEvent(StreamInfoService::getUserCount()));
+        event(new StreamListenerChangeEvent(StreamInfoService::getUserCount()));
     }
 }

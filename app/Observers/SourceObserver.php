@@ -2,6 +2,7 @@
 
 namespace App\Observers;
 
+use App\Enum\SourceStatusEnum;
 use App\Events\SourceStatusChangedEvent;
 use App\Models\Source;
 use Illuminate\Support\Facades\Log;
@@ -23,7 +24,7 @@ class SourceObserver
         // Store the original status value for comparison after update
         $originalStatus = $source->getOriginal('status');
 
-        if ($originalStatus instanceof \App\Enum\SourceStatusEnum) {
+        if ($originalStatus instanceof SourceStatusEnum) {
             $originalStatus = $originalStatus->value;
         }
 
@@ -44,7 +45,7 @@ class SourceObserver
             if ($previousStatus === null) {
                 // Fallback to getOriginal if for some reason we don't have it stored
                 $previousStatus = $source->getOriginal('status');
-                if ($previousStatus instanceof \App\Enum\SourceStatusEnum) {
+                if ($previousStatus instanceof SourceStatusEnum) {
                     $previousStatus = $previousStatus->value;
                 }
             }

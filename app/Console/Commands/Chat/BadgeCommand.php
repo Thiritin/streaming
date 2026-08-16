@@ -5,6 +5,7 @@ namespace App\Console\Commands\Chat;
 use App\Events\UserRoleUpdatedEvent;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Chat\MessagePresenter;
 use Illuminate\Support\Facades\Log;
 
 class BadgeCommand extends AbstractChatCommand
@@ -100,7 +101,7 @@ class BadgeCommand extends AbstractChatCommand
 
         // Clear cached role/badge data used by chat
         \Cache::forget("user_roles_{$targetUser->id}");
-        \App\Services\Chat\MessagePresenter::forgetAuthor($targetUser->id);
+        MessagePresenter::forgetAuthor($targetUser->id);
 
         // Broadcast update (using existing UserRoleUpdatedEvent if it exists)
         if (class_exists('App\Events\UserRoleUpdatedEvent')) {
@@ -133,7 +134,7 @@ class BadgeCommand extends AbstractChatCommand
 
         // Clear cached role/badge data used by chat
         \Cache::forget("user_roles_{$targetUser->id}");
-        \App\Services\Chat\MessagePresenter::forgetAuthor($targetUser->id);
+        MessagePresenter::forgetAuthor($targetUser->id);
 
         // Broadcast update (using existing UserRoleUpdatedEvent if it exists)
         if (class_exists('App\Events\UserRoleUpdatedEvent')) {

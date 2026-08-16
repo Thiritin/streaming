@@ -2,10 +2,12 @@
 
 namespace App\Services;
 
+use LKDev\HetznerCloud\HetznerAPIClient;
+
 class Hetzner
 {
-    public static function client(): \LKDev\HetznerCloud\HetznerAPIClient
+    public static function client(): HetznerAPIClient
     {
-        return new \LKDev\HetznerCloud\HetznerAPIClient(config('services.hetzner.token'));
+        return new HetznerAPIClient(config('services.hetzner.token'));
     }
 }

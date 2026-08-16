@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Http\Middleware\LocalOnly;
+use App\Http\Middleware\ShareManageProps;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Support\Providers\RouteServiceProvider as ServiceProvider;
 use Illuminate\Http\Request;
@@ -41,7 +43,7 @@ class RouteServiceProvider extends ServiceProvider
             Route::middleware('web')
                 ->group(base_path('routes/web.php'));
 
-            Route::middleware(['web', 'auth:web', 'can:access-manage', \App\Http\Middleware\ShareManageProps::class])
+            Route::middleware(['web', 'auth:web', 'can:access-manage', ShareManageProps::class])
                 ->prefix('manage')
                 ->name('manage.')
                 ->group(base_path('routes/manage.php'));
@@ -49,7 +51,7 @@ class RouteServiceProvider extends ServiceProvider
             // Developer account switcher. Deliberately unauthenticated, so it only
             // exists at all when running locally.
             if ($this->app->isLocal()) {
-                Route::middleware(['web', \App\Http\Middleware\LocalOnly::class])
+                Route::middleware(['web', LocalOnly::class])
                     ->group(base_path('routes/local.php'));
             }
         });
