@@ -7,6 +7,7 @@ use App\Enum\ServerTypeEnum;
 use App\Http\Controllers\Controller;
 use App\Jobs\Server\Provision\CreateVirtualMachineJob;
 use App\Models\Server;
+use App\Services\Hetzner;
 use App\Support\Manage\Toast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -39,7 +40,7 @@ class ServerProvisionController extends Controller
 
         $validated = $request->validate([
             'type' => ['required', Rule::enum(ServerTypeEnum::class)],
-            'server_type' => ['nullable', 'string', Rule::in(array_keys(config('stream.server.types', [])))],
+            'server_type' => ['nullable', 'string', Rule::in(array_keys(Hetzner::availableServerTypes()))],
         ]);
 
         $type = ServerTypeEnum::from($validated['type']);

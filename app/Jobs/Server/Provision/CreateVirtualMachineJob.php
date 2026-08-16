@@ -64,7 +64,7 @@ class CreateVirtualMachineJob implements ShouldQueue
         // Build request payload directly due to SDK issues
         $serverType = $hetznerClient->serverTypes()->getByName($hetznerServerType);
         $image = $hetznerClient->images()->getByName('ubuntu-22.04');
-        $location = $hetznerClient->locations()->getByName('nbg1');
+        $location = $hetznerClient->locations()->getByName(config('stream.server.location', 'nbg1'));
 
         $payload = [
             'name' => $name,

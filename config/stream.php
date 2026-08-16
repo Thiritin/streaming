@@ -27,39 +27,47 @@ return [
     | Server provisioning
     |--------------------------------------------------------------------------
     |
-    | Instance sizes offered by the "Provision Cloud Server" action in /manage, and
-    | the size each role starts on. These are read by CreateVirtualMachineJob; until
-    | now the sizes were hardcoded there and this block was a decorative copy that had
-    | already drifted away from what was actually provisioned.
+    | Where servers are created, what sizes may be chosen, and what each role starts
+    | on. Read by CreateVirtualMachineJob and by the "Provision Cloud Server" action.
     |
-    | Sizing is a money decision, not a code one. Hetzner Cloud bills hourly, so the
-    | difference between ccx33 and ccx43 over a two-week event is roughly €70 - worth
-    | an operator being able to choose per server without a deploy.
+    | Sizing is a money decision, not a code one. Hetzner bills hourly, so the gap
+    | between ccx33 and ccx43 over a two week event is around EUR 70 - worth an operator
+    | choosing per server without a deploy.
     |
-    | Labels carry cores and RAM rather than prices, which go stale. `ccx` types are
-    | dedicated vCPU (what the x264 ladder needs); `cpx` are shared, which is fine for
-    | edges because they are bandwidth-bound rather than CPU-bound.
-    |
-    | Origin sizing is driven by the ladder: three x264 encodes per source, so four
-    | live sources is twelve concurrent encodes. Measure with scripts/bench-ladder.sh
-    | before trusting a smaller box.
+    | `ccx` sizes are dedicated vCPU, which the x264 ladder needs: three encodes per
+    | live source, so four sources is twelve concurrent encodes. Measure with
+    | scripts/bench-ladder.sh before trusting a smaller box. Edges are bandwidth-bound
+    | rather than CPU-bound, so the cheapest shared size serves as many viewers as the
+    | uplink allows.
     */
     'server' => [
+        // Where servers are created. Capacity is per location, and a size can be
+        // unplaceable in one while fine in another.
+        'location' => env('HETZNER_LOCATION', 'nbg1'),
+
+        // Fallback only. The dropdown asks Hetzner what it can actually place right
+        // now (see Hetzner::availableServerTypes) - a static list goes stale both when
+        // a generation is retired and when a size is temporarily out of stock, and
+        // both produce the same unhelpful `422 unsupported location for server type`.
+        // This list is what gets used if the API cannot be reached.
         'types' => [
-            'cpx21' => 'cpx21 - 3 vCPU / 4 GB (shared)',
-            'cpx31' => 'cpx31 - 4 vCPU / 8 GB (shared)',
-            'cpx41' => 'cpx41 - 8 vCPU / 16 GB (shared)',
+            'cx23' => 'cx23 - 2 vCPU / 4 GB (shared)',
+            'cx33' => 'cx33 - 4 vCPU / 8 GB (shared)',
+            'cpx22' => 'cpx22 - 2 vCPU / 4 GB (shared)',
+            'cpx32' => 'cpx32 - 4 vCPU / 8 GB (shared)',
+            'cpx42' => 'cpx42 - 8 vCPU / 16 GB (shared)',
             'ccx13' => 'ccx13 - 2 vCPU / 8 GB (dedicated)',
             'ccx23' => 'ccx23 - 4 vCPU / 16 GB (dedicated)',
             'ccx33' => 'ccx33 - 8 vCPU / 32 GB (dedicated)',
             'ccx43' => 'ccx43 - 16 vCPU / 64 GB (dedicated)',
-            'ccx53' => 'ccx53 - 32 vCPU / 128 GB (dedicated)',
         ],
 
         // Preselected in the dropdown, and used for anything provisioned outside it.
+        // Origins need dedicated cores for the x264 ladder. Edges are bandwidth-bound,
+        // so the cheapest shared size carries as many viewers as the uplink allows.
         'defaults' => [
             'origin' => env('HETZNER_ORIGIN_TYPE', 'ccx33'),
-            'edge' => env('HETZNER_EDGE_TYPE', 'cpx21'),
+            'edge' => env('HETZNER_EDGE_TYPE', 'cx23'),
         ],
 
         // Viewer capacity gate per edge, used by the balancer. Not derived from the

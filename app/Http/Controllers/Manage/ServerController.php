@@ -7,6 +7,7 @@ use App\Enum\ServerTypeEnum;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Manage\ServerRequest;
 use App\Models\Server;
+use App\Services\Hetzner;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
 use App\Support\Manage\Filter;
@@ -353,7 +354,7 @@ class ServerController extends Controller
     {
         $defaults = array_flip(config('stream.server.defaults', []));
 
-        return collect(config('stream.server.types', []))
+        return collect(Hetzner::availableServerTypes())
             ->map(fn (string $label, string $value) => [
                 'value' => $value,
                 'label' => isset($defaults[$value])

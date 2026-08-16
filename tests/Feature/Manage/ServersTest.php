@@ -8,8 +8,11 @@ use App\Jobs\Server\DeleteServerJob;
 use App\Jobs\Server\Provision\CreateVirtualMachineJob;
 use App\Models\Server;
 use App\Models\User;
+use App\Services\Hetzner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Inertia\SessionKey;
 use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -662,5 +665,78 @@ class ServersTest extends TestCase
                 ->count('users', 1)
                 ->where('users.0.name', 'Assigned Viewer')
             );
+    }
+
+    // ------------------------------------------------- instance size catalogue
+
+    /**
+     * The dropdown asks Hetzner what it can actually place, because a fixed list goes
+     * stale two different ways and both look identical from the app: a generation is
+     * retired (the whole `cpx21`/`cpx31`/`cpx41` line stopped being placeable in every
+     * EU datacenter), or a size is temporarily out of stock. Either way provisioning
+     * dies with `422 unsupported location for server type` and leaves a row at
+     * `pending` with no IP.
+     */
+    public function test_the_size_catalogue_comes_from_hetzner(): void
+    {
+        config(['services.hetzner.token' => 'test-token', 'stream.server.location' => 'nbg1']);
+        Cache::forget('hetzner.server_types');
+
+        Http::fake([
+            'api.hetzner.cloud/v1/server_types*' => Http::response(['server_types' => [
+                ['id' => 1, 'name' => 'cx23', 'cores' => 2, 'memory' => 4, 'architecture' => 'x86',
+                    'cpu_type' => 'shared', 'prices' => [['price_hourly' => ['gross' => '0.0088']]]],
+                ['id' => 2, 'name' => 'ccx33', 'cores' => 8, 'memory' => 32, 'architecture' => 'x86',
+                    'cpu_type' => 'dedicated', 'prices' => [['price_hourly' => ['gross' => '0.2259']]]],
+                ['id' => 3, 'name' => 'cpx21', 'cores' => 3, 'memory' => 4, 'architecture' => 'x86',
+                    'cpu_type' => 'shared', 'prices' => [['price_hourly' => ['gross' => '0.0513']]]],
+                ['id' => 4, 'name' => 'cax11', 'cores' => 2, 'memory' => 4, 'architecture' => 'arm',
+                    'cpu_type' => 'shared', 'prices' => [['price_hourly' => ['gross' => '0.0096']]]],
+            ]]),
+            'api.hetzner.cloud/v1/datacenters*' => Http::response(['datacenters' => [
+                ['name' => 'nbg1-dc3', 'location' => ['name' => 'nbg1'],
+                    'server_types' => ['available' => [1, 2, 4]]],
+                ['name' => 'fsn1-dc14', 'location' => ['name' => 'fsn1'],
+                    'server_types' => ['available' => [1, 2, 3]]],
+            ]]),
+        ]);
+
+        $types = Hetzner::availableServerTypes();
+
+        $this->assertArrayHasKey('cx23', $types);
+        $this->assertArrayHasKey('ccx33', $types);
+
+        // Placeable in fsn1 but not our location.
+        $this->assertArrayNotHasKey('cpx21', $types);
+
+        // ARM is cheap and useless: the transcoder and uploader images are x86 only.
+        $this->assertArrayNotHasKey('cax11', $types);
+
+        // Cheapest first, because the list is read by someone deciding what to spend.
+        $this->assertSame('cx23', array_key_first($types));
+        $this->assertStringContainsString('0.009', $types['cx23']);
+    }
+
+    public function test_the_catalogue_falls_back_when_hetzner_is_unreachable(): void
+    {
+        config(['services.hetzner.token' => 'test-token']);
+        Cache::forget('hetzner.server_types');
+
+        Http::fake(['api.hetzner.cloud/*' => Http::response('', 500)]);
+
+        // A stale list beats an empty dropdown when someone is provisioning under
+        // pressure.
+        $this->assertSame(config('stream.server.types'), Hetzner::availableServerTypes());
+    }
+
+    public function test_no_token_means_no_api_call(): void
+    {
+        config(['services.hetzner.token' => null]);
+        Cache::forget('hetzner.server_types');
+        Http::fake();
+
+        $this->assertSame(config('stream.server.types'), Hetzner::availableServerTypes());
+
+        Http::assertNothingSent();
     }
 }
