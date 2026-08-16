@@ -7,7 +7,7 @@ import {resolvePageComponent} from 'laravel-vite-plugin/inertia-helpers';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import VueCookies from 'vue-cookies'
 import VueAxios from "vue-axios";
-import { installViewTransitions } from './viewTransitions';
+// import { installViewTransitions } from './viewTransitions'; // see the note at the bottom
 import { mediaHeroDirective } from './composables/useMediaHero';
 
 // Read the shared branding off the initial Inertia payload so the tab title and
@@ -42,7 +42,22 @@ createInertiaApp({
     },
 });
 
-// Registered after the app so the router exists. A no-op in a browser without the
-// View Transitions API, and for anyone who has asked for reduced motion;
-// navigation falls back to the plain Inertia swap.
-installViewTransitions();
+// Page transitions are off.
+//
+// `installViewTransitions()` starts a view transition on Inertia's `before` event
+// and holds it open until `finish`, i.e. across the whole network request. While
+// one is pending the browser suppresses painting, so on a real connection the page
+// visibly freezes for the length of the round trip and then repaints all at once.
+// Users reported it as "pressing anything just reloads the page in place", which is
+// exactly what a frozen document followed by a whole-page cross-fade looks like.
+//
+// It was invisible in development because the response is already there: the freeze
+// is only as long as the request, and locally that is a few milliseconds.
+//
+// Deliberately left installed-but-uncalled rather than deleted. The effect is worth
+// having; what it needs is to start when the DOM is about to swap rather than when
+// the request is sent, so that painting is only suppressed for the swap itself.
+// Inertia exposes no pre-swap hook, so that is a real piece of work and not a
+// hotfix. See resources/js/viewTransitions.js.
+//
+// installViewTransitions();
