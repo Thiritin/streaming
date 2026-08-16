@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\ColorPresets;
+
 return [
 
     /*
@@ -124,7 +126,7 @@ return [
                     'type' => 'color',
                     'helper' => 'Pick a preset or set any hex. A full 50-950 ramp is derived from it; empty keeps the built-in palette.',
                     'rules' => ['nullable', 'string', 'regex:/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/'],
-                    'presets' => \App\Support\ColorPresets::PRESETS,
+                    'presets' => ColorPresets::PRESETS,
                 ],
                 [
                     'key' => 'logo_path',

@@ -22,15 +22,52 @@ return [
     // HLS tracker API key
     'hls_tracker_api_key' => env('STREAM_HLS_TRACKER_API_KEY', ''),
 
-    // Server provisioning
+    /*
+    |--------------------------------------------------------------------------
+    | Server provisioning
+    |--------------------------------------------------------------------------
+    |
+    | Instance sizes offered by the "Provision Cloud Server" action in /manage, and
+    | the size each role starts on. These are read by CreateVirtualMachineJob; until
+    | now the sizes were hardcoded there and this block was a decorative copy that had
+    | already drifted away from what was actually provisioned.
+    |
+    | Sizing is a money decision, not a code one. Hetzner Cloud bills hourly, so the
+    | difference between ccx33 and ccx43 over a two-week event is roughly €70 - worth
+    | an operator being able to choose per server without a deploy.
+    |
+    | Labels carry cores and RAM rather than prices, which go stale. `ccx` types are
+    | dedicated vCPU (what the x264 ladder needs); `cpx` are shared, which is fine for
+    | edges because they are bandwidth-bound rather than CPU-bound.
+    |
+    | Origin sizing is driven by the ladder: three x264 encodes per source, so four
+    | live sources is twelve concurrent encodes. Measure with scripts/bench-ladder.sh
+    | before trusting a smaller box.
+    */
     'server' => [
-        'origin' => [
-            'type' => 'ccx33',
-            'max_streams' => 10,
+        'types' => [
+            'cpx21' => 'cpx21 - 3 vCPU / 4 GB (shared)',
+            'cpx31' => 'cpx31 - 4 vCPU / 8 GB (shared)',
+            'cpx41' => 'cpx41 - 8 vCPU / 16 GB (shared)',
+            'ccx13' => 'ccx13 - 2 vCPU / 8 GB (dedicated)',
+            'ccx23' => 'ccx23 - 4 vCPU / 16 GB (dedicated)',
+            'ccx33' => 'ccx33 - 8 vCPU / 32 GB (dedicated)',
+            'ccx43' => 'ccx43 - 16 vCPU / 64 GB (dedicated)',
+            'ccx53' => 'ccx53 - 32 vCPU / 128 GB (dedicated)',
         ],
-        'edge' => [
-            'type' => 'cx22',
-            'max_clients' => 100,
+
+        // Preselected in the dropdown, and used for anything provisioned outside it.
+        'defaults' => [
+            'origin' => env('HETZNER_ORIGIN_TYPE', 'ccx33'),
+            'edge' => env('HETZNER_EDGE_TYPE', 'cpx21'),
+        ],
+
+        // Viewer capacity gate per edge, used by the balancer. Not derived from the
+        // instance size: edges run out of uplink long before CPU, so this tracks
+        // bandwidth per server rather than cores.
+        'max_clients' => [
+            'origin' => 1000,
+            'edge' => 100,
         ],
     ],
 

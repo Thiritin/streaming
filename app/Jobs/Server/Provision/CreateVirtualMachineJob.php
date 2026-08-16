@@ -26,7 +26,10 @@ class CreateVirtualMachineJob implements ShouldQueue
 
     public function handle(): void
     {
-        $hetznerServerType = ($this->server->type === ServerTypeEnum::ORIGIN) ? 'ccx43' : 'cpx21';
+        // Chosen per server when provisioning from /manage, falling back to the
+        // per-role default in config/stream.php. It used to be hardcoded here, which
+        // made instance size a deploy-time decision for something billed by the hour.
+        $hetznerServerType = $this->server->hetznerServerType();
         $hetznerClient = Hetzner::client();
         $name = $this->server->type->value.'-'.$this->server->id.'-'.Str::random(12);
 
@@ -120,7 +123,10 @@ class CreateVirtualMachineJob implements ShouldQueue
             'ip' => $server->public_net->ipv4->ip,
             'internal_ip' => $internalIp,
             'port' => 443,
-            'max_clients' => ($this->server->type === ServerTypeEnum::EDGE) ? 100 : 1000,
+            'max_clients' => config(
+                'stream.server.max_clients.'.($this->server->type === ServerTypeEnum::EDGE ? 'edge' : 'origin'),
+                $this->server->type === ServerTypeEnum::EDGE ? 100 : 1000,
+            ),
             'status' => ServerStatusEnum::PROVISIONING,
         ]);
 

@@ -73,6 +73,9 @@ class ServersTest extends TestCase
                 fn ($columns) => collect($columns)->pluck('key')->all() === [
                     'hetzner_id',
                     'type',
+                    // Not a Filament column: the Hetzner instance size, which is now
+                    // chosen per server when provisioning rather than hardcoded.
+                    'server_type',
                     'hostname',
                     'ip',
                     'port',
@@ -426,6 +429,74 @@ class ServersTest extends TestCase
             ->post(route('manage.servers.provision'), ['type' => ServerTypeEnum::ORIGIN->value]);
 
         $this->assertSame(1000, Server::sole()->max_clients);
+    }
+
+    // ------------------------------------------------------------- instance size
+
+    public function test_the_chosen_instance_size_is_recorded_and_used(): void
+    {
+        Bus::fake();
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.servers.provision'), [
+                'type' => ServerTypeEnum::ORIGIN->value,
+                'server_type' => 'ccx23',
+            ]);
+
+        $server = Server::sole();
+
+        $this->assertSame('ccx23', $server->server_type);
+        // What CreateVirtualMachineJob actually sends to Hetzner.
+        $this->assertSame('ccx23', $server->hetznerServerType());
+    }
+
+    public function test_omitting_the_size_falls_back_to_the_configured_default(): void
+    {
+        Bus::fake();
+        config(['stream.server.defaults.origin' => 'ccx33']);
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.servers.provision'), ['type' => ServerTypeEnum::ORIGIN->value]);
+
+        $this->assertSame('ccx33', Server::sole()->server_type);
+    }
+
+    /**
+     * The field reaches the Hetzner API, so it is validated against the configured list
+     * rather than accepted freely. Without this an operator could name any instance
+     * Hetzner sells, including one that bills at several euro an hour.
+     */
+    public function test_an_unlisted_instance_size_is_rejected(): void
+    {
+        Bus::fake();
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.servers.provision'), [
+                'type' => ServerTypeEnum::EDGE->value,
+                'server_type' => 'ccx63-does-not-exist',
+            ])
+            ->assertSessionHasErrors('server_type');
+
+        $this->assertSame(0, Server::count());
+        Bus::assertNotDispatched(CreateVirtualMachineJob::class);
+    }
+
+    /**
+     * Servers provisioned before the column existed have no recorded size, and must not
+     * be guessed at as something they might not be.
+     */
+    public function test_a_server_without_a_recorded_size_falls_back_by_role(): void
+    {
+        config([
+            'stream.server.defaults.origin' => 'ccx33',
+            'stream.server.defaults.edge' => 'cpx21',
+        ]);
+
+        $origin = Server::factory()->origin()->create(['server_type' => null]);
+        $edge = Server::factory()->create(['server_type' => null]);
+
+        $this->assertSame('ccx33', $origin->hetznerServerType());
+        $this->assertSame('cpx21', $edge->hetznerServerType());
     }
 
     #[DataProvider('blockingOriginStatuses')]

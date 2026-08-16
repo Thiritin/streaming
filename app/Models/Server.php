@@ -68,6 +68,26 @@ class Server extends Model
     }
 
     /**
+     * The Hetzner instance size this server is, or should be provisioned as.
+     *
+     * Falls back to the per-role default for servers created before `server_type`
+     * existed, and for anything provisioned outside the /manage action. The size is a
+     * money decision - Hetzner bills hourly - so it is config plus a per-server
+     * override rather than a constant in the provisioning job.
+     */
+    public function hetznerServerType(): string
+    {
+        if ($this->server_type) {
+            return $this->server_type;
+        }
+
+        $role = $this->type === ServerTypeEnum::ORIGIN ? 'origin' : 'edge';
+
+        return config("stream.server.defaults.{$role}")
+            ?? ($role === 'origin' ? 'ccx33' : 'cpx21');
+    }
+
+    /**
      * Get all active edge servers
      */
     public static function getActiveEdges()

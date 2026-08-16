@@ -47,6 +47,7 @@ class ServerController extends Controller
             ->columns([
                 Column::text('hetzner_id', 'Server ID')->searchable()->fallback('-'),
                 Column::badge('type', 'Type'),
+                Column::text('server_type', 'Size')->toggleable()->fallback('-'),
                 Column::copyable('hostname', 'Hostname')->searchable()->sortable(),
                 Column::copyable('ip', 'IP'),
                 Column::number('port', 'Port')->sortable(),
@@ -206,6 +207,9 @@ class ServerController extends Controller
         return [
             'hetzner_id' => $server->hetzner_id,
             'type' => Status::serverType($server->type),
+            // Null for anything provisioned before the size was recorded; the fallback
+            // renders '-' rather than implying a size nobody chose.
+            'server_type' => $server->server_type,
             'hostname' => $server->hostname,
             'ip' => $server->ip,
             'port' => $server->port,
@@ -308,20 +312,56 @@ class ServerController extends Controller
                 ->fields([
                     [
                         'key' => 'type',
-                        'label' => 'Server Type',
+                        'label' => 'Role',
                         'type' => 'select',
                         'default' => ServerTypeEnum::EDGE->value,
                         'required' => true,
                         'helper' => 'Origin servers handle stream ingestion and transcoding. Edge servers cache and distribute content.',
                         'options' => [
-                            ['value' => ServerTypeEnum::ORIGIN->value, 'label' => 'Origin Server (ccx43 - High Performance)'],
-                            ['value' => ServerTypeEnum::EDGE->value, 'label' => 'Edge Server (cpx21 - Standard)'],
+                            ['value' => ServerTypeEnum::ORIGIN->value, 'label' => 'Origin Server'],
+                            ['value' => ServerTypeEnum::EDGE->value, 'label' => 'Edge Server'],
                         ],
+                    ],
+                    [
+                        'key' => 'server_type',
+                        'label' => 'Instance Size',
+                        'type' => 'select',
+                        // Defaults to the edge size because the role above does, and the
+                        // two are chosen together. Picking Origin without changing this
+                        // is caught by the mismatch note in the helper rather than by
+                        // silently overriding the operator.
+                        'default' => config('stream.server.defaults.edge'),
+                        'required' => true,
+                        'helper' => 'Hetzner bills hourly, so this is the main cost lever: over a two week event the '
+                            .'gap between ccx33 and ccx43 is roughly EUR 70. Origins need dedicated (ccx) cores for the '
+                            .'x264 ladder - three encodes per live source. Edges are bandwidth-bound, so shared (cpx) is fine.',
+                        'options' => $this->serverTypeOptions(),
                     ],
                 ]);
         }
 
         return $actions;
+    }
+
+    /**
+     * Instance sizes offered by the provision dialog, marked with the role each is the
+     * default for so an operator does not have to remember which is which.
+     *
+     * @return array<int, array{value: string, label: string}>
+     */
+    private function serverTypeOptions(): array
+    {
+        $defaults = array_flip(config('stream.server.defaults', []));
+
+        return collect(config('stream.server.types', []))
+            ->map(fn (string $label, string $value) => [
+                'value' => $value,
+                'label' => isset($defaults[$value])
+                    ? $label.' - default for '.$defaults[$value]
+                    : $label,
+            ])
+            ->values()
+            ->all();
     }
 
     /**
