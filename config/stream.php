@@ -83,12 +83,21 @@ return [
         'hls_port' => env('DOCKER_HLS_PORT', 80),
     ],
 
-    // Container images baked into the generated provisioning scripts. Built
-    // from docker/ in this repo; set the full reference including the registry
-    // namespace an operator publishes them under.
+    /*
+    | Container images baked into the generated provisioning scripts, built from
+    | docker/ in this repo by .github/workflows/docker-support-images.yml.
+    |
+    | Fully qualified on purpose. These defaults used to be bare names -
+    | `ffmpeg-hls:latest` - which Docker resolves as official Docker Hub images that do
+    | not exist, so `docker compose up` on a fresh origin died with "pull access
+    | denied" and the whole stack never started. The registry namespace has to be part
+    | of the default, not something an environment is trusted to remember.
+    |
+    | Override per environment if the images are published somewhere else.
+    */
     'images' => [
-        'ffmpeg_hls' => env('STREAM_IMAGE_FFMPEG_HLS', 'ffmpeg-hls:latest'),
-        'archive_uploader' => env('STREAM_IMAGE_ARCHIVE_UPLOADER', 'archive-uploader:latest'),
+        'ffmpeg_hls' => env('STREAM_IMAGE_FFMPEG_HLS', 'eurofurence/ffmpeg-hls:latest'),
+        'archive_uploader' => env('STREAM_IMAGE_ARCHIVE_UPLOADER', 'eurofurence/archive-uploader:latest'),
     ],
 
     // Filesystem disk holding the segment archive and the generated recording

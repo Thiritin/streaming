@@ -225,4 +225,35 @@ class EdgeTokenEnforcementTest extends TestCase
             ? substr($config, $start)
             : substr($config, $start, $next - $start);
     }
+
+    /**
+     * Provisioning images must name their registry.
+     *
+     * The defaults were bare (`ffmpeg-hls:latest`), which Docker resolves as an official
+     * Docker Hub image. None exists, so a fresh origin died at `docker compose up` with
+     * "pull access denied" and the stack never started - with nothing in the app to say
+     * so, because the failure happens on the box.
+     */
+    public function test_provisioning_images_are_fully_qualified(): void
+    {
+        foreach (config('stream.images') as $key => $reference) {
+            $this->assertStringContainsString(
+                '/',
+                $reference,
+                "stream.images.{$key} is '{$reference}', which Docker reads as an official "
+                .'Docker Hub image. It needs the registry namespace, or provisioning fails '
+                .'on the server with "pull access denied".'
+            );
+        }
+    }
+
+    public function test_the_origin_compose_references_those_images(): void
+    {
+        $origin = Server::factory()->origin()->create(['shared_secret' => 'origin-secret']);
+        $compose = $this->provisioning->generateConfig($origin, 'docker-compose');
+
+        foreach (config('stream.images') as $reference) {
+            $this->assertStringContainsString($reference, $compose);
+        }
+    }
 }
