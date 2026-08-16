@@ -2,7 +2,6 @@
 
 namespace App\Jobs\Server\Deprovision;
 
-use App\Enum\ServerTypeEnum;
 use App\Models\Server;
 use App\Services\DnsKeyService;
 use Illuminate\Bus\Queueable;
@@ -26,9 +25,12 @@ class DeleteDnsRecordJob implements ShouldQueue
             return;
         }
 
-        if ($this->server->type === ServerTypeEnum::ORIGIN) {
-            return;
-        }
+        // Origins used to return early here, which leaked a record on every teardown.
+        // CreateDnsRecordJob makes an A record for an origin the same as for an edge, so
+        // skipping the delete was simply asymmetric: origin-1 was torn down in September
+        // 2025 and its hostname still resolved eleven months later, by which point
+        // Hetzner had long since reassigned that address to somebody else. A name under
+        // our zone pointing at a stranger's server is worth more than an untidy record.
 
         $hostname = $this->server->hostname;
         $ttl = config('dns.ttl', 60);
