@@ -159,8 +159,17 @@ class HlsController extends Controller
                 'streamkey' => $streamkey ?? null,
             ]);
 
-            return response('Failed to fetch playlist', 502)
-                ->header('Content-Type', 'text/plain');
+            // Pass a 404 through rather than flattening it to 502. The edge answers
+            // 404 whenever a playlist is not there right now - between publisher
+            // reconnects, in the seconds before the ladder has written anything, or
+            // for a stream that has simply ended. That is "not available yet", and
+            // hls.js retries around it; a 502 reads as a broken server and is treated
+            // far more harshly. docker/edge-nginx/hls-auth.js makes the same argument
+            // about 403 versus 404 one layer down.
+            return response(
+                'Playlist not available',
+                $response->status() === 404 ? 404 : 502,
+            )->header('Content-Type', 'text/plain');
 
         } catch (\Exception $e) {
             Log::error('Failed to fetch master playlist from assigned server', [
@@ -314,8 +323,11 @@ class HlsController extends Controller
                 'streamkey' => $streamkey ?? null,
             ]);
 
-            return response('Failed to fetch playlist', 502)
-                ->header('Content-Type', 'text/plain');
+            // See master(): a missing playlist is a 404, not a fault.
+            return response(
+                'Playlist not available',
+                $response->status() === 404 ? 404 : 502,
+            )->header('Content-Type', 'text/plain');
 
         } catch (\Exception $e) {
             Log::error('Failed to fetch variant playlist from edge server', [

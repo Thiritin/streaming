@@ -146,11 +146,18 @@ viewer() {
     2>/dev/null || echo "master-fail" >> "$log"
 
   while [ "$(date +%s)" -lt "$deadline" ]; do
-    local playlist
-    playlist=$(curl -s -m 10 --fail \
-      "${APP_URL}/hls/${slug}_${rendition}.m3u8?streamkey=${VIEWER_KEY}" 2>/dev/null) || {
-      echo "variant-fail" >> "$log"; sleep 2; continue
-    }
+    # Status recorded alongside the body: "it failed" is not a diagnosis, and the
+    # difference between 404 (no such stream yet), 503 (no edge available) and 502
+    # (the app could not reach the edge) points at completely different components.
+    local response status playlist
+    response=$(curl -s -m 10 -w '\n%{http_code}' \
+      "${APP_URL}/hls/${slug}_${rendition}.m3u8?streamkey=${VIEWER_KEY}" 2>/dev/null)
+    status="${response##*$'\n'}"
+    playlist="${response%$'\n'*}"
+
+    if [ "$status" != "200" ]; then
+      echo "variant-${status:-noresponse}" >> "$log"; sleep 2; continue
+    fi
 
     # The app rewrites these to absolute edge URLs, so they are taken as given rather
     # than reassembled here - if the rewrite is wrong, this test should notice.
@@ -192,7 +199,10 @@ echo "=== result ==="
 pub_fail=0
 for log in "$WORK"/logs/pub-*.log; do
   [ -f "$log" ] || continue
-  if grep -qiE "error|failed|broken pipe|connection refused" "$log"; then
+  # "Failed to update header with correct duration/filesize" is what FLV always says
+  # when a stream ends; it is not a fault and flagging it made every clean run look bad.
+  if grep -iE "error|failed|broken pipe|connection refused" "$log" \
+     | grep -qivE "update header with correct (duration|filesize)"; then
     pub_fail=$((pub_fail + 1))
     echo "  publisher problem in $(basename "$log"):"
     grep -iE "error|failed|broken pipe" "$log" | head -2 | sed 's/^/    /'

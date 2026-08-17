@@ -336,4 +336,33 @@ class HlsCachingTest extends TestCase
         // Verify only one server call
         $this->assertEquals(1, $callCount);
     }
+
+    /**
+     * A playlist that is not there yet is a 404, not a 502.
+     *
+     * The edge answers 404 whenever a playlist is momentarily absent - between
+     * publisher reconnects, in the seconds before the ladder has written anything, or
+     * for a stream that has ended. The app used to flatten every non-2xx into 502,
+     * which reads as a broken server: hls.js retries around a 404 and treats a 502 far
+     * more harshly. A soak run against production showed this as 6% of all playlist
+     * polls coming back 502 while the stream was perfectly healthy.
+     */
+    public function test_a_missing_playlist_is_passed_through_as_404(): void
+    {
+        Http::fake(['*' => Http::response('not found', 404)]);
+
+        $this->get('/hls/test-stream_hd.m3u8?streamkey=test-streamkey-123')
+            ->assertStatus(404);
+
+        $this->get('/hls/test-stream/master.m3u8?streamkey=test-streamkey-123')
+            ->assertStatus(404);
+    }
+
+    public function test_a_genuine_upstream_fault_is_still_502(): void
+    {
+        Http::fake(['*' => Http::response('boom', 500)]);
+
+        $this->get('/hls/test-stream_hd.m3u8?streamkey=test-streamkey-123')
+            ->assertStatus(502);
+    }
 }
