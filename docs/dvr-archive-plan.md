@@ -521,6 +521,37 @@ Ladder totals 1500+3500+6000 kbps video and 128+160+192 kbps audio, about 11.5 M
 disk should be sized at 50 GB or more per source: the window itself is 5.2 GB, and the
 rest is headroom for upload lag and for an S3 outage that stalls the reaper.
 
+## Storage reporting
+
+Two numbers show up in `/manage` > Recordings, and they answer different questions.
+
+**How full is the bucket.** S3 has no free-space call, and no provider this runs against
+exposes a quota over the API, so the only honest total is the one you add up yourself.
+`ArchiveStorageService` walks the bucket with a paginated `ListObjectsV2` and groups the
+result by source (`archive/<slug>`), because the question behind the panel is always which
+source is eating the room. At ~648k objects for a five day stream that is ~650 list calls
+and minutes of wall clock, so it never runs on a page load: `ScanArchiveStorageJob` runs it
+hourly, the result is cached, and the panel shows what was measured and when. A scan that
+hits its page cap reports itself as partial rather than presenting a floor as a total.
+
+Free space needs a denominator nobody can discover, so it comes from `ARCHIVE_QUOTA_BYTES`.
+Unset, the panel reports what is used and says the capacity is not configured, which is
+better than inventing a limit.
+
+**How big is a recording.** `recordings.archive_bytes`, written by
+`ArchivePlaylistService::build()` while it already holds the segments. Exact for the source
+rendition, whose per-segment sizes the uploader records as `#EXT-X-ARCHIVE-BYTES`; the
+ladder carries none, because one hour-index entry describes all three renditions at once,
+so its share is derived from the bitrates in `RENDITIONS`. Hence the `~` in the column.
+
+The column is a span, not a cost. A recording is a window onto a shared archive: the same
+segments back every other cut over that source and the archive itself, so deleting a
+recording reclaims nothing. Only expiry of the underlying hours does.
+
+`php artisan archive:usage --refresh` scans on demand; `--recordings` backfills
+`archive_bytes` for cuts built before the column existed, reading hour indexes rather than
+rebuilding so it cannot disturb a playlist.
+
 ## Failure modes
 
 | Failure | Handling |
