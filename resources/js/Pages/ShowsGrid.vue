@@ -3,7 +3,7 @@
     <Head title="Browse" />
 
     <!-- Featured channel: the primary channel owns this slot, live or not -->
-    <StageHero v-if="featured" :show="featured" :chat="featuredChat" />
+    <StageHero v-if="featured" :show="featured" :chat="featuredChat" :source-status="featuredSourceStatus" />
 
     <!-- Nothing on any channel and nothing scheduled -->
     <div v-else class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-16 pb-10">
@@ -80,9 +80,10 @@
 </template>
 
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
-import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useRealtimeResync } from '@/composables/useRealtimeResync';
 import StageHero from '@/Components/Shows/StageHero.vue';
 import ShowTile from '@/Components/Shows/ShowTile.vue';
 import RecordingTile from '@/Components/Recordings/RecordingTile.vue';
@@ -109,6 +110,7 @@ const liveShows = ref([...props.liveShows]);
 const startingSoonShows = ref([...props.startingSoonShows]);
 const upcomingShows = ref([...props.upcomingShows]);
 const featured = ref(props.featured ? { ...props.featured } : null);
+const featuredSourceStatus = ref(props.featured?.source_status ?? null);
 
 const activeFilter = ref('all');
 
@@ -159,10 +161,60 @@ const showArchiveLink = computed(() =>
 );
 
 // Echo keeps the page current; there is deliberately no periodic page reload,
-// which used to interrupt anyone leaving the browse page open.
+// which used to interrupt anyone leaving the browse page open. What a websocket
+// cannot do is replay what it missed, so pull fresh props back after a gap.
+const resync = () => {
+  router.reload({
+    only: ['liveShows', 'startingSoonShows', 'upcomingShows', 'featured', 'featuredChat'],
+  });
+};
+
+useRealtimeResync(resync);
+
+watch(() => props.liveShows, (value) => liveShows.value = [...(value ?? [])]);
+watch(() => props.startingSoonShows, (value) => startingSoonShows.value = [...(value ?? [])]);
+watch(() => props.upcomingShows, (value) => upcomingShows.value = [...(value ?? [])]);
+watch(() => props.featured, (value) => {
+  featured.value = value ? { ...value } : null;
+  featuredSourceStatus.value = value?.source_status ?? null;
+  subscribeToFeaturedSource(featured.value?.source_id);
+}, { deep: true });
+
+// The hero plays the featured channel, so it needs that source's status the same
+// way the full player does: a stream that stops is not a stream still connecting.
+let featuredSourceId = null;
+
+const subscribeToFeaturedSource = (sourceId) => {
+  if (sourceId === featuredSourceId) return;
+
+  if (featuredSourceId) Echo.leave(`source.${featuredSourceId}`);
+  featuredSourceId = sourceId ?? null;
+
+  if (!featuredSourceId) return;
+
+  Echo.channel(`source.${featuredSourceId}`).listen('.source.status.changed', (e) => {
+    featuredSourceStatus.value = e.status;
+
+    // Coming back on air means a new playlist to attach to, which only the server
+    // can hand out.
+    if (e.status === 'online') resync();
+  });
+};
+
 onMounted(() => {
+  subscribeToFeaturedSource(featured.value?.source_id);
+
   Echo.channel('shows')
     .listen('.show.status.changed', (e) => {
+      if (featured.value?.id === e.show.id) {
+        featured.value = {
+          ...featured.value,
+          ...e.show,
+          slug: e.show.slug || featured.value.slug,
+          hls_url: e.hlsUrl ?? e.show.hls_url ?? featured.value.hls_url,
+        };
+      }
+
       if (e.status === 'live') {
         removeById(upcomingShows, e.show.id);
         removeById(startingSoonShows, e.show.id);
@@ -209,6 +261,11 @@ const removeById = (list, id) => {
 
 onUnmounted(() => {
   Echo.leave('shows');
+
+  if (featuredSourceId) {
+    Echo.leave(`source.${featuredSourceId}`);
+    featuredSourceId = null;
+  }
 });
 </script>
 

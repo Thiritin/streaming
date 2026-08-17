@@ -137,6 +137,12 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  // Status of the channel behind the show, when the page tracks it. A show can be
+  // live while its source is not publishing, and that is not "connecting".
+  sourceStatus: {
+    type: String,
+    default: null,
+  },
 });
 
 const now = useNow();
@@ -151,9 +157,14 @@ const MAX_RECOVERIES = 3;
 
 const isLive = computed(() => props.show.status === 'live');
 
+// A source the page knows is down cannot be waited for. Only treat an unknown
+// status as "still might arrive".
+const sourceIsDown = computed(() => props.sourceStatus !== null && props.sourceStatus !== 'online');
+
 // "Connecting" that never resolves is a lie; once the stream errors out, say so.
 const playbackLabel = computed(() => {
   if (!isLive.value) return 'Off air';
+  if (sourceIsDown.value) return props.sourceStatus === 'error' ? 'Connection interrupted' : 'Stream offline';
 
   return failed.value ? 'Stream unavailable' : 'Connecting';
 });
@@ -234,7 +245,7 @@ const stopPlayback = ({ errored = false } = {}) => {
 // Autoplay is muted on purpose: browsers block audible autoplay, and a front page
 // that shouts at you is worse than one you have to unmute.
 const startPlayback = async () => {
-  if (!props.show.hls_url || !isLive.value) return;
+  if (!props.show.hls_url || !isLive.value || sourceIsDown.value) return;
 
   await nextTick();
   const el = player.value;
@@ -286,7 +297,7 @@ const startPlayback = async () => {
   }
 };
 
-watch(() => [props.show.id, props.show.hls_url], () => {
+watch(() => [props.show.id, props.show.hls_url, props.show.status, props.sourceStatus], () => {
   stopPlayback();
   startPlayback();
 });

@@ -393,6 +393,7 @@ class StreamController extends Controller
             'description_html' => $show->description_html,
             'source' => $show->source?->name,
             'source_id' => $show->source_id,
+            'source_status' => $show->source?->status->value,
             'status' => $show->status,
             'thumbnail_url' => $show->thumbnail_url,
             'hls_url' => $show->status === 'live' ? $show->getHlsUrl() : null,
