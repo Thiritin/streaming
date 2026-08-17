@@ -101,6 +101,7 @@ class SourceController extends Controller
                 'description' => $source->description,
                 'rtmp_url' => $source->getRtmpServerUrl(),
                 'stream_key' => $source->getObsStreamKey(),
+                'companion_url' => url('/api/companion/'.$source->slug),
                 'shows_count' => $source->shows()->count(),
                 'live_shows_count' => $source->liveShows()->count(),
                 'created_at' => $source->created_at?->diffForHumans() ?? '-',

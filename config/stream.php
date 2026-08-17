@@ -173,6 +173,15 @@ return [
         'refresh_margin' => (int) env('HLS_TOKEN_REFRESH_MARGIN', 180),
     ],
 
+    // The key a hardware control surface authenticates with; see
+    // docs/admin/companion.md. One key for the installation, not one per source:
+    // which source a surface drives is part of its request, and the people who
+    // run the rooms are the same people either way.
+    //
+    // Empty disables the control API outright, which is the default: nothing is
+    // reachable until someone sets the key.
+    'control_key' => env('COMPANION_API_KEY'),
+
     // Local dev loops: with DEV_STREAMS=true, sources play the HLS that
     // scripts/dev-streams.sh writes into public/dev-streams/<slug> instead of
     // being proxied to an edge server that does not exist on a laptop.

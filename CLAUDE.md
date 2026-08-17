@@ -80,6 +80,7 @@ Site is served by Yerd at `http://streaming.test` (`APP_URL`); no `artisan serve
 | 5173 | Vite | `npm run dev`; `detectTls: false` in `vite.config.js` so the plugin does not probe Yerd's valet config for certs |
 | 8081 | Reverb | WebSockets; `REVERB_PORT`/`REVERB_SERVER_PORT`, 8080 is unavailable |
 | 6379 | Valkey | Redis-compatible, reached via the `phpredis` extension and the `REDIS_*` env vars |
+| 8000 | Companion | only while `./scripts/companion.sh up` is running; see docs/admin/companion.md |
 
 Local `CACHE_DRIVER=file` and `QUEUE_CONNECTION=database` by design, so Valkey is optional locally; production uses it for cache, Horizon queues, and Reverb scaling.
 
@@ -159,6 +160,9 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
 - Dashboard: capacity, server health, alerts, live viewers, the next few hours of programme
 - Sources, Shows, the Show planner and Stream Control
 - Import: pulls sessions from pretalx into shows; see docs/admin/pretalx-import.md
+- Each source page carries its control-surface endpoint (`/api/companion/<stream name>`,
+  start/stop/status, one `COMPANION_API_KEY` for the installation); see
+  docs/admin/companion.md
 - Servers, including the generated install script
 - Users, Roles, Emotes and Recordings
 - Settings: branding, login copy, accent colour and footer links

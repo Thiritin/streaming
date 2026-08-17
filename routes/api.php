@@ -1,5 +1,16 @@
 <?php
 
+use App\Http\Controllers\Api\CommandController;
+use App\Http\Controllers\Api\CompanionController;
+use App\Http\Controllers\Api\HlsSessionController;
+use App\Http\Controllers\Api\RecordingApiController;
+use App\Http\Controllers\Api\ServerFileController;
+use App\Http\Controllers\Api\ServerProvisionController;
+use App\Http\Controllers\Api\SrsCallbackController;
+use App\Http\Controllers\Api\StreamController;
+use App\Http\Middleware\CheckCompanionTokenMiddleware;
+use App\Http\Middleware\CheckRecordingApiKeyMiddleware;
+use App\Http\Middleware\CheckSharedSecretMiddleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -20,50 +31,59 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 
 // Command API endpoints. These are chat commands, so they go away with chat.
 Route::middleware(['web', 'auth', 'chat.enabled', 'throttle:60,60'])->prefix('command')->group(function () {
-    Route::post('/execute', [App\Http\Controllers\Api\CommandController::class, 'execute'])->name('api.command.execute');
-    Route::get('/suggestions', [App\Http\Controllers\Api\CommandController::class, 'suggestions'])->name('api.command.suggestions');
-    Route::get('/list', [App\Http\Controllers\Api\CommandController::class, 'list'])->name('api.command.list');
-    Route::get('/search', [App\Http\Controllers\Api\CommandController::class, 'search'])->name('api.command.search');
-    Route::get('/help', [App\Http\Controllers\Api\CommandController::class, 'help'])->name('api.command.help');
+    Route::post('/execute', [CommandController::class, 'execute'])->name('api.command.execute');
+    Route::get('/suggestions', [CommandController::class, 'suggestions'])->name('api.command.suggestions');
+    Route::get('/list', [CommandController::class, 'list'])->name('api.command.list');
+    Route::get('/search', [CommandController::class, 'search'])->name('api.command.search');
+    Route::get('/help', [CommandController::class, 'help'])->name('api.command.help');
 });
 
-Route::middleware([\App\Http\Middleware\CheckSharedSecretMiddleware::class])->group(function () {
-    Route::post('stream/play', [App\Http\Controllers\Api\StreamController::class, 'play'])->name('api.stream.play');
-    Route::post('stream/stop', [App\Http\Controllers\Api\StreamController::class, 'stop'])->name('api.stream.stop');
+Route::middleware([CheckSharedSecretMiddleware::class])->group(function () {
+    Route::post('stream/play', [StreamController::class, 'play'])->name('api.stream.play');
+    Route::post('stream/stop', [StreamController::class, 'stop'])->name('api.stream.stop');
 
-    Route::get('file/{file}', App\Http\Controllers\Api\ServerFileController::class)->name('server.file');
+    Route::get('file/{file}', ServerFileController::class)->name('server.file');
 
     // Server provisioning endpoints
-    Route::get('server/config/{type}', [App\Http\Controllers\Api\ServerProvisionController::class, 'config'])->name('api.server.config');
-    Route::get('server/scripts/{script}', [App\Http\Controllers\Api\ServerProvisionController::class, 'script'])->name('api.server.script');
-    Route::post('server/register', [App\Http\Controllers\Api\ServerProvisionController::class, 'register'])->name('api.server.register');
-    Route::post('server/{server}/heartbeat', [App\Http\Controllers\Api\ServerProvisionController::class, 'heartbeat'])->name('api.server.heartbeat');
+    Route::get('server/config/{type}', [ServerProvisionController::class, 'config'])->name('api.server.config');
+    Route::get('server/scripts/{script}', [ServerProvisionController::class, 'script'])->name('api.server.script');
+    Route::post('server/register', [ServerProvisionController::class, 'register'])->name('api.server.register');
+    Route::post('server/{server}/heartbeat', [ServerProvisionController::class, 'heartbeat'])->name('api.server.heartbeat');
 });
+
+// Control surface (Bitfocus Companion and anything else that can send an HTTP request).
+// One key for the installation, the source in the path; see docs/admin/companion.md.
+Route::middleware([CheckCompanionTokenMiddleware::class, 'throttle:120,1'])
+    ->prefix('companion')
+    ->group(function () {
+        Route::get('{source:slug}/status', [CompanionController::class, 'status'])->name('api.companion.status');
+        Route::post('{source:slug}/start', [CompanionController::class, 'start'])->name('api.companion.start');
+        Route::post('{source:slug}/stop', [CompanionController::class, 'stop'])->name('api.companion.stop');
+    });
 
 // HLS session tracking endpoints
 Route::prefix('hls')->group(function () {
-    Route::get('auth', [App\Http\Controllers\Api\HlsSessionController::class, 'auth'])->name('api.hls.auth');
-    Route::post('heartbeat', [App\Http\Controllers\Api\HlsSessionController::class, 'heartbeat'])->name('api.hls.heartbeat');
+    Route::get('auth', [HlsSessionController::class, 'auth'])->name('api.hls.auth');
+    Route::post('heartbeat', [HlsSessionController::class, 'heartbeat'])->name('api.hls.heartbeat');
 });
 
 // SRS callbacks
 Route::prefix('srs')->group(function () {
-    Route::post('auth', [App\Http\Controllers\Api\SrsCallbackController::class, 'auth'])->name('api.srs.auth');
-    Route::post('play', [App\Http\Controllers\Api\SrsCallbackController::class, 'play'])->name('api.srs.play');
-    Route::post('stop', [App\Http\Controllers\Api\SrsCallbackController::class, 'stop'])->name('api.srs.stop');
-    Route::post('unpublish', [App\Http\Controllers\Api\SrsCallbackController::class, 'unpublish'])->name('api.srs.unpublish');
-    Route::post('error', [App\Http\Controllers\Api\SrsCallbackController::class, 'error'])->name('api.srs.error');
-    Route::post('on-hls', [App\Http\Controllers\Api\SrsCallbackController::class, 'onHls'])->name('api.srs.on-hls');
-    Route::post('on-play', [App\Http\Controllers\Api\SrsCallbackController::class, 'play'])->name('api.srs.on-play');
-    Route::post('on-stop', [App\Http\Controllers\Api\SrsCallbackController::class, 'stop'])->name('api.srs.on-stop');
+    Route::post('auth', [SrsCallbackController::class, 'auth'])->name('api.srs.auth');
+    Route::post('play', [SrsCallbackController::class, 'play'])->name('api.srs.play');
+    Route::post('stop', [SrsCallbackController::class, 'stop'])->name('api.srs.stop');
+    Route::post('unpublish', [SrsCallbackController::class, 'unpublish'])->name('api.srs.unpublish');
+    Route::post('error', [SrsCallbackController::class, 'error'])->name('api.srs.error');
+    Route::post('on-hls', [SrsCallbackController::class, 'onHls'])->name('api.srs.on-hls');
+    Route::post('on-play', [SrsCallbackController::class, 'play'])->name('api.srs.on-play');
+    Route::post('on-stop', [SrsCallbackController::class, 'stop'])->name('api.srs.on-stop');
 });
 
-
 // Recording API endpoints for external processing server
-Route::middleware([\App\Http\Middleware\CheckRecordingApiKeyMiddleware::class])->prefix('recording')->group(function () {
-    Route::get('shows', [App\Http\Controllers\Api\RecordingApiController::class, 'shows'])->name('api.recording.shows');
-    Route::post('create', [App\Http\Controllers\Api\RecordingApiController::class, 'create'])->name('api.recording.create');
+Route::middleware([CheckRecordingApiKeyMiddleware::class])->prefix('recording')->group(function () {
+    Route::get('shows', [RecordingApiController::class, 'shows'])->name('api.recording.shows');
+    Route::post('create', [RecordingApiController::class, 'create'])->name('api.recording.create');
 });
 
 // Public recording endpoint
-Route::get('recording/{slug}', [App\Http\Controllers\Api\RecordingApiController::class, 'getBySlug'])->name('api.recording.get');
+Route::get('recording/{slug}', [RecordingApiController::class, 'getBySlug'])->name('api.recording.get');

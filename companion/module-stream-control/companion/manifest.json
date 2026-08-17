@@ -1,0 +1,27 @@
+{
+  "$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+  "type": "connection",
+  "id": "stream-control",
+  "name": "stream-control",
+  "shortname": "Stream Control",
+  "description": "Start and stop shows on one streaming source",
+  "version": "1.0.0",
+  "license": "MIT",
+  "repository": "git+https://github.com/example/stream-control.git",
+  "bugs": "https://github.com/example/stream-control/issues",
+  "maintainers": [
+    {
+      "name": "Streaming team"
+    }
+  ],
+  "runtime": {
+    "type": "node22",
+    "api": "nodejs-ipc",
+    "apiVersion": "2.0.0",
+    "entrypoint": "../src/main.js"
+  },
+  "legacyIds": [],
+  "manufacturer": "Streaming",
+  "products": ["Stream Control"],
+  "keywords": ["Streaming", "Playout"]
+}

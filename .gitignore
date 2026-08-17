@@ -1,5 +1,6 @@
 /.phpunit.cache
 /node_modules
+/companion/*/node_modules
 /public/build
 /public/hot
 /public/storage

@@ -1,0 +1,16 @@
+{
+  "name": "stream-control",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/main.js",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": "^22.20"
+  },
+  "dependencies": {
+    "@companion-module/base": "~2.0.4"
+  }
+}

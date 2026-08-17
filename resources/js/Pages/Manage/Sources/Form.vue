@@ -170,6 +170,20 @@ const submit = () => {
           </FormField>
         </FormSection>
 
+        <FormSection
+          v-if="isEdit"
+          title="Control surface"
+          description="Paste this into a Stream Control connection in Companion. Play starts the show in the current slot, or the next one if the slot has not begun; Stop ends whatever is live."
+          :columns="1"
+        >
+          <FormField
+            label="API base URL"
+            helper="The control key is COMPANION_API_KEY in the environment, and is the same for every source."
+          >
+            <CopyableText :value="source.companion_url" />
+          </FormField>
+        </FormSection>
+
         <FormSection v-if="isEdit" title="Shows on this source" :columns="1">
           <div v-if="shows.length" class="overflow-x-auto rounded border border-hairline">
             <table class="w-full text-[13px]">

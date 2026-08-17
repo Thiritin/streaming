@@ -1,0 +1,29 @@
+# Bitfocus Companion with the Stream Control module mounted, for testing the
+# start/stop buttons against the local app.
+#
+# Start with: ./scripts/companion.sh up, then open http://localhost:8000.
+#
+# The module is mounted from the repo rather than installed, so an edit plus a
+# restart of the connection is the whole dev loop. Its node_modules is installed
+# on the host (the script does it) - the container's entrypoint only installs
+# dependencies when that directory is missing.
+
+name: streaming-companion
+
+services:
+  companion:
+    image: ghcr.io/bitfocus/companion/companion:latest
+    ports:
+      - "8000:8000" # web UI
+      - "16622:16622" # Satellite API, for a surface on another machine
+    volumes:
+      - companion-config:/companion
+      - ./companion/module-stream-control:/app/module-local-dev/stream-control
+    extra_hosts:
+      # The app is served by Yerd on the host, so the container has to resolve
+      # streaming.test the same way a browser on this machine does.
+      - "streaming.test:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  companion-config:

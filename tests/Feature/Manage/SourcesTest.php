@@ -363,6 +363,24 @@ class SourcesTest extends TestCase
             ->assertForbidden();
     }
 
+    // ---------------------------------------------------------- control surface
+
+    /**
+     * The stream name is what picks the source on a surface, so the page hands over the
+     * whole endpoint rather than leaving an operator to assemble it.
+     */
+    public function test_the_edit_page_carries_the_control_surface_endpoint(): void
+    {
+        $source = Source::factory()->create();
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.sources.edit', $source))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('source.companion_url', url('/api/companion/'.$source->slug))
+            );
+    }
+
     // ---------------------------------------------------------------- deletes
 
     public function test_a_source_without_live_shows_can_be_deleted(): void
