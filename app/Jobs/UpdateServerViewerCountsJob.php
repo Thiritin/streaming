@@ -61,9 +61,13 @@ class UpdateServerViewerCountsJob implements ShouldBeUnique, ShouldQueue
 
         // Update each server with its viewer count
         foreach ($viewerCounts as $serverId => $count) {
+            // Deliberately not touching last_heartbeat. That column means "the server
+            // told us it is alive", and this job is the app writing to its own rows -
+            // stamping it here made every active edge look freshly checked in forever,
+            // so hasRecentHeartbeat() was true for a box that had been dead for hours.
+            // The real signal comes from heartbeat.sh via /api/server/{id}/heartbeat.
             Server::where('id', $serverId)->update([
                 'viewer_count' => $count,
-                'last_heartbeat' => now(),
             ]);
 
             Log::debug('Updated server viewer count', [
@@ -78,7 +82,6 @@ class UpdateServerViewerCountsJob implements ShouldBeUnique, ShouldQueue
             ->where('status', ServerStatusEnum::ACTIVE)
             ->update([
                 'viewer_count' => 0,
-                'last_heartbeat' => now(),
             ]);
 
         // Log summary

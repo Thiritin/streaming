@@ -203,7 +203,46 @@ echo "================================================"
 # Setup auto-restart on boot
 systemctl enable docker
 
-# Setup heartbeat cron job (every minute)
-(crontab -l 2>/dev/null; echo "* * * * * /opt/streaming/heartbeat.sh") | crontab -
+# Heartbeat.
+#
+# The cron line below has existed for a long time; the script it runs never did, so
+# no server has ever checked in and `servers.last_heartbeat` only moved because the
+# app was stamping its own rows. Writing it is the whole fix.
+#
+# Liveness only. Viewer counts are derived from `source_users` in the app, which knows
+# about signed-out viewers too, so there is nothing useful for the box to report there.
+cat > /opt/streaming/heartbeat.sh <<'HEARTBEAT'
+#!/bin/bash
+# Reports that this server is alive. Installed by the provisioning script.
+set -u
+
+APP_URL="{{ $serverUrl }}"
+SERVER_ID="{{ $server->id }}"
+SHARED_SECRET="{{ $server->shared_secret }}"
+
+# Whether the local stack is actually serving, not merely whether the box is powered
+# on - a heartbeat that says "alive" while nginx is down is worse than none.
+if curl -fsS -m 5 -o /dev/null "http://localhost/health" 2>/dev/null; then
+    STATUS="healthy"
+else
+    STATUS="unhealthy"
+fi
+
+curl -fsS -m 10 -X POST "${APP_URL}/api/server/${SERVER_ID}/heartbeat" \
+    -H "X-Shared-Secret: ${SHARED_SECRET}" \
+    -H "Accept: application/json" \
+    -H "Content-Type: application/json" \
+    -d "{\"health\":{\"local\":\"${STATUS}\"}}" \
+    >/dev/null 2>&1
+HEARTBEAT
+
+chmod 700 /opt/streaming/heartbeat.sh
+
+# Replace rather than append, so reinstalling does not stack duplicate entries.
+(crontab -l 2>/dev/null | grep -v '/opt/streaming/heartbeat.sh'; \
+ echo "* * * * * /opt/streaming/heartbeat.sh") | crontab -
+
+# Once immediately, so a fresh server does not look stale for its first minute.
+/opt/streaming/heartbeat.sh || true
 
 exit 0

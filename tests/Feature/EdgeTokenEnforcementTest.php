@@ -256,4 +256,45 @@ class EdgeTokenEnforcementTest extends TestCase
             $this->assertStringContainsString($reference, $compose);
         }
     }
+
+    /**
+     * The install script has to actually write the heartbeat script.
+     *
+     * The cron entry pointing at `/opt/streaming/heartbeat.sh` existed for a long time
+     * while nothing ever created the file, so no server ever checked in. The column
+     * still moved, because UpdateServerViewerCountsJob was stamping `last_heartbeat` on
+     * every active edge itself - meaning a box could be dead for hours and still report
+     * a fresh heartbeat. Both halves are asserted here.
+     */
+    public function test_the_install_script_writes_the_heartbeat_script(): void
+    {
+        $script = $this->provisioning->generateInstallScript($this->edge);
+
+        $this->assertStringContainsString('cat > /opt/streaming/heartbeat.sh', $script);
+        // Blade fills the identity in; the URL itself is assembled by the shell at
+        // run time, so assert the parts rather than a joined string.
+        $this->assertStringContainsString('SERVER_ID="'.$this->edge->id.'"', $script);
+        $this->assertStringContainsString('SHARED_SECRET="'.$this->edge->shared_secret.'"', $script);
+        $this->assertStringContainsString('/api/server/${SERVER_ID}/heartbeat', $script);
+        $this->assertStringContainsString('X-Shared-Secret: ${SHARED_SECRET}', $script);
+
+        // Cron alone was the bug; the file has to exist and be runnable.
+        $this->assertStringContainsString('chmod 700 /opt/streaming/heartbeat.sh', $script);
+        $this->assertStringContainsString('* * * * * /opt/streaming/heartbeat.sh', $script);
+    }
+
+    public function test_the_app_does_not_stamp_its_own_heartbeat(): void
+    {
+        $job = file_get_contents(app_path('Jobs/UpdateServerViewerCountsJob.php'));
+
+        // Strip comments, which explain exactly why this must not happen.
+        $code = preg_replace('#//.*$#m', '', $job);
+
+        $this->assertStringNotContainsString(
+            "'last_heartbeat'",
+            $code,
+            'UpdateServerViewerCountsJob must not write last_heartbeat. That column means '
+            .'the server reported in; the app writing it makes a dead box look alive.'
+        );
+    }
 }
