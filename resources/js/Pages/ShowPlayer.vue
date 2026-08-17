@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { Head, Link, usePage, router } from '@inertiajs/vue3';
+import { useRealtimeResync } from '@/composables/useRealtimeResync';
 import StreamPlayer from "@/Components/Livestream/StreamPlayer.vue";
 import ChatPanel from "@/Components/Chat/ChatPanel.vue";
 import MarkdownText from "@/Components/MarkdownText.vue";
@@ -239,37 +240,65 @@ const stopHlsChecker = () => {
     hlsCheckAttempts = 0;
 };
 
+// Source channel subscription. Kept in one place so the show can move to another
+// source mid-session without losing status updates.
+let subscribedSourceId = null;
+
+const handleSourceStatus = (e) => {
+    const previousStatus = sourceStatus.value;
+    sourceStatus.value = e.status;
+
+    if (e.status === 'online' && ['offline', 'error'].includes(previousStatus)) {
+        isReconnecting.value = true;
+        startHlsChecker();
+    } else if (e.status === 'error' || e.status === 'offline') {
+        isReconnecting.value = false;
+        stopHlsChecker();
+    }
+};
+
+const subscribeToSource = (sourceId) => {
+    if (!sourceId || sourceId === subscribedSourceId) return;
+
+    if (subscribedSourceId) {
+        Echo.leave(`source.${subscribedSourceId}`);
+    }
+
+    subscribedSourceId = sourceId;
+    Echo.channel(`source.${sourceId}`).listen('.source.status.changed', handleSourceStatus);
+};
+
+// Pull the server's view of the show back after a websocket gap; the refs below
+// keep the page in step with the props that come back.
+const resync = () => {
+    router.reload({
+        only: ['currentShow', 'availableShows', 'initialStatus', 'initialHlsUrl', 'initialListeners'],
+    });
+};
+
+useRealtimeResync(resync);
+
+watch(() => props.currentShow, (show) => {
+    if (!show) return;
+
+    activeShow.value = show;
+    sourceStatus.value = show.source?.status || 'offline';
+    subscribeToSource(show.source_id);
+}, { deep: true });
+
+watch(() => props.availableShows, (value) => shows.value = value ?? []);
+watch(() => props.initialStatus, (value) => status.value = value);
+watch(() => props.initialHlsUrl, (value) => { if (value) hlsUrl.value = value; });
+watch(() => props.initialListeners, (value) => listeners.value = value);
+
 // Lifecycle
 onMounted(() => {
     // Load theater mode preference and add keyboard listener
     loadTheaterModePreference();
     window.addEventListener('keydown', handleKeydown);
 
-    // Subscribe to source status updates if we have a source
-    if (activeShow.value?.source_id) {
-        Echo.channel(`source.${activeShow.value.source_id}`)
-            .listen('.source.status.changed', (e) => {
-                console.log('Source status changed:', e);
-                const previousStatus = sourceStatus.value;
-                sourceStatus.value = e.status;
-                
-                // Handle transitions to online from offline/error
-                if (e.status === 'online' && ['offline', 'error'].includes(previousStatus)) {
-                    console.log('Source transitioning to online - starting reconnection process');
-                    isReconnecting.value = true;
-                    startHlsChecker();
-                    
-                } else if (e.status === 'error') {
-                    console.log('Source entered error state');
-                    isReconnecting.value = false;
-                    stopHlsChecker();
-                } else if (e.status === 'offline') {
-                    isReconnecting.value = false;
-                    stopHlsChecker();
-                }
-            });
-    }
-    
+    subscribeToSource(activeShow.value?.source_id);
+
     Echo.channel('StreamInfo')
         .listen('.stream.status.changed', (e) => {
             if (status.value === 'provisioning') {
@@ -354,35 +383,7 @@ onMounted(() => {
                     hlsUrl.value = e.hlsUrl;
                 }
                 
-                // Subscribe to source updates if we have a new source
-                if (e.source?.id && e.source.id !== activeShow.value.source_id) {
-                    // Leave old source channel
-                    if (activeShow.value.source_id) {
-                        Echo.leave(`source.${activeShow.value.source_id}`);
-                    }
-                    
-                    // Join new source channel
-                    Echo.channel(`source.${e.source.id}`)
-                        .listen('.source.status.changed', (sourceEvent) => {
-                            console.log('Source status changed:', sourceEvent);
-                            const previousStatus = sourceStatus.value;
-                            sourceStatus.value = sourceEvent.status;
-                            
-                            // Handle transitions to online from offline/error
-                            if (sourceEvent.status === 'online' && ['offline', 'error'].includes(previousStatus)) {
-                                console.log('Source transitioning to online - starting reconnection process');
-                                isReconnecting.value = true;
-                                startHlsChecker();
-                            } else if (sourceEvent.status === 'error') {
-                                console.log('Source entered error state');
-                                isReconnecting.value = false;
-                                stopHlsChecker();
-                            } else if (sourceEvent.status === 'offline') {
-                                isReconnecting.value = false;
-                                stopHlsChecker();
-                            }
-                        });
-                }
+                subscribeToSource(activeShow.value.source_id);
             })
             .listen('.show.ended', (e) => {
                 console.log('Show ended:', e);
@@ -438,10 +439,11 @@ onUnmounted(() => {
     document.body.classList.remove('theater-mode');
 
     // Leave the source channel
-    if (activeShow.value?.source_id) {
-        Echo.leave(`source.${activeShow.value.source_id}`);
+    if (subscribedSourceId) {
+        Echo.leave(`source.${subscribedSourceId}`);
+        subscribedSourceId = null;
     }
-    
+
     // Leave the show channel
     if (activeShow.value?.id) {
         Echo.leave(`show.${activeShow.value.id}`);
