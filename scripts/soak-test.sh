@@ -14,7 +14,7 @@
 # Required:
 #   ORIGIN_RTMP    rtmp://<origin-ip>:1935
 #   SOURCES        slug:key,slug:key,...   (from /manage > Sources)
-#   EDGE_HOSTS     edge-a.example.org,edge-b.example.org
+#   APP_URL        https://stream.eurofurence.org
 #   VIEWER_KEY     a streamkey or token the edges accept
 #
 # WHERE TO RUN THIS
@@ -46,7 +46,7 @@ DURATION="${3:-300}"
 
 : "${ORIGIN_RTMP:?set ORIGIN_RTMP, e.g. rtmp://167.233.244.142:1935}"
 : "${SOURCES:?set SOURCES, e.g. main:key1,docks-nightclub:key2}"
-: "${EDGE_HOSTS:?set EDGE_HOSTS, e.g. edge-16-x.stream.example.org,edge-17-y.stream.example.org}"
+: "${APP_URL:?set APP_URL, e.g. https://stream.eurofurence.org}"
 : "${VIEWER_KEY:?set VIEWER_KEY to a streamkey the edges accept}"
 
 SIZE="${SIZE:-1920x1080}"
@@ -60,7 +60,6 @@ mkdir -p "$CLIPS" "$WORK/logs"
 trap 'echo; echo "stopping..."; pkill -P $$ 2>/dev/null; rm -rf "$WORK"' EXIT INT TERM
 
 IFS=',' read -ra SOURCE_LIST <<< "$SOURCES"
-IFS=',' read -ra EDGE_LIST <<< "$EDGE_HOSTS"
 
 if [ "${#SOURCE_LIST[@]}" -lt "$PUBLISHERS" ]; then
   echo "Only ${#SOURCE_LIST[@]} sources given but $PUBLISHERS publishers asked for." >&2
@@ -71,7 +70,7 @@ command -v ffmpeg >/dev/null || { echo "ffmpeg is required." >&2; exit 1; }
 
 echo "Soak test"
 echo "  publishers : $PUBLISHERS x ${SIZE}@${FPS} ${BITRATE}"
-echo "  viewers    : $VIEWERS across ${#EDGE_LIST[@]} edge(s)"
+echo "  viewers    : $VIEWERS (playlists via app, segments via edges)"
 echo "  duration   : ${DURATION}s"
 echo
 
@@ -121,48 +120,65 @@ sleep 25
 
 # ---------------------------------------------------------------- viewers
 
-# One viewer: resolve the master, pick a rendition, then keep fetching whatever the
-# media playlist offers, at roughly the pace a player would. Records one line per
-# failure so the summary can distinguish "slow" from "broken".
+# A viewer walks the path the streaming page actually walks, which is not the same as
+# pulling HLS off an edge.
+#
+#   GET  {APP}/hls/{slug}/master.m3u8    <- Laravel, not the edge
+#   GET  {APP}/hls/{slug}_{rendition}.m3u8   <- Laravel, every ~2s, for the whole session
+#   GET  https://{edge}/live/...ts       <- absolute URLs the app rewrote into the playlist
+#
+# Source::getHlsUrl() returns route('hls.master'), so the app proxies every playlist and
+# only segments go straight to an edge. At 250 viewers polling a variant every two
+# seconds that is roughly 125 requests a second landing on PHP, which is the number this
+# test exists to find - the edges' uplink is a known quantity, the app's playlist
+# throughput is not.
+#
+# The app caches each playlist for 2s in Redis, so the edge sees one fetch per variant
+# per 2s regardless of viewer count. That cache is doing the heavy lifting, and it is
+# worth knowing it holds under real concurrency rather than assuming.
 viewer() {
-  local id=$1 host=$2 slug=$3 rendition=$4
-  local base="https://${host}/live"
+  local id=$1 slug=$2 rendition=$3
   local log="$WORK/logs/viewer-${id}.err"
   local seen="" deadline=$(( $(date +%s) + DURATION ))
 
+  # Once per session, as a page load would.
+  curl -s -m 15 -o /dev/null "${APP_URL}/hls/${slug}/master.m3u8?streamkey=${VIEWER_KEY}" \
+    2>/dev/null || echo "master-fail" >> "$log"
+
   while [ "$(date +%s)" -lt "$deadline" ]; do
     local playlist
-    playlist=$(curl -s -m 10 --fail "${base}/${slug}_${rendition}.m3u8?streamkey=${VIEWER_KEY}" 2>/dev/null) || {
-      echo "playlist-fail" >> "$log"; sleep 2; continue
+    playlist=$(curl -s -m 10 --fail \
+      "${APP_URL}/hls/${slug}_${rendition}.m3u8?streamkey=${VIEWER_KEY}" 2>/dev/null) || {
+      echo "variant-fail" >> "$log"; sleep 2; continue
     }
 
-    # Newest few segments only, which is where a live player sits.
+    # The app rewrites these to absolute edge URLs, so they are taken as given rather
+    # than reassembled here - if the rewrite is wrong, this test should notice.
     local segs
-    segs=$(echo "$playlist" | grep -v '^#' | grep '\.ts$' | tail -3)
+    segs=$(echo "$playlist" | grep -v '^#' | grep '\.ts' | tail -3)
 
     for seg in $segs; do
       case "$seen" in *"|$seg|"*) continue ;; esac
       seen="${seen}|${seg}|"
-      code=$(curl -s -m 15 -o /dev/null -w '%{http_code}' \
-             "${base}/${seg}?streamkey=${VIEWER_KEY}" 2>/dev/null)
+      code=$(curl -s -m 15 -o /dev/null -w '%{http_code}' "$seg" 2>/dev/null)
       [ "$code" = "200" ] || echo "segment-$code" >> "$log"
     done
 
-    # Trim the memory of seen segments so it cannot grow without bound.
     seen="${seen: -4000}"
     sleep 2
   done
 }
 
 echo
-echo "Starting $VIEWERS viewers..."
-RENDITIONS=(sd hd fhd)
+echo "Starting $VIEWERS viewers against ${APP_URL} (playlists) + edges (segments)..."
 for ((v = 0; v < VIEWERS; v++)); do
-  host="${EDGE_LIST[$((v % ${#EDGE_LIST[@]}))]}"
   entry="${SOURCE_LIST[$((v % PUBLISHERS))]}"
-  # Weight towards hd, which is what most viewers actually land on.
+  # Weighted towards hd, which is where most viewers land.
   case $((v % 5)) in 0) r=sd ;; 4) r=fhd ;; *) r=hd ;; esac
-  viewer "$v" "$host" "${entry%%:*}" "$r" &
+  viewer "$v" "${entry%%:*}" "$r" &
+  # Ramp rather than stampede: 250 sessions opening in the same instant measures
+  # connection setup, not steady state.
+  [ $(( (v + 1) % 25 )) -eq 0 ] && sleep 1
 done
 
 echo "  running for ${DURATION}s..."
@@ -194,7 +210,16 @@ if [ "$fails" -gt 0 ]; then
 fi
 
 echo
-echo "Check on the origin while a run is in flight, which is where the answer is:"
-echo "  docker stats --no-stream origin-ffmpeg-hls"
-echo "  docker logs --tail 20 origin-ffmpeg-hls   # 'stalled' or restarts mean it is not keeping up"
-echo "  docker logs --tail 5 archive-uploader     # a climbing 'pending' means uploads are losing"
+echo "While a run is in flight, the three places an answer shows up:"
+echo
+echo "  origin - can it encode this many ladders at once?"
+echo "    docker stats --no-stream origin-ffmpeg-hls"
+echo "    docker logs --tail 20 origin-ffmpeg-hls   # 'stalled' or restarts mean it is not keeping up"
+echo
+echo "  app - can it serve the playlist polling? (roughly viewers/2 requests a second)"
+echo "    kubectl -n ef-streaming-prod top pods -l app.kubernetes.io/name=laravel"
+echo "    kubectl -n ef-streaming-prod logs -l app.kubernetes.io/name=laravel --tail=50 | grep -i error"
+echo
+echo "  archive - are recordings actually being captured?"
+echo "    docker logs --tail 5 archive-uploader     # a climbing 'pending' means uploads are losing"
+echo "    php artisan archive:verify <slug> --minutes=10   # run in the app pod, after the soak"
