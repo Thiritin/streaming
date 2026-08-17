@@ -13,12 +13,7 @@
 
         {{-- WebSocket endpoint handed to Echo at runtime, so no deployment's own
              host is baked into the built bundle. Read in resources/js/bootstrap.js. --}}
-        @php($broadcasting = [
-            'key' => config('broadcasting.connections.reverb.key'),
-            'host' => config('broadcasting.connections.reverb.options.host'),
-            'port' => (int) config('broadcasting.connections.reverb.options.port'),
-            'scheme' => config('broadcasting.connections.reverb.options.scheme'),
-        ])
+        @php($broadcasting = \App\Support\BroadcastEndpoint::forBrowser())
         <script>
             window.__broadcasting = @json($broadcasting);
         </script>

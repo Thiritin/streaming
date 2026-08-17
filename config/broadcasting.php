@@ -41,6 +41,14 @@ return [
                 'scheme' => env('REVERB_SCHEME', 'https'),
                 'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
             ],
+            // What the browser connects to, when that is not what the server connects
+            // to. Leave unset unless Reverb is reached over a different host, port or
+            // scheme from outside the deployment; see App\Support\BroadcastEndpoint.
+            'client' => [
+                'host' => env('REVERB_CLIENT_HOST'),
+                'port' => env('REVERB_CLIENT_PORT'),
+                'scheme' => env('REVERB_CLIENT_SCHEME'),
+            ],
             'client_options' => [
                 // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
             ],
