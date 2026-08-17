@@ -14,6 +14,20 @@ const props = defineProps({
   width: {
     type: String,
     default: 'w-80'
+  },
+  // A drawer that sits over something worth watching, like the player, opts out of
+  // the backdrop and passes a translucent surface instead.
+  overlay: {
+    type: Boolean,
+    default: true
+  },
+  panelClass: {
+    type: String,
+    default: 'bg-primary-900'
+  },
+  headerClass: {
+    type: String,
+    default: ''
   }
 });
 
@@ -28,7 +42,7 @@ const handleEscape = (e) => {
 
 // Handle body scroll lock
 watch(() => props.isOpen, (newValue) => {
-  if (newValue) {
+  if (newValue && props.overlay) {
     document.body.style.overflow = 'hidden';
   } else {
     document.body.style.overflow = '';
@@ -56,8 +70,8 @@ onUnmounted(() => {
     leave-to-class="opacity-0"
   >
     <div
-      v-if="isOpen"
-      class="fixed inset-0 bg-black bg-opacity-50 z-40 xl:hidden"
+      v-if="isOpen && overlay"
+      class="fixed inset-0 bg-black/50 z-40 xl:hidden"
       @click="emit('close')"
     ></div>
   </Transition>
@@ -74,13 +88,14 @@ onUnmounted(() => {
     <div
       v-if="isOpen"
       :class="[
-        'fixed top-0 h-full bg-primary-900 shadow-xl z-50 xl:hidden',
+        'fixed top-0 h-full shadow-xl z-50 xl:hidden',
+        panelClass,
         width,
         position === 'right' ? 'right-0' : 'left-0'
       ]"
     >
       <!-- Drawer Header -->
-      <div class="flex items-center justify-between p-4 border-b border-primary-800">
+      <div class="flex items-center justify-between p-4 border-b border-primary-800" :class="headerClass">
         <slot name="header">
           <h2 class="text-lg font-semibold text-white">Menu</h2>
         </slot>

@@ -13,6 +13,9 @@ const props = defineProps({
     chatSettings: { type: Object, default: () => ({}) },
     chatState: { type: Object, default: () => ({}) },
     showHeader: { type: Boolean, default: true },
+    // Laid over the player rather than beside it: keep the video readable behind
+    // the messages instead of painting the panel's own background over it.
+    transparent: { type: Boolean, default: false },
 })
 
 const page = usePage()
@@ -190,7 +193,10 @@ const onBan = (message) => act(() => chat.moderation.ban(message.user.id))
 </script>
 
 <template>
-    <div class="relative flex h-full flex-col bg-primary-950">
+    <div
+        class="relative flex h-full flex-col"
+        :class="transparent ? 'bg-primary-950/45 backdrop-blur-md [text-shadow:0_1px_3px_rgb(0_0_0/0.9)]' : 'bg-primary-950'"
+    >
         <div
             v-if="showHeader"
             class="flex items-center justify-between border-b border-primary-800 px-3 py-2.5 text-primary-100"

@@ -693,11 +693,14 @@ onUnmounted(() => {
         </button>
         
         <!-- Mobile Chat Drawer -->
-        <MobileDrawer 
-            :is-open="isChatDrawerOpen" 
+        <MobileDrawer
+            :is-open="isChatDrawerOpen"
             @close="isChatDrawerOpen = false"
             position="right"
             width="w-full max-w-sm"
+            :overlay="false"
+            panel-class="bg-transparent"
+            header-class="bg-primary-950/45 backdrop-blur-md [text-shadow:0_1px_3px_rgb(0_0_0/0.9)]"
         >
             <template #header>
                 <div class="flex items-center gap-2">
@@ -720,6 +723,7 @@ onUnmounted(() => {
                 :chat-state="chatState"
                 :show-header="false"
                 :source-id="sourceId"
+                transparent
                 class="h-full"
             />
         </MobileDrawer>
