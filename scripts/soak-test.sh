@@ -49,6 +49,11 @@ DURATION="${3:-300}"
 : "${APP_URL:?set APP_URL, e.g. https://stream.eurofurence.org}"
 : "${VIEWER_KEY:?set VIEWER_KEY to a streamkey the edges accept}"
 
+# Time given to the ladder before viewers start. Measured against production: about
+# six seconds from RTMP publish to the first playlist the app will serve, so this is
+# generous rather than tight.
+WARMUP="${WARMUP:-25}"
+
 SIZE="${SIZE:-1920x1080}"
 FPS="${FPS:-30}"
 BITRATE="${BITRATE:-6000k}"
@@ -101,7 +106,7 @@ start_publisher() {
   # timestamps the loop resets, which SRS rejects otherwise.
   ffmpeg -hide_banner -loglevel warning -nostdin \
     -re -stream_loop -1 -fflags +genpts -i "$clip" \
-    -c copy -t "$DURATION" \
+    -c copy -t "$(( WARMUP + DURATION + 15 ))" \
     -f flv "${ORIGIN_RTMP}/ingress/${slug}?secret=${key}" \
     > "$WORK/logs/pub-${slug}.log" 2>&1 &
 
@@ -114,9 +119,13 @@ for ((i = 0; i < PUBLISHERS; i++)); do
   start_publisher "$i" "${entry%%:*}" "${entry#*:}"
 done
 
-# The ladder needs a moment before any playlist exists to pull.
-echo "  waiting 25s for the ladder to produce segments..."
-sleep 25
+# Publishers run for WARMUP + DURATION + margin, so they outlast the viewers.
+# They used to stop at DURATION while viewers ran from WARMUP to WARMUP+DURATION,
+# leaving the last WARMUP seconds with nothing being published - which showed up as a
+# tidy 6% of playlist polls failing and looked like a server fault rather than the
+# harness ending the stream early.
+echo "  waiting ${WARMUP}s for the ladder to produce segments..."
+sleep "$WARMUP"
 
 # ---------------------------------------------------------------- viewers
 

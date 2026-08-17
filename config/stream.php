@@ -115,6 +115,13 @@ return [
     // for everything, so point this at `s3` rather than configuring DVR_AWS_* twice.
     'archive_disk' => env('ARCHIVE_DISK', 'dvr'),
 
+    // Bucket size the archive is allowed to fill, in bytes. Zero or unset means the
+    // manage panel reports what is stored but not what is left, which is the honest
+    // answer: S3 has no free-space call and no provider this runs against exposes a
+    // quota over the API, so the limit is whatever was bought and only an operator
+    // knows it.
+    'archive_quota_bytes' => (int) env('ARCHIVE_QUOTA_BYTES', 0),
+
     // How segment URLs inside a recording playlist are produced.
     //
     // 'signed'  Presigned S3 URLs, straight from the bucket to the player. Production.

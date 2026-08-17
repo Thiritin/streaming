@@ -4,6 +4,7 @@ namespace App\Console;
 
 use App\Jobs\CleanupStaleViewerSessionsJob;
 use App\Jobs\SaveViewCountJob;
+use App\Jobs\ScanArchiveStorageJob;
 use App\Jobs\Server\ServerHealthCheckJob;
 use App\Jobs\ServerAssignmentJob;
 use App\Jobs\UpdateListenerCountJob;
@@ -42,6 +43,12 @@ class Kernel extends ConsoleKernel
 
         // Check auto mode shows every minute to start/end them based on schedule and source status
         $schedule->command('shows:check-auto-mode')->everyMinute();
+
+        // Totals for the archive bucket, which the recordings page reads from the cache.
+        // A full listing of a con-long archive is hundreds of requests and minutes of
+        // wall clock, so it runs here rather than on a page load; hourly is far finer
+        // than the rate at which "are we running out of room" changes its answer.
+        $schedule->job(new ScanArchiveStorageJob)->hourly();
 
         // ----------------------------------------------------------------- upkeep
         //

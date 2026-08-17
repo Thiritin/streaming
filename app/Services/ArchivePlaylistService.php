@@ -107,6 +107,12 @@ class ArchivePlaylistService
             'm3u8_url' => route('recordings.playlist.master', $recording->slug),
             'duration' => (int) round(array_sum(array_column($segments, 'duration'))),
             'segment_count' => count($segments),
+            'archive_bytes' => $this->cutBytes(
+                $source,
+                CarbonImmutable::parse($recording->starts_at)->utc(),
+                CarbonImmutable::parse($recording->ends_at)->utc(),
+                $segments,
+            ),
             'status' => 'ready',
             'build_error' => null,
             'playlist_built_at' => now(),
@@ -183,6 +189,39 @@ class ArchivePlaylistService
         }
 
         return (int) round($bytes * 8 / $duration);
+    }
+
+    /**
+     * Bytes of archive a cut spans, across every rendition held for it.
+     *
+     * Exact for the source rendition, whose per-segment sizes the uploader records as
+     * #EXT-X-ARCHIVE-BYTES. The ladder carries none, because one index entry describes
+     * all three renditions at once, so its share is derived from the bitrates the
+     * transcoder was told to hit. That is what makes the total an estimate rather than a
+     * measurement, and it is the right trade: listing the objects behind one recording is
+     * hundreds of round trips for a number that moves by a few percent.
+     *
+     * Note what this is not. A recording owns no storage; it is a window onto a shared
+     * archive that would exist unchanged if the recording were deleted. This measures how
+     * much archive the cut covers, not how much space it costs.
+     */
+    public function cutBytes(
+        string $source,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        ?array $ladder = null,
+    ): int {
+        $ladder ??= $this->segmentsInRange($source, $from, $to);
+
+        $ladderSeconds = array_sum(array_column($ladder, 'duration'));
+        $ladderBitrate = array_sum(array_column(self::RENDITIONS, 'bandwidth'));
+
+        $sourceBytes = array_sum(array_column(
+            $this->segmentsInRange($source, $from, $to, self::SOURCE_RENDITION),
+            'bytes',
+        ));
+
+        return (int) round($ladderSeconds * $ladderBitrate / 8) + (int) $sourceBytes;
     }
 
     /**

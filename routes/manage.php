@@ -134,6 +134,8 @@ Route::get('emotes/{emote}', [EmoteController::class, 'edit'])->name('emotes.edi
 Route::put('emotes/{emote}', [EmoteController::class, 'update'])->name('emotes.update');
 Route::delete('emotes/{emote}', [EmoteController::class, 'destroy'])->name('emotes.destroy');
 
+Route::post('recordings/storage/rescan', [RecordingController::class, 'rescanStorage'])
+    ->name('recordings.storage.rescan');
 Route::post('recordings/bulk/thumbnail', [RecordingController::class, 'bulkRegenerateThumbnails'])
     ->name('recordings.bulk.thumbnail');
 Route::delete('recordings/bulk', [RecordingController::class, 'bulkDestroy'])->name('recordings.bulk.destroy');

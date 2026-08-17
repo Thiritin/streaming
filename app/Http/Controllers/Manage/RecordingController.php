@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Manage;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Manage\RecordingRequest;
 use App\Jobs\ProcessRecordingJob;
+use App\Jobs\ScanArchiveStorageJob;
 use App\Models\Recording;
 use App\Models\Role;
 use App\Models\Show;
 use App\Services\ArchivePlaylistService;
+use App\Services\ArchiveStorageService;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
 use App\Support\Manage\Filter;
@@ -18,7 +20,9 @@ use App\Support\Manage\Toast;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Number;
 use Illuminate\Support\Str;
+use Inertia\Inertia;
 use Inertia\Response;
 
 /**
@@ -43,6 +47,7 @@ class RecordingController extends Controller
                 Column::text('show', 'Show')->toggleable(),
                 Column::datetime('date', 'Date')->sortable(),
                 Column::duration('duration', 'Duration'),
+                Column::number('size', 'Size')->sortable('archive_bytes'),
                 Column::number('views', 'Views')->sortable(),
                 Column::badge('is_published', 'Published'),
                 Column::badge('access', 'Access')->toggleable(hiddenByDefault: true),
@@ -62,6 +67,10 @@ class RecordingController extends Controller
 
         return inertia('Manage/Recordings/Index', [
             'table' => $table->toArray($request),
+            // Deferred: the totals come out of the cache, but the panel is the one part
+            // of this page nobody is waiting on, and keeping it off the initial payload
+            // means a table sort never re-serialises it.
+            'storage' => Inertia::defer(fn () => $this->storagePanel(app(ArchiveStorageService::class))),
         ]);
     }
 
@@ -444,6 +453,80 @@ class RecordingController extends Controller
     }
 
     /**
+     * Kick off a fresh bucket scan.
+     *
+     * Queued rather than run inline: it is a full listing of a bucket holding hundreds
+     * of thousands of segments, so an inline version would hold the request open for
+     * minutes and time out behind any sane proxy.
+     */
+    public function rescanStorage(): RedirectResponse
+    {
+        $this->authorize('create', Recording::class);
+
+        ScanArchiveStorageJob::dispatch();
+
+        Toast::flashSuccess(
+            'Storage scan queued',
+            'Listing the whole bucket takes a few minutes. Reload once it has run.',
+        );
+
+        return back();
+    }
+
+    /**
+     * What the storage panel above the table shows.
+     *
+     * @return array<string, mixed>
+     */
+    private function storagePanel(ArchiveStorageService $storage): array
+    {
+        $usage = $storage->usage();
+
+        return [
+            'configured' => $usage['configured'],
+            'error' => $usage['error'],
+            'partial' => $usage['partial'],
+            'scannedAt' => $usage['scanned_at'],
+            'used' => $usage['bytes'] === null ? null : Number::fileSize($usage['bytes'], 1),
+            'usedBytes' => $usage['bytes'],
+            'free' => $usage['free'] === null ? null : Number::fileSize($usage['free'], 1),
+            'quota' => $usage['quota'] === null ? null : Number::fileSize($usage['quota'], 1),
+            'percent' => $usage['percent'],
+            'objects' => $usage['objects'],
+            'prefixes' => array_map(fn (array $prefix) => [
+                'label' => $prefix['label'],
+                'size' => Number::fileSize($prefix['bytes'], 1),
+                'objects' => $prefix['objects'],
+                // Share of the measured total, so the bar reads the same whether or not
+                // a quota is configured.
+                'share' => $usage['bytes'] > 0 ? round($prefix['bytes'] / $usage['bytes'] * 100, 1) : 0,
+            ], array_slice($usage['prefixes'], 0, 8)),
+        ];
+    }
+
+    /**
+     * How much archive the cut spans.
+     *
+     * Not the same thing as what it costs: the segments are shared with every other cut
+     * over the same source and with the live archive itself, so deleting the recording
+     * reclaims none of it. The description says so, because a size column next to a
+     * delete button invites exactly the wrong conclusion.
+     *
+     * @return array{display: string, description: string|null}|null
+     */
+    private function sizeCell(Recording $recording): ?array
+    {
+        if ($recording->archive_bytes === null) {
+            return null;
+        }
+
+        return [
+            'display' => '~'.Number::fileSize($recording->archive_bytes, 1),
+            'description' => 'shared archive',
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function row(Recording $recording): array
@@ -455,6 +538,7 @@ class RecordingController extends Controller
             'show' => $recording->show?->title ?? '-',
             'date' => $recording->date?->format('M j, Y H:i'),
             'duration' => $recording->duration,
+            'size' => $this->sizeCell($recording),
             'views' => $recording->views,
             'is_published' => $recording->is_published
                 ? Status::make('Published', Status::OK)
@@ -554,6 +638,14 @@ class RecordingController extends Controller
 
         return [
             Action::link('create', 'New Recording', route('manage.recordings.create'))->icon('plus'),
+            Action::post('rescan_storage', 'Rescan Storage', route('manage.recordings.storage.rescan'))
+                ->icon('refresh-cw')
+                ->tone(Status::IDLE)
+                ->confirm(
+                    'Rescan archive storage',
+                    'The whole bucket is listed, which takes a few minutes and runs in the background.',
+                    'Rescan',
+                ),
         ];
     }
 

@@ -546,12 +546,19 @@ const loadPreview = async (centreMs = null) => {
     previewStartMs.value = startMs;
     loaded.value = { from: Math.min(range.from, startMs), to: servedTo };
 
+    // A window opens at currentTime 0, which is up to half a span before the instant it was
+    // fetched for. Without a seek to that instant the first timeupdate reports the start of
+    // the window and drags the playhead there, so pressing play jumps to the wrong place.
+    seekAfterLoad ??= clampToArchive(centre);
+
     if (hls) {
         hls.destroy();
         hls = null;
     }
 
-    // Seeking needs a duration, which only exists once metadata is in.
+    // Seeking needs a duration, which only exists once metadata is in. Dropped first in case
+    // a superseded load left one that will now never fire.
+    video.value.removeEventListener('loadedmetadata', applyPendingSeek);
     video.value.addEventListener('loadedmetadata', applyPendingSeek, { once: true });
 
     if (Hls.isSupported()) {

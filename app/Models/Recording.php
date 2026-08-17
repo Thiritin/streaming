@@ -41,6 +41,7 @@ class Recording extends Model
         'playlist_built_at' => 'datetime',
         'duration' => 'integer',
         'segment_count' => 'integer',
+        'archive_bytes' => 'integer',
         'views' => 'integer',
         'is_published' => 'boolean',
         'thumbnail_updated_at' => 'datetime',
