@@ -81,11 +81,21 @@ export default class StreamControlInstance extends InstanceBase {
 	}
 
 	async poll() {
+		// An app that has gone slow must not accumulate polls: with a 1s interval and a
+		// request that takes 5s to time out, the unguarded version has five in flight.
+		if (this.polling) {
+			return
+		}
+
+		this.polling = true
+
 		try {
 			await this.request('GET', '/status')
 		} catch (error) {
 			// The poll is the connection check, so a failed one is what marks the module down.
 			this.log('debug', `Status poll failed: ${error.message}`)
+		} finally {
+			this.polling = false
 		}
 	}
 
@@ -115,6 +125,14 @@ export default class StreamControlInstance extends InstanceBase {
 		if (response.status === 401) {
 			this.updateStatus(InstanceStatus.AuthenticationFailure, 'The control key was rejected')
 			throw new Error('Invalid control key')
+		}
+
+		// The stream name is the last part of the base URL, so a 404 is a configuration
+		// mistake rather than a server problem, and saying so saves an operator from
+		// hunting a network fault that is not there.
+		if (response.status === 404) {
+			this.updateStatus(InstanceStatus.BadConfig, 'No source with that stream name - check the API base URL')
+			throw new Error('Unknown stream name')
 		}
 
 		let body

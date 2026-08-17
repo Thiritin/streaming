@@ -96,6 +96,13 @@ test('a rejected key reports an authentication failure', async () => {
 	assert.equal(calls.status.at(-1)[0], InstanceStatus.AuthenticationFailure)
 })
 
+test('an unknown stream name is reported as a configuration problem', async () => {
+	const { self, calls } = harness(async () => reply(404, { message: 'Not found' }))
+
+	await assert.rejects(() => self.request.call(self, 'GET', '/status'), /Unknown stream name/)
+	assert.equal(calls.status.at(-1)[0], InstanceStatus.BadConfig)
+})
+
 test('an unreachable server reports a connection failure', async () => {
 	const { self, calls } = harness(async () => {
 		throw new Error('fetch failed')
@@ -123,4 +130,40 @@ test('a server error leaves the connection marked as failing', async () => {
 
 	await assert.rejects(() => self.request.call(self, 'GET', '/status'), /HTTP 500/)
 	assert.deepEqual(calls.status.at(-1), [InstanceStatus.UnknownError, 'HTTP 500'])
+})
+
+// A slow app must not accumulate polls: with a 1s interval and a 5s timeout the unguarded
+// version has five requests in flight at once.
+test('a poll that is still running blocks the next one', async () => {
+	let inFlight = 0
+	let peak = 0
+	let release
+
+	const { self } = harness(async () => {
+		inFlight += 1
+		peak = Math.max(peak, inFlight)
+		await new Promise((resolve) => {
+			release = resolve
+		})
+		inFlight -= 1
+
+		return reply(200, okBody)
+	})
+	self.poll = StreamControlInstance.prototype.poll
+
+	const first = self.poll.call(self)
+	const second = self.poll.call(self)
+	await second
+
+	release()
+	await first
+
+	assert.equal(peak, 1)
+
+	// Once the first finishes, polling resumes rather than being wedged shut.
+	release = undefined
+	const third = self.poll.call(self)
+	release?.()
+	await third
+	assert.equal(peak, 1)
 })

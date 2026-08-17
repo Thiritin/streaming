@@ -2,9 +2,6 @@
 
 namespace App\Models;
 
-use App\Events\ShowCancelled;
-use App\Events\ShowEnded;
-use App\Events\ShowWentLive;
 use App\Services\ThumbnailService;
 use App\Support\Markdown;
 use Carbon\Carbon;
@@ -162,13 +159,13 @@ class Show extends Model
      */
     public function goLive()
     {
+        // ShowObserver fires ShowWentLive off the status change, so this must not fire it
+        // too: the event broadcasts to every viewer, and dispatching it from both places
+        // sent the "we are live" message twice for one press.
         $this->update([
             'status' => 'live',
             'actual_start' => now(),
         ]);
-
-        // Dispatch event for notifications
-        event(new ShowWentLive($this));
     }
 
     /**
@@ -181,15 +178,8 @@ class Show extends Model
             'actual_end' => now(),
         ]);
 
-        // Mark all active viewers as left in the source
-        if ($this->source) {
-            $this->source->activeViewers()->update([
-                'left_at' => now(),
-            ]);
-        }
-
-        // Dispatch event for notifications
-        event(new ShowEnded($this));
+        // Viewer cleanup and the ShowEnded broadcast both live in ShowObserver, which fires
+        // off the status change however it was made.
     }
 
     /**
@@ -197,11 +187,10 @@ class Show extends Model
      */
     public function cancel()
     {
+        // ShowObserver fires ShowCancelled off the status change.
         $this->update([
             'status' => 'cancelled',
         ]);
-
-        event(new ShowCancelled($this));
     }
 
     /**

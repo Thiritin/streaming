@@ -145,8 +145,8 @@ form, cut on a word boundary by the server; the full title stays in `live_title`
 
 Three endpoints, authenticated with the installation's control key in `X-Companion-Token` (a
 `token` query parameter also works, for surfaces that cannot set headers). The source is the
-stream name in the path. Rate limited to 120 requests a minute, which is a 0.5s poll with
-room to spare.
+stream name in the path. Rate limited to 600 requests a minute per IP, because a control
+room is one IP with several surfaces polling on it.
 
 ```
 GET  /api/companion/{stream-name}/status

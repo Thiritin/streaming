@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Show;
 use App\Models\Source;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -97,7 +98,34 @@ class ShowControlService
             ];
         }
 
-        $show->goLive();
+        // A hardware button gets double-tapped, and two presses a few milliseconds apart
+        // would otherwise both find the show scheduled and both take it live - one show on
+        // air, but two "we are live" notifications to every viewer. The row lock makes the
+        // second press see the status the first one wrote.
+        $started = DB::transaction(function () use ($show) {
+            $locked = Show::whereKey($show->getKey())->lockForUpdate()->first();
+
+            if (! $locked || $locked->status !== 'scheduled') {
+                return null;
+            }
+
+            $locked->goLive();
+
+            return $locked;
+        });
+
+        if (! $started) {
+            $live = $this->liveShow($source);
+
+            return [
+                'ok' => true,
+                'action' => 'none',
+                'message' => $live ? "'{$live->title}' is already live." : 'That show is no longer startable.',
+                'show' => $live,
+            ];
+        }
+
+        $show = $started;
 
         Log::info('Control surface started a show', [
             'source_id' => $source->id,
@@ -134,7 +162,30 @@ class ShowControlService
             ];
         }
 
-        $live->endLivestream();
+        // Same reason as the start path: two Stop presses must not end the show twice and
+        // send two "it is over" notifications.
+        $ended = DB::transaction(function () use ($live) {
+            $locked = Show::whereKey($live->getKey())->lockForUpdate()->first();
+
+            if (! $locked || $locked->status !== 'live') {
+                return null;
+            }
+
+            $locked->endLivestream();
+
+            return $locked;
+        });
+
+        if (! $ended) {
+            return [
+                'ok' => true,
+                'action' => 'none',
+                'message' => 'Nothing is live on this source.',
+                'show' => null,
+            ];
+        }
+
+        $live = $ended;
 
         Log::info('Control surface ended a show', [
             'source_id' => $source->id,

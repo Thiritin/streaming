@@ -53,7 +53,9 @@ Route::middleware([CheckSharedSecretMiddleware::class])->group(function () {
 
 // Control surface (Bitfocus Companion and anything else that can send an HTTP request).
 // One key for the installation, the source in the path; see docs/admin/companion.md.
-Route::middleware([CheckCompanionTokenMiddleware::class, 'throttle:120,1'])
+// The limit is per IP, and a control room is one IP with several surfaces on it: three
+// stages polling every second is 180 requests a minute before anyone presses anything.
+Route::middleware([CheckCompanionTokenMiddleware::class, 'throttle:600,1'])
     ->prefix('companion')
     ->group(function () {
         Route::get('{source:slug}/status', [CompanionController::class, 'status'])->name('api.companion.status');

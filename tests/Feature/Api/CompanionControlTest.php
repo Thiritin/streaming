@@ -207,6 +207,43 @@ class CompanionControlTest extends TestCase
         $this->assertSame('scheduled', $queued->fresh()->status);
     }
 
+    /**
+     * A hardware button gets double-tapped. One press takes the show live; the second must
+     * not repeat the notification every viewer already received.
+     */
+    public function test_a_double_press_only_takes_a_show_live_once(): void
+    {
+        $show = $this->showOn($this->source, [
+            'scheduled_start' => now()->subMinutes(5),
+            'scheduled_end' => now()->addMinutes(55),
+        ]);
+
+        $this->postJson($this->url('start'), [], $this->headers())->assertOk();
+        $this->postJson($this->url('start'), [], $this->headers())
+            ->assertOk()
+            ->assertJsonPath('action', 'none');
+
+        $this->assertSame('live', $show->fresh()->status);
+        Event::assertDispatchedTimes(ShowWentLive::class, 1);
+    }
+
+    public function test_a_double_stop_only_ends_a_show_once(): void
+    {
+        $this->showOn($this->source, [
+            'status' => 'live',
+            'actual_start' => now()->subMinutes(5),
+            'scheduled_start' => now()->subMinutes(10),
+            'scheduled_end' => now()->addMinutes(50),
+        ]);
+
+        $this->postJson($this->url('stop'), [], $this->headers())->assertOk();
+        $this->postJson($this->url('stop'), [], $this->headers())
+            ->assertOk()
+            ->assertJsonPath('action', 'none');
+
+        Event::assertDispatchedTimes(ShowEnded::class, 1);
+    }
+
     public function test_start_with_nothing_queued_reports_a_conflict(): void
     {
         $this->postJson($this->url('start'), [], $this->headers())
