@@ -300,6 +300,15 @@ class RecordingController extends Controller
         // silently rendering nothing.
         abort_if($to <= $from, 422, 'The preview range ends before it starts.');
 
+        // A playlist names every segment in its range, so its size is linear in the span
+        // asked for and an unbounded request is a denial of service against this endpoint.
+        // The cap stays, but it is reported: truncating in silence is what made the cut
+        // editor unusable past the first four hours. It requested the whole archive as one
+        // window, got a quarter of it with a 200, and had no way to know - so seeking past
+        // the truncation point moved the playhead to an instant the media did not contain,
+        // which reads as a recording that stops early rather than a range that was clipped.
+        $requestedTo = $to;
+
         if ($from->diffInHours($to) > 4) {
             $to = $from->addHours(4);
         }
@@ -314,6 +323,10 @@ class RecordingController extends Controller
             'Content-Type' => 'application/vnd.apple.mpegurl',
             // Segment URLs inside are signed and time limited.
             'Cache-Control' => 'private, no-store',
+            // What was actually served, which is not always what was asked for.
+            'X-Preview-From' => $from->toIso8601String(),
+            'X-Preview-To' => $to->toIso8601String(),
+            'X-Preview-Truncated' => $to->lt($requestedTo) ? 'true' : 'false',
         ]);
     }
 

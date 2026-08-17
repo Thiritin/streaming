@@ -42,6 +42,25 @@ const previewStartMs = ref(null);
 /** Set while previewing a marker, so playback can be stopped at the right point. */
 const stopAtMs = ref(null);
 
+/**
+ * How much archive the media element holds at once.
+ *
+ * A preview playlist names every segment it covers, so its size is linear in the span
+ * asked for: at 2s segments a single day's archive is around 19,000 presigned URLs, which
+ * is a playlist measured in megabytes for the server to sign and for hls.js to hold. The
+ * picture therefore covers a window that travels with the playhead, and seeking outside it
+ * loads the next window.
+ *
+ * The scrubber still spans the whole archive. It is a map of the timeline, not the media:
+ * tying the two together is what made everything past the first window unreachable, since
+ * the server truncates an over-long range and the video element then simply had no frames
+ * there. Kept under the server's own ceiling so a request is never truncated at all.
+ */
+const PREVIEW_SPAN_MS = 2 * 60 * 60_000;
+
+/** Wall-clock range the currently loaded preview covers, or null before the first load. */
+const loaded = ref(null);
+
 const toMs = (v) => (v ? new Date(v).getTime() : null);
 const toIso = (ms) => new Date(ms).toISOString();
 
@@ -215,13 +234,67 @@ const msFromClientX = (clientX) => {
     return window_.value.from + ratio * window_.value.span;
 };
 
-/** Move the video to an absolute instant. */
-const seekTo = (ms) => {
-    playheadMs.value = ms;
+/** The media window to load so that `ms` is playable, centred on it where the archive allows. */
+const previewWindowFor = (ms) => {
+    if (!archive.value) return null;
+    const span = Math.min(PREVIEW_SPAN_MS, archive.value.to - archive.value.from);
+    let from = ms - span / 2;
+    if (from < archive.value.from) from = archive.value.from;
+    if (from + span > archive.value.to) from = archive.value.to - span;
+    return { from, to: from + span };
+};
+
+const isLoaded = (ms) => loaded.value !== null && ms >= loaded.value.from && ms <= loaded.value.to;
+
+/** Absolute instant -> offset into the loaded window, applied to the media element. */
+const seekLoaded = (ms) => {
     if (!video.value || previewStartMs.value === null) return;
     const offset = (ms - previewStartMs.value) / 1000;
     if (offset >= 0 && Number.isFinite(video.value.duration)) {
         video.value.currentTime = Math.min(offset, video.value.duration);
+    }
+};
+
+/**
+ * Move the video to an absolute instant, fetching another window first if that instant is
+ * outside the one already loaded.
+ */
+const seekTo = (ms) => {
+    const target = clampToArchive(ms);
+    playheadMs.value = target;
+
+    if (!video.value) return;
+
+    if (!isLoaded(target)) {
+        // Always the latest target, so a scrub that crosses the boundary several times
+        // ends up loading the window it finished in rather than each one it passed over.
+        seekAfterLoad = target;
+        if (!loading.value) loadPreview(target);
+        return;
+    }
+
+    seekLoaded(target);
+};
+
+/** Completes a seek that had to wait for its window, once the media can be seeked. */
+const applyPendingSeek = () => {
+    if (seekAfterLoad === null) return;
+    const target = seekAfterLoad;
+
+    // The operator kept scrubbing while this window loaded and has left it again. Leave the
+    // target set and fetch the window they ended up in.
+    if (!isLoaded(target)) {
+        if (!loading.value) loadPreview(target);
+        return;
+    }
+
+    seekAfterLoad = null;
+    playheadMs.value = target;
+    seekLoaded(target);
+
+    if (playAfterSeek) {
+        playAfterSeek = false;
+        video.value?.play();
     }
 };
 
@@ -235,6 +308,13 @@ const seekTo = (ms) => {
 let pendingSeekMs = null;
 let seekFrame = null;
 let resumeAfterScrub = false;
+
+/** Instant to seek to once a window load finishes, when it landed outside the loaded one. */
+let seekAfterLoad = null;
+/** Whether that deferred seek should start playback when it lands. */
+let playAfterSeek = false;
+/** Discards the result of a load that a later one has already superseded. */
+let loadToken = 0;
 
 const flushSeek = () => {
     seekFrame = null;
@@ -326,20 +406,34 @@ const markHere = (which) => {
     setMarker(which, playheadMs.value);
 };
 
+/**
+ * Play from an instant, loading its window first if need be.
+ *
+ * Calling play() straight after seekTo only works when the instant is already loaded. A cut
+ * whose ends fall in different windows - anything longer than the preview span - would
+ * otherwise start playing the outgoing window while the right one was still in flight.
+ */
+const playFrom = (ms) => {
+    seekTo(ms);
+    if (seekAfterLoad !== null) {
+        playAfterSeek = true;
+        return;
+    }
+    video.value?.play();
+};
+
 /** Play from the in point, which is what a viewer will see first. */
 const previewStart = () => {
     if (inMs.value === null) return;
     stopAtMs.value = inMs.value + 10_000;
-    seekTo(inMs.value);
-    video.value?.play();
+    playFrom(inMs.value);
 };
 
 /** Play the last few seconds, which is where a bad out point actually shows. */
 const previewEnd = () => {
     if (outMs.value === null) return;
     stopAtMs.value = outMs.value;
-    seekTo(outMs.value - 5_000);
-    video.value?.play();
+    playFrom(outMs.value - 5_000);
 };
 
 const togglePlay = () => {
@@ -350,6 +444,9 @@ const togglePlay = () => {
 
 const onTimeUpdate = () => {
     if (!video.value || previewStartMs.value === null) return;
+    // A window is still loading for a seek that has already been requested. Reporting the
+    // outgoing window's position would drag the playhead back to where it was.
+    if (seekAfterLoad !== null) return;
     playheadMs.value = previewStartMs.value + video.value.currentTime * 1000;
 
     if (stopAtMs.value !== null && playheadMs.value >= stopAtMs.value) {
@@ -399,38 +496,63 @@ const onKeydown = (event) => {
  * hls.js rather than a bare <video src>: browsers other than Safari have no native HLS,
  * and a raw .m3u8 in a src attribute fails with "no video with supported format found".
  */
-const loadPreview = async () => {
-    if (!window_.value || !video.value) return;
+const loadPreview = async (centreMs = null) => {
+    if (!video.value) return;
+
+    const centre = centreMs ?? playheadMs.value ?? inMs.value ?? archive.value?.from;
+    const range = centre === null || centre === undefined ? null : previewWindowFor(centre);
+    if (!range) return;
 
     const url =
         route('manage.recordings.preview', props.recordingId) +
-        `?from=${encodeURIComponent(toIso(window_.value.from))}` +
-        `&to=${encodeURIComponent(toIso(window_.value.to))}&rendition=hd`;
+        `?from=${encodeURIComponent(toIso(range.from))}` +
+        `&to=${encodeURIComponent(toIso(range.to))}&rendition=hd`;
 
+    const token = ++loadToken;
     loading.value = true;
     loadError.value = null;
 
     // The playlist's first segment can start slightly before the requested window, since
     // selection is by segment start. Read the real start so currentTime maps to the right
     // instant instead of drifting by up to one segment.
+    let startMs;
+    let servedTo = range.to;
     try {
-        const text = await fetch(url, { headers: { Accept: 'application/vnd.apple.mpegurl' } })
-            .then((r) => {
-                if (!r.ok) throw new Error(`Preview unavailable (${r.status})`);
-                return r.text();
-            });
+        const response = await fetch(url, { headers: { Accept: 'application/vnd.apple.mpegurl' } });
+        if (!response.ok) throw new Error(`Preview unavailable (${response.status})`);
+        const text = await response.text();
+
         const match = text.match(/#EXT-X-PROGRAM-DATE-TIME:(.+)/);
-        previewStartMs.value = match ? new Date(match[1].trim()).getTime() : window_.value.from;
+        startMs = match ? new Date(match[1].trim()).getTime() : range.from;
+
+        // The server caps how long a range it will render. Believing the request instead of
+        // the response is what let the playhead run past the end of the actual media.
+        const to = Date.parse(response.headers.get('X-Preview-To') ?? '');
+        if (Number.isFinite(to)) servedTo = Math.min(range.to, to);
     } catch (e) {
+        if (token !== loadToken) return;
         loading.value = false;
         loadError.value = e.message;
+        // Otherwise a failed window leaves a seek pending forever, and onTimeUpdate stays
+        // muted for the rest of the session.
+        seekAfterLoad = null;
+        playAfterSeek = false;
         return;
     }
+
+    // A newer window was asked for while this one was in flight; that one owns the player.
+    if (token !== loadToken) return;
+
+    previewStartMs.value = startMs;
+    loaded.value = { from: Math.min(range.from, startMs), to: servedTo };
 
     if (hls) {
         hls.destroy();
         hls = null;
     }
+
+    // Seeking needs a duration, which only exists once metadata is in.
+    video.value.addEventListener('loadedmetadata', applyPendingSeek, { once: true });
 
     if (Hls.isSupported()) {
         hls = new Hls({ enableWorker: true, lowLatencyMode: false, backBufferLength: 120 });
@@ -445,11 +567,11 @@ const loadPreview = async () => {
     }
 
     loading.value = false;
-    if (inMs.value !== null) playheadMs.value = inMs.value;
+    if (playheadMs.value === null && inMs.value !== null) playheadMs.value = inMs.value;
 };
 
 onMounted(() => {
-    loadPreview();
+    loadPreview(inMs.value ?? archive.value?.from ?? null);
     window.addEventListener('keydown', onKeydown);
 });
 
@@ -457,7 +579,7 @@ onMounted(() => {
 watch(archive, (value, previous) => {
     if (value && !previous) {
         fitToCut();
-        loadPreview();
+        loadPreview(inMs.value ?? value.from);
     }
 });
 
@@ -467,14 +589,10 @@ onBeforeUnmount(() => {
     hls?.destroy();
 });
 
-// Reloads only when the view is deliberately changed (fit, zoom, whole archive). Marker
-// edits no longer touch the window at all, so dragging never tears down the player.
-watch(
-    () => (view.value ? `${view.value.from}-${view.value.to}` : null),
-    (next, previous) => {
-        if (next && previous && next !== previous) loadPreview();
-    },
-);
+// Zooming and framing no longer touch the player at all. The view is the ruler's coordinate
+// system; the media window follows the playhead, and seekTo fetches another one when the
+// playhead leaves it. Reloading on every zoom used to tear the player down for a change that
+// altered nothing about what was playing.
 </script>
 
 <template>
