@@ -1,8 +1,10 @@
 <?php
 
+use App\Models\Recording;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 return new class extends Migration
 {
@@ -25,13 +27,13 @@ return new class extends Migration
         });
 
         // Generate slugs for existing records
-        $recordings = \App\Models\Recording::all();
+        $recordings = Recording::all();
         foreach ($recordings as $recording) {
-            $baseSlug = \Illuminate\Support\Str::slug($recording->title);
+            $baseSlug = Str::slug($recording->title);
             $slug = $baseSlug;
             $count = 1;
 
-            while (\App\Models\Recording::where('slug', $slug)->where('id', '!=', $recording->id)->exists()) {
+            while (Recording::where('slug', $slug)->where('id', '!=', $recording->id)->exists()) {
                 $slug = $baseSlug.'-'.$count;
                 $count++;
             }

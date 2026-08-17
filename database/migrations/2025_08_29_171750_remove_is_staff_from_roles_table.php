@@ -16,7 +16,7 @@ return new class extends Migration
             Schema::table('roles', function (Blueprint $table) {
                 try {
                     $table->dropIndex('roles_is_staff_index');
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     // Index might not exist
                 }
             });

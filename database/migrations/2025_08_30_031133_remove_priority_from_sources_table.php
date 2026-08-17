@@ -16,7 +16,7 @@ return new class extends Migration
             Schema::table('sources', function (Blueprint $table) {
                 try {
                     $table->dropIndex('sources_priority_index');
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     // Index might not exist
                 }
             });

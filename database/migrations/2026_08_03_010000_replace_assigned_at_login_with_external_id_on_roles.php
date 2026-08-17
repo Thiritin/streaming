@@ -31,7 +31,7 @@ return new class extends Migration
                 // fails on MySQL.
                 try {
                     $table->dropIndex('roles_assigned_at_login_index');
-                } catch (\Throwable) {
+                } catch (Throwable) {
                     // Older installs never had the index.
                 }
 

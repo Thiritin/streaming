@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Source;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +27,7 @@ return new class extends Migration
         // Force re-save to encrypt existing keys
         foreach ($sources as $source) {
             // The model will handle encryption when we retrieve and save
-            $sourceModel = \App\Models\Source::find($source->id);
+            $sourceModel = Source::find($source->id);
             if ($sourceModel) {
                 // Temporarily store the plain key
                 $plainKey = $source->stream_key;

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Server;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +25,7 @@ return new class extends Migration
                 // Create a temporary table with the new schema
                 Schema::create('clients_temp', function (Blueprint $table) {
                     $table->id();
-                    $table->foreignIdFor(\App\Models\Server::class)->constrained()->cascadeOnDelete();
+                    $table->foreignIdFor(Server::class)->constrained()->cascadeOnDelete();
                     $table->string('client')->nullable();
                     $table->string('client_id')->nullable();
                     $table->dateTime('start')->nullable();
@@ -44,13 +45,13 @@ return new class extends Migration
                 Schema::table('clients', function (Blueprint $table) {
                     $table->dropForeign('server_user_id_fk');
                     $table->dropColumn('server_user_id');
-                    $table->foreignIdFor(\App\Models\Server::class)->after('id')->constrained()->cascadeOnDelete();
+                    $table->foreignIdFor(Server::class)->after('id')->constrained()->cascadeOnDelete();
                 });
             }
         } else {
             // If column doesn't exist, just add the server_id column
             Schema::table('clients', function (Blueprint $table) {
-                $table->foreignIdFor(\App\Models\Server::class)->after('id')->constrained()->cascadeOnDelete();
+                $table->foreignIdFor(Server::class)->after('id')->constrained()->cascadeOnDelete();
             });
         }
     }
@@ -63,7 +64,7 @@ return new class extends Migration
         }
 
         Schema::table('clients', function (Blueprint $table) {
-            $table->dropConstrainedForeignIdFor(\App\Models\Server::class);
+            $table->dropConstrainedForeignIdFor(Server::class);
             $table->foreignId('server_user_id')->nullable()->after('id')->constrained('server_user', 'id', 'server_user_id_fk')->cascadeOnDelete();
         });
     }

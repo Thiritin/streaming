@@ -16,7 +16,7 @@ return new class extends Migration
             Schema::table('sources', function (Blueprint $table) {
                 $table->dropIndex('sources_is_active_index');
             });
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Index doesn't exist, continue
         }
 

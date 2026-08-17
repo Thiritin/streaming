@@ -29,6 +29,8 @@ class Server extends Model
         'last_heartbeat' => 'datetime',
         'last_health_check' => 'datetime',
         'immutable' => 'boolean',
+        // What the server reports about itself on heartbeat.
+        'metadata' => 'array',
     ];
 
     protected $attributes = [
