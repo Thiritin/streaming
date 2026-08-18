@@ -104,14 +104,14 @@ return [
     | Fully qualified on purpose. These defaults used to be bare names -
     | `ffmpeg-hls:latest` - which Docker resolves as official Docker Hub images that do
     | not exist, so `docker compose up` on a fresh origin died with "pull access
-    | denied" and the whole stack never started. The registry namespace has to be part
-    | of the default, not something an environment is trusted to remember.
+    | denied" and the whole stack never started. The registry and namespace have to be
+    | part of the default, not something an environment is trusted to remember.
     |
     | Override per environment if the images are published somewhere else.
     */
     'images' => [
-        'ffmpeg_hls' => env('STREAM_IMAGE_FFMPEG_HLS', 'eurofurence/ffmpeg-hls:latest'),
-        'archive_uploader' => env('STREAM_IMAGE_ARCHIVE_UPLOADER', 'eurofurence/archive-uploader:latest'),
+        'ffmpeg_hls' => env('STREAM_IMAGE_FFMPEG_HLS', 'ghcr.io/thiritin/ffmpeg-hls:latest'),
+        'archive_uploader' => env('STREAM_IMAGE_ARCHIVE_UPLOADER', 'ghcr.io/thiritin/archive-uploader:latest'),
     ],
 
     // Filesystem disk holding the segment archive and the generated recording

@@ -1,13 +1,77 @@
+name: Docker
+
+# Images live in GitHub Container Registry under the repository owner, so the built-in
+# GITHUB_TOKEN is the only credential needed. The name has to be lowercased; GHCR
+# rejects `Thiritin/streaming` while the repository is spelled that way.
+
 on:
   push:
     branches: [ main ]
   release:
     types:
       - created
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-docker:
-    uses: Thiritin/workflows/.github/workflows/docker-semver.yml@main
-    secrets:
-      DockerHubUser: ${{ secrets.DOCKERHUB_USERNAME }}
-      DockerHubPass: ${{ secrets.DOCKERHUB_PASSWORD }}
-      DockerHubPrefix: eurofurence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image name
+        id: prep
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.prep.outputs.image }}
+          flavor: |
+            latest=auto
+          tags: |
+            type=edge,enable=true,branch=main
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          cache-from: "type=gha"
+          cache-to: "type=gha,mode=max"
+          builder: ${{ steps.buildx.outputs.name }}
+          file: ./Dockerfile
+          target: production
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push local
+        uses: docker/build-push-action@v6
+        if: ${{ github.ref_name == 'main' }}
+        with:
+          cache-from: "type=gha"
+          builder: ${{ steps.buildx.outputs.name }}
+          file: ./Dockerfile
+          target: local
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.prep.outputs.image }}:local
