@@ -39,6 +39,17 @@ const handleUnmute = () => {
     showUnmutePrompt.value = false;
 };
 
+/*
+ * The prompt is a hint, not a button. It sat over the scrubber and swallowed the
+ * click, so a viewer reaching for the timeline unmuted the stream instead of
+ * seeking. It no longer takes pointer events at all; any press on the player is
+ * the gesture the browser was waiting for, and that press still reaches whatever
+ * control it landed on.
+ */
+const handlePointerDown = () => {
+    if (showUnmutePrompt.value) handleUnmute();
+};
+
 const handleToggleStats = () => {
     showStats.value = !showStats.value;
 };
@@ -52,7 +63,7 @@ defineExpose({
 </script>
 
 <template>
-    <div class="stream-player-container" v-if="hlsUrl">
+    <div class="stream-player-container" v-if="hlsUrl" @pointerdown.capture="handlePointerDown">
         <VideoPlayer
             ref="playerRef"
             :src="hlsUrl"
@@ -75,7 +86,7 @@ defineExpose({
 
         <!-- Unmute prompt -->
         <transition name="fade">
-            <div v-if="showUnmutePrompt" class="unmute-prompt" @click="handleUnmute">
+            <div v-if="showUnmutePrompt" class="unmute-prompt">
                 <svg class="unmute-icon" viewBox="0 0 24 24" width="24" height="24">
                     <path fill="currentColor" d="M3,9H7L12,4V20L7,15H3V9M16.59,12L14,9.41L15.41,8L18,10.59L20.59,8L22,9.41L19.41,12L22,14.59L20.59,16L18,13.41L15.41,16L14,14.59L16.59,12Z"/>
                 </svg>
@@ -121,7 +132,9 @@ defineExpose({
 /* Unmute prompt styling */
 .unmute-prompt {
     position: absolute;
-    bottom: 80px;
+    /* Clear of the control bar, and inert: the scrubber underneath stays clickable. */
+    bottom: 120px;
+    pointer-events: none;
     left: 50%;
     transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.8);
@@ -131,13 +144,7 @@ defineExpose({
     display: flex;
     align-items: center;
     gap: 10px;
-    cursor: pointer;
     z-index: 15;
-    transition: background 0.2s;
-}
-
-.unmute-prompt:hover {
-    background: rgba(0, 0, 0, 0.9);
 }
 
 .unmute-icon {

@@ -4,6 +4,7 @@ namespace Tests\Feature\Manage;
 
 use App\Models\Role;
 use App\Models\User;
+use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\CreatesManageUsers;
@@ -109,6 +110,35 @@ class RolesTest extends TestCase
             ->assertRedirect();
 
         $this->assertSame($before, Role::count());
+    }
+
+    /**
+     * Every deploy runs `migrate --seed`, so the seeder has to be create-only: an
+     * update would hand back the badge an operator hid and blank the group id that
+     * role sync at login runs on.
+     */
+    public function test_reseeding_leaves_an_edited_role_alone(): void
+    {
+        $this->seed(RoleSeeder::class);
+
+        Role::where('slug', 'admin')->update([
+            'is_visible' => false,
+            'external_id' => 'GROUP-42',
+            'chat_color' => '#123456',
+            'priority' => 7,
+        ]);
+
+        $before = Role::count();
+
+        $this->seed(RoleSeeder::class);
+
+        $admin = Role::where('slug', 'admin')->firstOrFail();
+
+        $this->assertSame($before, Role::count());
+        $this->assertFalse((bool) $admin->is_visible);
+        $this->assertSame('GROUP-42', $admin->external_id);
+        $this->assertSame('#123456', $admin->chat_color);
+        $this->assertSame(7, $admin->priority);
     }
 
     public function test_two_roles_cannot_claim_the_same_external_id(): void

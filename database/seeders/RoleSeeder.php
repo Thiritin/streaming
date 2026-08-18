@@ -8,12 +8,18 @@ use Illuminate\Database\Seeder;
 class RoleSeeder extends Seeder
 {
     /**
-     * Run the database seeds.
+     * The shipped set of roles, created once and then left alone.
+     *
+     * Deliberately create-only. Every deploy runs `migrate --seed`, so an update here
+     * would rewrite whatever the panel has since saved: badges switched back on for
+     * roles an operator had hidden, colours and priorities reverted, and the group id
+     * in `external_id` blanked, which silently unhooks role sync at login. A fresh
+     * installation gets these rows; after that /manage > Roles owns them.
      */
     public function run(): void
     {
         // Admin role with full permissions
-        Role::updateOrCreate(
+        Role::firstOrCreate(
             ['slug' => 'admin'],
             [
                 'name' => 'Administrator',
@@ -52,7 +58,7 @@ class RoleSeeder extends Seeder
         );
 
         // Moderator role with chat and user management permissions
-        Role::updateOrCreate(
+        Role::firstOrCreate(
             ['slug' => 'moderator'],
             [
                 'name' => 'Moderator',
@@ -80,7 +86,7 @@ class RoleSeeder extends Seeder
         );
 
         // Staff role (general convention staff)
-        Role::updateOrCreate(
+        Role::firstOrCreate(
             ['slug' => 'staff'],
             [
                 'name' => 'Staff',
@@ -101,7 +107,7 @@ class RoleSeeder extends Seeder
         );
 
         // Supersponsor role (assigned at login from registration system)
-        Role::updateOrCreate(
+        Role::firstOrCreate(
             ['slug' => 'supersponsor'],
             [
                 'name' => 'Super Sponsor',
@@ -122,7 +128,7 @@ class RoleSeeder extends Seeder
         );
 
         // Sponsor role (can be assigned at login from registration system)
-        Role::updateOrCreate(
+        Role::firstOrCreate(
             ['slug' => 'sponsor'],
             [
                 'name' => 'Sponsor',
@@ -142,7 +148,7 @@ class RoleSeeder extends Seeder
         );
 
         // Attendee role (default role for all registered attendees)
-        Role::updateOrCreate(
+        Role::firstOrCreate(
             ['slug' => 'attendee'],
             [
                 'name' => 'Attendee',
@@ -160,7 +166,7 @@ class RoleSeeder extends Seeder
         );
 
         // Digital Pass role for authenticated users without tickets
-        Role::updateOrCreate(
+        Role::firstOrCreate(
             ['slug' => 'digital-pass'],
             [
                 'name' => 'Digital Pass',
