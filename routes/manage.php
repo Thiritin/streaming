@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Manage\DashboardController;
+use App\Http\Controllers\Manage\DisplayScreenController;
 use App\Http\Controllers\Manage\EmbedKeyController;
 use App\Http\Controllers\Manage\EmoteController;
 use App\Http\Controllers\Manage\PretalxConnectionController;
@@ -79,6 +80,18 @@ Route::get('embed-keys/create', [EmbedKeyController::class, 'create'])->name('em
 Route::post('embed-keys', [EmbedKeyController::class, 'store'])->name('embed-keys.store');
 Route::post('embed-keys/{embedKey}/sign-out', [EmbedKeyController::class, 'signOut'])->name('embed-keys.sign-out');
 Route::delete('embed-keys/{embedKey}', [EmbedKeyController::class, 'destroy'])->name('embed-keys.destroy');
+Route::post('embed-keys/{embedKey}/direct', [EmbedKeyController::class, 'direct'])->name('embed-keys.direct');
+
+/*
+ * The screens those keys let in. Bulk routes first, so 'displays/bulk' is not read
+ * as a screen id.
+ */
+Route::post('displays/bulk/direct', [DisplayScreenController::class, 'bulkDirect'])->name('displays.bulk.direct');
+Route::post('displays/direct-all', [DisplayScreenController::class, 'directAll'])->name('displays.direct-all');
+Route::get('displays', [DisplayScreenController::class, 'index'])->name('displays.index');
+Route::post('displays/{displayScreen}/direct', [DisplayScreenController::class, 'direct'])->name('displays.direct');
+Route::post('displays/{displayScreen}/rename', [DisplayScreenController::class, 'rename'])->name('displays.rename');
+Route::delete('displays/{displayScreen}', [DisplayScreenController::class, 'destroy'])->name('displays.destroy');
 
 Route::get('sources', [SourceController::class, 'index'])->name('sources.index');
 Route::get('sources/create', [SourceController::class, 'create'])->name('sources.create');

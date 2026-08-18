@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\DisplayScreen;
 use App\Models\EmbedKey;
 use App\Models\Emote;
 use App\Models\Recording;
@@ -10,6 +11,7 @@ use App\Models\Server;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\User;
+use App\Policies\DisplayScreenPolicy;
 use App\Policies\EmbedKeyPolicy;
 use App\Policies\EmotePolicy;
 use App\Policies\RecordingPolicy;
@@ -31,6 +33,7 @@ class AuthServiceProvider extends ServiceProvider
      * @var array<class-string, class-string>
      */
     protected $policies = [
+        DisplayScreen::class => DisplayScreenPolicy::class,
         EmbedKey::class => EmbedKeyPolicy::class,
         Emote::class => EmotePolicy::class,
         Recording::class => RecordingPolicy::class,

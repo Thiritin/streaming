@@ -9,7 +9,12 @@ const props = defineProps({
 });
 
 const MAX_RECOVERIES = 3;
-const STATE_POLL_MS = 20000;
+/*
+ * Also how long a remote switch from /manage takes to land, which is what sets it:
+ * 20s was fine when this was only about a source going off air, but somebody sending
+ * every screen to the main stage before a show is standing there watching.
+ */
+const STATE_POLL_MS = 10000;
 const OFFLINE_GRACE_MS = 45000;
 const MUTED_STORAGE_KEY = 'display.muted';
 
@@ -93,12 +98,21 @@ const switchTo = (slug) => {
 };
 
 /*
+ * A screen that has been sent somewhere stays there. Without this the offline
+ * fallback below would walk it off the channel again while the show it was sent to
+ * is still coming up, which is exactly the case /manage sent it for.
+ */
+const directed = ref(null);
+
+/*
  * An unattended screen must never sit on a dead stream, but a publisher reconnect
  * is routine and takes a few seconds. So the channel only changes once a source has
  * been down for the whole grace window; anything shorter and a hiccup would move
  * every screen in the building.
  */
 const reconcile = () => {
+  if (directed.value) return;
+
   const now = Date.now();
   const live = current.value?.isOnline ?? false;
 
@@ -119,11 +133,20 @@ const reconcile = () => {
 
 const pollState = async () => {
   try {
-    const response = await fetch(route('display.state'), { headers: { Accept: 'application/json' } });
+    /*
+     * The poll doubles as the screen's heartbeat: what it reports here is what
+     * /manage lists as playing, and the reply is where a remote switch arrives.
+     */
+    const url = route('display.state', { page: 'play', source: currentSlug.value ?? '' });
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
     if (!response.ok) return;
 
     const data = await response.json();
     sources.value = data.sources;
+
+    directed.value = data.directedSlug ?? null;
+    if (directed.value) switchTo(directed.value);
+
     reconcile();
   } catch (e) {
     // A display outlives transient network trouble; the next tick tries again.

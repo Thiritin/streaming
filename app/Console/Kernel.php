@@ -4,6 +4,7 @@ namespace App\Console;
 
 use App\Jobs\CleanupStaleViewerSessionsJob;
 use App\Jobs\FlushShowBoopsJob;
+use App\Jobs\PruneDisplayScreensJob;
 use App\Jobs\PruneServerMetricsJob;
 use App\Jobs\SaveViewCountJob;
 use App\Jobs\ScanArchiveStorageJob;
@@ -74,6 +75,9 @@ class Kernel extends ConsoleKernel
 
         // System samples from every server's heartbeat, one row a minute each.
         $schedule->job(new PruneServerMetricsJob)->daily();
+
+        // Screens that stopped polling a day ago and are not coming back.
+        $schedule->job(new PruneDisplayScreensJob)->daily();
     }
 
     /**

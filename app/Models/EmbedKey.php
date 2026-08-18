@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 
@@ -58,6 +59,14 @@ class EmbedKey extends Model
 
         static::saved($forget);
         static::deleted($forget);
+    }
+
+    /**
+     * The screens currently holding a session minted from this code.
+     */
+    public function screens(): HasMany
+    {
+        return $this->hasMany(DisplayScreen::class);
     }
 
     /**
@@ -169,6 +178,10 @@ class EmbedKey extends Model
     public function signOutScreens(): void
     {
         $this->forceFill(['signed_out_at' => now()])->save();
+
+        // The rows describe live screens. Those sessions stop resolving as of now, so
+        // leaving them listed would offer /manage a screen it can no longer reach.
+        $this->screens()->delete();
     }
 
     /**

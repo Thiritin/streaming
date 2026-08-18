@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enum\PlaybackTokenTypeEnum;
 use App\Enum\SourceStatusEnum;
+use App\Models\DisplayScreen;
 use App\Models\EmbedKey;
 use App\Models\Source;
 use App\Services\PlaybackTokenService;
@@ -81,10 +82,14 @@ class DisplayController extends Controller
             return to_route('display.prompt');
         }
 
+        $screen = DisplayScreen::report($key, $request, 'hub', null);
+
         return Inertia::render('Display/Hub', [
             'keyName' => $key->name,
+            'screenName' => $screen->displayName(),
             'sources' => $this->sources($key),
             'featuredSlug' => Source::featured()?->slug,
+            'directedSlug' => $screen->directedSource?->slug,
         ]);
     }
 
@@ -100,10 +105,21 @@ class DisplayController extends Controller
         }
 
         $sources = $this->sources($key);
+        $screen = DisplayScreen::report($key, $request, 'play', null);
+
+        /*
+         * A standing instruction outranks the query string: the screen may be coming
+         * back up after a reboot with the channel it was launched on still in its
+         * URL, and what /manage last asked for is the newer answer.
+         */
+        $initial = $this->initialSlug(
+            $sources,
+            $screen->directedSource?->slug ?? $request->query('source'),
+        );
 
         return Inertia::render('Display/Play', [
             'sources' => $sources,
-            'initialSlug' => $this->initialSlug($sources, $request->query('source')),
+            'initialSlug' => $initial,
         ]);
     }
 
@@ -124,9 +140,19 @@ class DisplayController extends Controller
 
         $sources = $this->sources($key);
 
+        $page = $request->query('page') === 'play' ? 'play' : 'hub';
+        $playing = $page === 'play'
+            ? Source::where('slug', (string) $request->query('source'))->first()
+            : null;
+
+        $screen = DisplayScreen::report($key, $request, $page, $playing);
+
         return response()->json([
             'sources' => $sources,
             'featuredSlug' => Source::featured()?->slug,
+            // Null once the screen reports it arrived, so somebody standing at the
+            // screen can still switch channel afterwards.
+            'directedSlug' => $screen->directedSource?->slug,
         ]);
     }
 
@@ -139,6 +165,8 @@ class DisplayController extends Controller
      */
     public function leave(Request $request): RedirectResponse
     {
+        DisplayScreen::forSession($request)?->delete();
+
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 

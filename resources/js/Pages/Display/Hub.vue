@@ -4,16 +4,28 @@ import { Head, router } from '@inertiajs/vue3';
 
 const props = defineProps({
   keyName: { type: String, required: true },
+  screenName: { type: String, default: null },
   sources: { type: Array, required: true },
   featuredSlug: { type: String, default: null },
+  directedSlug: { type: String, default: null },
 });
 
 const sources = ref([...props.sources]);
+const directedSlug = ref(props.directedSlug);
 const copied = ref(null);
 let pollTimer = null;
 let copiedTimer = null;
 
 const onlineCount = computed(() => sources.value.filter((s) => s.isOnline).length);
+
+/*
+ * A screen parked on the hub can be sent somewhere from /manage, but it cannot obey:
+ * fullscreen and audio need a gesture, so all this page can do is say so and make the
+ * button the obvious one to press.
+ */
+const directed = computed(
+  () => sources.value.find((s) => s.slug === directedSlug.value) ?? null,
+);
 
 const startPlayback = (slug = null) => {
   /*
@@ -76,9 +88,14 @@ const kioskCommand = computed(
 
 const pollState = async () => {
   try {
-    const response = await fetch(route('display.state'), { headers: { Accept: 'application/json' } });
+    const response = await fetch(route('display.state', { page: 'hub' }), {
+      headers: { Accept: 'application/json' },
+    });
     if (!response.ok) return;
-    sources.value = (await response.json()).sources;
+
+    const data = await response.json();
+    sources.value = data.sources;
+    directedSlug.value = data.directedSlug ?? null;
   } catch (e) {
     // Retried on the next tick.
   }
@@ -95,12 +112,32 @@ onBeforeUnmount(() => { clearInterval(pollTimer); clearTimeout(copiedTimer); });
     <div class="mx-auto max-w-5xl px-6 py-10">
       <header class="mb-8">
         <p class="text-xs uppercase tracking-widest text-primary-500">Display</p>
-        <h1 class="mt-1 text-3xl font-bold text-white">{{ keyName }}</h1>
+        <h1 class="mt-1 text-3xl font-bold text-white">{{ screenName ?? keyName }}</h1>
         <p class="mt-2 text-primary-400">
           {{ onlineCount }} of {{ sources.length }} sources live. This screen stays signed in
           until the key is revoked.
         </p>
       </header>
+
+      <div
+        v-if="directed"
+        class="mb-6 flex flex-wrap items-center gap-4 rounded-lg border border-primary-600 bg-primary-900 p-4"
+      >
+        <div class="flex-1">
+          <p class="font-medium text-white">Sent to {{ directed.name }}</p>
+          <p class="text-sm text-primary-400">
+            Control asked this screen to show {{ directed.name }}. Playback has to be started
+            here, because a browser will not go fullscreen or unmute on its own.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="rounded-lg bg-primary-600 px-4 py-2 font-semibold text-white transition hover:bg-primary-500"
+          @click="startPlayback(directed.slug)"
+        >
+          Start {{ directed.name }}
+        </button>
+      </div>
 
       <!-- Square buttons: the primary action, then one per source. -->
       <section class="mb-10 grid grid-cols-2 gap-3 sm:grid-cols-4">

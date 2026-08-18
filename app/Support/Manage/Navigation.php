@@ -53,6 +53,7 @@ final class Navigation
             ['label' => 'Infrastructure', 'items' => [
                 $this->item('Servers', 'server', 'manage.servers.index'),
                 $this->item('Display Keys', 'monitor', 'manage.embed-keys.index'),
+                $this->item('Screens', 'monitor-play', 'manage.displays.index'),
             ]],
             ['label' => 'Administration', 'items' => [
                 $this->item('Users', 'users', 'manage.users.index'),

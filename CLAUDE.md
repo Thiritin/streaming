@@ -177,6 +177,9 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   Read the key through `App\Support\ControlKey::current()`, never `config('stream.control_key')`
   directly - the config value is only the environment fallback, so a `config()` read ignores
   what Settings > Control surfaces saved
+- Display Keys and Screens: the codes unattended displays sign in with, plus the screens
+  themselves - what each is playing and where to send it. A screen reports itself on its
+  poll and picks up a directed source the same way; see docs/admin/displays.md
 - Servers, including the generated install script
 - Users, Roles, Emotes and Recordings
 - Settings: branding, login copy, accent colour, footer links and the control key
