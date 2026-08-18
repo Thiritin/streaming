@@ -26,7 +26,7 @@ usePoll(10000, { only: ['table'] });
       :actions="table.pageActions"
     />
 
-    <FilterBar :filters="table.filters" :search="table.search" />
+    <FilterBar :table="table" />
 
     <DataTable :table="table" />
 

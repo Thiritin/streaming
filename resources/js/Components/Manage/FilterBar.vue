@@ -1,21 +1,25 @@
 <script setup>
 /**
- * Renders the server-declared filter set plus the search box. Every control writes to the
- * query string, so a filtered view is linkable and a poll cannot reset it.
+ * The one toolbar above a table: the server-declared filter set, the search box and the
+ * column switcher. Filters and search write to the query string, so a filtered view is
+ * linkable and a poll cannot reset it.
  */
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { router } from '@inertiajs/vue3';
 import ManageIcon from './ManageIcon.vue';
 import { useTableQuery } from './useTableQuery.js';
 
 const props = defineProps({
-  filters: { type: Array, default: () => [] },
-  search: { type: String, default: '' },
+  table: { type: Object, required: true },
   searchable: { type: Boolean, default: true },
 });
 
 const { setFilter, setSearch } = useTableQuery();
 
-const term = ref(props.search);
+const filters = computed(() => props.table.filters ?? []);
+const toggleableColumns = computed(() => props.table.columns.filter((column) => column.toggleable));
+
+const term = ref(props.table.search ?? '');
 const open = ref(null);
 let debounce = null;
 
@@ -44,15 +48,29 @@ const toggleValue = (filter, value) => {
 };
 
 watch(
-  () => props.search,
+  () => props.table.search,
   (value) => {
-    term.value = value;
+    term.value = value ?? '';
   },
 );
 
 const onSearch = () => {
   window.clearTimeout(debounce);
   debounce = window.setTimeout(() => setSearch(term.value), 300);
+};
+
+const hidden = computed(() => props.table.hiddenColumns ?? []);
+
+const toggleColumn = (key) => {
+  router.post(
+    route('manage.tables.columns', props.table.name),
+    {
+      hidden: hidden.value.includes(key)
+        ? hidden.value.filter((existing) => existing !== key)
+        : [...hidden.value, key],
+    },
+    { preserveScroll: true, preserveState: true },
+  );
 };
 
 const control =
@@ -145,15 +163,48 @@ const control =
       </label>
     </template>
 
-    <label v-if="searchable" class="ml-auto flex items-center gap-1.5">
-      <ManageIcon name="search" :size="13" class="text-fg-3" />
-      <input
-        v-model="term"
-        type="search"
-        placeholder="Search"
-        :class="[control, 'w-48']"
-        @input="onSearch"
-      />
-    </label>
+    <div class="ml-auto flex items-center gap-2">
+      <label v-if="searchable" class="flex items-center gap-1.5">
+        <ManageIcon name="search" :size="13" class="text-fg-3" />
+        <input
+          v-model="term"
+          type="search"
+          placeholder="Search"
+          :class="[control, 'w-48']"
+          @input="onSearch"
+        />
+      </label>
+
+      <div v-if="toggleableColumns.length" class="relative">
+        <button
+          type="button"
+          :class="[control, 'inline-flex items-center gap-1.5 text-fg-2 transition-colors hover:bg-surface-3']"
+          :aria-expanded="open === '__columns'"
+          @click="open = open === '__columns' ? null : '__columns'"
+        >
+          <ManageIcon name="columns" />
+          Columns
+        </button>
+
+        <div
+          v-if="open === '__columns'"
+          class="absolute top-8 right-0 z-30 w-56 rounded border border-hairline bg-surface-2 p-1.5 shadow-lg"
+        >
+          <label
+            v-for="column in toggleableColumns"
+            :key="column.key"
+            class="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[12px] text-fg-1 hover:bg-surface-3"
+          >
+            <input
+              type="checkbox"
+              :checked="!hidden.includes(column.key)"
+              class="accent-state-live"
+              @change="toggleColumn(column.key)"
+            />
+            {{ column.label }}
+          </label>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

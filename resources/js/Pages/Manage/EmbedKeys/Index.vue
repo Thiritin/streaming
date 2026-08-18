@@ -21,7 +21,7 @@ defineProps({
       :actions="table.pageActions"
     />
 
-    <FilterBar :filters="table.filters" :search="table.search" />
+    <FilterBar :table="table" />
 
     <DataTable :table="table" />
 

@@ -21,14 +21,6 @@ const props = defineProps({
 const { toggleSort } = useTableQuery();
 
 const selected = ref([]);
-const hidden = ref([...(props.table.hiddenColumns ?? [])]);
-
-watch(
-  () => props.table.hiddenColumns,
-  (next) => {
-    hidden.value = [...(next ?? [])];
-  },
-);
 
 // A reload can drop rows out from under the selection; keep only what is still visible.
 watch(
@@ -39,8 +31,11 @@ watch(
   },
 );
 
-const visibleColumns = computed(() => props.table.columns.filter((column) => !hidden.value.includes(column.key)));
-const toggleableColumns = computed(() => props.table.columns.filter((column) => column.toggleable));
+const visibleColumns = computed(() => {
+  const hidden = props.table.hiddenColumns ?? [];
+
+  return props.table.columns.filter((column) => !hidden.includes(column.key));
+});
 
 const allSelected = computed(
   () => props.table.rows.length > 0 && selected.value.length === props.table.rows.length,
@@ -49,20 +44,6 @@ const allSelected = computed(
 const toggleAll = () => {
   selected.value = allSelected.value ? [] : props.table.rows.map((row) => row.id);
 };
-
-const toggleColumn = (key) => {
-  hidden.value = hidden.value.includes(key)
-    ? hidden.value.filter((existing) => existing !== key)
-    : [...hidden.value, key];
-
-  router.post(
-    route('manage.tables.columns', props.table.name),
-    { hidden: hidden.value },
-    { preserveScroll: true, preserveState: true },
-  );
-};
-
-const columnsOpen = ref(false);
 
 const align = {
   left: 'text-left',
@@ -130,36 +111,6 @@ const open = (row, event) => {
       >
         Clear
       </button>
-    </div>
-
-    <div v-if="toggleableColumns.length" class="relative flex h-9 items-center justify-end px-3">
-      <button
-        type="button"
-        class="inline-flex h-7 items-center gap-1.5 rounded border border-hairline px-2 text-[12px] text-fg-2 transition-colors hover:bg-surface-3"
-        @click="columnsOpen = !columnsOpen"
-      >
-        <ManageIcon name="columns" />
-        Columns
-      </button>
-
-      <div
-        v-if="columnsOpen"
-        class="absolute top-8 right-3 z-20 w-56 rounded border border-hairline bg-surface-2 p-2 shadow-lg"
-      >
-        <label
-          v-for="column in toggleableColumns"
-          :key="column.key"
-          class="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[12px] text-fg-1 hover:bg-surface-3"
-        >
-          <input
-            type="checkbox"
-            :checked="!hidden.includes(column.key)"
-            class="accent-state-live"
-            @change="toggleColumn(column.key)"
-          />
-          {{ column.label }}
-        </label>
-      </div>
     </div>
 
     <div class="overflow-x-auto">

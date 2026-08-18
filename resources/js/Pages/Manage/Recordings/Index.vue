@@ -23,19 +23,13 @@ defineProps({
       :actions="table.pageActions"
     />
 
-    <div class="px-4 pt-4">
-      <Deferred data="storage">
-        <template #fallback>
-          <div class="h-9 rounded border border-hairline bg-surface-2 px-3 text-[12px] leading-9 text-fg-3">
-            Reading archive storage...
-          </div>
-        </template>
+    <Deferred data="storage">
+      <template #fallback><span /></template>
 
-        <StoragePanel v-if="storage" :storage="storage" />
-      </Deferred>
-    </div>
+      <StoragePanel v-if="storage" :storage="storage" />
+    </Deferred>
 
-    <FilterBar :filters="table.filters" :search="table.search" />
+    <FilterBar :table="table" />
 
     <DataTable :table="table" />
 
