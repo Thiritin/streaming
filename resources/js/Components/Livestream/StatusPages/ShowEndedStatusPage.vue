@@ -1,113 +1,65 @@
 <template>
-    <div class="relative w-full aspect-video bg-black flex items-center justify-center text-white">
-        <div class="text-center p-8 max-w-2xl">
-            <div class="mb-6">
-                <svg class="w-24 h-24 mx-auto text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
-            </div>
-            
-            <h2 class="text-3xl font-bold mb-4">{{ show.title }}</h2>
-            <p class="text-xl mb-6 text-primary-300">This Stream Has Ended</p>
-            
-            <div v-if="show.actual_start && show.actual_end" class="mb-6 text-primary-400">
-                <p>Duration: {{ streamDuration }}</p>
-                <p v-if="show.peak_viewer_count">Peak Viewers: {{ show.peak_viewer_count }}</p>
-            </div>
-            
-            <p class="text-primary-400 mb-8">
-                Thank you for watching!
-            </p>
-            
-            <!-- Other Live Shows -->
-            <div v-if="otherLiveShows && otherLiveShows.length > 0" class="mt-8 border-t border-primary-700 pt-8">
-                <h3 class="text-lg font-semibold mb-4">Other Live Shows</h3>
-                <div class="space-y-3">
-                    <a 
-                        v-for="liveShow in otherLiveShows" 
-                        :key="liveShow.id"
-                        :href="route('show.view', liveShow.slug)"
-                        class="block bg-primary-800 hover:bg-primary-700 rounded-lg p-4 transition-colors"
-                    >
-                        <div class="flex items-center justify-between">
-                            <div class="text-left">
-                                <h4 class="font-semibold">{{ liveShow.title }}</h4>
-                                <p class="text-sm text-primary-400">{{ liveShow.source?.name }}</p>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                <span class="flex h-2 w-2">
-                                    <span class="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-red-400 opacity-75"></span>
-                                    <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                                </span>
-                                <span class="text-sm text-red-400">LIVE</span>
-                            </div>
-                        </div>
-                        <div v-if="liveShow.viewer_count > 0" class="mt-2 text-sm text-primary-400">
-                            {{ liveShow.viewer_count }} {{ liveShow.viewer_count === 1 ? 'viewer' : 'viewers' }}
-                        </div>
-                    </a>
-                </div>
-            </div>
-            
-            <!-- Main Stream Link -->
-            <div v-else-if="promotedUrl" class="mt-8">
-                <a 
-                    :href="promotedUrl"
-                    class="inline-flex items-center px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
-                >
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                    </svg>
-                    {{ promotedLabel ?? 'Watch Main Stream' }}
-                </a>
-            </div>
-        </div>
-    </div>
+  <StatusScreen
+    tone="idle"
+    :eyebrow="eyebrow"
+    :title="show.title"
+    subtitle="That's a wrap. Thanks for watching."
+    :backdrop="show.thumbnail_url"
+  >
+    <p v-if="stats.length" class="mt-3 text-xs text-primary-400">
+      {{ stats.join(' · ') }}
+    </p>
+
+    <template #actions>
+      <Link v-if="!promoted" :href="route('shows.index')" class="status-cta">Browse shows</Link>
+    </template>
+
+    <template #next>
+      <UpNextCard v-if="promoted" :show="promoted" />
+    </template>
+  </StatusScreen>
 </template>
 
 <script setup>
-import { computed } from 'vue';
-import { usePromotedShow } from '@/composables/usePromotedShow';
-import dayjs from 'dayjs';
-import duration from 'dayjs/plugin/duration';
-import relativeTime from 'dayjs/plugin/relativeTime';
-
-dayjs.extend(duration);
-dayjs.extend(relativeTime);
+import { computed } from 'vue'
+import { Link } from '@inertiajs/vue3'
+import StatusScreen from '@/Components/Livestream/StatusPages/Components/StatusScreen.vue'
+import UpNextCard from '@/Components/Livestream/StatusPages/Components/UpNextCard.vue'
 
 const props = defineProps({
-    show: {
-        type: Object,
-        required: true
-    },
-    otherLiveShows: {
-        type: Array,
-        default: () => []
-    },
-    mainStreamUrl: {
-        type: String,
-        default: '/stream'
-    },
-    /**
-     * Where to send someone whose show has ended: the primary channel if it is on air,
-     * otherwise the busiest live show, otherwise what is on next. Resolved server side
-     * by StreamController::resolvePromotedShow().
-     */
-    promoted: {
-        type: Object,
-        default: null
-    }
-});
+  show: { type: Object, required: true },
+  /**
+   * Where to send someone whose show has ended: the featured channel if it is on air,
+   * otherwise the busiest live show, otherwise what is on next. Resolved server side
+   * by StreamController::resolvePromotedShow().
+   */
+  promoted: { type: Object, default: null },
+})
 
-const { promotedUrl, promotedLabel } = usePromotedShow(props, props.mainStreamUrl);
+const eyebrow = computed(() => [props.show.source?.name || props.show.source, 'ended'].filter(Boolean).join(' · '))
 
-const streamDuration = computed(() => {
-    if (!props.show?.actual_start || !props.show?.actual_end) return '';
-    
-    const start = dayjs(props.show.actual_start);
-    const end = dayjs(props.show.actual_end);
-    const diff = end.diff(start);
-    
-    return dayjs.duration(diff).humanize();
-});
+const stats = computed(() => {
+  const out = []
+  const { actual_start: start, actual_end: end, peak_viewer_count: peak } = props.show
+
+  if (start && end) {
+    const minutes = Math.max(1, Math.round((new Date(end) - new Date(start)) / 60000))
+    const hours = Math.floor(minutes / 60)
+    out.push(hours > 0 ? `Ran ${hours}h ${minutes % 60}m` : `Ran ${minutes}m`)
+  }
+
+  if (peak) {
+    out.push(`Peaked at ${peak} watching`)
+  }
+
+  return out
+})
 </script>
+
+<style scoped>
+@reference "../../../../css/app.css";
+
+.status-cta {
+  @apply inline-flex items-center gap-2 rounded-lg bg-primary-500 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-400;
+}
+</style>

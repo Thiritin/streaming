@@ -23,10 +23,11 @@ class AccessTest extends TestCase
         $this->createManageUsers();
     }
 
-    public function test_guests_are_sent_to_the_application_login(): void
+    public function test_guests_do_not_see_the_panel_at_all(): void
     {
-        // Deliberately different from /admin, which had its own login screen.
-        $this->get('/manage')->assertRedirect(route('login'));
+        // The panel does not exist for a guest: no login screen of its own, and no
+        // bounce to the viewer sign-in either.
+        $this->get('/manage')->assertNotFound();
     }
 
     public function test_users_without_the_gate_are_forbidden(): void

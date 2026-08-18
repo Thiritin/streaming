@@ -141,13 +141,43 @@ class GuestEdgeBalancingTest extends TestCase
         $this->viewer('guest-one')->get('/hls/main-stage/master.m3u8')->assertOk();
 
         $pinned = SourceUser::firstWhere('source_id', $this->source->id)->server_id;
-        Server::whereKey($pinned)->update(['status' => ServerStatusEnum::DEPROVISIONING]);
+
+        // Through the model, the way InitializeDeprovisioningJob does it: the edge
+        // list the playlist path reads is cached, and Server drops that cache as it
+        // is written, so the change lands on the very next request.
+        Server::findOrFail($pinned)->update(['status' => ServerStatusEnum::DEPROVISIONING]);
 
         $this->viewer('guest-one')->get('/hls/main-stage/master.m3u8')->assertOk();
 
         $now = SourceUser::firstWhere('source_id', $this->source->id)->server_id;
 
         $this->assertNotSame($pinned, $now, 'A pinned edge that is no longer active must be given up.');
+        $this->assertContains($now, [$first->id, $second->id]);
+    }
+
+    /**
+     * The same thing written straight to the database, which fires no model event.
+     * Nothing in the app deprovisions that way, but the guarantee should not rest on
+     * the invalidation alone: the cached edge list lapses on its own, and the pin is
+     * re-checked against it every request.
+     */
+    public function test_a_guest_is_moved_off_an_edge_taken_down_behind_the_models_back(): void
+    {
+        $first = $this->edge('a.example.com');
+        $second = $this->edge('b.example.com');
+
+        $this->viewer('guest-one')->get('/hls/main-stage/master.m3u8')->assertOk();
+
+        $pinned = SourceUser::firstWhere('source_id', $this->source->id)->server_id;
+        Server::whereKey($pinned)->update(['status' => ServerStatusEnum::DEPROVISIONING]);
+
+        $this->travel(15)->seconds();
+
+        $this->viewer('guest-one')->get('/hls/main-stage/master.m3u8')->assertOk();
+
+        $now = SourceUser::firstWhere('source_id', $this->source->id)->server_id;
+
+        $this->assertNotSame($pinned, $now);
         $this->assertContains($now, [$first->id, $second->id]);
     }
 

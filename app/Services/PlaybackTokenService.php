@@ -71,6 +71,44 @@ class PlaybackTokenService
     }
 
     /**
+     * Issue the token that segment URLs inside a playlist carry.
+     *
+     * Deliberately not per viewer. The claims are the source and an expiry rounded
+     * down to a bucket, so every viewer of a source is handed the same string for
+     * the length of that bucket - which is what lets one rendered, pre-compressed
+     * playlist body serve all of them instead of one 700KB body being built, and
+     * gzipped, per viewer per poll.
+     *
+     * Nothing is given up by dropping `sub`: edges never read it, and neither does
+     * anything here. Expiry remains the revocation mechanism, so a ban still takes
+     * effect within the token lifetime; the difference is that a leaked segment URL
+     * is usable by anyone until it lapses rather than being tied to one account on
+     * paper. See docs/streaming-auth-redesign.md.
+     */
+    public function issueSegmentToken(Source|string $source, ?int $ttl = null): string
+    {
+        $ttl ??= $this->ttl();
+        $bucket = max(1, (int) config('stream.token.bucket'));
+
+        return $this->issue(new PlaybackToken(
+            type: PlaybackTokenTypeEnum::VIEWER,
+            source: $this->slug($source),
+            // Floored so the string only changes once a bucket. Every token still
+            // carries at least ttl - bucket seconds of life.
+            expiresAt: intdiv(now()->getTimestamp(), $bucket) * $bucket + $ttl,
+        ));
+    }
+
+    /**
+     * How long a segment token stays byte-identical, which is how long a rendered
+     * playlist body can be reused across viewers.
+     */
+    public function bucket(): int
+    {
+        return max(1, (int) config('stream.token.bucket'));
+    }
+
+    /**
      * Issue a key for an external embed.
      *
      * No expiry by default: the URL is baked into a VRChat world and can never
@@ -89,6 +127,7 @@ class PlaybackTokenService
             keyId: $keyId,
             edge: $edge,
             expiresAt: $ttl === null ? null : time() + $ttl,
+            issuedAt: now()->getTimestamp(),
         ));
     }
 

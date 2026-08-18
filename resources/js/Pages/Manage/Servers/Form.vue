@@ -1,11 +1,12 @@
 <script setup>
 import { computed } from 'vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 import ManageLayout from '@/Layouts/ManageLayout.vue';
 import ActionButton from '@/Components/Manage/ActionButton.vue';
 import FormActions from '@/Components/Manage/FormActions.vue';
 import FormField from '@/Components/Manage/FormField.vue';
 import FormSection from '@/Components/Manage/FormSection.vue';
+import ManageIcon from '@/Components/Manage/ManageIcon.vue';
 import PageHeader from '@/Components/Manage/PageHeader.vue';
 
 const props = defineProps({
@@ -47,6 +48,14 @@ const submit = () => {
         : 'Register a server this installation manages by hand'"
     >
       <template #actions>
+        <Link
+          v-if="isEdit"
+          :href="server.show_url"
+          class="inline-flex h-7 items-center gap-1.5 rounded border border-hairline px-2 text-[12px] text-fg-2 transition-colors hover:bg-surface-3"
+        >
+          <ManageIcon name="arrow-left" />
+          Back to server
+        </Link>
         <ActionButton v-for="action in actions" :key="action.name" :action="action" />
       </template>
     </PageHeader>

@@ -5,9 +5,10 @@
  * media hot path: a request carrying `?t=<token>` is verified here with a local
  * HMAC and never touches Laravel.
  *
- * A request carrying the legacy `?streamkey=` falls back to the old
- * /api/hls/auth subrequest, so nothing breaks while both credentials are in
- * circulation. That fallback goes away when streamkeys do.
+ * The system streamkey is the only other accepted credential, for internal
+ * callers that are not viewers. Per-user streamkeys are gone: they could only be
+ * resolved against the database, which put a PHP request in front of every
+ * segment.
  *
  * Keep in sync with app/Services/PlaybackTokenService.php - the two must agree
  * on the wire format exactly. See docs/streaming-auth-redesign.md.
@@ -17,11 +18,8 @@ const crypto = require('crypto');
 
 const TOKEN_VERSION = 'v1';
 
-/* Internal location that proxies to Laravel, used only for legacy streamkeys. */
-const LEGACY_AUTH_LOCATION = '/auth-legacy';
-
 /*
- * Mirrors the slug pattern in HlsSessionController. Source slugs are kebab-case
+ * Mirrors the slug pattern the playlist proxy emits. Source slugs are kebab-case
  * so the underscore is safe as the quality separator:
  *   /live/main-stage_master.m3u8
  *   /live/main-stage_fhd.m3u8
@@ -212,7 +210,7 @@ function verifyToken(token, expectedSlug) {
  * auth subrequest, so the query string is parsed from it rather than from
  * $arg_* to avoid any ambiguity about whose args those are.
  */
-async function verify(r) {
+function verify(r) {
     const target = splitUri(r.variables.request_uri || '');
     const slug = sourceSlug(target.path);
 
@@ -262,40 +260,10 @@ async function verify(r) {
         }
     }
 
-    if (streamkey === null) {
-        r.return(403);
-
-        return;
-    }
-
-    // A per-user streamkey can only be resolved in the database, so this one
-    // still costs a round trip to Laravel. Removed with the streamkey itself.
-    try {
-        const reply = await r.subrequest(LEGACY_AUTH_LOCATION, { args: target.query });
-
-        if (reply.status >= 200 && reply.status < 300) {
-            r.return(204);
-
-            return;
-        }
-
-        // The app answers 404 when it thinks the stream is unknown or offline.
-        // That is not an authorisation decision, so let the origin answer it -
-        // it will 404 too if the segment really is gone. Reporting 403 here made
-        // a stream restart look like an auth failure, and players treat a 403 as
-        // fatal where they will retry around a 404.
-        if (reply.status === 404) {
-            r.return(204);
-
-            return;
-        }
-
-        r.error('hls-auth: legacy auth returned ' + reply.status + ' for ' + slug);
-        r.return(403);
-    } catch (e) {
-        r.error('hls-auth: legacy auth subrequest failed: ' + e.message);
-        r.return(403);
-    }
+    // Nothing else is a credential. A per-user streamkey used to be resolved here
+    // by a subrequest into Laravel, which put PHP in the path of every segment;
+    // the playlist proxy now hands out playback tokens instead.
+    r.return(403);
 }
 
 export default { verify };

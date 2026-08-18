@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Manage\ServerRequest;
 use App\Models\Server;
 use App\Services\Hetzner;
+use App\Services\ServerMetricsService;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
 use App\Support\Manage\Filter;
@@ -78,7 +79,7 @@ class ServerController extends Controller
             ])
             ->defaultSort('created_at', 'desc')
             ->rows(fn (Server $server) => $this->row($server))
-            ->recordUrl(fn (Server $server) => route('manage.servers.edit', $server))
+            ->recordUrl(fn (Server $server) => route('manage.servers.show', $server))
             ->rowActions(fn (Server $server) => $this->rowActions($server))
             ->pageActions($this->pageActions());
 
@@ -115,7 +116,67 @@ class ServerController extends Controller
 
         Toast::flashSuccess('Server created', "'{$server->hostname}' is now managed here.");
 
-        return to_route('manage.servers.edit', $server);
+        return to_route('manage.servers.show', $server);
+    }
+
+    /**
+     * The server as it is: what it is doing now, what it has been doing, and where to
+     * go to change it. Editing lives on its own page - most visits here are to read a
+     * graph, and a form is the wrong thing to land on for that.
+     */
+    public function show(Request $request, Server $server, ServerMetricsService $metrics): Response
+    {
+        $this->authorize('view', $server);
+
+        return inertia('Manage/Servers/Show', [
+            'server' => $this->details($server),
+            'metrics' => $metrics->forServer($server, $request->query('range')),
+            'actions' => array_map(
+                fn (Action $action) => $action->toArray(),
+                $this->recordActions($server, includeEdit: true),
+            ),
+            'users' => $server->users()
+                ->select(['id', 'name', 'sub', 'reg_id'])
+                ->orderBy('name')
+                ->get()
+                ->all(),
+        ]);
+    }
+
+    /**
+     * Read-only view of a server, in the units an operator thinks in.
+     *
+     * @return array<string, mixed>
+     */
+    private function details(Server $server): array
+    {
+        $isEdge = $server->type === ServerTypeEnum::EDGE;
+
+        return [
+            'id' => $server->id,
+            'hostname' => $server->hostname ?: 'Unnamed server',
+            'ip' => $server->ip,
+            'port' => $server->port,
+            'hetzner_id' => $server->hetzner_id,
+            'server_type' => $server->server_type,
+            'type' => Status::serverType($server->type),
+            'status' => Status::server($server->status),
+            'health_status' => $isEdge ? Status::health($server->health_status) : null,
+            'health_check_message' => $server->health_check_message,
+            'last_health_check' => $server->last_health_check?->diffForHumans(),
+            'is_edge' => $isEdge,
+            'is_cloud' => $server->isHetznerServer(),
+            'max_clients' => $server->max_clients,
+            'viewer_count' => (int) $server->viewer_count,
+            'heartbeat' => $server->hasRecentHeartbeat()
+                ? Status::make('Recent', Status::OK, 'circle-check')
+                : Status::make('Stale', Status::DANGER, 'circle-x'),
+            'last_heartbeat' => $server->last_heartbeat?->diffForHumans() ?? 'Never',
+            'last_heartbeat_exact' => $server->last_heartbeat?->format('M j, Y H:i:s'),
+            'created_at' => $server->created_at?->format('M j, Y H:i') ?? '-',
+            'edit_url' => route('manage.servers.edit', $server),
+            'index_url' => route('manage.servers.index'),
+        ];
     }
 
     public function edit(Server $server): Response
@@ -140,6 +201,7 @@ class ServerController extends Controller
                 'updated_at' => $server->updated_at?->diffForHumans() ?? '-',
                 'is_cloud' => $server->isHetznerServer(),
                 'is_edge' => $server->type === ServerTypeEnum::EDGE,
+                'show_url' => route('manage.servers.show', $server),
             ],
             'options' => $this->formOptions(),
             'actions' => array_map(

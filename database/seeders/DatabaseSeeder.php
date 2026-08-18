@@ -30,6 +30,7 @@ class DatabaseSeeder extends Seeder
                 LocalDevelopmentSourceSeeder::class,
                 ShowSeeder::class,
                 RecordingSeeder::class,
+                LocalStreamActivitySeeder::class,
             ]);
         }
     }

@@ -6,6 +6,7 @@ use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Enum\SourceStatusEnum;
 use App\Models\Server;
+use App\Models\ServerMetric;
 use App\Models\Show;
 use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -97,6 +98,54 @@ class DashboardTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('alerts.0.tone', 'warn')
                 ->where('alerts.0.title', 'Server edge-quiet has not checked in'));
+    }
+
+    /**
+     * An origin that fills up stops recording and an edge that fills up stops caching,
+     * so the warning has to arrive well before either does.
+     */
+    public function test_a_nearly_full_disk_raises_an_alert(): void
+    {
+        $server = Server::factory()->create([
+            'type' => ServerTypeEnum::EDGE,
+            'status' => ServerStatusEnum::ACTIVE,
+            'hostname' => 'edge-full',
+            'health_status' => 'healthy',
+            'last_heartbeat' => now(),
+        ]);
+
+        ServerMetric::create([
+            'server_id' => $server->id,
+            'recorded_at' => now(),
+            'disk_total_bytes' => 100_000_000_000,
+            'disk_used_bytes' => 97_000_000_000,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.home'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('alerts.0.tone', 'danger')
+                ->where('alerts.0.title', 'Server edge-full is running out of disk'));
+    }
+
+    public function test_a_healthy_disk_raises_nothing(): void
+    {
+        $server = Server::factory()->create([
+            'status' => ServerStatusEnum::ACTIVE,
+            'health_status' => 'healthy',
+            'last_heartbeat' => now(),
+        ]);
+
+        ServerMetric::create([
+            'server_id' => $server->id,
+            'recorded_at' => now(),
+            'disk_total_bytes' => 100_000_000_000,
+            'disk_used_bytes' => 40_000_000_000,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.home'))
+            ->assertInertia(fn (Assert $page) => $page->count('alerts', 0));
     }
 
     public function test_a_live_show_on_an_offline_source_raises_an_alert(): void

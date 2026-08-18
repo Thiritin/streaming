@@ -1,26 +1,22 @@
-<script setup>
-
-import FaCircleNotchIcon from "@/Components/Icons/FaCircleNotchIcon.vue";
-import StreamStatusWrapper from "@/Components/Livestream/StatusPages/Components/StreamStatusWrapper.vue";
-import StatusDescription from "@/Components/Livestream/StatusPages/Components/StatusDescription.vue";
-import StatusTitle from "@/Components/Livestream/StatusPages/Components/StatusTitle.vue";
-</script>
-
 <template>
-    <StreamStatusWrapper>
-        <FaCircleNotchIcon
-            class="animate-spin fill-current text-[12rem] block mx-auto mb-8"></FaCircleNotchIcon>
-        <StatusTitle>Finding a Server...</StatusTitle>
-        <StatusDescription class="mb-4">
-            We are currently increasing the capacity of our datacenter. This may take a few
-            minutes
-        </StatusDescription>
-        <StatusDescription>
-            You will be automatically redirected once a server is available.
-        </StatusDescription>
-    </StreamStatusWrapper>
+  <StatusScreen
+    tone="wait"
+    eyebrow="Capacity"
+    title="Finding you a server"
+    subtitle="We are adding capacity for this stream. This takes a couple of minutes at most."
+    :backdrop="show?.thumbnail_url"
+  >
+    <FaCircleNotchIcon class="mx-auto mt-6 block animate-spin fill-current text-[3rem] text-primary-300" />
+
+    <p class="mt-4 text-xs text-primary-400">You are sent through to the stream the moment a server is free.</p>
+  </StatusScreen>
 </template>
 
-<style>
+<script setup>
+import StatusScreen from '@/Components/Livestream/StatusPages/Components/StatusScreen.vue'
+import FaCircleNotchIcon from '@/Components/Icons/FaCircleNotchIcon.vue'
 
-</style>
+defineProps({
+  show: { type: Object, default: null },
+})
+</script>

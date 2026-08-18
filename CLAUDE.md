@@ -10,6 +10,8 @@ Nothing convention-specific is hardcoded. Names, copy, links, logo, login backgr
 
 Branding has exactly one source: the `branding_settings` table, edited at `/manage` > Settings or via `php artisan branding:set key=value`. Do not add `env()` to `config/branding.php` or `BRANDING_*` vars to `.env` - a saved row always wins, so a second source could only disagree. The accent colour is applied as runtime CSS custom properties (`app.blade.php`, after `@vite`), so changing it needs no rebuild; never move it into a `VITE_` var.
 
+Feature switches (chat, emotes, boops) live in the same table and are edited at `/manage` > Settings > Features, with defaults in `config/features.php`. Read them through `App\Support\Features` (`Features::chat()`, `::emotes()`, `::boops()`), never `config('features.*')` directly - the config value is only the fallback, so a `config()` read ignores what the panel saved. `Features::emotes()` already folds in the chat switch. The resolved set is cached under one key and dropped by `BrandingSetting` on write.
+
 ## Core Architecture
 
 ### Tech Stack
@@ -49,6 +51,11 @@ Branding has exactly one source: the `branding_settings` table, edited at `/mana
      `source_users` row for guests. `UpdateServerViewerCountsJob` refreshes
      `servers.viewer_count` every 30s from active sessions.
    - Edges are bandwidth-bound, not CPU-bound. `max_clients` is the capacity gate.
+   - Each server's `heartbeat.sh` cron posts a system sample every minute (CPU, load,
+     memory, disk, network rates, uptime) to `/api/server/{id}/heartbeat`. It lands in
+     `server_metrics`, one row a minute, and is charted on the server page at
+     `/manage/servers/{id}`. Viewer counts are never taken from the box - they stay
+     derived from `source_users`, which knows about guests too.
 
 ## Development Commands
 
@@ -144,9 +151,13 @@ Critical background jobs for server management:
 - `Server\CreateServerJob` / `Server\DeleteServerJob`: Hetzner provision and teardown
 - `Server\Provision\*` / `Server\Deprovision\*`: the async lifecycle steps (VM, DNS, readiness)
 - `Server\ServerHealthCheckJob`: GETs `/health` on each active edge, every minute
+- `PruneServerMetricsJob`: drops `server_metrics` rows past the retention window, daily
 - `ServerAssignmentJob`: backfills viewers with no edge assignment, every 15s
 - `UpdateServerViewerCountsJob`: recomputes `servers.viewer_count`, every 30s
 - `CleanupStaleViewerSessionsJob`: closes sessions idle 3+ minutes, every minute
+- `FlushShowBoopsJob`: banks cached boops into `shows.boop_count` and broadcasts one
+  grouped total per show, every 5s. Clicks never write on the request; see
+  `App\Services\BoopCounter`
 - Chat command jobs for moderation
 
 The schedule lives in `app/Console/Kernel.php`. There is no scaling job; see

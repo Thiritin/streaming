@@ -63,9 +63,12 @@ Route::middleware([CheckCompanionTokenMiddleware::class, 'throttle:600,1'])
         Route::post('{source:slug}/stop', [CompanionController::class, 'stop'])->name('api.companion.stop');
     });
 
-// HLS session tracking endpoints
+// HLS session tracking endpoints.
+//
+// The per-request `auth` endpoint is gone: edges verify playback tokens locally in
+// njs, so nothing on the media path calls back here. Counting runs on the aggregate
+// heartbeat instead.
 Route::prefix('hls')->group(function () {
-    Route::get('auth', [HlsSessionController::class, 'auth'])->name('api.hls.auth');
     Route::post('heartbeat', [HlsSessionController::class, 'heartbeat'])->name('api.hls.heartbeat');
 });
 

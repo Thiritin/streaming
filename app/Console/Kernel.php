@@ -3,6 +3,8 @@
 namespace App\Console;
 
 use App\Jobs\CleanupStaleViewerSessionsJob;
+use App\Jobs\FlushShowBoopsJob;
+use App\Jobs\PruneServerMetricsJob;
 use App\Jobs\SaveViewCountJob;
 use App\Jobs\ScanArchiveStorageJob;
 use App\Jobs\Server\ServerHealthCheckJob;
@@ -25,6 +27,11 @@ class Kernel extends ConsoleKernel
         $schedule->job(new ServerAssignmentJob)->everyFifteenSeconds();
         // Disabled: CleanUpInactiveServerAssignmentsJob - clients table has been dropped
         // $schedule->job(new \App\Jobs\CleanUpInactiveServerAssignmentsJob)->everyFiveMinutes();
+
+        // Boops are counted in the cache and banked here: one UPDATE and one
+        // broadcast per show per tick, however hard the button is being mashed.
+        // See App\Services\BoopCounter.
+        $schedule->job(new FlushShowBoopsJob)->everyFiveSeconds();
 
         // Update server viewer counts based on active source_users
         $schedule->job(new UpdateServerViewerCountsJob)->everyThirtySeconds();
@@ -68,6 +75,9 @@ class Kernel extends ConsoleKernel
 
         // Batched jobs record a row per batch, kept for the same reason and as long.
         $schedule->command('queue:prune-batches --hours=48')->daily();
+
+        // System samples from every server's heartbeat, one row a minute each.
+        $schedule->job(new PruneServerMetricsJob)->daily();
     }
 
     /**

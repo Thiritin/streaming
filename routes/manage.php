@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Manage\DashboardController;
+use App\Http\Controllers\Manage\EmbedKeyController;
 use App\Http\Controllers\Manage\EmoteController;
 use App\Http\Controllers\Manage\PretalxConnectionController;
 use App\Http\Controllers\Manage\PretalxImportController;
@@ -67,6 +68,16 @@ Route::delete('sources/bulk', [SourceController::class, 'bulkDestroy'])->name('s
 Route::post('sources/{source}/status', [SourceController::class, 'updateStatus'])->name('sources.status');
 Route::post('sources/{source}/stream-key', [SourceController::class, 'regenerateStreamKey'])->name('sources.stream-key');
 
+/*
+ * Display keys. No edit route on purpose: a key is a name and a secret, and
+ * revoking is deleting the row.
+ */
+Route::get('embed-keys', [EmbedKeyController::class, 'index'])->name('embed-keys.index');
+Route::get('embed-keys/create', [EmbedKeyController::class, 'create'])->name('embed-keys.create');
+Route::post('embed-keys', [EmbedKeyController::class, 'store'])->name('embed-keys.store');
+Route::post('embed-keys/{embedKey}/sign-out', [EmbedKeyController::class, 'signOut'])->name('embed-keys.sign-out');
+Route::delete('embed-keys/{embedKey}', [EmbedKeyController::class, 'destroy'])->name('embed-keys.destroy');
+
 Route::get('sources', [SourceController::class, 'index'])->name('sources.index');
 Route::get('sources/create', [SourceController::class, 'create'])->name('sources.create');
 Route::post('sources', [SourceController::class, 'store'])->name('sources.store');
@@ -103,7 +114,8 @@ Route::delete('shows/{show}', [ShowController::class, 'destroy'])->name('shows.d
 Route::get('servers', [ServerController::class, 'index'])->name('servers.index');
 Route::get('servers/create', [ServerController::class, 'create'])->name('servers.create');
 Route::post('servers', [ServerController::class, 'store'])->name('servers.store');
-Route::get('servers/{server}', [ServerController::class, 'edit'])->name('servers.edit');
+Route::get('servers/{server}', [ServerController::class, 'show'])->name('servers.show');
+Route::get('servers/{server}/edit', [ServerController::class, 'edit'])->name('servers.edit');
 Route::put('servers/{server}', [ServerController::class, 'update'])->name('servers.update');
 Route::delete('servers/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
 

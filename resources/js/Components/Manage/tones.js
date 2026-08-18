@@ -40,3 +40,22 @@ export const toneDot = {
 };
 
 export const resolve = (map, tone, fallback = 'idle') => map[tone] ?? map[fallback];
+
+/** SVG fills for charts. Same tones, as an area under a line rather than text. */
+export const toneFill = {
+  live: 'fill-state-live/15',
+  ok: 'fill-state-ok/15',
+  warn: 'fill-state-warn/15',
+  idle: 'fill-fg-3/10',
+  danger: 'fill-state-danger/15',
+  info: 'fill-state-info/15',
+};
+
+export const toneFillSolid = {
+  live: 'fill-state-live',
+  ok: 'fill-state-ok',
+  warn: 'fill-state-warn',
+  idle: 'fill-fg-3',
+  danger: 'fill-state-danger',
+  info: 'fill-state-info',
+};

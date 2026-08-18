@@ -23,6 +23,10 @@ class HlsCachingTest extends TestCase
         // Clear cache before each test
         Cache::flush();
 
+        // Segment URLs carry a playback token, so the signing secret has to exist
+        // for the rewrite to produce one.
+        config(['stream.token.viewer_secret' => str_repeat('a', 64)]);
+
         // Create a test source
         $this->source = Source::factory()->create([
             'slug' => 'test-stream',
@@ -108,12 +112,15 @@ class HlsCachingTest extends TestCase
 
         // Verify segment URLs are rewritten correctly in both responses
         $content = $response2->getContent();
-        $this->assertStringContainsString('http://edge.example.com:8080/live/test-stream_hd_001.ts?streamkey=test-streamkey-123', $content);
+        $this->assertMatchesRegularExpression(
+            '#http://edge\.example\.com:8080/live/test-stream_hd_001\.ts\?t=v1\.#',
+            $content
+        );
+        $this->assertStringNotContainsString('streamkey', $content);
     }
 
-    public function test_cache_keys_are_unique_per_stream_server_and_auth()
+    public function test_one_cache_entry_serves_every_viewer_the_same_bytes()
     {
-        // Create another user with different streamkey
         $user2 = User::factory()->create(['streamkey' => 'different-key-456']);
         $user2->update(['server_id' => $this->defaultServer->id]);
 
@@ -128,18 +135,76 @@ class HlsCachingTest extends TestCase
             );
         });
 
-        // Request with first streamkey
         $response1 = $this->get('/hls/test-stream_hd.m3u8?streamkey=test-streamkey-123');
         $response1->assertStatus(200);
         $response1->assertHeader('X-Cache', 'MISS');
 
-        // Request with second streamkey - should NOT use cache due to different key
         $response2 = $this->get('/hls/test-stream_hd.m3u8?streamkey=different-key-456');
         $response2->assertStatus(200);
-        $response2->assertHeader('X-Cache', 'MISS');
+        $response2->assertHeader('X-Cache', 'HIT');
 
-        // Verify both requests hit the server
-        $this->assertCount(2, $requestUrls);
+        $this->assertCount(1, $requestUrls);
+
+        // The segment token is bound to the source and an expiry, not to a viewer -
+        // the edge only ever checks those two - so one rendered body serves everyone.
+        // That is what lets an 1800 segment DVR playlist be substituted and
+        // compressed once per window rather than once per viewer per poll.
+        $this->assertEquals($response1->getContent(), $response2->getContent());
+        $this->assertStringNotContainsString('streamkey', $response1->getContent());
+
+        preg_match('/\?t=([^\s]+)/', $response1->getContent(), $token);
+        $this->assertNotEmpty($token[1] ?? null);
+    }
+
+    public function test_the_segment_token_is_stable_within_a_bucket_and_moves_with_it()
+    {
+        config(['stream.token.bucket' => 60]);
+
+        Http::fake(['*' => Http::response("#EXTM3U\n#EXTINF:10.0,\ntest-stream_hd_001.ts\n", 200)]);
+
+        $tokenFrom = function () {
+            $content = $this->get('/hls/test-stream_hd.m3u8?streamkey=test-streamkey-123')->getContent();
+            preg_match('/\?t=([^\s]+)/', $content, $matches);
+
+            return $matches[1] ?? null;
+        };
+
+        $first = $tokenFrom();
+
+        // Past the playlist cache but inside the bucket: a fresh render, same token,
+        // so the bytes handed out do not churn every two seconds.
+        $this->travel(3)->seconds();
+        $this->assertEquals($first, $tokenFrom());
+
+        $this->travel(120)->seconds();
+        $this->assertNotEquals($first, $tokenFrom());
+    }
+
+    public function test_a_playlist_is_compressed_for_a_client_that_accepts_it()
+    {
+        // Long enough to be worth compressing, and repetitive the way a real DVR
+        // playlist is - which is exactly why the repeated token costs so little.
+        $segments = '';
+        for ($i = 1; $i <= 400; $i++) {
+            $segments .= "#EXTINF:2.000000,\ntest-stream_hd_".str_pad((string) $i, 5, '0', STR_PAD_LEFT).".ts\n";
+        }
+
+        Http::fake(['*' => Http::response("#EXTM3U\n#EXT-X-VERSION:3\n".$segments, 200)]);
+
+        $plain = $this->get('/hls/test-stream_hd.m3u8?streamkey=test-streamkey-123');
+        $plain->assertStatus(200);
+        $plain->assertHeaderMissing('Content-Encoding');
+
+        $compressed = $this->get(
+            '/hls/test-stream_hd.m3u8?streamkey=test-streamkey-123',
+            ['Accept-Encoding' => 'gzip, deflate, br'],
+        );
+        $compressed->assertStatus(200);
+        $compressed->assertHeader('Content-Encoding', 'gzip');
+        $compressed->assertHeader('Vary', 'Accept-Encoding');
+
+        $this->assertEquals($plain->getContent(), gzdecode($compressed->getContent()));
+        $this->assertLessThan(strlen($plain->getContent()) / 4, strlen($compressed->getContent()));
     }
 
     public function test_cache_expires_after_2_seconds()

@@ -93,6 +93,8 @@ class OidcClientController extends Controller
             'sub' => $userinfo['sub'],
         ], [
             'name' => $userinfo['name'],
+            // Remote URL served by the identity provider, refreshed on every sign-in.
+            'avatar' => $userinfo['avatar'] ?? null,
         ]);
         $user = $user->fresh();
 
@@ -108,7 +110,6 @@ class OidcClientController extends Controller
         // provider mid-convention.
         Auth::loginUsingId($user->id, remember: true);
         Session::put('access_token', $accessToken);
-        Session::put('avatar', $userinfo['avatar'] ?? null);
         Log::info('OIDC DEBUG logged in', [
             'user_id' => $user->id,
             'auth_check' => Auth::check(),

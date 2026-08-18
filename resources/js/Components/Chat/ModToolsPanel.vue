@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { usePage } from '@inertiajs/vue3'
 import { humanizeSeconds } from '@/composables/useChat'
 
 const props = defineProps({
@@ -10,6 +11,9 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close', 'result'])
+
+const page = usePage()
+const emotesEnabled = computed(() => page.props.features?.emotes !== false)
 
 const slowPresets = [0, 3, 10, 30, 60, 120]
 const announcement = ref('')
@@ -129,6 +133,7 @@ onMounted(refresh)
                 <div class="mb-1 text-[10px] uppercase tracking-widest text-primary-500">Chat modes</div>
                 <div class="flex flex-wrap gap-1">
                     <button
+                        v-if="emotesEnabled"
                         type="button"
                         :disabled="busy"
                         class="rounded border px-2 py-1 text-[11px] transition-colors disabled:opacity-50"

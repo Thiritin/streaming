@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Local\DebugController;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
 /*
 |--------------------------------------------------------------------------
@@ -40,7 +41,7 @@ Route::get('/archive-media/{path}', function (string $path) {
     abort_unless(config('stream.archive_url_mode') === 'proxy', 404);
     abort_unless(str_starts_with($path, 'archive/'), 404);
 
-    $disk = \Illuminate\Support\Facades\Storage::disk(config('stream.archive_disk'));
+    $disk = Storage::disk(config('stream.archive_disk'));
     abort_unless($disk->exists($path), 404);
 
     return $disk->response($path, null, [

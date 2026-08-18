@@ -27,6 +27,7 @@ let cooldownTimer = null
 
 const maxLength = computed(() => page.props.chat?.config?.maxMessageLength ?? 500)
 const emotes = computed(() => page.props.chat?.emotes?.list ?? [])
+const emotesEnabled = computed(() => page.props.features?.emotes !== false)
 const commands = computed(() => page.props.chat?.commands ?? [])
 const length = computed(() => props.modelValue.length)
 const nearLimit = computed(() => length.value > maxLength.value * 0.8)
@@ -239,14 +240,14 @@ defineExpose({ focus: () => textarea.value?.focus(), insert })
                 @mouseenter="highlighted = index"
                 @click="applySuggestion(suggestion)"
             >
-                <img v-if="suggestion.image" :src="suggestion.image" class="h-6 w-6" :alt="suggestion.label" />
-                <span :style="suggestion.color ? { color: suggestion.color } : undefined">{{ suggestion.label }}</span>
-                <span v-if="suggestion.hint" class="truncate text-xs text-primary-500">{{ suggestion.hint }}</span>
+                <img v-if="suggestion.image" :src="suggestion.image" class="h-6 w-6 shrink-0" :alt="suggestion.label" />
+                <span class="shrink-0 whitespace-nowrap" :style="suggestion.color ? { color: suggestion.color } : undefined">{{ suggestion.label }}</span>
+                <span v-if="suggestion.hint" class="min-w-0 flex-1 truncate text-xs text-primary-500">{{ suggestion.hint }}</span>
             </button>
         </div>
 
         <!-- Emote picker -->
-        <div v-if="showPicker" class="absolute bottom-full left-3 right-3 mb-2">
+        <div v-if="emotesEnabled && showPicker" class="absolute bottom-full left-3 right-3 mb-2">
             <EmotePicker @close="showPicker = false" @select="(text) => insert(text)" />
         </div>
 
@@ -267,6 +268,7 @@ defineExpose({ focus: () => textarea.value?.focus(), insert })
                     @keydown="onKeydown"
                 />
                 <button
+                    v-if="emotesEnabled"
                     type="button"
                     class="absolute bottom-1.5 right-1.5 rounded p-1 text-primary-400 hover:bg-primary-800 hover:text-primary-100 disabled:opacity-50"
                     :disabled="disabled"

@@ -1,6 +1,7 @@
 <script setup>
+import { ref } from 'vue';
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
-import {Head, Link} from "@inertiajs/vue3";
+import { Head, Link } from "@inertiajs/vue3";
 import Container from "@/Components/Container.vue";
 import Input from "@/Components/ui/Input.vue";
 import Button from "@/Components/ui/Button.vue";
@@ -10,13 +11,44 @@ const props = defineProps({
         type: Object,
         required: true,
     },
+    playlists: {
+        type: Array,
+        default: () => [],
+    },
+    personal: {
+        type: Boolean,
+        default: false,
+    },
 });
 
-const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text).then(() => {
-        // Could add a toast notification here
-    });
+const copied = ref(null);
+let copiedTimer = null;
+
+const copy = async (entry) => {
+    try {
+        await navigator.clipboard.writeText(entry.url);
+    } catch {
+        return;
+    }
+
+    copied.value = entry.key;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copied.value = null), 2000);
 };
+
+const statusTone = {
+    live: 'text-green-400',
+    scheduled: 'text-yellow-400',
+    ended: 'text-red-400',
+    cancelled: 'text-red-400',
+};
+
+const players = [
+    { name: 'VLC', how: 'Media → Open Network Stream, paste, Play.' },
+    { name: 'mpv / IINA', how: 'mpv "<url>", or drop the URL into IINA\'s Open URL box.' },
+    { name: 'ffplay', how: 'ffplay "<url>"' },
+    { name: 'Smart TV / set-top box', how: 'Any app that opens an HLS or m3u8 URL.' },
+];
 </script>
 
 <template>
@@ -25,11 +57,9 @@ const copyToClipboard = (text) => {
             <title>{{ show.title }} - External Player</title>
         </Head>
 
-        <!-- Header with Back Button -->
-        <div class="bg-primary-900 border-b border-primary-800 py-2">
+        <div class="bg-primary-900 border-b border-primary-800 py-3">
             <Container>
-            <div class="flex items-center justify-between">
-                <div class="flex items-center">
+                <div class="flex items-center text-sm">
                     <Link :href="route('show.view', show.slug)" class="inline-flex items-center text-primary-400 hover:text-white transition-colors">
                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
@@ -37,136 +67,90 @@ const copyToClipboard = (text) => {
                         Back to Player
                     </Link>
                     <span class="mx-3 text-primary-600">|</span>
-                    <Link :href="route('shows.grid')" class="text-primary-400 hover:text-white transition-colors">
-                        All Shows
-                    </Link>
+                    <Link :href="route('shows.grid')" class="text-primary-400 hover:text-white transition-colors">All Shows</Link>
                 </div>
-            </div>
-            <div class="mt-2">
-                <h1 class="text-white font-semibold text-lg">External Player URLs: {{ show.title }}</h1>
-                <span v-if="show.source" class="text-primary-400">{{ show.source }}</span>
-                <span :class="{
-                    'text-green-400': show.status === 'live',
-                    'text-yellow-400': show.status === 'scheduled',
-                    'text-red-400': show.status === 'ended'
-                }" class="ml-3 text-sm">● {{ show.status.toUpperCase() }}</span>
-            </div>
+
+                <div class="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <h1 class="text-white font-semibold text-xl">{{ show.title }}</h1>
+                    <span v-if="show.source" class="text-primary-400 text-sm">{{ show.source }}</span>
+                    <span :class="statusTone[show.status] || 'text-primary-400'" class="text-sm font-medium uppercase">
+                        ● {{ show.status }}
+                    </span>
+                </div>
+                <p class="mt-1 text-primary-400 text-sm">
+                    Open this stream in VLC, mpv, a Smart TV app, or anything else that plays HLS.
+                </p>
             </Container>
         </div>
 
         <Container class="py-8">
-                <!-- Introduction -->
-                <div class="mb-6 text-primary-100 bg-primary-800 overflow-hidden shadow-sm lg:rounded p-6">
-                    <h2 class="text-2xl font-semibold mb-2">Watch on Any Device</h2>
-                    <p>Use these HLS stream URLs to watch "{{ show.title }}" in your preferred media player like VLC, MPV, or any HLS-compatible application.</p>
-                </div>
-
-                <!-- Stream URLs -->
-                <div class="mb-6 bg-primary-800 text-primary-100 overflow-hidden shadow-sm lg:rounded p-6">
-                    <div v-if="show.can_watch && show.hls_url">
-                        <h3 class="text-xl font-semibold mb-4">Stream URL</h3>
-
-                        <div class="space-y-3">
-                            <!-- Master Playlist URL -->
-                            <div class="p-3 bg-primary-900 rounded">
-                                <div class="flex gap-2 items-center">
-                                    <label class="text-primary-200 text-sm font-bold w-32">🎯 HLS Stream:</label>
-                                    <Input
-                                        :modelValue="show.hls_url"
-                                        readonly
-                                        class="flex-1 font-mono text-xs"
-                                        @click="$event.target.select()"
-                                    />
-                                    <Button
-                                        @click="copyToClipboard(show.hls_url)"
-                                        size="sm"
-                                    >
-                                        Copy
-                                    </Button>
-                                </div>
-                                <p class="text-xs text-primary-400 mt-1 ml-36">Adaptive bitrate streaming - automatically adjusts quality based on your connection</p>
-                            </div>
+            <div v-if="playlists.length" class="space-y-6">
+                <div class="bg-primary-800 lg:rounded shadow-sm divide-y divide-primary-700">
+                    <div
+                        v-for="entry in playlists"
+                        :key="entry.key"
+                        class="p-4 sm:p-5"
+                    >
+                        <div class="flex flex-wrap items-baseline justify-between gap-2">
+                            <h2 class="text-white font-semibold">{{ entry.label }}</h2>
+                            <span class="text-xs text-primary-400">{{ entry.detail }}</span>
                         </div>
-                    </div>
-                    <div v-else class="text-center py-8">
-                        <svg class="w-16 h-16 text-primary-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        <h3 class="text-xl font-semibold text-primary-300 mb-2">Stream Not Available</h3>
-                        <p class="text-primary-400">This show is not currently available for external viewing.</p>
-                        <Link :href="route('shows.grid')" class="inline-block mt-4 px-4 py-2 bg-primary-700 hover:bg-primary-600 rounded transition-colors">
-                            Browse Other Shows
-                        </Link>
+
+                        <div class="mt-3 flex gap-2">
+                            <Input
+                                :modelValue="entry.url"
+                                readonly
+                                class="flex-1 font-mono text-xs"
+                                @click="$event.target.select()"
+                            />
+                            <Button
+                                @click="copy(entry)"
+                                :variant="copied === entry.key ? 'secondary' : 'default'"
+                                class="shrink-0 w-24"
+                            >
+                                {{ copied === entry.key ? 'Copied' : 'Copy' }}
+                            </Button>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Instructions -->
-                <div class="bg-primary-800 text-primary-100 overflow-hidden shadow-sm lg:rounded p-6">
-                    <h2 class="text-xl font-semibold mb-4">How to Use These URLs</h2>
-
-                    <div class="space-y-6">
-                        <div class="flex items-start">
-                            <span class="flex-shrink-0 w-8 h-8 bg-primary-700 rounded-full flex items-center justify-center text-sm font-bold mr-3">1</span>
-                            <div>
-                                <h3 class="font-semibold mb-1">Open Your Media Player</h3>
-                                <p class="text-primary-300 text-sm">Launch VLC, MPV, or any HLS-compatible media player on your device.</p>
-                            </div>
-                        </div>
-
-                        <div class="flex items-start">
-                            <span class="flex-shrink-0 w-8 h-8 bg-primary-700 rounded-full flex items-center justify-center text-sm font-bold mr-3">2</span>
-                            <div>
-                                <h3 class="font-semibold mb-1">Open Network Stream</h3>
-                                <p class="text-primary-300 text-sm">In VLC: Go to Media → Open Network Stream (Ctrl+N)<br>
-                                In MPV: Just paste the URL as a command line argument</p>
-                            </div>
-                        </div>
-
-                        <div class="flex items-start">
-                            <span class="flex-shrink-0 w-8 h-8 bg-primary-700 rounded-full flex items-center justify-center text-sm font-bold mr-3">3</span>
-                            <div>
-                                <h3 class="font-semibold mb-1">Paste the Stream URL</h3>
-                                <p class="text-primary-300 text-sm">Copy and paste your preferred quality URL from above. Choose based on your internet connection speed.</p>
-                            </div>
-                        </div>
-
-                        <div class="flex items-start">
-                            <span class="flex-shrink-0 w-8 h-8 bg-primary-700 rounded-full flex items-center justify-center text-sm font-bold mr-3">4</span>
-                            <div>
-                                <h3 class="font-semibold mb-1">Enjoy the Stream!</h3>
-                                <p class="text-primary-300 text-sm">Click Play and enjoy watching "{{ show.title }}" on your preferred device.</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mt-6 p-4 bg-primary-900 rounded">
-                        <h4 class="font-semibold text-sm mb-2">💡 Pro Tips:</h4>
-                        <ul class="text-sm text-primary-300 space-y-1">
-                            <li>• Choose FHD (1080p) for the best quality if you have fast internet (6+ Mbps)</li>
-                            <li>• Use HD (720p) for a good balance of quality and bandwidth (3+ Mbps)</li>
-                            <li>• If you have a slow connection, choose SD (480p) for smooth playback (1.5+ Mbps)</li>
-                            <li>• You can save the URL as a playlist file in VLC for quick access</li>
-                            <li>• These URLs work on Smart TVs with compatible media player apps</li>
-                        </ul>
-                    </div>
+                <div v-if="personal" class="flex gap-3 rounded border border-yellow-600/40 bg-yellow-500/10 p-4">
+                    <svg class="w-5 h-5 shrink-0 text-yellow-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                    </svg>
+                    <p class="text-sm text-yellow-100">
+                        These URLs carry your personal stream key. Anyone you send one to is watching as you, so keep them to your own devices.
+                    </p>
                 </div>
+
+                <div class="bg-primary-800 lg:rounded shadow-sm p-5">
+                    <h2 class="text-white font-semibold mb-4">Where to paste it</h2>
+                    <dl class="space-y-3">
+                        <div v-for="player in players" :key="player.name" class="sm:flex sm:gap-4">
+                            <dt class="text-primary-200 text-sm font-medium sm:w-48 sm:shrink-0">{{ player.name }}</dt>
+                            <dd class="text-primary-400 text-sm">{{ player.how }}</dd>
+                        </div>
+                    </dl>
+
+                    <p class="mt-5 text-xs text-primary-400">
+                        Automatic quality is the right choice almost always: it starts low and climbs as the connection allows.
+                        Pick a fixed rung only when a player handles switching badly, or when you want to cap what the stream pulls.
+                    </p>
+                </div>
+            </div>
+
+            <div v-else class="bg-primary-800 lg:rounded shadow-sm p-10 text-center">
+                <svg class="w-14 h-14 text-primary-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <h2 class="text-xl font-semibold text-primary-200 mb-2">Nothing to play yet</h2>
+                <p class="text-primary-400">
+                    External URLs appear once this show is live.
+                </p>
+                <Link :href="route('shows.grid')" class="inline-block mt-5 px-4 py-2 bg-primary-700 hover:bg-primary-600 text-white rounded transition-colors">
+                    Browse other shows
+                </Link>
+            </div>
         </Container>
     </authenticated-layout>
 </template>
-
-<style>
-details summary::-webkit-details-marker {
-    display: none;
-}
-
-details[open] summary::after {
-    transform: rotate(90deg);
-}
-
-details summary::after {
-    content: '▶';
-    display: inline-block;
-    margin-left: 0.5rem;
-    transition: transform 0.2s;
-}
-</style>

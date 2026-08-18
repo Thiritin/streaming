@@ -114,14 +114,18 @@ class EdgeTokenEnforcementTest extends TestCase
         $this->assertStringContainsString('auth_request /auth;', $directives);
     }
 
-    public function test_the_legacy_streamkey_path_still_reaches_laravel(): void
+    public function test_no_media_request_can_reach_laravel(): void
     {
         $config = $this->provisioning->generateConfig($this->edge, 'nginx');
 
-        $this->assertStringContainsString('location = /auth-legacy {', $config);
-        $this->assertStringContainsString('/api/hls/auth', $config);
-        // HlsSessionController parses the stream slug out of this header.
-        $this->assertStringContainsString('proxy_set_header X-Original-URI $request_uri;', $config);
+        // The streamkey fallback is gone. It was the last thing that put a PHP
+        // request in front of a segment, and it could only ever be resolved
+        // against the database, so it could not be cached usefully either.
+        $this->assertStringNotContainsString('/auth-legacy', $config);
+        $this->assertStringNotContainsString('/api/hls/auth', $config);
+
+        // Nothing left to cache auth answers for, either.
+        $this->assertStringNotContainsString('auth_cache', $config);
     }
 
     public function test_edge_compose_builds_the_image_and_passes_the_secrets(): void

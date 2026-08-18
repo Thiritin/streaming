@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Http\Middleware\HideManageFromGuests;
 use App\Http\Middleware\LocalOnly;
 use App\Http\Middleware\ShareManageProps;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -43,7 +44,11 @@ class RouteServiceProvider extends ServiceProvider
             Route::middleware('web')
                 ->group(base_path('routes/web.php'));
 
-            Route::middleware(['web', 'auth:web', 'can:access-manage', ShareManageProps::class])
+            // Playlists, on a stack trimmed to what they actually need.
+            Route::middleware('hls')
+                ->group(base_path('routes/hls.php'));
+
+            Route::middleware(['web', HideManageFromGuests::class, 'can:access-manage', ShareManageProps::class])
                 ->prefix('manage')
                 ->name('manage.')
                 ->group(base_path('routes/manage.php'));

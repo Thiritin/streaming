@@ -5,9 +5,9 @@
     <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-8 pb-4">
       <div class="space-y-2">
         <p class="text-xs font-semibold uppercase tracking-[0.14em] text-primary-300">Programme guide</p>
-        <h1 class="text-3xl font-bold text-white tracking-tight">What's on and what's next</h1>
+        <h1 class="text-3xl font-bold text-white tracking-tight">What's on</h1>
         <p class="text-primary-300 text-sm max-w-2xl">
-          Everything in the order it airs, across all channels. The channel travels with each row.
+          All channels, in the order they air.
         </p>
       </div>
 
@@ -46,6 +46,9 @@
 
               <span class="agenda-main">
                 <span class="agenda-title">{{ entry.title }}</span>
+                <span v-if="entry.status === 'cancelled'" class="agenda-reason">
+                  {{ entry.cancellation_reason || 'Not going ahead.' }}
+                </span>
                 <span class="agenda-meta">
                   <span class="channel-badge" :class="{ 'channel-badge-primary': entry.channel === primaryChannel }">
                     {{ entry.channel }}
@@ -53,7 +56,7 @@
                   <span class="tabular-nums">{{ entry.durationLabel }}</span>
                   <span v-if="entry.is_restricted" class="agenda-restricted">Restricted</span>
                   <span
-                    v-if="entry.will_be_available"
+                    v-if="entry.will_be_available && entry.status !== 'cancelled'"
                     class="agenda-available"
                     title="This show is planned to be published afterwards, so you can watch it later if you miss it live."
                   >Available later</span>
@@ -61,7 +64,8 @@
               </span>
 
               <span class="agenda-status">
-                <span v-if="entry.status === 'live'" class="status-live">
+                <span v-if="entry.status === 'cancelled'" class="status-cancelled">Cancelled</span>
+                <span v-else-if="entry.status === 'live'" class="status-live">
                   <span class="live-pip" aria-hidden="true" />
                   On air
                 </span>
@@ -77,7 +81,7 @@
 
     <div v-else class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 py-20 text-center">
       <h2 class="text-xl font-semibold text-white">Nothing scheduled yet</h2>
-      <p class="text-primary-400 mt-2">Shows appear here as soon as they land in the schedule.</p>
+      <p class="text-primary-400 mt-2">Check back later.</p>
     </div>
   </div>
 </template>
@@ -137,6 +141,7 @@ const showNowMarkerBefore = (index) => {
 };
 
 const rowClass = (entry) => {
+  if (entry.status === 'cancelled') return 'agenda-row-cancelled';
   if (entry.status === 'live') return 'agenda-row-live';
   if (entry.status === 'ended' || new Date(entry.scheduled_end).getTime() < now.value) return 'agenda-row-past';
 
@@ -208,6 +213,15 @@ const formatClock = (value) => new Date(value).toLocaleTimeString([], {
   @apply opacity-55;
 }
 
+.agenda-row-cancelled {
+  @apply opacity-60;
+}
+
+.agenda-row-cancelled .agenda-title,
+.agenda-row-cancelled .agenda-time {
+  @apply line-through decoration-primary-500;
+}
+
 .agenda-time {
   @apply flex flex-col leading-tight;
 }
@@ -226,6 +240,10 @@ const formatClock = (value) => new Date(value).toLocaleTimeString([], {
 
 .agenda-title {
   @apply truncate text-sm font-semibold text-white;
+}
+
+.agenda-reason {
+  @apply truncate text-[11px] text-primary-300;
 }
 
 .agenda-meta {
@@ -263,6 +281,10 @@ const formatClock = (value) => new Date(value).toLocaleTimeString([], {
 
 .status-muted {
   @apply text-[11px] tabular-nums text-primary-400;
+}
+
+.status-cancelled {
+  @apply rounded-full border border-red-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-red-300;
 }
 
 .live-pip {

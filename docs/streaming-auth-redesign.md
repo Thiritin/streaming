@@ -43,13 +43,18 @@ Issue a short-lived signed token instead of a permanent secret. Claims:
 {
   typ:  "viewer" | "embed",
   src:  <source slug>,          // exactly one, never a wildcard; this IS the entitlement
-  sub:  <user id>,              // viewer tokens
   kid:  <embed key id>,         // embed tokens, checked against a pushed allowlist
-  edge: <edge hostname>,        // which edge this session is pinned to
-  sid:  <playback session uuid>,// for counting, not for auth
   exp:  <unix ts>               // 15 minutes out; absent on embed keys
 }
 ```
+
+`PlaybackToken` can also carry `sub`, `edge` and `sid`, and `issueViewer()` still
+does, but **the token that segment URLs actually carry has none of them**. Edges
+verify `typ`, the signature, `exp` and `src` and nothing else, so the extra claims
+were never enforced anywhere - and they made every playlist body unique per viewer.
+`PlaybackTokenService::issueSegmentToken()` mints the segment credential from the
+source and a bucketed expiry alone, which makes one rendered, pre-compressed
+playlist serve everyone watching a source. See "Playlist cost" below.
 
 Encoded as `v1.base64url(claims json).base64url(hmac_sha256(body, secret))`, where the signed body includes the version prefix so it cannot be downgraded. Every edge holds the shared secret and verifies **locally, in-process, with no network call**. `exp` is the revocation mechanism.
 
@@ -95,6 +100,24 @@ Longer term, a **CDN or anycast layer in front of the edges** is strictly better
 Edges already POST aggregate counts to `/api/hls/heartbeat`. Extend that to be the only counting mechanism: an agent on each edge tails the nginx access log, counts distinct `sid` claims per stream over the last 30s, and posts every 10-15s. That is one request per edge per 15s instead of one per viewer per segment.
 
 For per-attendee presence (which attendee watched which show), use the **Reverb presence channel the player is already joined to**. It is accurate, free, and completely decoupled from HLS. The `SourceUser` heartbeat writes come off the request path, and the stale-session sweep moves into the existing `CleanupStaleViewerSessionsJob` schedule.
+
+### 6b. Playlist cost
+
+The live window is 60 minutes (`DVR_WINDOW_SEGMENTS=1800` at `hls_time 2`), so a
+variant playlist is 1800 entries. With a per-viewer token appended to every segment
+line that is roughly 700KB of unique body per response, rebuilt and sent per viewer
+per poll - the dominant cost of the whole playlist path, well ahead of the database
+work around it.
+
+What it costs now, per variant per two second window rather than per request:
+
+- one upstream fetch, behind a single-flight lock, with the previous copy served to
+  whoever loses the race
+- one substitution of the shared segment token into the cached body
+- one gzip of the result, which collapses the repeated token to almost nothing
+
+A warm request is a cache read and a write of bytes. Playlists are compressed in the
+app rather than relying on whatever fronts it, and `Vary: Accept-Encoding` is set.
 
 ### 7. Cache policy, top to bottom
 
@@ -144,7 +167,7 @@ Long-lived embeds are a **separate token type**, not a viewer token with a dista
 | | Viewer token | Embed key |
 |---|---|---|
 | `typ` | `viewer` | `embed` |
-| `sub` | user id | embed key id |
+| `sub` | absent on segment tokens | embed key id in `kid` |
 | `src` | slug or `*` | one slug, never `*` |
 | TTL | 15 min | no `exp`; stable for the world's lifetime |
 | Revoke | let it expire | edge-pushed allowlist |

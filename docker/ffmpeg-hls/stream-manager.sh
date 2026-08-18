@@ -8,12 +8,19 @@ SRS_RTMP_URL="${SRS_RTMP_URL:-rtmp://localhost:1935}"
 OUTPUT_BASE_DIR="${OUTPUT_BASE_DIR:-/var/www/html/hls/live}"
 CHECK_INTERVAL="${CHECK_INTERVAL:-5}"
 
-# The live rewind window. hls_time is 2s, so 1800 segments is 60 minutes of seekable
-# playlist. hls_delete_threshold keeps a further margin of segments on disk after they
-# fall out of the playlist; that margin is the grace the S3 uploader gets to copy a
-# segment before it disappears. See docs/dvr-archive-plan.md.
-DVR_WINDOW_SEGMENTS="${DVR_WINDOW_SEGMENTS:-1800}"
-HLS_DELETE_THRESHOLD="${HLS_DELETE_THRESHOLD:-60}"
+# The live rewind window. hls_time is 2s, so 900 segments is 30 minutes of seekable
+# playlist. It is also the uploader's catch-up window: the indexer builds hour indexes
+# by parsing this playlist, so a segment that falls out of it is never indexed even
+# though the file is still on disk.
+#
+# hls_delete_threshold keeps a further margin of segments on disk after they leave the
+# playlist. It is a backstop, not the normal path: the S3 uploader owns deletion and
+# only unlinks a segment it has confirmed in the bucket (see docker/archive-uploader).
+# The margin is what stops the disk filling when the uploader cannot keep up, so it is
+# sized as outage tolerance - 1500 segments is 50 minutes - rather than as the couple
+# of minutes an upload actually takes. See docs/dvr-archive-plan.md.
+DVR_WINDOW_SEGMENTS="${DVR_WINDOW_SEGMENTS:-900}"
+HLS_DELETE_THRESHOLD="${HLS_DELETE_THRESHOLD:-1500}"
 
 # A publisher reconnect starts a new FFmpeg session under a new timestamp prefix, and
 # FFmpeg only ever deletes segments it wrote itself, so the previous session's files

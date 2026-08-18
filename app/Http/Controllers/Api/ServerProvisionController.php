@@ -6,6 +6,7 @@ use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Http\Controllers\Controller;
 use App\Models\Server;
+use App\Models\ServerMetric;
 use App\Services\ServerProvisioningService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -206,10 +207,68 @@ class ServerProvisionController extends Controller
             ]);
         }
 
+        $this->recordMetrics($server, $request->input('metrics'));
+
         return response()->json([
             'status' => 'ok',
             'type' => $server->type->value,
             'total_viewers' => $server->type === ServerTypeEnum::EDGE ? Server::getTotalViewers() : null,
+        ]);
+    }
+
+    /**
+     * Store the system sample that came with a heartbeat.
+     *
+     * Every field is optional. The box sends rates it worked out from its own previous
+     * sample, so the first heartbeat after an install - and the first after a reboot -
+     * legitimately has no network or CPU figure, and a missing field must not cost us
+     * the rest of the row. Anything it does send is clamped to a sane range, since a
+     * counter wrap on the box would otherwise draw a spike nobody can read past.
+     */
+    private function recordMetrics(Server $server, mixed $metrics): void
+    {
+        if (! is_array($metrics) || empty($metrics)) {
+            return;
+        }
+
+        $number = function (string $key, ?float $max = null) use ($metrics): ?float {
+            $value = $metrics[$key] ?? null;
+
+            if (! is_numeric($value)) {
+                return null;
+            }
+
+            $value = (float) $value;
+
+            if ($value < 0 || ($max !== null && $value > $max)) {
+                return null;
+            }
+
+            return $value;
+        };
+
+        $integer = fn (string $key, ?float $max = null) => ($value = $number($key, $max)) === null
+            ? null
+            : (int) round($value);
+
+        ServerMetric::create([
+            'server_id' => $server->id,
+            'recorded_at' => now(),
+            'cpu_percent' => $number('cpu_percent', 100),
+            'load_1' => $number('load_1', 10000),
+            'cpu_cores' => $integer('cpu_cores', 1024),
+            'memory_used_bytes' => $integer('memory_used_bytes'),
+            'memory_total_bytes' => $integer('memory_total_bytes'),
+            'disk_used_bytes' => $integer('disk_used_bytes'),
+            'disk_total_bytes' => $integer('disk_total_bytes'),
+            // 100 Gbit/s in bytes, well above anything Hetzner will hand us and low
+            // enough to catch a wrapped counter.
+            'net_rx_bytes_per_sec' => $integer('net_rx_bytes_per_sec', 12_500_000_000),
+            'net_tx_bytes_per_sec' => $integer('net_tx_bytes_per_sec', 12_500_000_000),
+            'uptime_seconds' => $integer('uptime_seconds'),
+            // The app's own count, not the box's, so the viewers line on the server
+            // page is the same number the rest of /manage shows.
+            'viewer_count' => $server->type === ServerTypeEnum::EDGE ? (int) $server->viewer_count : null,
         ]);
     }
 }

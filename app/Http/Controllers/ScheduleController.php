@@ -21,7 +21,9 @@ class ScheduleController extends Controller
         $shows = Show::with('source')
             ->accessibleBy($user)
             ->whereNotNull('scheduled_start')
-            ->whereIn('status', ['scheduled', 'live', 'ended'])
+            // Cancelled slots stay on the guide so anyone who planned around them
+            // sees it is off rather than finding an empty gap.
+            ->whereIn('status', ['scheduled', 'live', 'ended', 'cancelled'])
             // Today through the next six days, plus anything still on air that
             // started before midnight so a long show never drops off the guide.
             ->where(function ($query) {
@@ -56,6 +58,7 @@ class ScheduleController extends Controller
                                 'title' => $show->title,
                                 'slug' => $show->slug,
                                 'status' => $show->status,
+                                'cancellation_reason' => $show->cancellation_reason,
                                 'scheduled_start' => $show->scheduled_start->toIso8601String(),
                                 // Blocks without an end time get a one hour default so the
                                 // grid still has something to span.

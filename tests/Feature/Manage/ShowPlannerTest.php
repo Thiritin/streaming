@@ -50,9 +50,9 @@ class ShowPlannerTest extends TestCase
 
     // ---------------------------------------------------------------- access
 
-    public function test_guests_are_sent_to_the_application_login(): void
+    public function test_guests_do_not_see_the_panel_at_all(): void
     {
-        $this->get(route('manage.shows.planner'))->assertRedirect(route('login'));
+        $this->get(route('manage.shows.planner'))->assertNotFound();
     }
 
     public function test_a_user_without_the_gate_is_forbidden(): void

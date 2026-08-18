@@ -186,6 +186,39 @@ return [
         ],
 
         [
+            'key' => 'features',
+            'label' => 'Features',
+            'description' => 'Parts of the site an installation can switch off. Turning one off hides it and closes its endpoints, so nothing can be reached by hand either.',
+            'columns' => 2,
+            'fields' => [
+                [
+                    'key' => 'chat',
+                    'label' => 'Chat',
+                    'type' => 'toggle',
+                    'store' => 'features',
+                    'helper' => 'Off hides the chat panel and pop-out everywhere and answers 404 on every chat route. Streams keep playing.',
+                    'rules' => ['boolean'],
+                ],
+                [
+                    'key' => 'emotes',
+                    'label' => 'Emotes',
+                    'type' => 'toggle',
+                    'store' => 'features',
+                    'helper' => 'Off removes the picker, the autocomplete and inline emotes in messages. Implied off when chat is off.',
+                    'rules' => ['boolean'],
+                ],
+                [
+                    'key' => 'boops',
+                    'label' => 'Boops',
+                    'type' => 'toggle',
+                    'store' => 'features',
+                    'helper' => 'The paw under the player and its shared counter. Off hides the button and stops accepting boops.',
+                    'rules' => ['boolean'],
+                ],
+            ],
+        ],
+
+        [
             'key' => 'pretalx',
             'label' => 'Pretalx',
             'description' => 'Where the programme comes from. With these set, /manage > Shows can import sessions from the published schedule.',

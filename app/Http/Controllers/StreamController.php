@@ -8,10 +8,12 @@ use App\Models\Recording;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\User;
+use App\Services\BoopCounter;
 use App\Services\Chat\ChatSettingsService;
 use App\Services\Chat\MessagePresenter;
 use App\Services\PlaybackTokenService;
 use App\Services\StreamInfoService;
+use App\Support\Features;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
@@ -30,7 +32,7 @@ class StreamController extends Controller
      */
     protected function chatProps(?int $sourceId, ?User $user): array
     {
-        if (! config('chat.enabled')) {
+        if (! Features::chat()) {
             return $this->emptyChatProps();
         }
 
@@ -419,7 +421,7 @@ class StreamController extends Controller
      */
     private function featuredChatExcerpt(?User $user, ?array $featured): array
     {
-        if (! config('chat.enabled')) {
+        if (! Features::chat()) {
             return ['source_id' => null, 'messages' => []];
         }
 
@@ -529,13 +531,42 @@ class StreamController extends Controller
                 ->with('error', 'This show is not available for viewing');
         }
 
-        // Get HLS URL for the show
-        $user = Auth::user();
-        $hlsUrl = $show->getHlsUrl();
+        /*
+         * The streamkey is what makes these URLs work outside a browser: a media
+         * player carries no session cookie, so the key in the query string is the
+         * whole credential. It is resolved once, here and on every playlist refresh,
+         * and never reaches an edge - the segment URLs the player is handed back
+         * carry a short-lived playback token instead.
+         */
+        $streamkey = $user?->streamkey;
+        $query = $streamkey ? '?streamkey='.$streamkey : '';
+        $slug = $show->source?->slug;
 
-        // Add streamkey to the URL if user has one
-        if ($user && $user->streamkey) {
-            $hlsUrl .= '?streamkey='.$user->streamkey;
+        $playlists = [];
+
+        if ($slug && $show->canWatch()) {
+            $playlists[] = [
+                'key' => 'auto',
+                'label' => 'Automatic quality',
+                'detail' => 'Adapts to the connection. Use this one unless you have a reason not to.',
+                'url' => route('hls.master', ['stream' => $slug]).$query,
+            ];
+
+            // The ladder itself lives in docker/ffmpeg-hls/stream-manager.sh; these
+            // are the rungs it publishes, fixed rather than adaptive for a player
+            // or a network that does better when told exactly what to pull.
+            foreach ([
+                ['fhd', '1080p', 'about 6 Mbps'],
+                ['hd', '720p', 'about 3.5 Mbps'],
+                ['sd', '480p', 'about 1.5 Mbps'],
+            ] as [$rung, $label, $bitrate]) {
+                $playlists[] = [
+                    'key' => $rung,
+                    'label' => $label,
+                    'detail' => 'Fixed quality, '.$bitrate.'.',
+                    'url' => route('hls.variant', ['variant' => $slug.'_'.$rung]).$query,
+                ];
+            }
         }
 
         return Inertia::render('ExternalStream', [
@@ -548,8 +579,12 @@ class StreamController extends Controller
                 'source' => $show->source ? $show->source->name : null,
                 'status' => $show->status,
                 'can_watch' => $show->canWatch(),
-                'hls_url' => $hlsUrl,
+                'hls_url' => $playlists[0]['url'] ?? null,
             ],
+            'playlists' => $playlists,
+            // Whether the URLs above are personal. Without a key they are the same
+            // for everyone, and warning about sharing them would be theatre.
+            'personal' => (bool) $streamkey,
             'playback' => $this->playbackProps($user, $show),
         ]);
     }
@@ -616,8 +651,12 @@ class StreamController extends Controller
                 ] : null,
                 'source_id' => $show->source_id,
                 'status' => $show->status,
+                'cancellation_reason' => $show->cancellation_reason,
                 'thumbnail_url' => $show->thumbnail_url,
                 'viewer_count' => $show->viewer_count,
+                'peak_viewer_count' => $show->peak_viewer_count,
+                // The live number, which is ahead of the column between ticks.
+                'boop_count' => app(BoopCounter::class)->total($show),
                 'scheduled_start' => $show->scheduled_start,
                 'scheduled_end' => $show->scheduled_end,
                 'actual_start' => $show->actual_start,
@@ -625,8 +664,9 @@ class StreamController extends Controller
             ],
             'availableShows' => $availableShows,
             // Somewhere to go when this show is not watchable. See resolvePromotedShow().
-            // Live shows skip this entirely: the player is working, so don't run promotion queries.
-            'promoted' => $show->status === 'live' ? null : $this->resolvePromotedShow($user, $show),
+            // Resolved for a live show too: "live" only means the show is on, and a viewer
+            // staring at an offline or errored feed is exactly who needs a way out.
+            'promoted' => $this->resolvePromotedShow($user, $show),
             'initialHlsUrl' => $hlsUrl,
             'playback' => $this->playbackProps($user, $show),
             'initialStatus' => $show->isLive() ? 'online' : \Cache::get('stream.status', static fn () => StreamStatusEnum::OFFLINE->value),

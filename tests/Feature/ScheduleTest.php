@@ -53,6 +53,27 @@ class ScheduleTest extends TestCase
         );
     }
 
+    public function test_cancelled_shows_stay_on_the_guide_with_their_reason(): void
+    {
+        Show::create([
+            'title' => 'Dance Comp',
+            'slug' => 'dance-comp',
+            'source_id' => $this->primary->id,
+            'status' => 'cancelled',
+            'cancellation_reason' => 'No stream, technical issue.',
+            'scheduled_start' => now()->addHour(),
+            'scheduled_end' => now()->addHours(2),
+        ]);
+
+        $this->actingAs($this->user)
+            ->get(route('schedule.index'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('days.0.channels.0.shows.0.title', 'Dance Comp')
+                ->where('days.0.channels.0.shows.0.status', 'cancelled')
+                ->where('days.0.channels.0.shows.0.cancellation_reason', 'No stream, technical issue.')
+            );
+    }
+
     public function test_primary_channel_owns_the_featured_slot_even_with_fewer_viewers(): void
     {
         $secondary = Source::create([

@@ -28,6 +28,13 @@ final readonly class PlaybackToken
         public ?string $sessionId = null,
         /** Unix timestamp. Required for viewer tokens, optional for embed keys. */
         public ?int $expiresAt = null,
+        /**
+         * Unix timestamp of minting. Only embed tokens carry it, and only because
+         * they do not expire: it is what lets a key sign its screens out without
+         * being revoked, since there is otherwise nothing to tell a token minted
+         * before that moment from one minted after.
+         */
+        public ?int $issuedAt = null,
     ) {}
 
     /**
@@ -81,6 +88,7 @@ final readonly class PlaybackToken
             'edge' => $this->edge,
             'sid' => $this->sessionId,
             'exp' => $this->expiresAt,
+            'iat' => $this->issuedAt,
         ], static fn ($value) => $value !== null);
     }
 
@@ -109,6 +117,12 @@ final readonly class PlaybackToken
             throw InvalidPlaybackTokenException::malformed('expiry is not an integer');
         }
 
+        $issuedAt = $claims['iat'] ?? null;
+
+        if ($issuedAt !== null && ! is_int($issuedAt)) {
+            throw InvalidPlaybackTokenException::malformed('issued-at is not an integer');
+        }
+
         if ($expiresAt === null && $type->requiresExpiry()) {
             throw InvalidPlaybackTokenException::missingExpiry();
         }
@@ -121,6 +135,7 @@ final readonly class PlaybackToken
             edge: self::optionalString($claims, 'edge'),
             sessionId: self::optionalString($claims, 'sid'),
             expiresAt: $expiresAt,
+            issuedAt: $issuedAt,
         );
     }
 

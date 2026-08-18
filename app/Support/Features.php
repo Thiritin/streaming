@@ -1,0 +1,79 @@
+<?php
+
+namespace App\Support;
+
+use App\Models\BrandingSetting;
+use App\Support\Manage\Settings;
+use Illuminate\Support\Facades\Cache;
+
+/**
+ * The installation's feature switches: what parts of the site exist at all.
+ *
+ * Saved values live in the settings table next to branding, defaults in
+ * config/features.php. The whole set is resolved in one go and held in the
+ * cache under a single key, so asking about a flag costs a cache read rather
+ * than a query. BrandingSetting drops the key whenever a setting is written,
+ * which is deliberately not a per-request memo: a queue worker lives for hours
+ * and has to see a flag flipped by the panel without being restarted.
+ */
+final class Features
+{
+    public const CACHE_KEY = 'feature_flags';
+
+    private const TTL = 3600;
+
+    /**
+     * Every flag, resolved.
+     *
+     * @return array<string, bool>
+     */
+    public static function all(): array
+    {
+        return Cache::remember(self::CACHE_KEY, self::TTL, function () {
+            $keys = array_keys(config('features', []));
+
+            $saved = BrandingSetting::whereIn('key', $keys)->pluck('value', 'key');
+
+            $flags = [];
+
+            foreach ($keys as $key) {
+                $flags[$key] = Settings::toBool(
+                    $saved->has($key) ? $saved->get($key) : config("features.{$key}")
+                );
+            }
+
+            return $flags;
+        });
+    }
+
+    public static function enabled(string $key): bool
+    {
+        return self::all()[$key] ?? false;
+    }
+
+    public static function chat(): bool
+    {
+        return self::enabled('chat');
+    }
+
+    /**
+     * Emotes only exist inside chat, so chat being off takes them with it.
+     */
+    public static function emotes(): bool
+    {
+        return self::chat() && self::enabled('emotes');
+    }
+
+    public static function boops(): bool
+    {
+        return self::enabled('boops');
+    }
+
+    /**
+     * Drop the resolved set. Called from BrandingSetting when a row is written.
+     */
+    public static function flush(): void
+    {
+        Cache::forget(self::CACHE_KEY);
+    }
+}

@@ -27,6 +27,13 @@ const logoutUrl = computed(() => branding.value.identity?.logoutUrl ?? '#');
 const user = computed(() => page.props.auth?.user ?? null);
 const loginUrl = computed(() => page.props.features?.loginUrl ?? '/login');
 const chatEnabled = computed(() => page.props.features?.chat !== false);
+const emotesEnabled = computed(() => page.props.features?.emotes !== false);
+
+// Picture from the identity provider, stored on the user at sign-in. A dead or
+// blocked URL falls back to the initial rather than a broken image.
+const avatarFailed = ref(false);
+const avatarUrl = computed(() => (avatarFailed.value ? null : user.value?.avatar || null));
+const initial = computed(() => user.value?.name?.charAt(0)?.toUpperCase() || 'U');
 </script>
 
 <template>
@@ -74,13 +81,6 @@ const chatEnabled = computed(() => page.props.features?.chat !== false);
                   </svg>
                   <span>Archive</span>
                 </NavLink>
-                <NavLink v-if="chatEnabled && user" :href="route('emotes.index')" :active="route().current('emotes.*')" prefetch>
-                  <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="9" stroke-width="2" />
-                    <path stroke-linecap="round" stroke-width="2" d="M9 10h.01M15 10h.01M8.5 14.5a4.5 4.5 0 007 0" />
-                  </svg>
-                  <span>Emotes</span>
-                </NavLink>
                 <!-- Staff and admins only; /manage is the panel that replaces /admin. -->
                 <NavLink
                   v-if="$page.props.auth.can_access_manage"
@@ -114,10 +114,17 @@ const chatEnabled = computed(() => page.props.features?.chat !== false);
                     class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-primary-800 transition-all group"
                   >
                     <!-- Avatar -->
-                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center ring-2 ring-transparent group-hover:ring-primary-500/50 transition-all">
-                      <span class="text-white font-semibold text-sm">
-                        {{ $page.props.auth.user.name?.charAt(0)?.toUpperCase() || 'U' }}
-                      </span>
+                    <img
+                      v-if="avatarUrl"
+                      :src="avatarUrl"
+                      alt=""
+                      loading="lazy"
+                      referrerpolicy="no-referrer"
+                      class="w-8 h-8 rounded-full object-cover bg-primary-800 ring-2 ring-transparent group-hover:ring-primary-500/50 transition-all"
+                      @error="avatarFailed = true"
+                    />
+                    <div v-else class="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center ring-2 ring-transparent group-hover:ring-primary-500/50 transition-all">
+                      <span class="text-white font-semibold text-sm">{{ initial }}</span>
                     </div>
                     <svg class="w-4 h-4 text-primary-400 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -129,10 +136,16 @@ const chatEnabled = computed(() => page.props.features?.chat !== false);
                   <!-- User Info -->
                   <div class="px-4 py-3 border-b border-primary-700">
                     <p class="text-sm font-medium text-white">{{ $page.props.auth.user.name }}</p>
-                    <p class="text-xs text-primary-400 truncate">{{ $page.props.auth.user.email }}</p>
                   </div>
 
                   <!-- Links -->
+                  <DropdownLink v-if="emotesEnabled" :href="route('emotes.index')">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="9" stroke-width="2" />
+                      <path stroke-linecap="round" stroke-width="2" d="M9 10h.01M15 10h.01M8.5 14.5a4.5 4.5 0 007 0" />
+                    </svg>
+                    Emotes
+                  </DropdownLink>
                   <DropdownLink v-if="source" as="a" :href="source.url" target="_blank">
                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                       <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd" />
@@ -206,9 +219,6 @@ const chatEnabled = computed(() => page.props.features?.chat !== false);
               <ResponsiveNavLink :href="route('recordings.index')" :active="route().current('recordings.*')" prefetch>
                 Archive
               </ResponsiveNavLink>
-              <ResponsiveNavLink v-if="chatEnabled && user" :href="route('emotes.index')" :active="route().current('emotes.*')" prefetch>
-                Emotes
-              </ResponsiveNavLink>
               <ResponsiveNavLink v-if="$page.props.auth.can_access_manage" :href="route('manage.home')" :active="route().current('manage.*')">
                 Admin
               </ResponsiveNavLink>
@@ -223,18 +233,25 @@ const chatEnabled = computed(() => page.props.features?.chat !== false);
 
             <div v-else class="pt-4 pb-3 border-t border-primary-800">
               <div class="flex items-center px-4 gap-3">
-                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
-                  <span class="text-white font-semibold">
-                    {{ $page.props.auth.user.name?.charAt(0)?.toUpperCase() || 'U' }}
-                  </span>
+                <img
+                  v-if="avatarUrl"
+                  :src="avatarUrl"
+                  alt=""
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                  class="w-10 h-10 rounded-full object-cover bg-primary-800"
+                  @error="avatarFailed = true"
+                />
+                <div v-else class="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
+                  <span class="text-white font-semibold">{{ initial }}</span>
                 </div>
-                <div>
-                  <div class="font-medium text-white">{{ $page.props.auth.user.name }}</div>
-                  <div class="text-sm text-primary-400">{{ $page.props.auth.user.email }}</div>
-                </div>
+                <div class="font-medium text-white">{{ $page.props.auth.user.name }}</div>
               </div>
 
               <div class="mt-3 space-y-1">
+                <ResponsiveNavLink v-if="emotesEnabled" :href="route('emotes.index')" :active="route().current('emotes.*')" prefetch>
+                  Emotes
+                </ResponsiveNavLink>
                 <ResponsiveNavLink v-if="source" :href="source.url" as="a">
                   GitHub
                 </ResponsiveNavLink>
@@ -274,20 +291,24 @@ const chatEnabled = computed(() => page.props.features?.chat !== false);
             <div class="flex flex-col items-center gap-1 text-sm text-primary-500 sm:items-end">
               <!-- Credits the software rather than the installation, which is why it is
                    not one of the branding links. Turned off in /manage > Settings. -->
-              <span v-if="source" class="text-primary-500">
-                <a
-                  :href="source.url"
-                  target="_blank"
-                  rel="noopener"
-                  class="hover:text-primary-300 transition-colors"
-                >Open source</a>,
-                <a
-                  :href="source.licenceUrl"
-                  target="_blank"
-                  rel="noopener"
-                  class="hover:text-primary-300 transition-colors"
-                >{{ source.licence }}</a>
-              </span>
+              <template v-if="source">
+                <span class="text-primary-500">Open source streaming system</span>
+                <span class="text-primary-500">
+                  <a
+                    :href="source.url"
+                    target="_blank"
+                    rel="noopener"
+                    class="hover:text-primary-300 transition-colors"
+                  >Run your own</a>
+                  &middot;
+                  <a
+                    :href="source.licenceUrl"
+                    target="_blank"
+                    rel="noopener"
+                    class="hover:text-primary-300 transition-colors"
+                  >{{ source.licence }}</a>
+                </span>
+              </template>
             </div>
           </div>
         </div>

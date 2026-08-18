@@ -11,6 +11,7 @@ use GuzzleHttp\Exception\ServerException;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -57,6 +58,21 @@ class Server extends Model
                 $server->status = ServerStatusEnum::PROVISIONING;
             }
         });
+
+        // The playlist path reads the active edges out of the cache rather than the
+        // database (HlsController::activeEdges), so a deprovisioned edge has to be
+        // taken out of that list the moment it changes - otherwise viewers keep being
+        // pinned to a box that is going away.
+        $forgetEdgeCaches = function ($server) {
+            Cache::forget('hls_active_edges');
+
+            if ($server->hostname) {
+                Cache::forget('hls_local_edge:'.$server->hostname);
+            }
+        };
+
+        static::saved($forgetEdgeCaches);
+        static::deleted($forgetEdgeCaches);
     }
 
     /**
@@ -207,6 +223,19 @@ class Server extends Model
     public function users()
     {
         return $this->hasMany(User::class);
+    }
+
+    /**
+     * What the box reported about itself, one row a minute. See ServerMetric.
+     */
+    public function metrics()
+    {
+        return $this->hasMany(ServerMetric::class);
+    }
+
+    public function latestMetric(): ?ServerMetric
+    {
+        return $this->metrics()->latest('recorded_at')->first();
     }
 
     public function deprovision()

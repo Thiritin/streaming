@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\Server;
 use App\Models\Show;
 use App\Models\Source;
+use App\Support\Features;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
 
@@ -51,11 +52,14 @@ final class Navigation
             ]],
             ['label' => 'Infrastructure', 'items' => [
                 $this->item('Servers', 'server', 'manage.servers.index'),
+                $this->item('Display Keys', 'monitor', 'manage.embed-keys.index'),
             ]],
             ['label' => 'Administration', 'items' => [
                 $this->item('Users', 'users', 'manage.users.index'),
                 $this->item('Roles', 'shield-check', 'manage.roles.index', $badges['roles'] ?? null),
-                $this->item('Emotes', 'smile', 'manage.emotes.index', $badges['emotes'] ?? null),
+                Features::emotes()
+                    ? $this->item('Emotes', 'smile', 'manage.emotes.index', $badges['emotes'] ?? null)
+                    : null,
                 $this->item('Settings', 'paintbrush', 'manage.settings'),
             ]],
         ];

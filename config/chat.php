@@ -2,11 +2,10 @@
 
 return [
     /*
-     * Master switch for chat. When false every chat endpoint answers 404, the
-     * client gets no chat props, and the panel, pop-out and emote pages are
-     * hidden. Streams keep playing; only the conversation goes away.
+     * The master switch moved to config/features.php, so it can be flipped from
+     * /manage > Settings > Features rather than only from the environment. Read
+     * it through App\Support\Features::chat().
      */
-    'enabled' => (bool) env('CHAT_ENABLED', true),
 
     'default' => [
         /*

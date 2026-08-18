@@ -6,6 +6,7 @@ use App\Services\BrandingService;
 use App\Services\ChatMessageSanitizer;
 use App\Services\CommandRegistry;
 use App\Services\EmoteService;
+use App\Support\Features;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Middleware;
@@ -30,84 +31,120 @@ class HandleInertiaRequests extends Middleware
     /**
      * Define the props that are shared by default.
      *
+     * Everything expensive here is a closure. Inertia only resolves a shared
+     * prop when it is actually going into the response, so a partial reload
+     * (`router.reload({ only: [...] })`, and every deferred prop fetch) skips
+     * the emote payload, the command registry and the chat backlog entirely
+     * instead of rebuilding them to throw them away.
+     *
+     * The switches themselves are free either way: Features and BrandingService
+     * both answer from the cache, so a full page load costs no query for them.
+     *
      * @return array<string, mixed>
      */
     public function share(Request $request): array
     {
-        $user = $request->user();
-        $chatEnabled = (bool) config('chat.enabled');
-        $chatCommands = [];
-        $chatConfig = [];
-        $emotes = ['map' => (object) [], 'list' => []];
-        $chatPermissions = [];
-
-        if ($user && $chatEnabled) {
-            // Use new CommandRegistry for commands
-            $commandRegistry = app(CommandRegistry::class);
-            $availableCommands = $commandRegistry->availableFor($user);
-
-            // Transform to array format for frontend
-            $chatCommands = array_map(function ($cmd) {
-                return [
-                    'name' => $cmd['name'],
-                    'description' => $cmd['description'],
-                    'syntax' => $cmd['signature'],
-                    'aliases' => $cmd['aliases'] ?? [],
-                ];
-            }, array_values($availableCommands));
-
-            $sanitizer = new ChatMessageSanitizer;
-            $chatConfig = [
-                'maxMessageLength' => $sanitizer->getMaxLength(),
-                'allowedDomains' => $sanitizer->getAllowedDomains(),
-                'bufferSize' => (int) config('chat.history.buffer', 300),
-            ];
-
-            $emotes = app(EmoteService::class)->clientPayload($user);
-
-            $chatPermissions = [
-                'moderate' => $user->canModerateChat(),
-                'ban' => $user->canBanFromChat(),
-                'announce' => $user->canModerateChat() || $user->hasPermission('chat.broadcast'),
-                'bypass_limits' => $user->canModerateChat() || $user->hasPermission('chat.ignore.ratelimit'),
-            ];
-        }
-
         return array_merge(parent::share($request), [
             'flash' => [
-                'status' => fn () => $request->session()->get('status'),
+                // Guarded: the error page shares these props from the exception
+                // handler, where a request that never reached the web group has
+                // no session to read.
+                'status' => fn () => $request->hasSession() ? $request->session()->get('status') : null,
             ],
-            'branding' => app(BrandingService::class)->forFrontend(),
-            // Deployment-wide switches the client needs to know about: whether
-            // chat exists at all, and whether a guest is allowed to browse
-            // without signing in. Both come from the env, see config/chat.php
-            // and config/auth.php.
-            'features' => [
-                'chat' => $chatEnabled,
+            'branding' => fn () => app(BrandingService::class)->forFrontend(),
+            /*
+             * Deployment-wide switches the client needs to know about: which
+             * features exist at all, and whether a guest is allowed to browse
+             * without signing in. The feature flags are edited in
+             * /manage > Settings > Features and default from config/features.php;
+             * authRequired comes from config/auth.php.
+             */
+            'features' => fn () => [
+                'chat' => Features::chat(),
+                'emotes' => Features::emotes(),
+                'boops' => Features::boops(),
                 'authRequired' => (bool) config('auth.required'),
                 'loginUrl' => route('login'),
             ],
-            'auth' => [
-                'user' => $user ? array_merge(
-                    $user->only('id', 'name', 'role'),
-                    [
-                        'is_staff' => $user->isStaff(),
-                        'chat_color' => $user->chat_color,
-                        'badges' => $user->chatBadges(),
-                    ]
-                ) : null,
-                'can_access_manage' => $user ? Gate::forUser($user)->allows('access-manage') : false,
-                // Kept until /admin is removed; see docs/admin/rebuild-plan.md part 5.
-                'can_access_filament' => $user?->can('filament.access'),
-                'has_server_assignment' => $user ? ($user->server_id && $user->streamkey ? true : false) : false,
-            ],
-            'chat' => [
-                'enabled' => $chatEnabled,
-                'commands' => $chatCommands,
-                'config' => $chatConfig,
-                'emotes' => $emotes,
-                'permissions' => $chatPermissions,
-            ],
+            'auth' => fn () => $this->authProps($request),
+            'chat' => fn () => $this->chatProps($request),
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function authProps(Request $request): array
+    {
+        $user = $request->user();
+
+        return [
+            'user' => $user ? array_merge(
+                $user->only('id', 'name', 'avatar', 'role'),
+                [
+                    'is_staff' => $user->isStaff(),
+                    'chat_color' => $user->chat_color,
+                    'badges' => $user->chatBadges(),
+                ]
+            ) : null,
+            'can_access_manage' => $user ? Gate::forUser($user)->allows('access-manage') : false,
+            // Kept until /admin is removed; see docs/admin/rebuild-plan.md part 5.
+            'can_access_filament' => $user?->can('filament.access'),
+            'has_server_assignment' => $user ? ($user->server_id && $user->streamkey ? true : false) : false,
+        ];
+    }
+
+    /**
+     * The chat half of the shared props. Empty for guests and for an
+     * installation with chat switched off; emotes drop out on their own switch
+     * while the rest of chat stays.
+     *
+     * @return array<string, mixed>
+     */
+    protected function chatProps(Request $request): array
+    {
+        $user = $request->user();
+        $enabled = Features::chat();
+
+        $props = [
+            'enabled' => $enabled,
+            'commands' => [],
+            'config' => [],
+            'emotes' => ['map' => (object) [], 'list' => []],
+            'permissions' => [],
+        ];
+
+        if (! $user || ! $enabled) {
+            return $props;
+        }
+
+        $availableCommands = app(CommandRegistry::class)->availableFor($user);
+
+        $props['commands'] = array_map(fn ($cmd) => [
+            'name' => $cmd['name'],
+            'description' => $cmd['description'],
+            'syntax' => $cmd['signature'],
+            'aliases' => $cmd['aliases'] ?? [],
+        ], array_values($availableCommands));
+
+        $sanitizer = new ChatMessageSanitizer;
+        $props['config'] = [
+            'maxMessageLength' => $sanitizer->getMaxLength(),
+            'allowedDomains' => $sanitizer->getAllowedDomains(),
+            'bufferSize' => (int) config('chat.history.buffer', 300),
+        ];
+
+        if (Features::emotes()) {
+            $props['emotes'] = app(EmoteService::class)->clientPayload($user);
+        }
+
+        $props['permissions'] = [
+            'moderate' => $user->canModerateChat(),
+            'ban' => $user->canBanFromChat(),
+            'announce' => $user->canModerateChat() || $user->hasPermission('chat.broadcast'),
+            'bypass_limits' => $user->canModerateChat() || $user->hasPermission('chat.ignore.ratelimit'),
+        ];
+
+        return $props;
     }
 }

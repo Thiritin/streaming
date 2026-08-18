@@ -30,7 +30,7 @@ const regenerate = () => router.post(props.regenerateUrl, {}, { preserveScroll: 
     >
       <template #actions>
         <Link
-          :href="route('manage.servers.edit', server.id)"
+          :href="route('manage.servers.show', server.id)"
           class="inline-flex h-7 items-center gap-1.5 rounded border border-hairline px-2 text-[12px] text-fg-2 transition-colors hover:bg-surface-3"
         >
           <ManageIcon name="arrow-left" />

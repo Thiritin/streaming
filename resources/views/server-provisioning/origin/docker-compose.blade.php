@@ -6,9 +6,14 @@ services:
     image: ossrs/srs:6
     container_name: origin-srs
     ports:
-      - "1935:1935"  # RTMP
-      - "1985:1985"  # SRS API
-      - "8082:8082"  # SRS HTTP
+      - "1935:1935"  # RTMP, public: encoders publish here
+      # Loopback only. The transcoder reaches SRS as origin-srs:1985 over the compose
+      # network, and the install script probes /api/v1/versions from the host, so
+      # neither needs the port published to 0.0.0.0. Docker writes its own DOCKER
+      # chain rules, so a published port is reachable the moment the Hetzner firewall
+      # is detached or misapplied; binding here does not depend on it.
+      - "127.0.0.1:1985:1985"  # SRS API
+      - "127.0.0.1:8082:8082"  # SRS HTTP stats
     environment:
       SRS_HTTP_PORT: 8082
     volumes:
@@ -27,11 +32,16 @@ services:
       SRS_RTMP_URL: rtmp://origin-srs:1935
       OUTPUT_BASE_DIR: /var/www/hls/live
       CHECK_INTERVAL: 5
-      # 1800 segments at hls_time 2 is the 60 minute live rewind window; the extra
-      # 60 retained segments are the grace the S3 uploader gets before a segment is
-      # deleted. See docs/dvr-archive-plan.md.
-      DVR_WINDOW_SEGMENTS: 1800
-      HLS_DELETE_THRESHOLD: 60
+      # 900 segments at hls_time 2 is the 30 minute live rewind window, and also how
+      # far behind the archive uploader may fall: the indexer can only index what the
+      # playlist still lists.
+      #
+      # The extra 1500 retained segments are a disk backstop, not the upload grace.
+      # Deletion belongs to the uploader, which unlinks only what S3 has confirmed;
+      # this is what stops the disk filling if the bucket is unreachable, and it buys
+      # another 50 minutes before anything is dropped unread.
+      DVR_WINDOW_SEGMENTS: 900
+      HLS_DELETE_THRESHOLD: 1500
       # Restart FFmpeg if it stops advancing its playlists while SRS still reports
       # the stream as publishing.
       SEGMENT_STALL_SECONDS: 15
@@ -105,9 +115,11 @@ services:
       # cannot describe both.
       ARCHIVE_SOURCE: 1
       SOURCE_HLS_PATH: /var/www/hls/source
-      # Must match DVR_WINDOW_SEGMENTS on origin-ffmpeg-hls (1800 x 2s). The reaper
-      # never deletes inside the window a viewer can still seek back into.
-      DVR_WINDOW_SECONDS: '3600'
+      # Must match DVR_WINDOW_SEGMENTS on origin-ffmpeg-hls (900 x 2s). The reaper
+      # never deletes inside the window a viewer can still seek back into, and never
+      # deletes a segment S3 has not confirmed, so this is a floor on age and not a
+      # retention policy in itself.
+      DVR_WINDOW_SECONDS: '1800'
       # Ceiling on archive upload bandwidth, so it cannot starve origin->edge
       # egress on the same uplink. 20% of a 1 Gbps link.
       #

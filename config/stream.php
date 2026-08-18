@@ -77,6 +77,12 @@ return [
             'origin' => 1000,
             'edge' => 100,
         ],
+
+        // How long the per-minute system samples reported by heartbeat.sh are kept.
+        // One row per server per minute is about 43k rows a month per server, which is
+        // nothing for the database and more history than anyone reviews after an
+        // event. PruneServerMetricsJob drops the rest nightly.
+        'metrics_retention_days' => (int) env('SERVER_METRICS_RETENTION_DAYS', 30),
     ],
 
     // The ABR ladder is not configured here. It lives in one place, the
@@ -174,6 +180,13 @@ return [
         // Seconds a token is still accepted past its expiry, to absorb clock
         // drift between app and edges and a refresh that lands late.
         'leeway' => (int) env('HLS_TOKEN_LEEWAY', 60),
+
+        // How long a segment token stays byte-identical. Segment tokens are shared
+        // by every viewer of a source rather than minted per viewer, so a playlist
+        // body is rendered and compressed once per bucket instead of once per
+        // request; the bucket is how much staleness that sharing is allowed to
+        // introduce into the expiry. See PlaybackTokenService::issueSegmentToken.
+        'bucket' => (int) env('HLS_TOKEN_BUCKET', 60),
 
         // How long before expiry the server pushes a fresh token to the player.
         // The remainder is the budget for the 403 recovery path.

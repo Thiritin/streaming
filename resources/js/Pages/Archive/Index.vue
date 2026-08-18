@@ -6,7 +6,7 @@
       <div class="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div class="space-y-2">
           <p class="text-xs font-semibold uppercase tracking-[0.14em] text-primary-300">Archive</p>
-          <h1 class="text-3xl font-bold text-white tracking-tight">Every convention, one collection each</h1>
+          <h1 class="text-3xl font-bold text-white tracking-tight">Past streams</h1>
           <p class="text-primary-300 text-sm">
             {{ totalRecordings }} recordings across {{ collections.length }}
             {{ collections.length === 1 ? 'year' : 'years' }}.
@@ -108,7 +108,7 @@
         </div>
 
         <p v-else class="py-16 text-center text-primary-400">
-          The archive is empty. Shows appear here once they finish processing.
+          Nothing here yet.
         </p>
       </div>
 

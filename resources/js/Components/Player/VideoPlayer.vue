@@ -205,6 +205,24 @@ defineExpose({
 }
 
 /*
+ * media-player carries its own 16:9 aspect ratio, so given a box shorter than
+ * that ratio it renders past the bottom of it and lands on whatever is below -
+ * on the stream page, the controls bar. Fitting it to the box and letterboxing
+ * the picture inside keeps the player inside its own bounds at any viewport.
+ */
+.video-player media-player {
+    max-height: 100%;
+    aspect-ratio: auto;
+}
+
+.video-player media-player video,
+.video-player media-player [data-media-provider] {
+    height: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+/*
  * These three are read by [data-media-player][data-layout='video'], i.e. the
  * media-player element itself, so they have to be set here and not on the
  * .vds-video-layout child: custom properties only inherit downward.

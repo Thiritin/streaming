@@ -6,6 +6,7 @@ use App\Http\Middleware\Authenticate;
 use App\Http\Middleware\AuthenticateIfRequired;
 use App\Http\Middleware\EncryptCookies;
 use App\Http\Middleware\EnsureChatIsEnabled;
+use App\Http\Middleware\EnsureEmotesAreEnabled;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PreventRequestsDuringMaintenance;
 use App\Http\Middleware\RedirectIfAuthenticated;
@@ -67,6 +68,21 @@ class Kernel extends HttpKernel
             AddLinkHeadersForPreloadedAssets::class,
         ],
 
+        /*
+         * Playlists, polled by every viewer every couple of seconds. Deliberately
+         * not the `web` group: cookies and a session are needed to recognise a
+         * signed-in viewer and to keep a guest's viewer id, but Inertia would
+         * assemble a full prop set - branding, emotes, chat commands, badges - on
+         * every poll, and there is no CSRF, session flash or preload header worth
+         * attaching to an m3u8. See routes/hls.php.
+         */
+        'hls' => [
+            EncryptCookies::class,
+            AddQueuedCookiesToResponse::class,
+            StartSession::class,
+            SubstituteBindings::class,
+        ],
+
         'api' => [
             // \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             // Removed throttling - these are mostly internal system endpoints
@@ -88,6 +104,7 @@ class Kernel extends HttpKernel
         'auth.optional' => AuthenticateIfRequired::class,
         'auth.basic' => AuthenticateWithBasicAuth::class,
         'chat.enabled' => EnsureChatIsEnabled::class,
+        'emotes.enabled' => EnsureEmotesAreEnabled::class,
         'auth.session' => AuthenticateSession::class,
         'cache.headers' => SetCacheHeaders::class,
         'can' => Authorize::class,

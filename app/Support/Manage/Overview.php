@@ -7,9 +7,12 @@ use App\Enum\ServerTypeEnum;
 use App\Enum\SourceStatusEnum;
 use App\Enum\StreamStatusEnum;
 use App\Models\Server;
+use App\Models\ServerMetric;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\User;
+use App\Services\ServerMetricsService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
 
@@ -166,8 +169,8 @@ final class Overview
                     'load' => $isEdge && $max > 0 ? (int) round($viewers / $max * 100) : null,
                     'heartbeat' => $server->last_heartbeat?->diffForHumans(),
                     'heartbeatStale' => $this->isStale($server),
-                    'url' => Route::has('manage.servers.edit')
-                        ? route('manage.servers.edit', $server)
+                    'url' => Route::has('manage.servers.show')
+                        ? route('manage.servers.show', $server)
                         : null,
                 ];
             })
@@ -203,7 +206,7 @@ final class Overview
                     'tone' => Status::DANGER,
                     'title' => "Server {$name} is in error",
                     'detail' => $server->health_check_message,
-                    'url' => Route::has('manage.servers.edit') ? route('manage.servers.edit', $server) : null,
+                    'url' => Route::has('manage.servers.show') ? route('manage.servers.show', $server) : null,
                 ];
 
                 continue;
@@ -214,7 +217,7 @@ final class Overview
                     'tone' => Status::DANGER,
                     'title' => "Server {$name} is failing its health check",
                     'detail' => $server->health_check_message,
-                    'url' => Route::has('manage.servers.edit') ? route('manage.servers.edit', $server) : null,
+                    'url' => Route::has('manage.servers.show') ? route('manage.servers.show', $server) : null,
                 ];
 
                 continue;
@@ -225,9 +228,16 @@ final class Overview
                     'tone' => Status::WARN,
                     'title' => "Server {$name} has not checked in",
                     'detail' => 'Last heartbeat '.($server->last_heartbeat?->diffForHumans() ?? 'never'),
-                    'url' => Route::has('manage.servers.edit') ? route('manage.servers.edit', $server) : null,
+                    'url' => Route::has('manage.servers.show') ? route('manage.servers.show', $server) : null,
                 ];
             }
+        }
+
+        // Disk. An origin that fills up stops recording, and an edge that fills up stops
+        // caching, so this is worth surfacing well before either happens. The sample is
+        // read once for the whole set rather than per server.
+        foreach ($this->lowDisk($servers) as $alert) {
+            $alerts[] = $alert;
         }
 
         // A live show pushing nothing is the failure an operator most wants to catch early.
@@ -314,6 +324,60 @@ final class Overview
      * A server that has not reported in for three heartbeat intervals is treated as
      * missing, matching the window `activeViewers()` uses for viewer sessions.
      */
+    /**
+     * Servers whose most recent sample shows the root filesystem nearly full.
+     *
+     * @param  Collection<int, Server>  $servers
+     * @return array<int, array<string, mixed>>
+     */
+    private function lowDisk($servers): array
+    {
+        if ($servers->isEmpty()) {
+            return [];
+        }
+
+        // Ordered ascending so keyBy leaves the newest sample per server, and windowed
+        // so a server that stopped reporting days ago cannot raise an alert about a
+        // disk state nobody can confirm any more.
+        $latest = ServerMetric::query()
+            ->whereIn('server_id', $servers->pluck('id'))
+            ->where('recorded_at', '>=', now()->subMinutes(15))
+            ->whereNotNull('disk_total_bytes')
+            ->orderBy('recorded_at')
+            ->get(['server_id', 'disk_used_bytes', 'disk_total_bytes'])
+            ->keyBy('server_id');
+
+        $alerts = [];
+
+        foreach ($servers as $server) {
+            $sample = $latest->get($server->id);
+
+            if (! $sample || ! $sample->disk_total_bytes || $sample->disk_used_bytes === null) {
+                continue;
+            }
+
+            $free = max(0, $sample->disk_total_bytes - $sample->disk_used_bytes);
+            $share = $free / $sample->disk_total_bytes * 100;
+
+            if ($share >= 10) {
+                continue;
+            }
+
+            $name = $server->hostname ?? "server #{$server->id}";
+
+            $alerts[] = [
+                'tone' => $share < 5 ? Status::DANGER : Status::WARN,
+                'title' => "Server {$name} is running out of disk",
+                'detail' => ServerMetricsService::bytes($free).' free of '
+                    .ServerMetricsService::bytes($sample->disk_total_bytes)
+                    .' ('.round($share).'%).',
+                'url' => Route::has('manage.servers.show') ? route('manage.servers.show', $server) : null,
+            ];
+        }
+
+        return $alerts;
+    }
+
     private function isStale(Server $server): bool
     {
         if ($server->status !== ServerStatusEnum::ACTIVE) {

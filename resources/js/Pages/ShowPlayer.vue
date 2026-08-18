@@ -4,6 +4,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, usePage, router } from '@inertiajs/vue3';
 import { useRealtimeResync } from '@/composables/useRealtimeResync';
 import StreamPlayer from "@/Components/Livestream/StreamPlayer.vue";
+import BoopButton from "@/Components/Livestream/BoopButton.vue";
 import ChatPanel from "@/Components/Chat/ChatPanel.vue";
 import MarkdownText from "@/Components/MarkdownText.vue";
 import StreamOfflineStatusPage from "@/Components/Livestream/StatusPages/StreamOfflineStatusPage.vue";
@@ -100,24 +101,63 @@ const streamPlayer = ref(null);
 const isChatDrawerOpen = ref(false);
 const isReconnecting = ref(false);
 const isTheaterMode = ref(false);
+const isChatHidden = ref(false);
+const isChromeVisible = ref(true);
+let chromeTimer = null;
+const CHROME_IDLE_MS = 2600;
 let hlsCheckInterval = null;
 let hlsCheckAttempts = 0;
 const maxHlsCheckAttempts = 15; // 30 seconds total (15 * 2 seconds)
 
-// Theater mode functions
+/*
+ * Theater mode: the video fills the window and the chrome floats on top of it,
+ * fading out once the pointer settles so there is nothing on screen but the
+ * stream. Moving the mouse, typing or touching brings it straight back.
+ *
+ * Chat is deliberately not part of the chrome. A chat you chose to open is not
+ * a distraction, and one that faded out mid-message would be a bug.
+ */
 const toggleTheaterMode = () => {
     isTheaterMode.value = !isTheaterMode.value;
     localStorage.setItem('theaterMode', isTheaterMode.value ? 'true' : 'false');
 
-    // Toggle body class for hiding navbar
-    if (isTheaterMode.value) {
-        document.body.classList.add('theater-mode');
-    } else {
-        document.body.classList.remove('theater-mode');
-    }
+    revealChrome();
+};
+
+const revealChrome = () => {
+    isChromeVisible.value = true;
+    clearTimeout(chromeTimer);
+
+    if (!isTheaterMode.value) return;
+
+    chromeTimer = setTimeout(() => {
+        // The drawer sits on top of the video anyway, and the bar it was opened
+        // from is the way back out of it.
+        if (isChatDrawerOpen.value) {
+            revealChrome();
+
+            return;
+        }
+
+        isChromeVisible.value = false;
+    }, CHROME_IDLE_MS);
+};
+
+// Hovering the bars is intent to use them, so they stay put until the pointer
+// leaves again.
+const holdChrome = () => {
+    isChromeVisible.value = true;
+    clearTimeout(chromeTimer);
+};
+
+const toggleChatVisibility = () => {
+    isChatHidden.value = !isChatHidden.value;
+    localStorage.setItem('chatHidden', isChatHidden.value ? 'true' : 'false');
 };
 
 const handleKeydown = (e) => {
+    revealChrome();
+
     if (e.key === 'Escape' && isTheaterMode.value) {
         toggleTheaterMode();
     }
@@ -125,20 +165,21 @@ const handleKeydown = (e) => {
 
 // Load theater mode preference from localStorage
 const loadTheaterModePreference = () => {
-    const saved = localStorage.getItem('theaterMode');
-    if (saved === 'true') {
+    if (localStorage.getItem('theaterMode') === 'true') {
         isTheaterMode.value = true;
-        document.body.classList.add('theater-mode');
+        revealChrome();
     }
+
+    isChatHidden.value = localStorage.getItem('chatHidden') === 'true';
 };
 
 // Computed properties
 const chatEnabled = computed(() => page.props.features?.chat !== false);
+const boopsEnabled = computed(() => page.props.features?.boops !== false);
 const showChatBox = computed(() => chatEnabled.value && status.value !== 'offline' && activeShow.value?.status === 'live');
 const showPlayer = computed(() => activeShow.value && activeShow.value.status === 'live' && hlsUrl.value && status.value === 'online' && sourceStatus.value === 'online' && provisioning.value === false && otherDevice.value === false && !isReconnecting.value);
 const showTitle = computed(() => activeShow.value ? activeShow.value.title : 'No Show Active');
 const otherLiveShows = computed(() => shows.value.filter(s => s.id !== activeShow.value?.id && s.status === 'live' && s.slug));
-const upcomingShows = computed(() => shows.value.filter(s => s.id !== activeShow.value?.id && s.status === 'scheduled' && s.slug).slice(0, 3));
 
 // Methods
 const isMobile = () => {
@@ -286,6 +327,9 @@ watch(() => props.currentShow, (show) => {
     subscribeToSource(show.source_id);
 }, { deep: true });
 
+// Closing the drawer restarts the idle countdown that it was holding open.
+watch(isChatDrawerOpen, () => revealChrome());
+
 watch(() => props.availableShows, (value) => shows.value = value ?? []);
 watch(() => props.initialStatus, (value) => status.value = value);
 watch(() => props.initialHlsUrl, (value) => { if (value) hlsUrl.value = value; });
@@ -296,6 +340,9 @@ onMounted(() => {
     // Load theater mode preference and add keyboard listener
     loadTheaterModePreference();
     window.addEventListener('keydown', handleKeydown);
+    window.addEventListener('mousemove', revealChrome, { passive: true });
+    window.addEventListener('mousedown', revealChrome, { passive: true });
+    window.addEventListener('touchstart', revealChrome, { passive: true });
 
     subscribeToSource(activeShow.value?.source_id);
 
@@ -435,8 +482,11 @@ onUnmounted(() => {
     stopHlsChecker();
 
     // Clean up theater mode
+    clearTimeout(chromeTimer);
     window.removeEventListener('keydown', handleKeydown);
-    document.body.classList.remove('theater-mode');
+    window.removeEventListener('mousemove', revealChrome);
+    window.removeEventListener('mousedown', revealChrome);
+    window.removeEventListener('touchstart', revealChrome);
 
     // Leave the source channel
     if (subscribedSourceId) {
@@ -463,15 +513,26 @@ onUnmounted(() => {
 
         <div
             class="flex flex-col xl:flex-row xl:overflow-hidden transition-all duration-(--dur-base)"
-            :class="isTheaterMode ? 'fixed inset-0 z-50 bg-primary-950' : 'xl:h-[calc(100vh-3rem)]'"
+            :class="isTheaterMode ? 'fixed inset-0 z-50 bg-black' : 'xl:h-[calc(100vh-3rem)]'"
         >
             <!-- Livestream -->
-            <div class="w-full flex-1 flex flex-col">
-                <!-- Back to Shows Bar - Fixed at top -->
-                <div class="bg-primary-900 border-b border-primary-800 px-4 py-2 flex-shrink-0">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <Link :href="route('shows.grid')" class="inline-flex items-center text-primary-400 hover:text-white transition-colors">
+            <div class="w-full flex-1 flex flex-col relative min-h-0" :class="isTheaterMode && !isChromeVisible ? 'cursor-none' : ''">
+                <!-- Back to Shows Bar. In theater mode it floats over the video and
+                     fades with the rest of the chrome instead of taking a row. -->
+                <div
+                    class="px-4 py-2 flex-shrink-0 transition-opacity duration-(--dur-base)"
+                    :class="[
+                        isTheaterMode
+                            ? 'absolute top-0 inset-x-0 z-30 bg-gradient-to-b from-black/85 via-black/45 to-transparent'
+                            : 'bg-primary-900 border-b border-primary-800',
+                        isTheaterMode && !isChromeVisible ? 'opacity-0 pointer-events-none' : 'opacity-100',
+                    ]"
+                    @mouseenter="holdChrome"
+                    @mouseleave="revealChrome"
+                >
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center min-w-0">
+                            <Link :href="route('shows.grid')" class="inline-flex items-center shrink-0 text-primary-400 hover:text-white transition-colors">
                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
                                 </svg>
@@ -479,10 +540,10 @@ onUnmounted(() => {
                                 <span class="sm:hidden">Back</span>
                             </Link>
                             <span class="mx-3 text-primary-600 hidden sm:inline">|</span>
-                            <span class="text-white font-semibold ml-3 sm:ml-0 truncate">{{ showTitle }}</span>
+                            <span class="text-white font-semibold ml-3 sm:ml-0 truncate min-w-0">{{ showTitle }}</span>
                             <span v-if="activeShow?.source" class="text-primary-400 ml-2 hidden sm:inline">• {{ activeShow.source.name || activeShow.source }}</span>
                         </div>
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 shrink-0">
                             <!-- Mobile Chat Button -->
                             <button 
                                 v-if="showChatBox"
@@ -497,6 +558,19 @@ onUnmounted(() => {
                                 <span v-if="chatMessages?.length > 0" class="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
                             </button>
                             
+                            <!-- Show Chat (desktop, when collapsed) -->
+                            <button
+                                v-if="showChatBox && isChatHidden"
+                                @click="toggleChatVisibility"
+                                class="hidden xl:inline-flex items-center px-3 py-1 text-sm bg-primary-800 hover:bg-primary-700 text-primary-300 hover:text-white rounded transition-colors"
+                                title="Show chat"
+                            >
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                </svg>
+                                <span>Chat</span>
+                            </button>
+
                             <!-- External Player Link -->
                             <Link
                                 v-if="activeShow && activeShow.slug"
@@ -512,9 +586,20 @@ onUnmounted(() => {
                     </div>
                 </div>
 
-                <!-- Scrollable Content Area -->
-                <div class="flex-1 overflow-auto">
-                    <div v-if="showPlayer">
+                <!-- Scrollable Content Area. Theater mode keeps the video alone on
+                     screen, so nothing below it is rendered and nothing scrolls. -->
+                <div
+                    class="flex-1"
+                    :class="[
+                        isTheaterMode ? 'overflow-hidden flex items-center justify-center' : 'overflow-auto',
+                        // Without a player the column is short, and the leftover height of
+                        // the viewport-tall layout used to sit under the page as a dead
+                        // band. Stacking it as a flex column lets the status screen take
+                        // that space instead.
+                        !isTheaterMode && !showPlayer ? 'flex flex-col' : '',
+                    ]"
+                >
+                    <div v-if="showPlayer" :class="isTheaterMode ? 'w-full' : ''">
                         <!-- Landing half of the shared-element morph: the tile that
                              was clicked on the browse grid tweens into this box.
                              See composables/useMediaHero.js. -->
@@ -522,16 +607,36 @@ onUnmounted(() => {
                                       v-media-hero
                                       :hls-url="hlsUrl"
                                       :show-info="activeShow"
-                                      class="z-10 relative w-full bg-black mx-auto"
-                                      :class="isTheaterMode ? 'max-h-[calc(100vh-6rem)]' : 'max-h-[60vh] sm:max-h-[70vh] md:max-h-[80vh] lg:max-h-[calc(100vh-12vh)]'"></StreamPlayer>
+                                      class="relative w-full bg-black mx-auto overflow-hidden"
+                                      :class="isTheaterMode ? 'h-full' : 'h-[min(56.25vw,70vh)]'"></StreamPlayer>
 
-                        <!-- Player Controls Bar -->
-                    <div class="player-controls-bar bg-primary-900 border-t border-primary-800 px-4 py-2">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-2 text-sm text-primary-400">
-                                <span>{{ listeners }} viewers</span>
+                        <!-- Player Controls Bar. Floats over the foot of the video in
+                             theater mode, on the same fade as the top bar. -->
+                    <div
+                        class="player-controls-bar px-4 py-2 transition-opacity duration-(--dur-base)"
+                        :class="[
+                            isTheaterMode
+                                ? 'absolute bottom-0 inset-x-0 z-30 bg-gradient-to-t from-black/85 via-black/45 to-transparent'
+                                : 'bg-primary-900 border-t border-primary-800',
+                            isTheaterMode && !isChromeVisible ? 'opacity-0 pointer-events-none' : 'opacity-100',
+                        ]"
+                        @mouseenter="holdChrome"
+                        @mouseleave="revealChrome"
+                    >
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex items-center gap-2 text-sm text-primary-400 min-w-0">
+                                <span class="truncate">{{ listeners }} viewers</span>
                             </div>
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-2 shrink-0">
+                                <!-- Boops: shared counter, no sign-in, no undo. -->
+                                <BoopButton
+                                    v-if="boopsEnabled && activeShow?.id && activeShow?.slug"
+                                    :show-id="activeShow.id"
+                                    :show-slug="activeShow.slug"
+                                    :initial-count="activeShow.boop_count ?? 0"
+                                    :disabled="activeShow.status !== 'live'"
+                                />
+
                                 <!-- Theater Mode Toggle -->
                                 <button
                                     @click="toggleTheaterMode"
@@ -550,7 +655,7 @@ onUnmounted(() => {
                     </div>
 
                     <!-- Stream Information -->
-                    <Container class="bg-primary-800 border-t-2 border-primary-700" padding="p-6">
+                    <Container v-if="!isTheaterMode" class="bg-primary-800 border-t-2 border-primary-700" padding="p-6">
                         <h2 class="text-2xl font-bold text-white mb-3">{{ activeShow?.title || 'Stream' }}</h2>
                         <MarkdownText
                             v-if="activeShow?.description"
@@ -565,7 +670,7 @@ onUnmounted(() => {
                     </Container>
 
                     <!-- Other Live Shows -->
-                    <Container v-if="otherLiveShows.length > 0" class="bg-black/50 border-t border-primary-800" padding="p-6">
+                    <Container v-if="otherLiveShows.length > 0 && !isTheaterMode" class="bg-black/50 border-t border-primary-800" padding="p-6">
                         <div class="flex items-center mb-6">
                             <h2 class="text-xl font-semibold text-white">Other Live Shows</h2>
                             <span class="ml-3 bg-red-600 text-white px-2 py-1 rounded text-xs font-bold uppercase animate-pulse">
@@ -580,46 +685,37 @@ onUnmounted(() => {
                     </Container>
                     </div>
                     <!-- Show Status Pages -->
-                    <div v-else-if="activeShow?.status === 'scheduled'">
+                    <div v-else-if="activeShow?.status === 'scheduled'" class="flex flex-1">
                         <ShowScheduledStatusPage :show="activeShow" :promoted="promoted" />
                     </div>
-                    <div v-else-if="activeShow?.status === 'ended'">
-                        <ShowEndedStatusPage 
-                            :show="activeShow" 
-                            :other-live-shows="otherLiveShows"
-                            :promoted="promoted"
-                            main-stream-url="/" />
+                    <div v-else-if="activeShow?.status === 'ended'" class="flex flex-1">
+                        <ShowEndedStatusPage :show="activeShow" :promoted="promoted" />
                     </div>
-                    <div v-else-if="activeShow?.status === 'cancelled'">
-                        <ShowCancelledStatusPage 
-                            :show="activeShow" 
-                            :other-live-shows="otherLiveShows"
-                            :upcoming-shows="upcomingShows"
-                            :promoted="promoted"
-                            main-stream-url="/schedule" />
+                    <div v-else-if="activeShow?.status === 'cancelled'" class="flex flex-1">
+                        <ShowCancelledStatusPage :show="activeShow" :promoted="promoted" />
                     </div>
                     <!-- Stream Status Pages -->
-                    <div v-else-if="status === 'starting_soon'">
-                        <StreamStartingSoonStatusPage></StreamStartingSoonStatusPage>
+                    <div v-else-if="status === 'starting_soon'" class="flex flex-1">
+                        <StreamStartingSoonStatusPage :show="activeShow" />
                     </div>
-                    <div v-else-if="provisioning === true && status !== 'offline'">
-                        <StreamProvisioningStatusPage></StreamProvisioningStatusPage>
+                    <div v-else-if="provisioning === true && status !== 'offline'" class="flex flex-1">
+                        <StreamProvisioningStatusPage :show="activeShow" />
                     </div>
-                    <div v-else-if="otherDevice === true && status !== 'offline'">
+                    <div v-else-if="otherDevice === true && status !== 'offline'" class="flex flex-1">
                         <StreamOtherDeviceStatusPage
                             @endStreamOnOtherDevice="otherDevice = false"></StreamOtherDeviceStatusPage>
                     </div>
-                    <div v-else-if="status === 'technical_issue'">
-                        <StreamTechnicalIssuesStatusPage :listeners="listeners"></StreamTechnicalIssuesStatusPage>
+                    <div v-else-if="status === 'technical_issue'" class="flex flex-1">
+                        <StreamTechnicalIssuesStatusPage :listeners="listeners" :show="activeShow" :promoted="promoted" />
                     </div>
-                    <div v-else-if="isReconnecting">
-                        <StreamReconnectingStatusPage></StreamReconnectingStatusPage>
+                    <div v-else-if="isReconnecting" class="flex flex-1">
+                        <StreamReconnectingStatusPage :show="activeShow" />
                     </div>
-                    <div v-else-if="sourceStatus === 'error' && status === 'online'">
-                        <StreamErrorStatusPage></StreamErrorStatusPage>
+                    <div v-else-if="sourceStatus === 'error' && status === 'online'" class="flex flex-1">
+                        <StreamErrorStatusPage :show="activeShow" :promoted="promoted" />
                     </div>
-                    <div v-else>
-                        <StreamOfflineStatusPage></StreamOfflineStatusPage>
+                    <div v-else class="flex flex-1">
+                        <StreamOfflineStatusPage :show="activeShow" :promoted="promoted" />
                     </div>
                     
                     <!-- Stream Information for non-player states -->
@@ -654,10 +750,21 @@ onUnmounted(() => {
                 </div>
             </div>
             <!-- Chat - Desktop Only -->
-            <div v-if="showChatBox" class="hidden xl:flex xl:flex-col w-full xl:w-1/6 xl:min-w-[300px]">
+            <div v-if="showChatBox && !isChatHidden" class="hidden xl:flex xl:flex-col w-full xl:w-1/6 xl:min-w-[300px]">
                 <!-- Chat Header with Pop-out Button -->
                 <div class="bg-primary-950 border-b border-primary-800 px-3 py-2 flex items-center justify-between shrink-0">
-                    <span class="text-white font-semibold text-sm">Chat</span>
+                    <div class="flex items-center gap-1">
+                        <button
+                            @click="toggleChatVisibility"
+                            class="p-1.5 -ml-1.5 text-primary-400 hover:text-white hover:bg-primary-800 rounded transition-colors"
+                            title="Hide chat"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </button>
+                        <span class="text-white font-semibold text-sm">Chat</span>
+                    </div>
                     <button
                         @click="openChatPopout"
                         class="p-1.5 text-primary-400 hover:text-white hover:bg-primary-800 rounded transition-colors"

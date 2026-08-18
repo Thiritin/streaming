@@ -24,6 +24,7 @@ class Show extends Model
         'actual_start',
         'actual_end',
         'status',
+        'cancellation_reason',
         'auto_mode',
         'auto_stop_at',
         'announce_recording',
@@ -32,6 +33,7 @@ class Show extends Model
         'thumbnail_capture_error',
         'viewer_count',
         'peak_viewer_count',
+        'boop_count',
         'priority',
         'tags',
         'metadata',
@@ -183,13 +185,16 @@ class Show extends Model
     }
 
     /**
-     * Cancel the show.
+     * Cancel the show. The optional reason is shown to viewers on the schedule and
+     * the show page, so a slot that is only losing its stream can say so instead of
+     * reading as the whole item being called off.
      */
-    public function cancel()
+    public function cancel(?string $reason = null)
     {
         // ShowObserver fires ShowCancelled off the status change.
         $this->update([
             'status' => 'cancelled',
+            'cancellation_reason' => $reason ?: null,
         ]);
     }
 

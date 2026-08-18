@@ -198,11 +198,15 @@ class ShowController extends Controller
         return back();
     }
 
-    public function cancel(Show $show): RedirectResponse
+    public function cancel(Show $show, Request $request): RedirectResponse
     {
         $this->authorize('cancel', $show);
 
-        $show->cancel();
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $show->cancel($validated['reason'] ?? null);
 
         Toast::flashSuccess('Show cancelled', "'{$show->title}' will not be broadcast.");
 
@@ -328,9 +332,16 @@ class ShowController extends Controller
                 ->tone(Status::IDLE)
                 ->confirm(
                     'Cancel Show',
-                    'The show will not be broadcast. It stays on the schedule as cancelled.',
+                    'The show will not be broadcast. It stays on the schedule marked cancelled.',
                     'Cancel Show',
-                );
+                )
+                ->fields([[
+                    'key' => 'reason',
+                    'label' => 'Reason (optional)',
+                    'type' => 'text',
+                    'required' => false,
+                    'helper' => 'Shown to viewers on the schedule, e.g. "no stream, technical issue". Leave empty for a plain cancellation.',
+                ]]);
         }
 
         if ($user->can('endStream', $show)) {

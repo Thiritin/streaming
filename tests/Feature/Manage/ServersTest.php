@@ -7,6 +7,7 @@ use App\Enum\ServerTypeEnum;
 use App\Jobs\Server\DeleteServerJob;
 use App\Jobs\Server\Provision\CreateVirtualMachineJob;
 use App\Models\Server;
+use App\Models\ServerMetric;
 use App\Models\User;
 use App\Services\Hetzner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -45,9 +46,9 @@ class ServersTest extends TestCase
 
     // ---------------------------------------------------------------- access
 
-    public function test_guests_are_sent_to_the_application_login(): void
+    public function test_guests_do_not_see_the_panel_at_all(): void
     {
-        $this->get(route('manage.servers.index'))->assertRedirect(route('login'));
+        $this->get(route('manage.servers.index'))->assertNotFound();
     }
 
     public function test_a_user_without_the_gate_is_forbidden(): void
@@ -649,7 +650,46 @@ class ServersTest extends TestCase
 
     // ---------------------------------------------------------------- detail page
 
-    public function test_the_detail_page_lists_the_viewers_assigned_to_the_server(): void
+    /**
+     * Reading a server and changing one are different pages: almost every visit is to
+     * look at a graph, and landing on a form for that was the old behaviour.
+     */
+    public function test_the_server_page_shows_its_metrics(): void
+    {
+        $server = Server::factory()->create(['viewer_count' => 12]);
+
+        ServerMetric::create([
+            'server_id' => $server->id,
+            'recorded_at' => now(),
+            'cpu_percent' => 12.5,
+            'memory_used_bytes' => 1_073_741_824,
+            'memory_total_bytes' => 4_294_967_296,
+            'net_tx_bytes_per_sec' => 12_500_000,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.servers.show', $server))
+            ->assertSuccessful()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Manage/Servers/Show')
+                ->where('server.hostname', $server->hostname)
+                ->where('metrics.range', '6h')
+                ->where('metrics.has_samples', true)
+                ->where('metrics.cards.1.value', '13%')
+            );
+    }
+
+    public function test_the_server_page_takes_a_time_range(): void
+    {
+        $server = Server::factory()->create();
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.servers.show', ['server' => $server, 'range' => '7d']))
+            ->assertSuccessful()
+            ->assertInertia(fn (Assert $page) => $page->where('metrics.range', '7d'));
+    }
+
+    public function test_the_edit_page_lists_the_viewers_assigned_to_the_server(): void
     {
         $server = Server::factory()->create();
         User::factory()->create(['server_id' => $server->id, 'name' => 'Assigned Viewer']);

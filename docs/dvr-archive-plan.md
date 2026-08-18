@@ -8,7 +8,8 @@ edge and the same playback token, with no special casing.
 
 ## Goals
 
-1. 60 minutes of live rewind so a late viewer can jump back to the start of a panel.
+1. 30 minutes of live rewind, enough to jump back into a panel that is already running.
+   It was 60; see "Window sizing" below for why it moved.
 2. Reliable, resumable sync of every segment to the recordings S3, addressed by show slug.
 3. Preview and trim recordings in the `/manage` panel.
 4. Recording never stops for the duration of the con, and origin disk is released as
@@ -18,7 +19,7 @@ edge and the same playback token, with no special casing.
 
 | Piece | File | Role |
 |---|---|---|
-| Transcoder | `docker/ffmpeg-hls/stream-manager.sh` | ABR ladder plus the source mirror, 2s segments, 60 minute sliding window |
+| Transcoder | `docker/ffmpeg-hls/stream-manager.sh` | ABR ladder plus the source mirror, 2s segments, 30 minute sliding window |
 | Archive uploader | `docker/archive-uploader/archive_uploader.py` | index, upload, verify, reap |
 | Cut | `app/Services/ArchivePlaylistService.php` | PDT range over the hour indexes, rendered per request |
 | Model | `app/Models/Recording.php` | cut markers, `archive_prefix`, `status`, `segment_count` |
@@ -72,10 +73,27 @@ Changes to `docker/ffmpeg-hls/stream-manager.sh`:
 +        -hls_segment_filename "$output_dir/${stream}_%v_${timestamp_prefix}_%06d.ts" \
 ```
 
-`hls_list_size 1800` at `hls_time 2` is a 60 minute seekable window, and
-`hls_delete_threshold 60` keeps a further two minutes on disk after a segment leaves the
+`hls_list_size 900` at `hls_time 2` is a 30 minute seekable window, and
+`hls_delete_threshold 1500` keeps a further 50 minutes on disk after a segment leaves the
 playlist. Step 1 ships on its own, before any uploader exists, so FFmpeg must still be
-the thing deleting segments or the disk grows without bound. Step 3 raises the threshold
+the thing deleting segments or the disk grows without bound.
+
+**Window sizing.** Three things used to ride on one number and now do not:
+
+- `hls_list_size` is how far a viewer can rewind, **and** how far the archive uploader
+  may fall behind: the indexer builds hour indexes by parsing this playlist, so a
+  segment that leaves it is never indexed even though the file is still there. 30
+  minutes covers a panel already in progress and 30 minutes of uploader outage.
+- `hls_delete_threshold` is a disk backstop. Deletion belongs to the uploader's reaper,
+  which unlinks only what S3 has confirmed with a fresh HEAD; the threshold is what
+  stops the disk filling when the bucket is unreachable, which is why it is sized in
+  tens of minutes rather than the couple of minutes an upload takes.
+- `DVR_WINDOW_SECONDS` on the uploader is the reaper's floor on age, and must match
+  `hls_list_size x hls_time` so nothing seekable is deleted underneath a viewer.
+
+Playlist size stopped being an argument for a short window once segment tokens became
+shared and playlists were rendered and compressed once per window rather than per
+viewer; see docs/streaming-auth-redesign.md. Step 3 raises the threshold
 to effectively infinite and hands deletion to the uploader's verified reaper.
 
 The output layout stays **flat**. Per-session subdirectories were considered and
@@ -173,8 +191,8 @@ It is always playable explicitly at `/archive/{slug}/source.m3u8`, which is the 
 for pulling a master to edit from, and the trim editor can preview it via
 `?rendition=source`.
 
-**Capacity changes.** Per source, at a 17 Mbps feed: the 60 minute window grows by
-~7.6 GB on origin disk, the archive by ~7.6 GB/hour, and `MAX_UPLOAD_RATE_MBPS` must
+**Capacity changes.** Per source, at a 17 Mbps feed: the 30 minute window grows by
+~3.8 GB on origin disk, the archive by ~7.6 GB/hour, and `MAX_UPLOAD_RATE_MBPS` must
 clear `sources x (11.5 + contribution)` rather than `sources x 11.5`. 200 Mbps carried
 8 sources at 2x headroom before; at 28.5 Mbps per source it carries 7 at none. Raise
 it, or set `ARCHIVE_SOURCE: 0` on sources where the ladder is enough.
@@ -189,7 +207,7 @@ parse, need its own view of the volume, and introduce a failure mode where the u
 and the indexer disagree about what they saw.
 
 **The index is the playlist, persisted.** The live playlist holds the only record of when
-a segment happened, and it forgets each entry after 60 minutes. Nothing more exotic than
+a segment happened, and it forgets each entry after 30 minutes. Nothing more exotic than
 that is going on, so the stored form is simply an HLS playlist per source per hour:
 
 ```
@@ -451,18 +469,21 @@ covers a short "what did they just say" rewind without a refetch.
 `StageHero.vue` and `ShowTile.vue` build their own hls.js instances for muted preview
 tiles and were deliberately left at their small buffers.
 
-Client-side parse cost is worth watching: hls.js re-parses the full 1800-entry playlist
+Client-side parse cost is worth watching: hls.js re-parses the full 900-entry playlist
 on every 2s refresh. Fine on desktop, measurable on weak devices, so check the VRChat
 and embed paths before rolling the window out to them.
 
 ### 8. Edge
 
 Measured against real transcoder output (103 B per entry, since ffmpeg writes a
-`PROGRAM-DATE-TIME` line per segment), an 1800-entry playlist is **179 KB raw and 10 KB at
-`gzip -6`** — 5%, because the timestamp and filename sequences are almost perfectly
-regular. Refreshed every 2s that is ~41 kbps per viewer, or ~82 Mbps of playlist traffic
-at 2000 viewers. Uncompressed it would be ~716 Mbps, so compression is doing real work
-here.
+`PROGRAM-DATE-TIME` line per segment), an 1800-entry playlist was **179 KB raw and 10 KB at
+`gzip -6`**, 5%, because the timestamp and filename sequences are almost perfectly regular.
+At the 900-entry window it is half that. Refreshed every 2s, compression is the difference
+between ~20 kbps and ~360 kbps per viewer, so it is doing real work here.
+
+The app's own copy is larger than the edge's, because it appends a token to every segment
+line. It is compressed in the app rather than by whatever fronts it, and rendered once per
+window for every viewer rather than per request; see docs/streaming-auth-redesign.md.
 
 `application/vnd.apple.mpegurl` is **already** in `gzip_types` in all three configs
 (`docker/edge-nginx/nginx.conf:43`, the `edge/nginx-config.blade.php` mirror, and
@@ -511,10 +532,10 @@ Ladder totals 1500+3500+6000 kbps video and 128+160+192 kbps audio, about 11.5 M
 
 | Quantity | Value |
 |---|---|
-| 60 min DVR window on disk, per source | ~5.2 GB, 5400 files |
+| 30 min DVR window on disk, per source | ~2.6 GB, 2700 files |
 | Archive per hour, per source | ~5.2 GB, 5400 objects |
 | Archive for a 5-day continuous stream | ~620 GB, ~648k objects |
-| Live playlist size at 1800 entries | 179 KB raw, 10 KB gzipped (measured) |
+| Live playlist size at 900 entries | ~90 KB raw, ~5 KB gzipped |
 | Playlist traffic per viewer | ~41 kbps |
 
 620 GB for the main stream is the number worth a decision (see open questions). Origin
@@ -562,17 +583,17 @@ rebuilding so it cannot disturb a playlist.
 | ffmpeg restart | Session prefix in every filename, collision-checked at start; `stop_ffmpeg` no longer wipes segments |
 | Two restarts in one second | `start_ffmpeg` bumps the session prefix while it is already in use |
 | Uploader crash | sqlite manifest plus prefix re-listing on boot; uploads are idempotent by key |
-| Indexer gap | Index is rebuilt from the live playlist, which holds 60 minutes of history, so an outage shorter than the window loses nothing |
+| Indexer gap | Index is rebuilt from the live playlist, which holds 30 minutes of history, so an outage shorter than that loses nothing. Segments outliving the playlist stay on disk but are never indexed, which is what sets the window's floor |
 | Segment counter wrap | `%06d` (55h at 2s) plus a fresh session prefix on every restart |
 | Origin disk full | Watchdog degrades the DVR window, then alerts loudly; never deletes unverified |
 | Bad cut | Non-destructive; re-cut from the retained archive |
 
 ## Sequencing
 
-1. **Done.** Origin changes in `docker/ffmpeg-hls/stream-manager.sh`: `hls_list_size 1800`,
+1. **Done.** Origin changes in `docker/ffmpeg-hls/stream-manager.sh`: `hls_list_size`,
    `%06d`, scoped `stop_ffmpeg` cleanup, orphan reaper, stall watchdog, and the `$!`
    process-substitution fix. Compose knobs in `docker-compose.dev.yml` (5 min window
-   locally) and the origin provisioning blade (60 min). Ships the 60 minute rewind alone.
+   locally) and the origin provisioning blade, now 30 min. Ships the rewind window alone.
 2. **Done.** PDT drift measured and designed around: index entries carry both `pdt` and
    `#EXT-X-ARCHIVE-OBSERVED`, so drift is correctable after the fact.
 3. Uploader rewrite, indexing included: mount `hls-content`, `.ts` support, playlist-based

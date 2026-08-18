@@ -5,14 +5,16 @@ namespace Tests\Feature;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\User;
+use App\Support\Features;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * The two deployment switches: AUTH_REQUIRED and CHAT_ENABLED.
+ * The deployment switches: AUTH_REQUIRED, plus the feature flags edited in
+ * /manage > Settings > Features.
  *
  * @see config/auth.php
- * @see config/chat.php
+ * @see config/features.php
  */
 class OptionalLoginAndChatToggleTest extends TestCase
 {
@@ -83,7 +85,7 @@ class OptionalLoginAndChatToggleTest extends TestCase
 
     public function test_disabling_chat_takes_the_chat_endpoints_away(): void
     {
-        config(['chat.enabled' => false]);
+        $this->disable('chat');
 
         $user = User::factory()->create();
 
@@ -98,9 +100,63 @@ class OptionalLoginAndChatToggleTest extends TestCase
         $this->actingAs($user)->get('/show/open-show/chat')->assertNotFound();
     }
 
+    public function test_disabling_emotes_leaves_chat_up(): void
+    {
+        $this->disable('emotes');
+
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->get('/emotes')->assertNotFound();
+        $this->actingAs($user)->get('/show/open-show/chat')->assertOk();
+
+        $this->actingAs($user)
+            ->get('/show/open-show')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('features.chat', true)
+                ->where('features.emotes', false)
+                ->where('chat.emotes.list', [])
+            );
+    }
+
+    public function test_disabling_chat_takes_emotes_with_it(): void
+    {
+        $this->disable('chat');
+
+        $this->actingAs(User::factory()->create())
+            ->get('/show/open-show')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('features.emotes', false));
+    }
+
+    public function test_disabling_boops_closes_the_boop_endpoint(): void
+    {
+        $this->disable('boops');
+
+        $this->actingAs(User::factory()->create())
+            ->post('/show/open-show/boop', ['count' => 1])
+            ->assertNotFound();
+
+        $this->actingAs(User::factory()->create())
+            ->get('/show/open-show')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('features.boops', false));
+    }
+
+    /**
+     * Turn a feature off the way the settings page does, and drop the resolved
+     * set so the request sees it.
+     */
+    private function disable(string $feature): void
+    {
+        config(["features.{$feature}" => false]);
+
+        Features::flush();
+    }
+
     public function test_the_player_still_loads_with_chat_disabled(): void
     {
-        config(['chat.enabled' => false]);
+        $this->disable('chat');
 
         $user = User::factory()->create();
 
