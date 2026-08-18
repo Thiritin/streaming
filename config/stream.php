@@ -198,11 +198,11 @@ return [
     // which source a surface drives is part of its request, and the people who
     // run the rooms are the same people either way.
     //
-    // Only the fallback: the key is edited at /manage > Settings and read through
-    // App\Support\ControlKey, so a saved row wins over this. Empty on both sides
-    // disables the control API outright, which is the default: nothing is
-    // reachable until someone sets a key.
-    'control_key' => env('COMPANION_API_KEY'),
+    // No default and never an env(): the key is generated and stored at
+    // /manage > Settings > Control surfaces, and read through App\Support\ControlKey.
+    // This entry only names where the settings registry stores it. Nothing saved
+    // means the control API is off, which is what a fresh install has.
+    'control_key' => null,
 
     // Local dev loops: with DEV_STREAMS=true, sources play the HLS that
     // scripts/dev-streams.sh writes into public/dev-streams/<slug> instead of

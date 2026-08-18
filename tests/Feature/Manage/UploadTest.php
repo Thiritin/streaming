@@ -56,9 +56,15 @@ class UploadTest extends TestCase
         Storage::disk('s3')->assertExists($path);
     }
 
-    public function test_branding_uploads_land_on_the_public_disk(): void
+    /**
+     * Branding used to land on the local `public` disk, which cannot work here: app pods
+     * are replicas with their own ephemeral filesystems, so a logo uploaded through one
+     * of them was invisible to the other nine and gone at the next deploy. It took the
+     * branding logo with it on 18 Aug 2026 - `/storage/branding/...` served a 503.
+     */
+    public function test_branding_uploads_land_on_the_bucket(): void
     {
-        Storage::fake('public');
+        Storage::fake('s3');
 
         $this->actingAs($this->admin)
             ->from('/manage')
@@ -68,7 +74,28 @@ class UploadTest extends TestCase
             ])
             ->assertSessionHas(SessionKey::FlashData->value.'.upload.path', 'branding/logo.png');
 
-        Storage::disk('public')->assertExists('branding/logo.png');
+        Storage::disk('s3')->assertExists('branding/logo.png');
+    }
+
+    /**
+     * Public visibility is the point: the logo is on every page including the login
+     * screen, so it has to be a plain cacheable URL. A signed one would expire and 403.
+     */
+    public function test_branding_is_the_one_purpose_stored_publicly(): void
+    {
+        foreach (config('manage.uploads') as $purpose => $config) {
+            $this->assertSame(
+                's3',
+                $config['disk'],
+                "Upload purpose '{$purpose}' must use the bucket; the local disk is per-pod.",
+            );
+
+            $this->assertSame(
+                str_starts_with($purpose, 'branding_') ? 'public' : 'private',
+                $config['visibility'],
+                "Upload purpose '{$purpose}' has the wrong visibility.",
+            );
+        }
     }
 
     public function test_the_toast_survives_the_redirect_as_a_top_level_flash_prop(): void

@@ -7,17 +7,18 @@ use App\Models\BrandingSetting;
 /**
  * The key a control surface authenticates with.
  *
- * Saved at /manage > Settings > Control surfaces, which is where it is rotated. The
- * `COMPANION_API_KEY` environment variable is only the fallback a fresh install boots
- * with, so a saved row always wins; clearing the field hands the key back to the
- * environment rather than switching the control API off on a host that sets one.
+ * One source: the settings table, generated and rotated at /manage > Settings >
+ * Control surfaces. There is deliberately no environment variable behind it, because a
+ * second source could only ever disagree with the row the panel shows.
  *
- * Empty either way means the control API is off, which is the state of a fresh install.
+ * Nothing saved means the control API is off, which is the state of a fresh install.
  */
 final class ControlKey
 {
+    public const KEY = 'control_key';
+
     public static function current(): string
     {
-        return trim((string) BrandingSetting::getValue('control_key', config('stream.control_key')));
+        return trim((string) BrandingSetting::getValue(self::KEY));
     }
 }

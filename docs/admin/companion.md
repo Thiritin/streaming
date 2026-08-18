@@ -32,9 +32,9 @@ empty key means the control API is off, which is what a fresh install has.
 Rotate it by generating a new one, saving, and reconfiguring the surfaces. Between the save
 and the last surface being updated, the surfaces still on the old key get 401s.
 
-`COMPANION_API_KEY` in the environment still works and is the fallback a host can boot with,
-but a saved key always wins, so clearing the field falls back to the environment rather than
-switching the API off on a host that sets one.
+The settings table is the only place the key lives. There is no environment variable behind
+it: installations that had `COMPANION_API_KEY` set had it copied into the table once, by
+migration, and the variable can be dropped.
 
 ### 2. Copy the endpoint and key for the source
 
@@ -207,8 +207,7 @@ the connection's base URL at that instead.
 | Which show Start and Stop apply to | `app/Services/ShowControlService.php` |
 | The endpoints | `app/Http/Controllers/Api/CompanionController.php` |
 | Key check | `app/Http/Middleware/CheckCompanionTokenMiddleware.php` |
-| The key itself | Settings > Control surfaces, resolved by `app/Support/ControlKey.php` |
-| Its fallback | `COMPANION_API_KEY`, read in `config/stream.php` |
+| The key itself | Settings > Control surfaces, read by `app/Support/ControlKey.php` |
 | The Companion module | `companion/module-stream-control/` |
 | Ready-made button page | `companion/stream-control-page.companionconfig` |
 | Companion in Docker | `docker-compose.companion.yml`, `scripts/companion.sh` |

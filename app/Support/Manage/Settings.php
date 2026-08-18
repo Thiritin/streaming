@@ -367,7 +367,7 @@ final class Settings
 
     /**
      * Same resolution BrandingService uses: absolute URLs and rooted paths pass
-     * through, anything else is a path on the public disk.
+     * through, anything else is a path on the bucket, stored with public visibility.
      */
     private function assetUrl(mixed $path): ?string
     {
@@ -381,6 +381,12 @@ final class Settings
             return $path;
         }
 
-        return Storage::disk('public')->url($path);
+        // Same guard as BrandingService::assetUrl: an unconfigured bucket should not
+        // turn the settings page into a 500.
+        try {
+            return Storage::disk('s3')->url($path);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

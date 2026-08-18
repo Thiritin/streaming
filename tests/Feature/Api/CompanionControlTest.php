@@ -29,7 +29,7 @@ class CompanionControlTest extends TestCase
 
         Event::fake([ShowWentLive::class, ShowEnded::class]);
 
-        config(['stream.control_key' => self::KEY]);
+        BrandingSetting::setValue('control_key', self::KEY);
 
         $this->source = Source::create([
             'name' => 'Main Stage',
@@ -69,7 +69,7 @@ class CompanionControlTest extends TestCase
      */
     public function test_an_unset_control_key_leaves_the_api_closed(): void
     {
-        config(['stream.control_key' => null]);
+        BrandingSetting::where('key', 'control_key')->delete();
 
         $this->getJson($this->url('status'))->assertStatus(401);
         $this->getJson($this->url('status'), $this->headers(''))->assertStatus(401);
@@ -77,10 +77,10 @@ class CompanionControlTest extends TestCase
     }
 
     /**
-     * Rotating the key happens at /manage > Settings, so a saved one has to beat the
-     * environment fallback the host booted with.
+     * Rotating the key at /manage > Settings takes effect on the next request, and the
+     * surfaces still on the old one are locked out until they are reconfigured.
      */
-    public function test_a_saved_control_key_wins_over_the_environment(): void
+    public function test_rotating_the_control_key_locks_the_old_one_out(): void
     {
         BrandingSetting::setValue('control_key', 'rotated-control-key');
 

@@ -15,6 +15,14 @@ return [
     | which is what Filament's FilePond integration did too; `resize` is the target
     | the client aims for and the server only enforces `max` and `mimes`.
     |
+    | Everything lands on `s3`. The local `public` disk cannot be used: app pods are
+    | replicas with their own ephemeral filesystems, so a file uploaded through one of
+    | them is invisible to the other nine and gone at the next deploy - which is exactly
+    | what happened to the branding logo. The `branding/*` objects are the only ones
+    | stored with public visibility, so a logo on the login page is a plain cacheable
+    | URL rather than a signed one that expires; everything else stays private and is
+    | read through a temporary URL.
+    |
     */
 
     'uploads' => [
@@ -50,7 +58,7 @@ return [
         ],
 
         'branding_logo' => [
-            'disk' => 'public',
+            'disk' => 's3',
             'directory' => 'branding',
             'visibility' => 'public',
             'mimes' => ['jpeg', 'jpg', 'png', 'webp', 'svg'],
@@ -60,7 +68,7 @@ return [
         ],
 
         'branding_login_image' => [
-            'disk' => 'public',
+            'disk' => 's3',
             'directory' => 'branding',
             'visibility' => 'public',
             'mimes' => ['jpeg', 'jpg', 'png', 'webp'],
@@ -70,7 +78,7 @@ return [
         ],
 
         'branding_login_video' => [
-            'disk' => 'public',
+            'disk' => 's3',
             'directory' => 'branding',
             'visibility' => 'public',
             'mimes' => ['mp4', 'webm'],

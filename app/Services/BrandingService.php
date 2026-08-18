@@ -160,6 +160,12 @@ class BrandingService
     /**
      * Turn a stored path into a usable URL. Absolute URLs pass through, so an
      * installation can point at a CDN instead of uploading anything.
+     *
+     * Branding objects live on the bucket with public visibility, so this is a plain
+     * URL rather than a signed one: the logo is on every page including the login
+     * screen, and an expiring URL would both break caching and eventually 403. The
+     * local `public` disk is not an option - app pods each have their own ephemeral
+     * filesystem, so an upload through one replica is invisible to the rest.
      */
     protected function assetUrl(?string $path): ?string
     {
@@ -173,6 +179,13 @@ class BrandingService
             return $path;
         }
 
-        return Storage::disk('public')->url($path);
+        // A bucket that is not configured must not take every page down with it. An
+        // installation with no S3 credentials yet still renders; the logo falls back to
+        // the site name as text, which is the same thing an empty path does.
+        try {
+            return Storage::disk('s3')->url($path);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

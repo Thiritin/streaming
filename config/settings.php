@@ -266,7 +266,7 @@ return [
                     'type' => 'secret',
                     'store' => 'stream',
                     'full' => true,
-                    'helper' => 'Sent by the surface as X-Companion-Token. Generating a new one rotates it, and every surface has to be reconfigured. Empty switches the control API off, unless COMPANION_API_KEY is set in the environment, which is then what applies.',
+                    'helper' => 'Sent by the surface as X-Companion-Token. Generating a new one rotates it, and every surface has to be reconfigured. Empty switches the control API off.',
                     'rules' => ['nullable', 'string', 'min:16', 'max:255'],
                 ],
             ],

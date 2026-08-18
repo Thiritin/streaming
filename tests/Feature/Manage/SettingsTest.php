@@ -317,8 +317,6 @@ class SettingsTest extends TestCase
      */
     public function test_the_control_key_is_readable_on_the_page_and_saved(): void
     {
-        config(['stream.control_key' => null]);
-
         $this->actingAs($this->admin)
             ->put(route('manage.settings.update'), $this->payload(['control_key' => 'a-long-enough-control-key']));
 
@@ -338,24 +336,20 @@ class SettingsTest extends TestCase
             });
     }
 
-    public function test_a_saved_control_key_wins_over_the_environment_and_clearing_falls_back(): void
+    public function test_clearing_the_control_key_closes_the_control_api(): void
     {
-        config(['stream.control_key' => 'from-the-environment']);
-
-        $this->assertSame('from-the-environment', ControlKey::current());
-
+        // The table is the only source, so an emptied field is not a fallback to
+        // anything: it switches the control API off.
         $this->actingAs($this->admin)
             ->put(route('manage.settings.update'), $this->payload(['control_key' => 'saved-control-key-value']));
 
         $this->assertSame('saved-control-key-value', ControlKey::current());
 
-        // Emptying the field deletes the row, which hands the key back to the
-        // environment rather than pinning a blank over it.
         $this->actingAs($this->admin)
             ->put(route('manage.settings.update'), $this->payload(['control_key' => '']));
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'control_key']);
-        $this->assertSame('from-the-environment', ControlKey::current());
+        $this->assertSame('', ControlKey::current());
     }
 
     public function test_a_short_control_key_is_rejected(): void

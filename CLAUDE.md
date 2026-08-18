@@ -175,8 +175,8 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
 - Each source page carries its control-surface endpoint (`/api/companion/<stream name>`,
   start/stop/status, one control key for the installation); see docs/admin/companion.md.
   Read the key through `App\Support\ControlKey::current()`, never `config('stream.control_key')`
-  directly - the config value is only the environment fallback, so a `config()` read ignores
-  what Settings > Control surfaces saved
+  directly - the table is the only source, and the config entry is a null placeholder that
+  names where the settings registry stores it. Never give it an `env()`
 - Display Keys and Screens: the codes unattended displays sign in with, plus the screens
   themselves - what each is playing and where to send it. A screen reports itself on its
   poll and picks up a directed source the same way; see docs/admin/displays.md
