@@ -284,7 +284,19 @@ class EdgeTokenEnforcementTest extends TestCase
 
         // Cron alone was the bug; the file has to exist and be runnable.
         $this->assertStringContainsString('chmod 700 /opt/streaming/heartbeat.sh', $script);
-        $this->assertStringContainsString('* * * * * /opt/streaming/heartbeat.sh', $script);
+
+        // The schedule goes in a drop-in, not root's crontab. Piping into `crontab -`
+        // silently installed an empty crontab on a fresh box, because the `grep -v`
+        // ahead of it matched nothing, exited 1, and `set -e` took the subshell down
+        // before the entry was ever echoed.
+        $this->assertStringContainsString('cat > /etc/cron.d/streaming-heartbeat', $script);
+        $this->assertStringContainsString('* * * * * root /opt/streaming/heartbeat.sh', $script);
+        $this->assertStringNotContainsString(
+            "heartbeat.sh') | crontab -",
+            $script,
+            'The heartbeat schedule must not be piped into `crontab -`; on a box with no '
+            .'crontab that pipeline installs an empty one and the heartbeat never runs.'
+        );
     }
 
     public function test_the_app_does_not_stamp_its_own_heartbeat(): void

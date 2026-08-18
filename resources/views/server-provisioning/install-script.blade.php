@@ -305,9 +305,22 @@ HEARTBEAT
 
 chmod 700 /opt/streaming/heartbeat.sh
 
-# Replace rather than append, so reinstalling does not stack duplicate entries.
-(crontab -l 2>/dev/null | grep -v '/opt/streaming/heartbeat.sh'; \
- echo "* * * * * /opt/streaming/heartbeat.sh") | crontab -
+# A drop-in rather than root's crontab. The old form piped `crontab -l | grep -v` into
+# `crontab -`, and on a fresh box with no crontab that grep matches nothing and exits 1,
+# which under `set -e` killed the subshell before the echo - so `crontab -` was handed an
+# empty file and every server installed an empty crontab. A file here is also idempotent
+# on reinstall without having to read the old entries back first.
+cat > /etc/cron.d/streaming-heartbeat <<'CRON'
+* * * * * root /opt/streaming/heartbeat.sh
+CRON
+
+chmod 644 /etc/cron.d/streaming-heartbeat
+
+# Drop the entry the old install script tried to leave in root's crontab, so a box that
+# was provisioned before this change does not end up running the heartbeat twice.
+if crontab -l 2>/dev/null | grep -q '/opt/streaming/heartbeat.sh'; then
+    crontab -l 2>/dev/null | grep -v '/opt/streaming/heartbeat.sh' | crontab -
+fi
 
 # Once immediately, so a fresh server does not look stale for its first minute.
 /opt/streaming/heartbeat.sh || true
