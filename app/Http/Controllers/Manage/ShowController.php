@@ -25,7 +25,15 @@ class ShowController extends Controller
     {
         $this->authorize('viewAny', Show::class);
 
-        $table = Table::make(Show::query()->with('source'))
+        // Archiving widens the result set rather than narrowing it, so the exclusion sits
+        // on the base query and the filter's job is to leave it off.
+        $query = Show::query()->with('source');
+
+        if (! $request->boolean('filter.show_archived')) {
+            $query->notArchived();
+        }
+
+        $table = Table::make($query)
             ->name('shows')
             ->columns([
                 Column::image('thumbnail', 'Thumbnail')->width('72px'),
@@ -41,6 +49,10 @@ class ShowController extends Controller
                 Column::number('peak_viewer_count', 'Peak')->sortable()->toggleable(hiddenByDefault: true),
                 Column::badge('auto_mode', 'Auto'),
                 Column::badge('access', 'Access')->toggleable(hiddenByDefault: true),
+                Column::datetime('archived_at', 'Archived')
+                    ->sortable()
+                    ->fallback('Not archived')
+                    ->toggleable(hiddenByDefault: true),
             ])
             ->filters([
                 // On by default, as in Filament: an operator almost never wants the archive
@@ -48,6 +60,9 @@ class ShowController extends Controller
                 Filter::boolean('hide_ended', 'Hide ended')
                     ->default(true)
                     ->apply(fn (Builder $query) => $query->where('status', '!=', 'ended')),
+                // No apply(): the archived rows are already off the base query above, and
+                // ticking this box is what stops that happening.
+                Filter::boolean('show_archived', 'Show archived'),
                 Filter::select('status', 'Status')
                     ->options(array_combine(
                         ShowRequest::STATUSES,
@@ -213,6 +228,72 @@ class ShowController extends Controller
         return back();
     }
 
+    public function archive(Show $show): RedirectResponse
+    {
+        $this->authorize('archive', $show);
+
+        $show->archive();
+
+        Toast::flashSuccess('Show archived', "'{$show->title}' is out of the default view.");
+
+        return back();
+    }
+
+    public function unarchive(Show $show): RedirectResponse
+    {
+        $this->authorize('archive', $show);
+
+        $show->unarchive();
+
+        Toast::flashSuccess('Show restored', "'{$show->title}' is back in the default view.");
+
+        return back();
+    }
+
+    /**
+     * A live show cannot be filed away while it is on air; the rest of the batch still goes.
+     */
+    public function bulkArchive(Request $request): RedirectResponse
+    {
+        $this->authorize('create', Show::class);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $archived = Show::whereIn('id', $validated['ids'])
+            ->whereNull('archived_at')
+            ->where('status', '!=', 'live')
+            ->get()
+            ->each->archive()
+            ->count();
+
+        Toast::flashSuccess('Shows archived', $archived.' of '.count($validated['ids']).' were archived.');
+
+        return back();
+    }
+
+    public function bulkUnarchive(Request $request): RedirectResponse
+    {
+        $this->authorize('create', Show::class);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $restored = Show::whereIn('id', $validated['ids'])
+            ->whereNotNull('archived_at')
+            ->get()
+            ->each->unarchive()
+            ->count();
+
+        Toast::flashSuccess('Shows restored', $restored.' of '.count($validated['ids']).' were archived.');
+
+        return back();
+    }
+
     /**
      * Cancelling only applies to shows that have not started; anything else is skipped
      * rather than failing the whole batch, which is what Filament's bulk action did.
@@ -279,6 +360,7 @@ class ShowController extends Controller
                 : null,
             'status' => Status::show($show->status),
             'scheduled_start' => $show->scheduled_start?->format('M j, Y H:i'),
+            'archived_at' => $show->archived_at?->format('M j, Y H:i'),
             'actual_start' => $show->actual_start?->format('M j, Y H:i'),
             'viewer_count' => $show->viewer_count,
             'peak_viewer_count' => $show->peak_viewer_count,
@@ -377,6 +459,21 @@ class ShowController extends Controller
         $actions[] = Action::link('statistics', 'View Statistics', route('manage.shows.statistics', $show))
             ->icon('bar-chart');
 
+        if ($user->can('archive', $show)) {
+            $actions[] = $show->isArchived()
+                ? Action::post('unarchive', 'Restore', route('manage.shows.unarchive', $show))
+                    ->icon('archive-restore')
+                    ->tone(Status::IDLE)
+                : Action::post('archive', 'Archive', route('manage.shows.archive', $show))
+                    ->icon('archive')
+                    ->tone(Status::IDLE)
+                    ->confirm(
+                        'Archive show',
+                        "'{$show->title}' is hidden from the shows list and the schedule until 'Show archived' is ticked.",
+                        'Archive',
+                    );
+        }
+
         if ($user->can('update', $show)) {
             $actions[] = Action::delete('delete', 'Delete', route('manage.shows.destroy', $show))
                 ->icon('trash-2')
@@ -402,6 +499,14 @@ class ShowController extends Controller
                 ->icon('circle-x')
                 ->tone(Status::IDLE)
                 ->confirm('Cancel selected shows', 'Only shows that have not started yet are cancelled.', 'Cancel shows'),
+            Action::post('bulk_archive', 'Archive', route('manage.shows.bulk.archive'))
+                ->icon('archive')
+                ->tone(Status::IDLE)
+                ->confirm('Archive selected shows', 'Live shows are skipped. Archived shows stay out of every current view.', 'Archive'),
+            Action::post('bulk_unarchive', 'Restore', route('manage.shows.bulk.unarchive'))
+                ->icon('archive-restore')
+                ->tone(Status::IDLE)
+                ->confirm('Restore selected shows', 'They return to the default shows list and the schedule.', 'Restore'),
             Action::delete('bulk_delete', 'Delete', route('manage.shows.bulk.destroy'))
                 ->icon('trash-2')
                 ->tone(Status::DANGER)

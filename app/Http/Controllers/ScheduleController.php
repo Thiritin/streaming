@@ -20,6 +20,7 @@ class ScheduleController extends Controller
 
         $shows = Show::with('source')
             ->accessibleBy($user)
+            ->notArchived()
             ->whereNotNull('scheduled_start')
             // Cancelled slots stay on the guide so anyone who planned around them
             // sees it is off rather than finding an empty gap.

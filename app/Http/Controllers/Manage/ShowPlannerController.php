@@ -38,6 +38,7 @@ class ShowPlannerController extends Controller
 
         $shows = Show::query()
             ->with('source')
+            ->notArchived()
             ->whereNotNull('scheduled_start')
             // Overlap, not containment: a dance running past midnight has to appear on the
             // day it starts even when the window ends mid-show.

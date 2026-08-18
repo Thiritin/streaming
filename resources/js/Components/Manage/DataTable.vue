@@ -95,7 +95,7 @@ const open = (row, event) => {
     <!-- Bulk bar: only present while something is selected, so it never costs vertical space. -->
     <div
       v-if="selected.length && table.bulkActions.length"
-      class="flex h-10 items-center gap-2 border-b border-hairline bg-surface-2 px-3"
+      class="flex min-h-10 flex-wrap items-center gap-2 border-b border-hairline bg-surface-2 px-3 py-1.5"
     >
       <span class="text-[12px] text-fg-2">{{ selected.length }} selected</span>
       <ActionButton

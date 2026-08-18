@@ -78,7 +78,7 @@ const control =
 </script>
 
 <template>
-  <div class="relative flex h-11 flex-wrap items-center gap-2 border-b border-hairline bg-surface-1 px-3">
+  <div class="relative flex min-h-11 flex-wrap items-center gap-2 border-b border-hairline bg-surface-1 px-3 py-2">
     <div v-if="open" class="fixed inset-0 z-20" aria-hidden="true" @click="open = null" />
 
     <template v-for="filter in filters" :key="filter.key">

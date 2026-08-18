@@ -6,6 +6,8 @@
  */
 import { computed } from 'vue';
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   ArrowRight,
   BarChart3,
@@ -68,6 +70,8 @@ import {
 } from 'lucide-vue-next';
 
 const icons = {
+  archive: Archive,
+  'archive-restore': ArchiveRestore,
   'arrow-left': ArrowLeft,
   'arrow-right': ArrowRight,
   'bar-chart': BarChart3,

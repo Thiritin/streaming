@@ -51,6 +51,15 @@ class ShowPolicy
         return $this->manages($user) && $show->status === 'scheduled';
     }
 
+    /**
+     * Filing away is not a status change, so it is allowed whatever the show ended as -
+     * except while it is on air, where hiding the running order helps nobody.
+     */
+    public function archive(User $user, Show $show): bool
+    {
+        return $this->manages($user) && $show->status !== 'live';
+    }
+
     private function manages(User $user): bool
     {
         return $user->hasPermission('stream.manage') || $user->hasPermission('admin.access') || $user->isStaff();

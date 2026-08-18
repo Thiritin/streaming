@@ -119,6 +119,7 @@ class ShowsTest extends TestCase
                     'peak_viewer_count',
                     'auto_mode',
                     'access',
+                    'archived_at',
                 ])
             );
     }
@@ -131,6 +132,7 @@ class ShowsTest extends TestCase
                 'table.filters',
                 fn ($filters) => collect($filters)->pluck('key')->all() === [
                     'hide_ended',
+                    'show_archived',
                     'status',
                     'source',
                     'today',
@@ -161,6 +163,76 @@ class ShowsTest extends TestCase
                 'table.rows',
                 fn ($rows) => count($titles($rows)) === 2,
             ));
+    }
+
+    public function test_archived_shows_are_hidden_until_the_filter_is_ticked(): void
+    {
+        $this->show(['title' => 'This year', 'status' => 'scheduled']);
+        // Cancelled, not ended: 'Hide ended' never touched it, which is why archiving exists.
+        $this->show(['title' => 'Last year', 'status' => 'cancelled', 'archived_at' => now()->subYear()]);
+
+        $titles = fn (iterable $rows) => collect($rows)->pluck('cells.title')->sort()->values()->all();
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.shows.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('table.filters.1.value', false)
+                ->where('table.rows', fn ($rows) => $titles($rows) === ['This year'])
+            );
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.shows.index', ['filter' => ['show_archived' => '1']]))
+            ->assertInertia(fn (Assert $page) => $page->where(
+                'table.rows',
+                fn ($rows) => $titles($rows) === ['Last year', 'This year'],
+            ));
+    }
+
+    public function test_a_show_can_be_archived_and_restored(): void
+    {
+        $show = $this->show(['status' => 'ended']);
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.shows.archive', $show))
+            ->assertRedirect();
+
+        $this->assertNotNull($show->fresh()->archived_at);
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.shows.unarchive', $show))
+            ->assertRedirect();
+
+        $this->assertNull($show->fresh()->archived_at);
+    }
+
+    public function test_a_live_show_cannot_be_archived(): void
+    {
+        $show = $this->show(['status' => 'live']);
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.shows.archive', $show))
+            ->assertForbidden();
+
+        $this->assertNull($show->fresh()->archived_at);
+    }
+
+    public function test_bulk_archive_skips_live_shows(): void
+    {
+        $cancelled = $this->show(['status' => 'cancelled']);
+        $live = $this->show(['status' => 'live']);
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.shows.bulk.archive'), ['ids' => [$cancelled->id, $live->id]])
+            ->assertRedirect();
+
+        $this->assertNotNull($cancelled->fresh()->archived_at);
+        $this->assertNull($live->fresh()->archived_at);
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.shows.bulk.unarchive'), ['ids' => [$cancelled->id]])
+            ->assertRedirect();
+
+        $this->assertNull($cancelled->fresh()->archived_at);
     }
 
     public function test_the_status_filter_accepts_several_states_at_once(): void

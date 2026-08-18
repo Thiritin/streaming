@@ -113,10 +113,14 @@ Route::post('shows/planner', [ShowPlannerController::class, 'store'])->name('sho
 Route::patch('shows/{show}/schedule', [ShowPlannerController::class, 'reschedule'])->name('shows.reschedule');
 
 Route::post('shows/bulk/cancel', [ShowController::class, 'bulkCancel'])->name('shows.bulk.cancel');
+Route::post('shows/bulk/archive', [ShowController::class, 'bulkArchive'])->name('shows.bulk.archive');
+Route::post('shows/bulk/unarchive', [ShowController::class, 'bulkUnarchive'])->name('shows.bulk.unarchive');
 Route::delete('shows/bulk', [ShowController::class, 'bulkDestroy'])->name('shows.bulk.destroy');
 Route::post('shows/{show}/go-live', [ShowController::class, 'goLive'])->name('shows.go-live');
 Route::post('shows/{show}/end', [ShowController::class, 'endStream'])->name('shows.end');
 Route::post('shows/{show}/cancel', [ShowController::class, 'cancel'])->name('shows.cancel');
+Route::post('shows/{show}/archive', [ShowController::class, 'archive'])->name('shows.archive');
+Route::post('shows/{show}/unarchive', [ShowController::class, 'unarchive'])->name('shows.unarchive');
 Route::get('shows/{show}/statistics', ShowStatisticsController::class)->name('shows.statistics');
 
 Route::get('shows', [ShowController::class, 'index'])->name('shows.index');

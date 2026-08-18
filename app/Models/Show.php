@@ -24,6 +24,7 @@ class Show extends Model
         'actual_start',
         'actual_end',
         'status',
+        'archived_at',
         'cancellation_reason',
         'auto_mode',
         'auto_stop_at',
@@ -49,6 +50,7 @@ class Show extends Model
         'actual_start' => 'datetime',
         'actual_end' => 'datetime',
         'thumbnail_updated_at' => 'datetime',
+        'archived_at' => 'datetime',
         'auto_stop_at' => 'datetime',
         'auto_mode' => 'boolean',
         'announce_recording' => 'boolean',
@@ -199,6 +201,29 @@ class Show extends Model
     }
 
     /**
+     * Put the show out of the way. Archiving is independent of status: a past year's
+     * run, cancelled slots included, is filed away without rewriting what happened to it.
+     */
+    public function archive()
+    {
+        if ($this->archived_at === null) {
+            $this->update(['archived_at' => now()]);
+        }
+    }
+
+    public function unarchive()
+    {
+        if ($this->archived_at !== null) {
+            $this->update(['archived_at' => null]);
+        }
+    }
+
+    public function isArchived(): bool
+    {
+        return $this->archived_at !== null;
+    }
+
+    /**
      * Check if show is currently live.
      */
     public function isLive()
@@ -266,6 +291,22 @@ class Show extends Model
         return $query->scheduled()
             ->where('scheduled_start', '>', now())
             ->orderBy('scheduled_start');
+    }
+
+    /**
+     * Scope for archived shows.
+     */
+    public function scopeArchived($query)
+    {
+        return $query->whereNotNull('archived_at');
+    }
+
+    /**
+     * Scope for everything not filed away, which is what every current-year view wants.
+     */
+    public function scopeNotArchived($query)
+    {
+        return $query->whereNull('archived_at');
     }
 
     /**
