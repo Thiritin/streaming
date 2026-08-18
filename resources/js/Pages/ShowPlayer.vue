@@ -614,7 +614,16 @@ onUnmounted(() => {
                         !isTheaterMode && !showPlayer ? 'flex flex-col' : '',
                     ]"
                 >
-                    <div v-if="showPlayer" :class="isTheaterMode ? 'w-full' : ''">
+                    <!-- The height cap lives here rather than on StreamPlayer itself.
+                         StreamPlayer's own `<style>` sets `.stream-player-container`
+                         to `height: 100%`, and a component stylesheet is unlayered
+                         while Tailwind's utilities sit in `@layer utilities`, so an
+                         unlayered `height: 100%` beats any `h-*` passed in no matter
+                         what the specificity is. The player was left sized 16:9 off
+                         its width alone: on a wide, short window it computed taller
+                         than the viewport, and the control bar at its foot fell below
+                         the fold. Sizing the box the player fills keeps the cap. -->
+                    <div v-if="showPlayer" :class="isTheaterMode ? 'w-full h-full' : 'h-[min(56.25vw,70vh)]'">
                         <!-- Landing half of the shared-element morph: the tile that
                              was clicked on the browse grid tweens into this box.
                              See composables/useMediaHero.js. -->
@@ -622,8 +631,7 @@ onUnmounted(() => {
                                       v-media-hero
                                       :hls-url="hlsUrl"
                                       :show-info="activeShow"
-                                      class="relative w-full bg-black mx-auto overflow-hidden"
-                                      :class="isTheaterMode ? 'h-full' : 'h-[min(56.25vw,70vh)]'"></StreamPlayer>
+                                      class="relative w-full h-full bg-black mx-auto overflow-hidden"></StreamPlayer>
 
                         <!-- Player Controls Bar. Floats over the foot of the video in
                              theater mode, on the same fade as the top bar. -->
