@@ -51,12 +51,15 @@ class DeleteDnsRecordJob implements ShouldQueue
                 'result' => $result,
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to delete DNS record', [
+            // Logged, not rethrown. This job runs before DeleteVirtualMachineJob in the
+            // chain, so throwing here aborted the chain and left the Hetzner VM running
+            // and billing - a dead nsupdate key was enough to make every teardown in the
+            // fleet leak a server. A stale A record is the cheaper of the two failures,
+            // and it is visible in the log rather than silent.
+            Log::error('Failed to delete DNS record; continuing with teardown', [
                 'hostname' => $hostname,
                 'error' => $e->getMessage(),
             ]);
-
-            throw $e;
         }
     }
 }

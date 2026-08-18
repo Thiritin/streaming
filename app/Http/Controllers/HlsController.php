@@ -481,7 +481,7 @@ class HlsController extends Controller
         }
 
         $session = $this->trackUserAccess($source, $user, $request, $guestKey);
-        $server = $override ?? $this->getServerForRequest($request, $user, $session);
+        $server = $override ?? $this->getServerForRequest($user, $session);
 
         if (! $server) {
             return null;
@@ -892,29 +892,31 @@ class HlsController extends Controller
      * The subnet override is applied by placeViewer before this is reached, so a
      * venue appliance never depends on getting this far.
      */
-    private function getServerForRequest(Request $request, $user, ?SourceUser $session = null)
+    private function getServerForRequest($user, ?SourceUser $session = null)
     {
         // For system users, just return the first available edge server
         if ($user && $user->id === 0) {
             return $this->activeEdges()->first();
         }
 
-        if (! $user) {
-            return $this->guestEdge($session);
-        }
-
-        return $user->getOrAssignServer($request->ip());
+        return $this->edgeForSession($session);
     }
 
     /**
-     * Edge for a signed-out viewer: chosen once, then kept.
+     * Edge for a viewer: chosen once, then kept on the session row.
      *
-     * Signed-in viewers get stickiness from `users.server_id`; this is the same idea on
-     * the session row. Without it the choice is remade on every request against a
-     * viewer_count that refreshes every 30 seconds, so a whole show's worth of guests
-     * reads the same "least loaded" answer and lands together.
+     * Signed-in viewers used to be pinned by `users.server_id` instead, which was a
+     * second answer to the same question and the one that scaled with the size of the
+     * user table rather than the number of people watching. `source_users` already
+     * carries the pin for guests, and `UpdateServerViewerCountsJob` already reads an
+     * edge's load from it, so it is the only pin that has to exist. A viewer who is
+     * not watching now holds no assignment at all.
+     *
+     * Stickiness matters as much as the choice: without it the pick is remade on every
+     * request against a viewer_count that refreshes every 30 seconds, so a whole show's
+     * worth of viewers reads the same "least loaded" answer and lands together.
      */
-    private function guestEdge(?SourceUser $session)
+    private function edgeForSession(?SourceUser $session)
     {
         $edges = $this->activeEdges();
 
@@ -922,9 +924,9 @@ class HlsController extends Controller
             return $edges->get($session->server_id);
         }
 
-        // Same ordering as User::assignServerToUser: prefer an edge with headroom and
-        // fall back to the least loaded one rather than refusing to serve. The list is
-        // already sorted by viewer_count, so the first match is the least loaded.
+        // Prefer an edge with headroom and fall back to the least loaded one rather
+        // than refusing to serve. The list is already sorted by viewer_count, so the
+        // first match is the least loaded.
         return $edges->first(fn (Server $edge) => $edge->viewer_count < $edge->max_clients)
             ?? $edges->first();
     }

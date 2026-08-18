@@ -10,7 +10,7 @@ use App\Models\Server;
 use App\Models\ServerMetric;
 use App\Models\Show;
 use App\Models\Source;
-use App\Models\User;
+use App\Models\SourceUser;
 use App\Services\ServerMetricsService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -86,7 +86,10 @@ final class Overview
 
         $maxClients = (int) (clone $edge)->where('status', ServerStatusEnum::ACTIVE)->sum('max_clients');
         $booting = (int) (clone $edge)->where('status', ServerStatusEnum::PROVISIONING)->sum('max_clients');
-        $waiting = User::whereNull('server_id')->count();
+        // Open sessions with no edge: viewers who asked for a playlist and could not
+        // be placed. Counted on the session row, not on accounts - an account that is
+        // not watching is not waiting for anything.
+        $waiting = SourceUser::whereNull('left_at')->whereNull('server_id')->count();
         $viewers = (int) (clone $edge)->where('status', ServerStatusEnum::ACTIVE)->sum('viewer_count');
 
         return [
@@ -265,7 +268,10 @@ final class Overview
             ];
         }
 
-        $waiting = User::whereNull('server_id')->count();
+        // Open sessions with no edge: viewers who asked for a playlist and could not
+        // be placed. Counted on the session row, not on accounts - an account that is
+        // not watching is not waiting for anything.
+        $waiting = SourceUser::whereNull('left_at')->whereNull('server_id')->count();
 
         if ($waiting > 0 && $viewers > 0) {
             $alerts[] = [

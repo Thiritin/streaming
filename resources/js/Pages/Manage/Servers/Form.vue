@@ -169,8 +169,8 @@ const submit = () => {
           <FormField label="Last modified" :model-value="server.updated_at" readonly />
         </FormSection>
 
-        <!-- What the unregistered Filament relation manager was reaching for. -->
-        <FormSection v-if="isEdit" title="Assigned users" :columns="1">
+        <!-- Open viewing sessions, guests included: an edge is held by a session. -->
+        <FormSection v-if="isEdit" title="Viewers on this edge" :columns="1">
           <div v-if="users.length" class="overflow-x-auto rounded border border-hairline">
             <table class="w-full text-[13px]">
               <thead>
@@ -189,7 +189,7 @@ const submit = () => {
               </tbody>
             </table>
           </div>
-          <p v-else class="text-[13px] text-fg-3">No viewers are assigned to this server.</p>
+          <p v-else class="text-[13px] text-fg-3">Nobody is watching through this server right now.</p>
         </FormSection>
       </div>
 

@@ -156,7 +156,7 @@ const details = [
 
         <section class="rounded border border-hairline bg-surface-2 p-3">
           <h2 class="mb-2 text-[13px] font-semibold text-fg-1">
-            Assigned viewers
+            Viewers on this edge
             <span class="font-normal text-fg-3">({{ users.length }})</span>
           </h2>
 
@@ -168,9 +168,7 @@ const details = [
           </ul>
 
           <p v-else class="py-4 text-[12px] text-fg-3">
-            No signed-in viewers are pinned to this server. Guests are counted through
-            their session rows instead, so the viewer figure above can be higher than
-            this list.
+            Nobody is watching through this server right now.
           </p>
         </section>
       </div>

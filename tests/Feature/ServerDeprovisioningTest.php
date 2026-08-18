@@ -6,243 +6,147 @@ use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Jobs\Server\Deprovision\InitializeDeprovisioningJob;
 use App\Models\Server;
+use App\Models\Source;
+use App\Models\SourceUser;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
+/**
+ * Taking an edge out of rotation.
+ *
+ * This job used to reassign accounts one at a time. Because a scheduled job pinned every
+ * account in the database to an edge whether or not it had ever watched anything, the
+ * loop was the size of the `users` table and blew the 60s queue timeout - and since the
+ * status was written last, the chain aborted before the server ever left `active`. The
+ * operator pressed Deprovision and nothing happened, repeatedly.
+ *
+ * What matters now: the work is bounded by who is watching, and the status is written
+ * first so a later failure is still recoverable.
+ */
 class ServerDeprovisioningTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_users_are_reassigned_when_server_is_deprovisioned()
+    private function edge(string $hostname, int $viewers = 0): Server
     {
-        // Create two edge servers
-        $serverToDeprovision = Server::create([
-            'hostname' => 'edge-to-deprovision.test',
-            'ip' => '10.0.0.1',
+        return Server::create([
+            'hostname' => $hostname,
+            'ip' => '10.0.0.'.random_int(1, 254),
             'port' => 443,
             'type' => ServerTypeEnum::EDGE,
             'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 50,
+            'viewer_count' => $viewers,
             'max_clients' => 100,
             'shared_secret' => 'test-secret',
         ]);
-
-        $availableServer = Server::create([
-            'hostname' => 'edge-available.test',
-            'ip' => '10.0.0.2',
-            'port' => 443,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 20,
-            'max_clients' => 100,
-            'shared_secret' => 'test-secret',
-        ]);
-
-        // Create users assigned to the server being deprovisioned
-        $users = User::factory()->count(5)->create([
-            'server_id' => $serverToDeprovision->id,
-            'streamkey' => 'test-key-123',
-        ]);
-
-        // Mock the Log facade to verify logging
-        Log::shouldReceive('info')
-            ->times(7) // 1 for initial log, 5 for each user reassignment, 1 for completion
-            ->andReturnTrue();
-
-        Log::shouldReceive('warning')
-            ->times(0); // Should not have any warnings
-
-        // Execute the deprovisioning job
-        $job = new InitializeDeprovisioningJob($serverToDeprovision);
-        $job->handle();
-
-        // Verify all users were reassigned to the available server
-        foreach ($users as $user) {
-            $user->refresh();
-            $this->assertEquals($availableServer->id, $user->server_id);
-            $this->assertEquals('test-key-123', $user->streamkey); // Streamkey should be preserved
-        }
-
-        // Verify the server status was updated
-        $serverToDeprovision->refresh();
-        $this->assertEquals(ServerStatusEnum::DEPROVISIONING, $serverToDeprovision->status);
     }
 
-    public function test_users_are_unassigned_when_no_servers_available()
+    private function viewerSession(Server $server, ?User $user = null): SourceUser
     {
-        // Create only one edge server (the one being deprovisioned)
-        $serverToDeprovision = Server::create([
-            'hostname' => 'edge-only.test',
-            'ip' => '10.0.0.3',
-            'port' => 443,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 30,
-            'max_clients' => 100,
-            'shared_secret' => 'test-secret',
+        return SourceUser::create([
+            'source_id' => Source::factory()->create()->id,
+            'user_id' => $user?->id,
+            'guest_key' => $user ? null : Str::random(16),
+            'server_id' => $server->id,
+            'joined_at' => now(),
+            'last_heartbeat_at' => now(),
         ]);
-
-        // Create users assigned to the server
-        $users = User::factory()->count(3)->create([
-            'server_id' => $serverToDeprovision->id,
-            'streamkey' => 'test-key-456',
-        ]);
-
-        // Mock the Log facade
-        Log::shouldReceive('info')
-            ->times(2) // 1 for initial log, 1 for completion
-            ->andReturnTrue();
-
-        Log::shouldReceive('warning')
-            ->times(3) // 3 warnings for each user that couldn't be reassigned
-            ->andReturnTrue();
-
-        // Execute the deprovisioning job
-        $job = new InitializeDeprovisioningJob($serverToDeprovision);
-        $job->handle();
-
-        // Verify all users were unassigned (no servers available)
-        foreach ($users as $user) {
-            $user->refresh();
-            $this->assertNull($user->server_id);
-            $this->assertNull($user->streamkey); // Streamkey should be cleared when no server available
-        }
-
-        // Verify the server status was updated
-        $serverToDeprovision->refresh();
-        $this->assertEquals(ServerStatusEnum::DEPROVISIONING, $serverToDeprovision->status);
     }
 
-    public function test_users_are_assigned_to_server_with_lowest_viewer_count()
+    public function test_the_server_leaves_rotation_before_anything_else_happens(): void
     {
-        // Create the server to be deprovisioned
-        $serverToDeprovision = Server::create([
-            'hostname' => 'edge-deprovision.test',
-            'ip' => '10.0.0.4',
-            'port' => 443,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 40,
-            'max_clients' => 100,
-            'shared_secret' => 'test-secret',
-        ]);
+        $server = $this->edge('edge-order.test');
 
-        // Create multiple available servers with different viewer counts
-        $server1 = Server::create([
-            'hostname' => 'edge-server1.test',
-            'ip' => '10.0.0.5',
-            'port' => 443,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 60,
-            'max_clients' => 100,
-            'shared_secret' => 'test-secret',
-        ]);
+        (new InitializeDeprovisioningJob($server))->handle();
 
-        $server2 = Server::create([
-            'hostname' => 'edge-server2.test',
-            'ip' => '10.0.0.6',
-            'port' => 443,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 10, // Lowest viewer count
-            'max_clients' => 100,
-            'shared_secret' => 'test-secret',
-        ]);
-
-        $server3 = Server::create([
-            'hostname' => 'edge-server3.test',
-            'ip' => '10.0.0.7',
-            'port' => 443,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 30,
-            'max_clients' => 100,
-            'shared_secret' => 'test-secret',
-        ]);
-
-        // Create a user assigned to the server being deprovisioned
-        $user = User::factory()->create([
-            'server_id' => $serverToDeprovision->id,
-            'streamkey' => 'test-key-789',
-        ]);
-
-        // Mock the Log facade
-        Log::shouldReceive('info')->andReturnTrue();
-        Log::shouldReceive('warning')->andReturnTrue();
-
-        // Execute the deprovisioning job
-        $job = new InitializeDeprovisioningJob($serverToDeprovision);
-        $job->handle();
-
-        // Verify the user was assigned to the server with lowest viewer count
-        $user->refresh();
-        $this->assertEquals($server2->id, $user->server_id);
-        $this->assertEquals('test-key-789', $user->streamkey); // Streamkey preserved
+        $this->assertEquals(ServerStatusEnum::DEPROVISIONING, $server->fresh()->status);
     }
 
-    public function test_deprovisioning_server_with_no_users()
+    public function test_open_sessions_on_the_edge_are_released(): void
     {
-        // Create a server with no users
-        $server = Server::create([
-            'hostname' => 'edge-no-users.test',
-            'ip' => '10.0.0.8',
-            'port' => 443,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 0,
-            'max_clients' => 100,
-            'shared_secret' => 'test-secret',
-        ]);
+        $server = $this->edge('edge-release.test');
 
-        // Mock the Log facade - should not receive any user-related logs
-        Log::shouldReceive('info')->never();
-        Log::shouldReceive('warning')->never();
+        $guest = $this->viewerSession($server);
+        $member = $this->viewerSession($server, User::factory()->create());
 
-        // Execute the deprovisioning job
-        $job = new InitializeDeprovisioningJob($server);
-        $job->handle();
+        (new InitializeDeprovisioningJob($server))->handle();
 
-        // Verify the server status was updated
-        $server->refresh();
-        $this->assertEquals(ServerStatusEnum::DEPROVISIONING, $server->status);
+        $this->assertNull($guest->fresh()->server_id, 'A guest session should be released.');
+        $this->assertNull($member->fresh()->server_id, 'A signed-in session should be released too.');
     }
 
-    public function test_user_not_reassigned_to_same_server()
+    /**
+     * A session that already ended is history. Rewriting it would corrupt the record of
+     * which edge actually served that viewer.
+     */
+    public function test_closed_sessions_are_left_alone(): void
     {
-        // Create the server to be deprovisioned (which is also the only active server initially)
-        $serverToDeprovision = Server::create([
-            'hostname' => 'edge-same.test',
-            'ip' => '10.0.0.9',
-            'port' => 443,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 30,
-            'max_clients' => 100,
-            'shared_secret' => 'test-secret',
-        ]);
+        $server = $this->edge('edge-history.test');
 
-        // Create a user
-        $user = User::factory()->create([
-            'server_id' => $serverToDeprovision->id,
-            'streamkey' => 'test-key-999',
-        ]);
+        $closed = $this->viewerSession($server);
+        $closed->forceFill(['left_at' => now()->subMinutes(5)])->save();
 
-        // Mock the Log facade
-        Log::shouldReceive('info')->andReturnTrue();
-        Log::shouldReceive('warning')->andReturnTrue();
+        (new InitializeDeprovisioningJob($server))->handle();
 
-        // Test the assignServerToUser method directly
-        $result = $user->assignServerToUser();
+        $this->assertEquals($server->id, $closed->fresh()->server_id);
+    }
 
-        // Should return false as there are no other servers available
-        $this->assertFalse($result);
+    public function test_sessions_on_other_edges_are_untouched(): void
+    {
+        $doomed = $this->edge('edge-doomed.test');
+        $survivor = $this->edge('edge-survivor.test');
 
-        // User should be unassigned
-        $user->refresh();
-        $this->assertNull($user->server_id);
-        $this->assertNull($user->streamkey);
+        $stays = $this->viewerSession($survivor);
+
+        (new InitializeDeprovisioningJob($doomed))->handle();
+
+        $this->assertEquals($survivor->id, $stays->fresh()->server_id);
+        $this->assertEquals(ServerStatusEnum::ACTIVE, $survivor->fresh()->status);
+    }
+
+    /**
+     * The edge list is cached, so without this the edge being torn down keeps being
+     * handed to viewers for the life of the cache entry.
+     */
+    public function test_the_active_edge_cache_is_dropped(): void
+    {
+        $server = $this->edge('edge-cache.test');
+
+        Cache::put('hls_active_edges', collect([$server->id => $server]), 60);
+
+        (new InitializeDeprovisioningJob($server))->handle();
+
+        $this->assertNull(Cache::get('hls_active_edges'));
+    }
+
+    /**
+     * The regression that made this job unusable. The old implementation issued at least
+     * one query per account in the database; a fleet with many accounts and nobody
+     * watching must now cost a fixed handful.
+     */
+    public function test_the_work_does_not_scale_with_the_user_table(): void
+    {
+        $server = $this->edge('edge-scale.test');
+
+        User::factory()->count(200)->create();
+        $this->viewerSession($server);
+
+        $queries = 0;
+        \DB::listen(function () use (&$queries) {
+            $queries++;
+        });
+
+        (new InitializeDeprovisioningJob($server))->handle();
+
+        $this->assertLessThan(
+            10,
+            $queries,
+            'Taking an edge out of rotation must cost a fixed number of queries. It once '
+            .'ran one per account in the database, which timed out the job and left the '
+            .'server stuck in active.'
+        );
     }
 }

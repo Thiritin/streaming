@@ -7,6 +7,8 @@ use App\Jobs\Server\Deprovision\DeleteDnsRecordJob;
 use App\Jobs\Server\Deprovision\DeleteVirtualMachineJob;
 use App\Models\Server;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 /**
@@ -99,6 +101,30 @@ class ServerTeardownTest extends TestCase
         $this->assertNotFalse($dns);
         $this->assertNotFalse($vm);
         $this->assertLessThan($vm, $dns, 'DNS must be removed before the machine it points at.');
+    }
+
+    /**
+     * A DNS failure must not keep the machine alive.
+     *
+     * The job runs before DeleteVirtualMachineJob in the chain, and it used to rethrow.
+     * `Bus::chain` stops at the first failure, so one broken nsupdate key meant every
+     * teardown in the fleet left its Hetzner server running and billing. A stale A record
+     * is the cheaper failure of the two, and it is logged rather than swallowed silently.
+     */
+    public function test_a_dns_failure_does_not_abort_the_teardown(): void
+    {
+        Config::set('app.env', 'production');
+
+        Log::shouldReceive('error')->atLeast()->once();
+        Log::shouldReceive('info')->zeroOrMoreTimes();
+
+        $server = Server::factory()->create(['status' => ServerStatusEnum::DEPROVISIONING]);
+
+        // No DNS key is configured under the test environment, so the service throws.
+        (new DeleteDnsRecordJob($server))->handle();
+
+        // Reaching here at all is the assertion: a throw would have broken the chain.
+        $this->assertTrue(true);
     }
 
     public function test_the_dns_delete_job_exists_for_every_server_type(): void

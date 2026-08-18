@@ -8,7 +8,6 @@ use App\Jobs\PruneServerMetricsJob;
 use App\Jobs\SaveViewCountJob;
 use App\Jobs\ScanArchiveStorageJob;
 use App\Jobs\Server\ServerHealthCheckJob;
-use App\Jobs\ServerAssignmentJob;
 use App\Jobs\UpdateListenerCountJob;
 use App\Jobs\UpdateServerViewerCountsJob;
 use Illuminate\Console\Scheduling\Schedule;
@@ -24,9 +23,6 @@ class Kernel extends ConsoleKernel
         // $schedule->command('inspire')->hourly();
         $schedule->job(new UpdateListenerCountJob)->everyMinute();
         $schedule->job(new SaveViewCountJob)->everyMinute();
-        $schedule->job(new ServerAssignmentJob)->everyFifteenSeconds();
-        // Disabled: CleanUpInactiveServerAssignmentsJob - clients table has been dropped
-        // $schedule->job(new \App\Jobs\CleanUpInactiveServerAssignmentsJob)->everyFiveMinutes();
 
         // Boops are counted in the cache and banked here: one UPDATE and one
         // broadcast per show per tick, however hard the button is being mashed.

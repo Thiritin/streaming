@@ -56,9 +56,8 @@ class HlsVariantBenchTest extends TestCase
 
         Http::fake(fn () => Http::response($body, 200));
 
-        // A streamkey is still what getOrAssignServer reads as "already assigned",
-        // so without one every request re-runs assignment and 503s.
-        $users = User::factory()->count(300)->create(['server_id' => $server->id])
+        // The edge comes from the viewer's session row, which the first request creates.
+        $users = User::factory()->count(300)->create()
             ->each(fn (User $u) => $u->forceFill(['streamkey' => 'key-'.$u->id])->save());
 
         // Warm the route/container so the first viewer does not pay for booting.

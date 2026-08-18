@@ -195,24 +195,43 @@ class GuestEdgeBalancingTest extends TestCase
     }
 
     /**
-     * Signed-in viewers, for contrast: the same stickiness, off users.server_id.
+     * Signed-in viewers take the same path, off the same column.
      *
-     * The second request is the whole point. getOrAssignServer used to read the cached
-     * `server` relation, which resolves to null once before assignment and stays null
-     * on a reused User instance. It then re-ran assignServerToUser, which deliberately
-     * excludes the current edge, found no alternative, and cleared the assignment - so
-     * a viewer who had just been given an edge was answered 503 on their next request.
+     * They used to be pinned by `users.server_id` instead, which was a second answer to
+     * the same question - and the one that a nightly job wrote for every account in the
+     * database whether or not it was watching. The session row is the only pin now, so a
+     * viewer who is not watching holds no edge at all.
+     *
+     * The second request is the whole point: an edge handed out once has to still be
+     * there on the next playlist refresh, not be re-picked or given up.
      */
     public function test_a_signed_in_viewer_keeps_their_edge_on_the_next_request(): void
     {
         $edge = $this->edge('a.example.com');
-        $user = User::factory()->create(['server_id' => null, 'streamkey' => null]);
+        $user = User::factory()->create(['streamkey' => null]);
 
         $this->actingAs($user)->get('/hls/main-stage/master.m3u8')->assertOk();
-        $this->assertSame($edge->id, $user->fresh()->server_id);
+
+        $session = SourceUser::firstWhere('user_id', $user->id);
+        $this->assertNotNull($session, 'A signed-in viewer should get a session row.');
+        $this->assertSame($edge->id, $session->server_id);
 
         $this->actingAs($user)->get('/hls/main-stage/master.m3u8')->assertOk();
-        $this->assertSame($edge->id, $user->fresh()->server_id);
+        $this->assertSame($edge->id, $session->fresh()->server_id);
+    }
+
+    /**
+     * The regression that motivated collapsing the two pins: an account that has never
+     * asked for a playlist must not be holding an edge, because deprovisioning that edge
+     * then has to move it.
+     */
+    public function test_an_account_that_is_not_watching_holds_no_edge(): void
+    {
+        $this->edge('a.example.com');
+
+        $user = User::factory()->create();
+
+        $this->assertSame(0, SourceUser::where('user_id', $user->id)->count());
     }
 
     /**

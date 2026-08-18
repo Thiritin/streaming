@@ -88,7 +88,6 @@ class HandleInertiaRequests extends Middleware
             'can_access_manage' => $user ? Gate::forUser($user)->allows('access-manage') : false,
             // Kept until /admin is removed; see docs/admin/rebuild-plan.md part 5.
             'can_access_filament' => $user?->can('filament.access'),
-            'has_server_assignment' => $user ? ($user->server_id && $user->streamkey ? true : false) : false,
         ];
     }
 

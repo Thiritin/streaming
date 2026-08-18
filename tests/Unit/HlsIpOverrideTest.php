@@ -137,9 +137,6 @@ class HlsIpOverrideTest extends TestCase
         Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
         Config::set('stream.local_streaming_hostname', 'local-edge.example.com');
 
-        // Assign the user to the default server
-        $this->user->update(['server_id' => $this->defaultServer->id]);
-
         // Mock HTTP response for the variant playlist
         Http::fake([
             'http://default-edge.example.com:8080/live/test-stream_hd.m3u8' => Http::response(
@@ -198,112 +195,6 @@ class HlsIpOverrideTest extends TestCase
         $this->assertStringContainsString('streamkey=test-streamkey-123', $content);
     }
 
-    public function test_user_model_returns_override_server_for_matching_subnet()
-    {
-        // Configure subnet override
-        Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
-        Config::set('stream.local_streaming_hostname', 'local-edge.example.com');
-
-        // Create the local override server
-        Server::create([
-            'hostname' => 'local-edge.example.com',
-            'port' => 8080,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 0,
-            'max_clients' => 100,
-            'hetzner_id' => 'test-local-hetzner-id',
-            'ip' => '192.168.1.1',
-        ]);
-
-        // Test getOrAssignServer with multiple IPs in the subnet
-        $testIps = ['192.168.1.1', '192.168.1.100', '192.168.1.254'];
-
-        foreach ($testIps as $testIp) {
-            $server = $this->user->getOrAssignServer($testIp);
-
-            $this->assertNotNull($server);
-            $this->assertEquals('local-edge.example.com', $server->hostname);
-            $this->assertEquals(8080, $server->port);
-        }
-    }
-
-    public function test_user_model_returns_default_server_for_non_matching_subnet()
-    {
-        // Configure subnet override
-        Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
-        Config::set('stream.local_streaming_hostname', 'local-edge.example.com');
-
-        // Create the local override server (even though we won't use it)
-        Server::create([
-            'hostname' => 'local-edge.example.com',
-            'port' => 8080,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 0,
-            'max_clients' => 100,
-            'hetzner_id' => 'test-local-hetzner-id',
-            'ip' => '192.168.1.1',
-        ]);
-
-        // Assign user to default server
-        $this->user->update(['server_id' => $this->defaultServer->id]);
-
-        // Test getOrAssignServer with IP outside the subnet
-        $server = $this->user->getOrAssignServer('10.0.0.50');
-
-        $this->assertNotNull($server);
-        $this->assertEquals('default-edge.example.com', $server->hostname);
-    }
-
-    public function test_both_ipv4_and_ipv6_subnets_work_together()
-    {
-        // Configure both IPv4 and IPv6 subnet overrides
-        Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
-        Config::set('stream.local_streaming_ipv6_subnet', '2001:db8::/64');
-        Config::set('stream.local_streaming_hostname', 'local-edge-dual.example.com');
-
-        // Create the dual-stack override server
-        Server::create([
-            'hostname' => 'local-edge-dual.example.com',
-            'port' => 8080,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 0,
-            'max_clients' => 100,
-            'hetzner_id' => 'test-dual-hetzner-id',
-            'ip' => '192.168.1.1',
-        ]);
-
-        // Test IPv4 subnet
-        $serverV4 = $this->user->getOrAssignServer('192.168.1.100');
-        $this->assertEquals('local-edge-dual.example.com', $serverV4->hostname);
-
-        // Test IPv6 subnet
-        $serverV6 = $this->user->getOrAssignServer('2001:db8::1234');
-        $this->assertEquals('local-edge-dual.example.com', $serverV6->hostname);
-
-        // Test non-matching IP
-        $this->user->update(['server_id' => $this->defaultServer->id]);
-        $serverDefault = $this->user->getOrAssignServer('10.0.0.50');
-        $this->assertEquals('default-edge.example.com', $serverDefault->hostname);
-    }
-
-    public function test_override_not_applied_when_hostname_not_configured()
-    {
-        // Configure subnets but not hostname
-        Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
-        Config::set('stream.local_streaming_ipv6_subnet', '2001:db8::/64');
-        Config::set('stream.local_streaming_hostname', '');
-
-        // Assign user to default server
-        $this->user->update(['server_id' => $this->defaultServer->id]);
-
-        // Should use default server even with matching IP
-        $server = $this->user->getOrAssignServer('192.168.1.100');
-        $this->assertEquals('default-edge.example.com', $server->hostname);
-    }
-
     public function test_override_works_with_system_streamkey()
     {
         // Configure system streamkey
@@ -344,35 +235,28 @@ class HlsIpOverrideTest extends TestCase
         $this->assertStringContainsString('local-edge.example.com', $content);
     }
 
-    public function test_multiple_users_with_same_subnet_override()
+    /**
+     * The subnets alone are not the switch. Without a hostname there is no appliance to
+     * send anyone to, so a matching IP must still be served by the normal edge.
+     */
+    public function test_override_not_applied_when_hostname_not_configured()
     {
-        // Create another user
-        $user2 = User::factory()->create([
-            'streamkey' => 'test-streamkey-456',
-        ]);
-
-        // Configure subnet override
         Config::set('stream.local_streaming_ipv4_subnet', '192.168.1.0/24');
-        Config::set('stream.local_streaming_hostname', 'local-edge.example.com');
+        Config::set('stream.local_streaming_ipv6_subnet', '2001:db8::/64');
+        Config::set('stream.local_streaming_hostname', '');
 
-        // Create the local override server
-        Server::create([
-            'hostname' => 'local-edge.example.com',
-            'port' => 8080,
-            'type' => ServerTypeEnum::EDGE,
-            'status' => ServerStatusEnum::ACTIVE,
-            'viewer_count' => 0,
-            'max_clients' => 100,
-            'hetzner_id' => 'test-local-hetzner-id',
-            'ip' => '192.168.1.1',
+        Http::fake([
+            'http://default-edge.example.com:8080/live/test-stream_hd.m3u8' => Http::response(
+                "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:10.0,\ntest-stream_hd_001.ts\n",
+                200
+            ),
         ]);
 
-        // Both users should get the same override server for IPs in the subnet
-        $server1 = $this->user->getOrAssignServer('192.168.1.100');
-        $server2 = $user2->getOrAssignServer('192.168.1.200');
+        $response = $this->withServerVariables(['REMOTE_ADDR' => '192.168.1.100'])
+            ->get('/hls/test-stream_hd.m3u8?streamkey=test-streamkey-123');
 
-        $this->assertEquals('local-edge.example.com', $server1->hostname);
-        $this->assertEquals('local-edge.example.com', $server2->hostname);
+        $response->assertStatus(200);
+        $this->assertStringContainsString('default-edge.example.com', $response->getContent());
     }
 
     public function test_subnet_helper_validates_ipv4_subnets()

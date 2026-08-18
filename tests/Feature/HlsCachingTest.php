@@ -49,9 +49,6 @@ class HlsCachingTest extends TestCase
             'hetzner_id' => 'test-hetzner-id',
             'ip' => '10.0.0.1',
         ]);
-
-        // Assign user to server
-        $this->user->update(['server_id' => $this->defaultServer->id]);
     }
 
     public function test_master_endpoint_caches_response_for_2_seconds()
@@ -122,7 +119,6 @@ class HlsCachingTest extends TestCase
     public function test_one_cache_entry_serves_every_viewer_the_same_bytes()
     {
         $user2 = User::factory()->create(['streamkey' => 'different-key-456']);
-        $user2->update(['server_id' => $this->defaultServer->id]);
 
         // Mock HTTP responses
         $requestUrls = [];

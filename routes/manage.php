@@ -56,6 +56,8 @@ Route::prefix('servers/{server}')->name('servers.')->group(function () {
     Route::post('install-script/regenerate', [ServerInstallScriptController::class, 'regenerate'])
         ->name('install-script.regenerate');
     Route::post('deprovision', [ServerController::class, 'deprovision'])->name('deprovision');
+    Route::post('force-deprovision', [ServerController::class, 'forceDeprovision'])
+        ->name('force-deprovision');
 });
 
 Route::post('servers/provision', [ServerProvisionController::class, 'store'])->name('servers.provision');

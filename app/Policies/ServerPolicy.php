@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enum\ServerStatusEnum;
 use App\Models\Server;
 use App\Models\User;
 
@@ -48,6 +49,17 @@ class ServerPolicy
     public function deprovision(User $user, Server $server): bool
     {
         return $this->manages($user) && $server->isHetznerServer();
+    }
+
+    /**
+     * The escape hatch for a teardown that stalled: skip straight to deleting the
+     * cloud resources. Offered only once the row is already `deprovisioning`, so it
+     * cannot be used to bypass taking the edge out of rotation first.
+     */
+    public function forceDeprovision(User $user, Server $server): bool
+    {
+        return $this->deprovision($user, $server)
+            && $server->status === ServerStatusEnum::DEPROVISIONING;
     }
 
     /**

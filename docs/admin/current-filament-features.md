@@ -239,7 +239,7 @@ Actions: **Save changes** (writes each `EDITABLE` key via `BrandingSetting::setV
 | Widget | Type | Poll | Content |
 |---|---|---|---|
 | `ServerActive` | stats cards | 10s | One card per edge-server status: `Edge Server {status}` = count (grouped query) |
-| `Capacity` | stats cards | 10s | Max clients (sum `max_clients` over active edge), Booting Capacity (same over provisioning edge), Waiting Users (`users.server_id IS NULL`) |
+| `Capacity` | stats cards | 10s | Max clients (sum `max_clients` over active edge), Booting Capacity (same over provisioning edge), Waiting Users (open `source_users` rows with no edge; was `users.server_id IS NULL` until 18 Aug 2026) |
 | `ViewCountChart` | line chart | none | the last 7 days as series, hourly average of `ViewCount.count` via `Flowframe\Trend`, x-axis = 24 fixed hour labels |
 
 `ViewCountChart` is stale — the dates are hardcoded to September 2023. The rebuild should make the range dynamic (per-event or last-N-days); flag it as a deliberate behaviour change rather than parity.

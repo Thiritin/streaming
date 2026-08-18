@@ -5,15 +5,19 @@ namespace Tests\Feature\Manage;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Jobs\Server\DeleteServerJob;
+use App\Jobs\Server\Deprovision\RemovalConditionCheckerJob;
 use App\Jobs\Server\Provision\CreateVirtualMachineJob;
 use App\Models\Server;
 use App\Models\ServerMetric;
+use App\Models\Source;
+use App\Models\SourceUser;
 use App\Models\User;
 use App\Services\Hetzner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Inertia\SessionKey;
 use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -348,17 +352,17 @@ class ServersTest extends TestCase
 
     // ---------------------------------------------------------------- delete and deprovision
 
-    public function test_deleting_a_manual_server_unassigns_its_viewers(): void
+    public function test_deleting_a_manual_server_releases_its_viewers(): void
     {
         $server = Server::factory()->create();
-        $user = User::factory()->create(['server_id' => $server->id]);
+        $session = $this->sessionOn($server);
 
         $this->actingAs($this->admin)
             ->delete(route('manage.servers.destroy', $server))
             ->assertRedirect(route('manage.servers.index'));
 
         $this->assertSame(0, Server::whereKey($server->id)->count());
-        $this->assertNull($user->fresh()->server_id);
+        $this->assertNull($session->fresh()->server_id);
         $this->assertSame('Server deleted', $this->toast()['title']);
     }
 
@@ -386,6 +390,53 @@ class ServersTest extends TestCase
 
         Bus::assertDispatched(DeleteServerJob::class);
         $this->assertSame('Deprovisioning started', $this->toast()['title']);
+    }
+
+    /**
+     * The escape hatch for a teardown that stalled. Only offered on a row already sitting
+     * in `deprovisioning`, so it cannot be used to skip taking an edge out of rotation.
+     */
+    public function test_a_stalled_teardown_can_be_forced(): void
+    {
+        Bus::fake();
+
+        $server = Server::factory()->cloud()->create([
+            'status' => ServerStatusEnum::DEPROVISIONING,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->from(route('manage.servers.index'))
+            ->post(route('manage.servers.force-deprovision', $server))
+            ->assertRedirect(route('manage.servers.index'));
+
+        Bus::assertDispatched(RemovalConditionCheckerJob::class);
+        $this->assertSame('Teardown restarted', $this->toast()['title']);
+    }
+
+    public function test_an_active_server_cannot_be_force_torn_down(): void
+    {
+        Bus::fake();
+
+        $server = Server::factory()->cloud()->create(['status' => ServerStatusEnum::ACTIVE]);
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.servers.force-deprovision', $server))
+            ->assertForbidden();
+
+        Bus::assertNotDispatched(RemovalConditionCheckerJob::class);
+    }
+
+    public function test_force_teardown_is_only_offered_once_a_teardown_has_stalled(): void
+    {
+        Server::factory()->cloud()->create(['status' => ServerStatusEnum::DEPROVISIONING]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.servers.index', ['filter' => ['status' => 'deprovisioning']]))
+            ->assertInertia(function (Assert $page) {
+                $actions = collect($page->toArray()['props']['table']['rows'][0]['actions'])->pluck('name');
+
+                $this->assertContains('force_deprovision', $actions);
+            });
     }
 
     public function test_a_manual_server_cannot_be_deprovisioned(): void
@@ -689,10 +740,10 @@ class ServersTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('metrics.range', '7d'));
     }
 
-    public function test_the_edit_page_lists_the_viewers_assigned_to_the_server(): void
+    public function test_the_edit_page_lists_the_viewers_on_the_server(): void
     {
         $server = Server::factory()->create();
-        User::factory()->create(['server_id' => $server->id, 'name' => 'Assigned Viewer']);
+        $this->sessionOn($server, User::factory()->create(['name' => 'Assigned Viewer']));
         User::factory()->create();
 
         $this->actingAs($this->admin)
@@ -705,6 +756,21 @@ class ServersTest extends TestCase
                 ->count('users', 1)
                 ->where('users.0.name', 'Assigned Viewer')
             );
+    }
+
+    /**
+     * An open viewing session on an edge, which is what holds an assignment now.
+     */
+    private function sessionOn(Server $server, ?User $user = null): SourceUser
+    {
+        return SourceUser::create([
+            'source_id' => Source::factory()->create()->id,
+            'user_id' => $user?->id,
+            'guest_key' => $user ? null : Str::random(16),
+            'server_id' => $server->id,
+            'joined_at' => now(),
+            'last_heartbeat_at' => now(),
+        ]);
     }
 
     // ------------------------------------------------- instance size catalogue

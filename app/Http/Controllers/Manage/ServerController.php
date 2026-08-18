@@ -7,6 +7,7 @@ use App\Enum\ServerTypeEnum;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Manage\ServerRequest;
 use App\Models\Server;
+use App\Models\SourceUser;
 use App\Services\Hetzner;
 use App\Services\ServerMetricsService;
 use App\Support\Manage\Action;
@@ -135,11 +136,7 @@ class ServerController extends Controller
                 fn (Action $action) => $action->toArray(),
                 $this->recordActions($server, includeEdit: true),
             ),
-            'users' => $server->users()
-                ->select(['id', 'name', 'sub', 'reg_id'])
-                ->orderBy('name')
-                ->get()
-                ->all(),
+            'users' => $this->viewersOn($server),
         ]);
     }
 
@@ -208,11 +205,7 @@ class ServerController extends Controller
                 fn (Action $action) => $action->toArray(),
                 $this->recordActions($server, includeEdit: false),
             ),
-            'users' => $server->users()
-                ->select(['id', 'name', 'sub', 'reg_id'])
-                ->orderBy('name')
-                ->get()
-                ->all(),
+            'users' => $this->viewersOn($server),
         ]);
     }
 
@@ -225,6 +218,32 @@ class ServerController extends Controller
         Toast::flashSuccess('Server updated');
 
         return back();
+    }
+
+    /**
+     * Who is on this edge right now.
+     *
+     * Read from open `source_users` rows rather than from accounts. An assignment
+     * belongs to a viewing session, so this counts signed-out viewers too - the figure
+     * used to cover only signed-in ones and could not be reconciled with the viewer
+     * count beside it.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function viewersOn(Server $server): array
+    {
+        return $server->sessions()
+            ->whereNull('left_at')
+            ->with('user:id,name,sub,reg_id')
+            ->latest('joined_at')
+            ->get()
+            ->map(fn (SourceUser $session) => [
+                'id' => $session->id,
+                'name' => $session->user?->name ?? 'Guest',
+                'sub' => $session->user?->sub ?? '-',
+                'reg_id' => $session->user?->reg_id,
+            ])
+            ->all();
     }
 
     /**
@@ -252,6 +271,24 @@ class ServerController extends Controller
         Toast::flashSuccess(
             'Deprovisioning started',
             "'{$server->hostname}' is being torn down on Hetzner Cloud.",
+        );
+
+        return back();
+    }
+
+    /**
+     * For a teardown that stalled: re-run the half that deletes the cloud resources.
+     * The policy only offers this on a row already sitting in `deprovisioning`.
+     */
+    public function forceDeprovision(Server $server): RedirectResponse
+    {
+        $this->authorize('forceDeprovision', $server);
+
+        $server->forceDeprovision();
+
+        Toast::flashSuccess(
+            'Teardown restarted',
+            "Deleting '{$server->hostname}' on Hetzner Cloud and removing its DNS record.",
         );
 
         return back();
@@ -333,6 +370,18 @@ class ServerController extends Controller
                     'Deprovision server',
                     'The Hetzner server and its DNS record are deleted. Viewers on it are moved away.',
                     'Deprovision',
+                );
+        }
+
+        if ($user->can('forceDeprovision', $server)) {
+            $actions[] = Action::post('force_deprovision', 'Force Teardown', route('manage.servers.force-deprovision', $server))
+                ->icon('zap')
+                ->tone(Status::DANGER)
+                ->confirm(
+                    'Force teardown',
+                    'This server is already being deprovisioned but has not finished. '
+                        .'Deletes the Hetzner server and its DNS record now, and ignores a DNS failure.',
+                    'Force teardown',
                 );
         }
 

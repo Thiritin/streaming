@@ -7,11 +7,11 @@ Status: proposal. Nothing here is implemented yet.
 Playback goes through Laravel twice per playlist refresh:
 
 1. `Source::getHlsUrl()` returns `route('hls.master')`, i.e. `/hls/{slug}/master.m3u8` on the app domain.
-2. `HlsController::master()` resolves the viewer (session cookie, or `?streamkey=`), writes a heartbeat, picks an edge via `User::getOrAssignServer()`, then makes a **blocking server-side HTTP request** to that edge for the real master playlist and rewrites variant lines to `/hls/{variant}.m3u8?streamkey=…`.
+2. `HlsController::master()` resolves the viewer (session cookie, or `?streamkey=`), writes a heartbeat, picks an edge via `HlsController::edgeForSession()`, then makes a **blocking server-side HTTP request** to that edge for the real master playlist and rewrites variant lines to `/hls/{variant}.m3u8?streamkey=…`.
 3. `HlsController::variant()` repeats all of that, then rewrites every `.ts` line to an absolute edge URL with `?streamkey=…` appended.
 4. Edge nginx runs `auth_request /auth` on `.ts` only, which calls `/api/hls/auth`. `HlsSessionController::auth()` identifies the viewer from streamkey / `hls_ctx` / an IP-keyed cache fallback, checks the source is `ONLINE`, and mints a session UUID.
 
-Edge selection is sticky per user row: `users.server_id` + `users.streamkey`, set by `assignServerToUser()`, backfilled by `ServerAssignmentJob`, and announced by the `ServerAssignmentChanged` broadcast.
+Edge selection is sticky per viewing session: `source_users.server_id`, set by `HlsController::placeViewer()` on the playlist request. It used to be sticky per *user row* as well - `users.server_id` + `users.streamkey`, set by `assignServerToUser()`, backfilled for every account by `ServerAssignmentJob`, announced by `ServerAssignmentChanged` - which is the half described in step 6 below and has since been removed. `users.streamkey` stays: it identifies the viewer, not the edge.
 
 ## Why it needs to change
 
@@ -91,7 +91,7 @@ Per-request round robin is wrong for HLS: a viewer bouncing between edges mid-st
 
 At page render, pick an edge weighted by current free capacity (from the cached `viewer_count` the edges already report), and put the hostname in the token's `edge` claim. The token carries the assignment, so there is no `users.server_id`, no write, and no broadcast. Token refresh reuses the same edge unless that edge is draining, in which case the next token moves the viewer and the player reloads the manifest.
 
-Deletions this enables: `users.server_id` and `users.streamkey` columns, `User::assignServerToUser()`, `User::getOrAssignServer()`, `ServerAssignmentJob`, `ServerAssignmentChanged`, and the `has_server_assignment` Inertia prop.
+Deletions this enables: the `users.streamkey` column. The rest of this list - `users.server_id`, `User::assignServerToUser()`, `User::getOrAssignServer()`, `ServerAssignmentJob`, `ServerAssignmentChanged`, and the `has_server_assignment` Inertia prop - is already gone, done ahead of the token work on 18 Aug 2026 because the per-account assignment made deprovisioning an edge scale with the size of the `users` table and time out.
 
 Longer term, a **CDN or anycast layer in front of the edges** is strictly better: once segment URLs are user-agnostic and `immutable`, they cache trivially, and edge selection stops being our problem. Worth costing out separately.
 
@@ -218,7 +218,7 @@ Original plan, kept for context - restricted-show access (`canBeAccessedBy`) bec
 3. Point the player at edge URLs directly via `TokenLoader`; delete `HlsController`.
 4. Reverb token push at T-3min, 60s edge skew grace, and the 403 -> `router.reload` recovery path.
 5. Move counting to log-tailing plus Reverb presence; take the heartbeat writes out of the request path.
-6. Switch edge selection to the token claim; drop `users.server_id`, `ServerAssignmentJob`, and friends.
+6. Switch edge selection to the token claim. ~~drop `users.server_id`, `ServerAssignmentJob`, and friends~~ - done 18 Aug 2026; selection now reads `source_users.server_id`, which the token claim would replace.
 7. Embed keys: model + `kid` allowlist endpoint, edge allowlist refresh, `/manage` CRUD with edge pinning.
 8. Stop issuing streamkeys; drop the column and the streamkey acceptance path.
 9. Segment cache lifetime to immutable once segment names are unique.

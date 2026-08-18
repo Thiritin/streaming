@@ -16,11 +16,11 @@ const props = defineProps({
 });
 
 /*
- * Only the two things an operator owns. `sub`, `name` and `reg_id` belong to the
- * identity provider and are rendered read-only below.
+ * Roles are the only thing an operator owns here. `sub`, `name` and `reg_id` belong to
+ * the identity provider and are rendered read-only below. An edge is not an account
+ * setting: it is chosen per viewing session, on the session row.
  */
 const form = useForm({
-  server_id: props.user.server_id ?? '',
   roles: [...props.user.roles],
 });
 
@@ -47,17 +47,6 @@ const submit = () => form.put(route('manage.users.update', props.user.id), { pre
           <FormField :model-value="user.name" label="Name" disabled />
           <FormField :model-value="user.reg_id ?? '—'" label="Registration ID" disabled />
           <FormField :model-value="user.updated_at" label="Last updated" disabled />
-        </FormSection>
-
-        <FormSection title="Assignment" :columns="1">
-          <FormField
-            v-model="form.server_id"
-            label="Edge server"
-            type="select"
-            :options="options.servers"
-            :error="form.errors.server_id"
-            helper="Only active edge servers can take a viewer. Left unassigned, one is picked on the next request."
-          />
         </FormSection>
 
         <FormSection

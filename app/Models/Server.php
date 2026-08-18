@@ -6,6 +6,7 @@ use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Enum\SourceStatusEnum;
 use App\Jobs\Server\DeleteServerJob;
+use App\Jobs\Server\Deprovision\RemovalConditionCheckerJob;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ServerException;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -220,9 +221,13 @@ class Server extends Model
             ->sum('viewer_count');
     }
 
-    public function users()
+    /**
+     * Viewer sessions that were served by this edge. There is no `users()` counterpart:
+     * an assignment belongs to a viewing session, not to an account.
+     */
+    public function sessions()
     {
-        return $this->hasMany(User::class);
+        return $this->hasMany(SourceUser::class);
     }
 
     /**
@@ -245,12 +250,25 @@ class Server extends Model
     }
 
     /**
-     * Override delete to unassign users first
+     * Delete the cloud resources for a teardown that did not finish.
+     *
+     * Skips straight past taking the edge out of rotation, which a stalled row has
+     * already had done to it, and re-runs the half that talks to Hetzner and DNS.
+     * RemovalConditionCheckerJob still refuses to act on a server that has been
+     * reactivated since, so this cannot delete a live edge by mistake.
+     */
+    public function forceDeprovision(): void
+    {
+        RemovalConditionCheckerJob::dispatch($this);
+    }
+
+    /**
+     * Override delete to release viewers first
      */
     public function delete()
     {
-        // Unassign all users from this server before deletion
-        $this->users()->update(['server_id' => null]);
+        // Release any session still pinned here, so the next playlist request re-picks.
+        $this->sessions()->whereNull('left_at')->update(['server_id' => null]);
 
         return parent::delete();
     }

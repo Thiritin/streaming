@@ -3,14 +3,10 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
-use App\Enum\ServerStatusEnum;
-use App\Enum\ServerTypeEnum;
-use App\Helpers\IpSubnetHelper;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -49,124 +45,21 @@ class User extends Authenticatable
         'feature_preferences' => 'array',
     ];
 
-    public function server()
+    /**
+     * A permanent personal credential for playback outside a browser.
+     *
+     * It used to be issued and revoked by the edge-assignment code, which meant losing
+     * an edge silently invalidated the URL a viewer had already pasted into VLC. The
+     * key identifies the viewer, not the edge that happens to be serving them, so it
+     * is issued once and kept.
+     */
+    public function ensureStreamkey(): string
     {
-        return $this->belongsTo(Server::class);
-    }
-
-    public function getOrAssignServer($clientIp = null)
-    {
-        // Check for subnet-based override first
-        if ($clientIp) {
-            $localIpv4Subnet = config('stream.local_streaming_ipv4_subnet');
-            $localIpv6Subnet = config('stream.local_streaming_ipv6_subnet');
-            $localHostname = config('stream.local_streaming_hostname');
-
-            if ($localHostname && (
-                ($localIpv4Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv4Subnet)) ||
-                ($localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet))
-            )) {
-                // Create a virtual server object with the override hostname
-                $server = new Server;
-                $server->hostname = $localHostname;
-                $server->port = 8080;
-
-                Log::info('Using local streaming server override for user', [
-                    'client_ip' => $clientIp,
-                    'override_hostname' => $localHostname,
-                    'matched_ipv4_subnet' => $localIpv4Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv4Subnet) ? $localIpv4Subnet : null,
-                    'matched_ipv6_subnet' => $localIpv6Subnet && IpSubnetHelper::isIpInSubnet($clientIp, $localIpv6Subnet) ? $localIpv6Subnet : null,
-                    'user_id' => $this->id,
-                ]);
-
-                return $server;
-            }
+        if (! $this->streamkey) {
+            $this->forceFill(['streamkey' => Str::random(32)])->save();
         }
 
-        // Queried rather than read off the `server` relation.
-        //
-        // The relation caches, including a cached null. Any flow that reuses one User
-        // instance across requests - actingAs in tests, a long-lived worker - would
-        // resolve `server` to null once before assignment and then keep answering null
-        // afterwards. getOrAssignServer then calls assignServerToUser on every later
-        // request, which excludes the currently assigned edge by design, finds nothing
-        // else, and *clears* server_id and streamkey before returning false. So the
-        // second request threw away a perfectly good assignment and answered 503.
-        //
-        // The status and type filters are new: a pinned edge that is being
-        // deprovisioned should be given up on the next request rather than held until
-        // something else notices, which is how the signed-out path behaves too.
-        $server = $this->server_id
-            ? Server::where('id', $this->server_id)
-                ->where('status', ServerStatusEnum::ACTIVE)
-                ->where('type', ServerTypeEnum::EDGE)
-                ->first()
-            : null;
-
-        if (is_null($server) || is_null($this->streamkey)) {
-            if ($this->assignServerToUser()) {
-                return $this->fresh()->server;
-            }
-
-            return null;
-        }
-
-        return $server;
-    }
-
-    public function assignServerToUser(): bool
-    {
-        // Find the edge server with the least viewers (best load balancing)
-        // Exclude the current server if it's being deprovisioned
-        $query = Server::where('status', ServerStatusEnum::ACTIVE)
-            ->where('type', ServerTypeEnum::EDGE);
-
-        // If the user is currently assigned to a server, exclude it from selection
-        // This ensures during reassignment we don't assign back to the deprovisioning server
-        if ($this->server_id) {
-            $query->where('id', '!=', $this->server_id);
-        }
-
-        // Only select servers that haven't reached their capacity
-        // This prevents overloading servers beyond their max_clients limit
-        $server = $query->whereRaw('viewer_count < max_clients')
-            ->orderBy('viewer_count', 'asc')
-            ->first();
-
-        // If no servers have capacity, still try to get the least loaded one
-        // This ensures users can still connect in emergency situations
-        if (! $server) {
-            $server = $query->orderBy('viewer_count', 'asc')->first();
-
-            if ($server) {
-                Log::warning('All servers at capacity, assigning to least loaded server', [
-                    'server_id' => $server->id,
-                    'viewer_count' => $server->viewer_count,
-                    'max_clients' => $server->max_clients,
-                    'user_id' => $this->id,
-                ]);
-            }
-        }
-
-        if (is_null($server) || is_null($server->id)) {
-            // No available servers, clear any stale assignment
-            if ($this->server_id || $this->streamkey) {
-                $this->update(['server_id' => null, 'streamkey' => null]);
-            }
-
-            return false;
-        }
-
-        // Preserve existing streamkey if user already has one, otherwise generate new
-        $streamkey = $this->streamkey ?: Str::random(32);
-
-        // Assign Server to User
-        $this->update([
-            'server_id' => $server->id,
-            'streamkey' => $streamkey,
-        ]);
-
-        return true;
+        return $this->streamkey;
     }
 
     public function messages(): HasMany

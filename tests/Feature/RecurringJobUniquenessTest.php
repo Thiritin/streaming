@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Jobs\CleanupStaleViewerSessionsJob;
 use App\Jobs\SaveViewCountJob;
 use App\Jobs\Server\ServerHealthCheckJob;
-use App\Jobs\ServerAssignmentJob;
 use App\Jobs\UpdateListenerCountJob;
 use App\Jobs\UpdateServerViewerCountsJob;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -32,7 +31,6 @@ class RecurringJobUniquenessTest extends TestCase
     public static function recurringJobs(): array
     {
         return [
-            'server assignment (15s)' => [ServerAssignmentJob::class],
             'server viewer counts (30s)' => [UpdateServerViewerCountsJob::class],
             'listener count (1m)' => [UpdateListenerCountJob::class],
             'view count (1m)' => [SaveViewCountJob::class],
@@ -72,10 +70,10 @@ class RecurringJobUniquenessTest extends TestCase
     {
         Queue::fake();
 
-        ServerAssignmentJob::dispatch();
-        ServerAssignmentJob::dispatch();
-        ServerAssignmentJob::dispatch();
+        UpdateServerViewerCountsJob::dispatch();
+        UpdateServerViewerCountsJob::dispatch();
+        UpdateServerViewerCountsJob::dispatch();
 
-        Queue::assertPushed(ServerAssignmentJob::class, 1);
+        Queue::assertPushed(UpdateServerViewerCountsJob::class, 1);
     }
 }

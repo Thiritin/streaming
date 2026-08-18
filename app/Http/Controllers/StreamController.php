@@ -538,7 +538,7 @@ class StreamController extends Controller
          * and never reaches an edge - the segment URLs the player is handed back
          * carry a short-lived playback token instead.
          */
-        $streamkey = $user?->streamkey;
+        $streamkey = $user?->ensureStreamkey();
         $query = $streamkey ? '?streamkey='.$streamkey : '';
         $slug = $show->source?->slug;
 

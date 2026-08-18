@@ -47,9 +47,11 @@ Feature switches (chat, emotes, boops) have two layers. The installation's switc
      Servers. Jobs under `app/Jobs/Server/` handle the async lifecycle once a
      provision is requested (VM creation, DNS, readiness, deletion).
    - Viewer-to-edge assignment is least-loaded-first and sticky, not a load
-     balancer: `User::assignServerToUser()` for signed-in viewers, the
-     `source_users` row for guests. `UpdateServerViewerCountsJob` refreshes
-     `servers.viewer_count` every 30s from active sessions.
+     balancer. It lives on the viewing session: `source_users.server_id`, written by
+     `HlsController::placeViewer()` on the playlist request, for guests and signed-in
+     viewers alike. There is no assignment on `users` and no job that pre-assigns one -
+     an account that is not watching holds no edge. `UpdateServerViewerCountsJob`
+     refreshes `servers.viewer_count` every 30s from those same rows.
    - Edges are bandwidth-bound, not CPU-bound. `max_clients` is the capacity gate.
    - Each server's `heartbeat.sh` cron posts a system sample every minute (CPU, load,
      memory, disk, network rates, uptime) to `/api/server/{id}/heartbeat`. It lands in
@@ -152,7 +154,6 @@ Critical background jobs for server management:
 - `Server\Provision\*` / `Server\Deprovision\*`: the async lifecycle steps (VM, DNS, readiness)
 - `Server\ServerHealthCheckJob`: GETs `/health` on each active edge, every minute
 - `PruneServerMetricsJob`: drops `server_metrics` rows past the retention window, daily
-- `ServerAssignmentJob`: backfills viewers with no edge assignment, every 15s
 - `UpdateServerViewerCountsJob`: recomputes `servers.viewer_count`, every 30s
 - `CleanupStaleViewerSessionsJob`: closes sessions idle 3+ minutes, every minute
 - `FlushShowBoopsJob`: banks cached boops into `shows.boop_count` and broadcasts one

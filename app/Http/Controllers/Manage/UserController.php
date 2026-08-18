@@ -2,11 +2,8 @@
 
 namespace App\Http\Controllers\Manage;
 
-use App\Enum\ServerStatusEnum;
-use App\Enum\ServerTypeEnum;
 use App\Http\Controllers\Controller;
 use App\Models\Role;
-use App\Models\Server;
 use App\Models\User;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
@@ -22,9 +19,9 @@ use Inertia\Response;
  * Attendee records.
  *
  * There is no create screen: users arrive through OIDC, and `sub`, `name` and
- * `reg_id` are owned by the identity provider. What an operator can actually
- * change is the edge server assignment and which roles are attached, so those are
- * the only writable controls.
+ * `reg_id` are owned by the identity provider. Roles are the only thing an operator
+ * can change, so they are the only writable control. An edge is not shown here either:
+ * it belongs to a viewing session, not to an account, and lives on `source_users`.
  */
 class UserController extends Controller
 {
@@ -32,14 +29,13 @@ class UserController extends Controller
     {
         $this->authorize('viewAny', User::class);
 
-        $table = Table::make(User::query()->with(['server', 'roles']))
+        $table = Table::make(User::query()->with('roles'))
             ->name('users')
             ->columns([
                 Column::text('name', 'Name')->searchable()->sortable(),
                 Column::copyable('sub', 'Subject')->searchable()->toggleable(hiddenByDefault: true),
                 Column::number('reg_id', 'Reg ID')->searchable()->sortable(),
                 Column::text('roles', 'Roles'),
-                Column::text('server', 'Edge server'),
                 Column::datetime('created_at', 'First seen')->sortable()->toggleable(hiddenByDefault: true),
             ])
             ->filters([
@@ -71,13 +67,11 @@ class UserController extends Controller
                 'sub' => $user->sub,
                 'name' => $user->name,
                 'reg_id' => $user->reg_id,
-                'server_id' => $user->server_id,
                 'roles' => $user->roles->pluck('slug')->all(),
                 'created_at' => $user->created_at?->diffForHumans() ?? '-',
                 'updated_at' => $user->updated_at?->diffForHumans() ?? '-',
             ],
             'options' => [
-                'servers' => $this->serverOptions(),
                 'roles' => $this->roleOptions(),
             ],
             'actions' => array_map(
@@ -102,12 +96,9 @@ class UserController extends Controller
         $this->authorize('update', $user);
 
         $validated = $request->validate([
-            'server_id' => ['nullable', 'integer', 'exists:servers,id'],
             'roles' => ['array'],
             'roles.*' => ['string', 'exists:roles,slug'],
         ]);
-
-        $user->update(['server_id' => $validated['server_id'] ?? null]);
 
         // Sync by slug so the form posts something stable rather than role ids.
         $roleIds = Role::whereIn('slug', $validated['roles'] ?? [])->pluck('id');
@@ -148,7 +139,6 @@ class UserController extends Controller
             // placeholder for an empty cell.
             'reg_id' => $user->reg_id,
             'roles' => $roles->isEmpty() ? '-' : $roles->pluck('name')->implode(', '),
-            'server' => $user->server?->hostname ?? '-',
             'created_at' => $user->created_at?->format('M j, Y H:i'),
         ];
     }
@@ -190,27 +180,6 @@ class UserController extends Controller
                 "Deleting '{$user->name}' also removes their chat history and watch records.",
                 'Delete',
             );
-    }
-
-    /**
-     * Only active edge servers can take a viewer, which is what the Filament select
-     * restricted to as well.
-     *
-     * @return array<int, array{value: int|string, label: string}>
-     */
-    private function serverOptions(): array
-    {
-        $options = [['value' => '', 'label' => 'Not assigned']];
-
-        foreach (Server::query()
-            ->where('type', ServerTypeEnum::EDGE)
-            ->where('status', ServerStatusEnum::ACTIVE)
-            ->orderBy('hostname')
-            ->get() as $server) {
-            $options[] = ['value' => $server->id, 'label' => $server->hostname];
-        }
-
-        return $options;
     }
 
     /**
