@@ -131,6 +131,20 @@ onMounted(() => {
     const el = player.value;
     if (!el) return;
 
+    /*
+     * hls.js over native HLS, set as a property for the same reason googleCast is
+     * below: `:prefer-native-hls="false"` writes the string "false" onto the
+     * attribute, and a present boolean attribute reads back as `true`. That
+     * inverts it, and vidstack orders its provider loaders off this flag - true
+     * puts the plain video provider ahead of the HLS one. Chromium answers
+     * "maybe" to canPlayType('application/vnd.apple.mpegurl') while being unable
+     * to actually play HLS, so the video provider would claim the playlist, set
+     * it as `<video src>`, and land on NETWORK_NO_SOURCE: a spinner forever, no
+     * MediaError, no failed request. Firefox answers "" and falls through to
+     * hls.js, which is why it only ever broke on Chromium and Brave.
+     */
+    el.preferNativeHLS = false;
+
     // Object-valued config has to be assigned as a property. Binding it in the
     // template would stringify it onto the attribute.
     el.googleCast = {
@@ -174,7 +188,6 @@ defineExpose({
             view-type="video"
             load="eager"
             playsinline
-            :prefer-native-hls="false"
             @provider-change="onProviderChange"
             @auto-play-fail="onAutoplayFail"
             @quality-change="onQualityChange"
