@@ -17,11 +17,13 @@ const MAX_RECOVERIES = 3;
 const STATE_POLL_MS = 10000;
 const OFFLINE_GRACE_MS = 45000;
 const MUTED_STORAGE_KEY = 'display.muted';
+const VOLUME_STORAGE_KEY = 'display.volume';
 
 const player = ref(null);
 const sources = ref([...props.sources]);
 const currentSlug = ref(props.initialSlug);
 const muted = ref(true);
+const volume = ref(1);
 const showChrome = ref(false);
 const failed = ref(false);
 
@@ -55,6 +57,7 @@ const play = async () => {
   failed.value = false;
   recoveries = 0;
   el.muted = muted.value;
+  el.volume = volume.value;
 
   if (Hls.isSupported()) {
     hlsInstance = new Hls({
@@ -163,6 +166,25 @@ const toggleMuted = () => {
   }
 };
 
+/*
+ * A screen is set once and left alone, so the level has to survive a reload the same
+ * way mute does. Turning it up off zero also unmutes: on a screen with no keyboard,
+ * a slider that moves and stays silent reads as broken.
+ */
+const setVolume = (value) => {
+  volume.value = Math.min(1, Math.max(0, Number(value)));
+
+  if (player.value) player.value.volume = volume.value;
+
+  if (volume.value > 0 && muted.value) toggleMuted();
+
+  try {
+    window.localStorage.setItem(VOLUME_STORAGE_KEY, String(volume.value));
+  } catch (e) {
+    // See toggleMuted.
+  }
+};
+
 const revealChrome = () => {
   showChrome.value = true;
   clearTimeout(chromeTimer);
@@ -185,6 +207,18 @@ onMounted(() => {
     // See toggleMuted.
   }
   muted.value = remembered !== '0';
+
+  let rememberedVolume = null;
+  try {
+    rememberedVolume = window.localStorage.getItem(VOLUME_STORAGE_KEY);
+  } catch (e) {
+    // See toggleMuted.
+  }
+
+  const parsed = Number(rememberedVolume);
+  volume.value = rememberedVolume !== null && Number.isFinite(parsed)
+    ? Math.min(1, Math.max(0, parsed))
+    : 1;
 
   play();
   pollTimer = setInterval(pollState, STATE_POLL_MS);
@@ -253,7 +287,7 @@ watch(currentSlug, play);
           {{ source.name }}
         </button>
 
-        <div class="ml-auto flex gap-2">
+        <div class="ml-auto flex items-center gap-2">
           <button
             type="button"
             class="rounded bg-primary-800/80 px-3 py-2 text-sm text-primary-200 hover:bg-primary-700"
@@ -261,6 +295,21 @@ watch(currentSlug, play);
           >
             {{ muted ? 'Unmute' : 'Mute' }}
           </button>
+
+          <label class="flex items-center gap-2 rounded bg-primary-800/80 px-3 py-2 text-sm text-primary-200">
+            <span class="sr-only">Volume</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              :value="volume"
+              class="h-1 w-32 accent-primary-400"
+              aria-label="Volume"
+              @input="setVolume($event.target.value)"
+            />
+            <span class="w-9 text-right tabular-nums">{{ Math.round(volume * 100) }}%</span>
+          </label>
           <button
             type="button"
             class="rounded bg-primary-800/80 px-3 py-2 text-sm text-primary-200 hover:bg-primary-700"

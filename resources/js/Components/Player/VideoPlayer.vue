@@ -92,6 +92,15 @@ const onProviderChange = (event) => {
     provider.library = () => import('hls.js');
     provider.config = {
         lowLatencyMode: false,
+        /*
+         * Without this hls.js sets the MediaSource duration to the playlist end and
+         * never calls setLiveSeekableRange, so `seekable` collapses to whatever is
+         * still buffered - about backBufferLength seconds. The scrubber then refuses
+         * to go further back than that however long the DVR window is. With it, the
+         * seekable range is the playlist's own window and a rewind that lands outside
+         * the buffer refetches the segments instead of being clamped away.
+         */
+        liveDurationInfinity: streamType.value === 'live:dvr',
         backBufferLength: backBufferLength.value,
         maxBufferLength: 30,
         maxMaxBufferLength: 60,

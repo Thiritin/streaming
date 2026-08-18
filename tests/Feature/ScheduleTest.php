@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enum\SourceStatusEnum;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\User;
@@ -27,6 +28,7 @@ class ScheduleTest extends TestCase
             'name' => 'Prime',
             'slug' => 'prime',
             'priority' => 100,
+            'status' => SourceStatusEnum::ONLINE,
         ]);
     }
 
@@ -80,6 +82,7 @@ class ScheduleTest extends TestCase
             'name' => 'Dance Stage',
             'slug' => 'dance-stage',
             'priority' => 10,
+            'status' => SourceStatusEnum::ONLINE,
         ]);
 
         Show::create([
@@ -112,6 +115,93 @@ class ScheduleTest extends TestCase
             ->where('featured.is_primary_channel', true)
             ->where('primaryChannel', 'Prime')
         );
+    }
+
+    /**
+     * A show can be left marked live on a channel that has stopped sending. The hero
+     * autoplays whatever it promotes, so promoting that one puts a dead player on the
+     * front page while another channel is actually on air.
+     */
+    public function test_featured_skips_the_primary_channel_while_it_is_off_air(): void
+    {
+        $this->primary->update(['status' => SourceStatusEnum::OFFLINE]);
+
+        $secondary = Source::create([
+            'name' => 'Dance Stage',
+            'slug' => 'dance-stage',
+            'priority' => 10,
+            'status' => SourceStatusEnum::ONLINE,
+        ]);
+
+        Show::create([
+            'title' => 'Main Stage Show',
+            'slug' => 'main-stage-show',
+            'source_id' => $this->primary->id,
+            'status' => 'live',
+            'viewer_count' => 900,
+            'scheduled_start' => now()->subHour(),
+            'scheduled_end' => now()->addHour(),
+            'actual_start' => now()->subHour(),
+        ]);
+
+        Show::create([
+            'title' => 'Dance Comp',
+            'slug' => 'dance-comp',
+            'source_id' => $secondary->id,
+            'status' => 'live',
+            'viewer_count' => 5,
+            'scheduled_start' => now()->subHour(),
+            'scheduled_end' => now()->addHour(),
+            'actual_start' => now()->subHour(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->get(route('shows.grid'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('featured.title', 'Dance Comp')
+                ->where('featured.is_primary_channel', false)
+            );
+    }
+
+    /**
+     * A live show anywhere beats the primary channel's placeholder: the hero is where
+     * the site sends someone who wants to watch something now.
+     */
+    public function test_featured_prefers_a_live_channel_over_the_primarys_next_slot(): void
+    {
+        $secondary = Source::create([
+            'name' => 'Dance Stage',
+            'slug' => 'dance-stage',
+            'priority' => 10,
+            'status' => SourceStatusEnum::ONLINE,
+        ]);
+
+        Show::create([
+            'title' => 'Later On Prime',
+            'slug' => 'later-on-prime',
+            'source_id' => $this->primary->id,
+            'status' => 'scheduled',
+            'scheduled_start' => now()->addHour(),
+            'scheduled_end' => now()->addHours(2),
+        ]);
+
+        Show::create([
+            'title' => 'Dance Comp',
+            'slug' => 'dance-comp',
+            'source_id' => $secondary->id,
+            'status' => 'live',
+            'viewer_count' => 5,
+            'scheduled_start' => now()->subHour(),
+            'scheduled_end' => now()->addHour(),
+            'actual_start' => now()->subHour(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->get(route('shows.grid'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('featured.title', 'Dance Comp')
+                ->where('featured.status', 'live')
+            );
     }
 
     public function test_featured_falls_back_to_next_scheduled_show_on_primary_channel(): void

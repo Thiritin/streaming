@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enum\SourceStatusEnum;
 use App\Enum\StreamStatusEnum;
 use App\Models\Message;
 use App\Models\Recording;
@@ -344,28 +345,46 @@ class StreamController extends Controller
     /**
      * Resolve the featured show for the stage hero.
      *
-     * The primary channel (highest source priority, e.g. Prime) always owns the
-     * hero: live if it is on air, otherwise its next scheduled show. Only when that
-     * channel has nothing at all do we fall back to the busiest live show.
+     * The primary channel (the one flagged featured, e.g. Prime) owns the hero while
+     * it is actually on air. A show marked live on a channel that is not sending
+     * does not count: the hero would autoplay nothing. So when the primary channel
+     * is dark the hero goes to the busiest live show on a channel that is up, and
+     * only falls back to the primary's next scheduled slot when nothing is live at
+     * all - a real stream beats a placeholder.
      */
     private function resolveFeaturedShow(?User $user, ?Source $primarySource): ?array
     {
+        $onAir = fn ($query) => $query->whereHas(
+            'source',
+            fn ($source) => $source->where('status', SourceStatusEnum::ONLINE),
+        );
+
         $show = null;
 
-        if ($primarySource) {
+        if ($primarySource && $primarySource->status === SourceStatusEnum::ONLINE) {
             $show = Show::with('source')
                 ->accessibleBy($user)
                 ->where('source_id', $primarySource->id)
                 ->where('status', 'live')
                 ->orderBy('viewer_count', 'desc')
-                ->first()
-                ?? Show::with('source')
-                    ->accessibleBy($user)
-                    ->where('source_id', $primarySource->id)
-                    ->scheduled()
-                    ->where('scheduled_start', '>=', now()->subHours(2))
-                    ->orderBy('scheduled_start')
-                    ->first();
+                ->first();
+        }
+
+        $show ??= Show::with('source')
+            ->accessibleBy($user)
+            ->where($onAir)
+            ->where('status', 'live')
+            ->orderBy('viewer_count', 'desc')
+            ->first();
+
+        if (! $show && $primarySource) {
+            $show = Show::with('source')
+                ->accessibleBy($user)
+                ->where('source_id', $primarySource->id)
+                ->scheduled()
+                ->where('scheduled_start', '>=', now()->subHours(2))
+                ->orderBy('scheduled_start')
+                ->first();
         }
 
         $show ??= Show::with('source')

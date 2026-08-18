@@ -16,11 +16,19 @@ const props = defineProps({
     // Laid over the player rather than beside it: keep the video readable behind
     // the messages instead of painting the panel's own background over it.
     transparent: { type: Boolean, default: false },
+    /**
+     * A useChat instance owned by the page. Pass one wherever the panel is
+     * mounted and unmounted while the page stays put - the log and the
+     * subscription then outlive the panel instead of being rebuilt from the
+     * page-load snapshot, which is what dropped every message received while
+     * chat was hidden. Left null, the panel owns its own state as before.
+     */
+    chat: { type: Object, default: null },
 })
 
 const page = usePage()
 
-const chat = useChat({
+const chat = props.chat ?? useChat({
     sourceId: props.sourceId,
     initialMessages: props.chatMessages,
     initialSettings: props.chatSettings,

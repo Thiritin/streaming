@@ -94,7 +94,7 @@ const control =
       <input
         type="number"
         min="1"
-        step="5"
+        step="1"
         :value="minutes"
         :class="[control, 'w-20 tabular-nums']"
         aria-label="Duration in minutes"

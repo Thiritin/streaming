@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, usePage, router } from '@inertiajs/vue3';
 import { useRealtimeResync } from '@/composables/useRealtimeResync';
+import { useChat } from '@/composables/useChat';
 import StreamPlayer from "@/Components/Livestream/StreamPlayer.vue";
 import BoopButton from "@/Components/Livestream/BoopButton.vue";
 import ChatPanel from "@/Components/Chat/ChatPanel.vue";
@@ -87,6 +88,20 @@ const props = defineProps({
 });
 
 const page = usePage();
+
+/*
+ * Owned by the page rather than by ChatPanel. The panel is mounted and unmounted
+ * as chat is hidden, popped into the mobile drawer and closed again; when the log
+ * lived inside it, every one of those threw the messages away and reseeded from
+ * the page-load snapshot, so reopening chat showed an empty room. Here it lives
+ * as long as the page does and keeps receiving while chat is out of sight.
+ */
+const chat = useChat({
+    sourceId: props.sourceId,
+    initialMessages: props.chatMessages ?? [],
+    initialSettings: props.chatSettings,
+    initialState: props.chatState,
+});
 
 // Reactive state
 const otherDevice = ref(props.initialOtherDevice);
@@ -512,7 +527,7 @@ onUnmounted(() => {
         </Head>
 
         <div
-            class="flex flex-col xl:flex-row xl:overflow-hidden transition-all duration-(--dur-base)"
+            class="flex flex-col lg:flex-row lg:overflow-hidden transition-all duration-(--dur-base)"
             :class="isTheaterMode ? 'fixed inset-0 z-50 bg-black' : 'xl:h-[calc(100vh-3rem)]'"
         >
             <!-- Livestream -->
@@ -548,7 +563,7 @@ onUnmounted(() => {
                             <button 
                                 v-if="showChatBox"
                                 @click="isChatDrawerOpen = true"
-                                class="xl:hidden inline-flex items-center px-3 py-1 text-sm bg-primary-800 hover:bg-primary-700 text-primary-300 hover:text-white rounded transition-colors relative"
+                                class="lg:hidden inline-flex items-center px-3 py-1 text-sm bg-primary-800 hover:bg-primary-700 text-primary-300 hover:text-white rounded transition-colors relative"
                             >
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
@@ -562,7 +577,7 @@ onUnmounted(() => {
                             <button
                                 v-if="showChatBox && isChatHidden"
                                 @click="toggleChatVisibility"
-                                class="hidden xl:inline-flex items-center px-3 py-1 text-sm bg-primary-800 hover:bg-primary-700 text-primary-300 hover:text-white rounded transition-colors"
+                                class="hidden lg:inline-flex items-center px-3 py-1 text-sm bg-primary-800 hover:bg-primary-700 text-primary-300 hover:text-white rounded transition-colors"
                                 title="Show chat"
                             >
                                 <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -750,7 +765,7 @@ onUnmounted(() => {
                 </div>
             </div>
             <!-- Chat - Desktop Only -->
-            <div v-if="showChatBox && !isChatHidden" class="hidden xl:flex xl:flex-col w-full xl:w-1/6 xl:min-w-[300px]">
+            <div v-if="showChatBox && !isChatHidden" class="hidden lg:flex lg:flex-col w-full lg:w-1/6 lg:min-w-[300px]">
                 <!-- Chat Header with Pop-out Button -->
                 <div class="bg-primary-950 border-b border-primary-800 px-3 py-2 flex items-center justify-between shrink-0">
                     <div class="flex items-center gap-1">
@@ -776,9 +791,7 @@ onUnmounted(() => {
                     </button>
                 </div>
                 <ChatPanel
-                    :chat-messages="chatMessages"
-                    :chat-settings="chatSettings"
-                    :chat-state="chatState"
+                    :chat="chat"
                     :show-header="false"
                     :source-id="sourceId"
                     class="flex-1 overflow-hidden"
@@ -790,7 +803,7 @@ onUnmounted(() => {
         <button 
             v-if="showChatBox && showPlayer && !isChatDrawerOpen"
             @click="isChatDrawerOpen = true"
-            class="xl:hidden fixed bottom-4 right-4 z-30 bg-primary-700 hover:bg-primary-600 text-white rounded-full p-4 shadow-lg transition-all duration-(--dur-base) hover:scale-110"
+            class="lg:hidden fixed bottom-4 right-4 z-30 bg-primary-700 hover:bg-primary-600 text-white rounded-full p-4 shadow-lg transition-all duration-(--dur-base) hover:scale-110"
         >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
@@ -825,9 +838,7 @@ onUnmounted(() => {
             </template>
             <ChatPanel
                 v-if="showChatBox && isChatDrawerOpen"
-                :chat-messages="chatMessages"
-                :chat-settings="chatSettings"
-                :chat-state="chatState"
+                :chat="chat"
                 :show-header="false"
                 :source-id="sourceId"
                 transparent
