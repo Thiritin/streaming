@@ -5,10 +5,17 @@
     <div class="absolute inset-0 stage-backdrop" aria-hidden="true" />
 
     <div class="relative mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-6 pb-8">
-      <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5">
+      <!-- The player is capped by width, not height. Capping the height of a 16:9
+           box makes the ratio transfer back into the width, so the box narrows while
+           the track it sits in stays 1fr: the ring and shadow kept the full column
+           and left a band of empty frame beside the picture - 264px at 1680x900,
+           484px at 1680x700, and only 24px at 1440x900, which is why it read as fine.
+           62vh of height is 62 * 16/9 = 110.22vh of width, so capping the track and
+           the panel at that gives the same ceiling with nothing left over. -->
+      <div class="grid gap-4 lg:grid-cols-[minmax(0,110.22vh)_minmax(340px,1fr)] lg:gap-5">
         <!-- Player panel -->
-        <div class="player-panel">
-          <div class="relative aspect-video max-h-[62vh] bg-primary-950">
+        <div class="player-panel max-w-[110.22vh]">
+          <div class="relative aspect-video bg-primary-950">
             <video
               v-show="streaming"
               ref="player"
