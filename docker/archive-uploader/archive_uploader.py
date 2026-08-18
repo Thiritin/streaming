@@ -79,7 +79,12 @@ INDEX_UPLOAD_INTERVAL = int(os.environ.get('INDEX_UPLOAD_INTERVAL', '60'))
 REAP_INTERVAL = int(os.environ.get('REAP_INTERVAL', '120'))
 
 # A segment is never deleted locally while it is still inside the live rewind window,
-# regardless of whether S3 has it. Must be >= the transcoder's DVR window.
+# regardless of whether S3 has it. Must be >= the transcoder's DVR window, which is
+# 900 segments at 2s (30 minutes) - compose passes the matching 1800 explicitly.
+#
+# The default stays higher than that on purpose: too large only means segments linger
+# on disk, while too small deletes something a viewer can still seek to. If these two
+# ever drift, drift upwards.
 DVR_WINDOW_SECONDS = int(os.environ.get('DVR_WINDOW_SECONDS', '3600'))
 
 MAX_CONCURRENT_UPLOADS = int(os.environ.get('MAX_CONCURRENT_UPLOADS', '5'))

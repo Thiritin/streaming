@@ -178,9 +178,20 @@ const submit = () => {
         >
           <FormField
             label="API base URL"
-            helper="The control key is COMPANION_API_KEY in the environment, and is the same for every source."
+            helper="Sent with the control key in an X-Companion-Token header."
           >
             <CopyableText :value="source.companion_url" />
+          </FormField>
+
+          <FormField
+            label="Control key"
+            helper="The same key for every source. Rotate it under Settings > Control surfaces."
+          >
+            <CopyableText
+              :value="source.companion_key"
+              masked
+              placeholder="Not set - the control API is off"
+            />
           </FormField>
         </FormSection>
 

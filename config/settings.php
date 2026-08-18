@@ -18,8 +18,10 @@ return [
     | saved, and `key` is the flat key written to the settings table. Both together
     | mean a field can be moved to another config file without touching saved data.
     |
-    | Types: text, textarea, url, color, image, video. Uploads name a purpose from
-    | config/manage.php, which owns the disk, directory and size limits.
+    | Types: text, textarea, url, color, image, video, toggle, links, password,
+    | secret. Uploads name a purpose from config/manage.php, which owns the disk,
+    | directory and size limits. `password` is write-only; `secret` is a value this
+    | installation hands out, so it can be read back, copied and generated.
     |
     */
 
@@ -252,11 +254,30 @@ return [
             ],
         ],
 
+        [
+            'key' => 'control',
+            'label' => 'Control surfaces',
+            'description' => 'The key a hardware control surface authenticates with; see docs/admin/companion.md. One key for the installation: a surface names the source it drives in its request, and the people who run the rooms are the same people either way.',
+            'columns' => 1,
+            'fields' => [
+                [
+                    'key' => 'control_key',
+                    'label' => 'Control key',
+                    'type' => 'secret',
+                    'store' => 'stream',
+                    'full' => true,
+                    'helper' => 'Sent by the surface as X-Companion-Token. Generating a new one rotates it, and every surface has to be reconfigured. Empty switches the control API off, unless COMPANION_API_KEY is set in the environment, which is then what applies.',
+                    'rules' => ['nullable', 'string', 'min:16', 'max:255'],
+                ],
+            ],
+        ],
+
     ],
 
     /*
      | Config namespace every group falls back to unless a field overrides it with
-     | its own `store`. Branding is the bulk of it; the pretalx group names its own.
+     | its own `store`. Branding is the bulk of it; the pretalx and control groups
+     | name their own.
      */
     'store' => 'branding',
 

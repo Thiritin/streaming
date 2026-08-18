@@ -44,6 +44,9 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        // Only the features this viewer has switched off, keyed as in
+        // config/features.php. See App\Support\Features::forUser().
+        'feature_preferences' => 'array',
     ];
 
     public function server()

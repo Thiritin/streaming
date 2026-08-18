@@ -6,6 +6,7 @@ use App\Enum\SourceStatusEnum;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Manage\SourceRequest;
 use App\Models\Source;
+use App\Support\ControlKey;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
 use App\Support\Manage\Filter;
@@ -102,6 +103,9 @@ class SourceController extends Controller
                 'rtmp_url' => $source->getRtmpServerUrl(),
                 'stream_key' => $source->getObsStreamKey(),
                 'companion_url' => url('/api/companion/'.$source->slug),
+                // One key for the installation, shown here so a surface can be wired
+                // without leaving the page it is being wired for.
+                'companion_key' => ControlKey::current(),
                 'shows_count' => $source->shows()->count(),
                 'live_shows_count' => $source->liveShows()->count(),
                 'created_at' => $source->created_at?->diffForHumans() ?? '-',

@@ -53,16 +53,14 @@ class HandleInertiaRequests extends Middleware
             ],
             'branding' => fn () => app(BrandingService::class)->forFrontend(),
             /*
-             * Deployment-wide switches the client needs to know about: which
-             * features exist at all, and whether a guest is allowed to browse
-             * without signing in. The feature flags are edited in
-             * /manage > Settings > Features and default from config/features.php;
+             * The switches the client needs to know about: which features this
+             * viewer gets, and whether a guest is allowed to browse without
+             * signing in. Feature flags are the installation's switches from
+             * /manage > Settings > Features with the viewer's own opt-outs from
+             * /settings applied, so the client never has to combine the two.
              * authRequired comes from config/auth.php.
              */
-            'features' => fn () => [
-                'chat' => Features::chat(),
-                'emotes' => Features::emotes(),
-                'boops' => Features::boops(),
+            'features' => fn () => Features::forUser($request->user()) + [
                 'authRequired' => (bool) config('auth.required'),
                 'loginUrl' => route('login'),
             ],
@@ -104,7 +102,7 @@ class HandleInertiaRequests extends Middleware
     protected function chatProps(Request $request): array
     {
         $user = $request->user();
-        $enabled = Features::chat();
+        $enabled = Features::enabledFor('chat', $user);
 
         $props = [
             'enabled' => $enabled,
@@ -134,7 +132,7 @@ class HandleInertiaRequests extends Middleware
             'bufferSize' => (int) config('chat.history.buffer', 300),
         ];
 
-        if (Features::emotes()) {
+        if (Features::enabledFor('emotes', $user)) {
             $props['emotes'] = app(EmoteService::class)->clientPayload($user);
         }
 

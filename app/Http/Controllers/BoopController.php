@@ -28,7 +28,7 @@ class BoopController extends Controller
             'count' => ['required', 'integer', 'min:1', 'max:'.self::MAX_PER_REQUEST],
         ]);
 
-        abort_unless(Features::boops(), 404, 'Boops are disabled.');
+        abort_unless(Features::enabledFor('boops', Auth::user()), 404, 'Boops are disabled.');
 
         if (! $show->canBeAccessedBy(Auth::user())) {
             abort(403);

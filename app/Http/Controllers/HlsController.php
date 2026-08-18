@@ -694,15 +694,25 @@ class HlsController extends Controller
      * paid once per PLAYLIST_TTL and the result is handed to everyone. The repeated
      * token compresses to almost nothing, which is why the wire cost collapses.
      *
-     * @return array{raw: string, gzip: ?string}
+     * Both encodings are built up front rather than on demand, because the choice
+     * belongs to the caller and the body is shared: a 389KB playlist is 5.8KB
+     * gzipped and 2.8KB brotlied, for about 1.1ms and 1.9ms once per TTL.
+     *
+     * @return array{raw: string, gzip: ?string, br: ?string}
      */
     private function renderPlaylist(string $body, ?string $credential): array
     {
         $raw = $this->applyCredential($body, $credential);
+        $worthCompressing = strlen($raw) >= self::COMPRESS_MIN_BYTES;
 
         return [
             'raw' => $raw,
-            'gzip' => strlen($raw) >= self::COMPRESS_MIN_BYTES ? gzencode($raw, 4) : null,
+            'gzip' => $worthCompressing ? gzencode($raw, 4) : null,
+            // ext-brotli only ships in the production image, so this stays null
+            // locally and in CI and those callers fall through to gzip.
+            'br' => $worthCompressing && function_exists('brotli_compress')
+                ? brotli_compress($raw, 4)
+                : null,
         ];
     }
 
@@ -711,20 +721,56 @@ class HlsController extends Controller
      */
     private function playlistResponse(Request $request, array $rendered, string $cacheState)
     {
-        $compressed = $rendered['gzip'] !== null
-            && str_contains(strtolower((string) $request->header('Accept-Encoding', '')), 'gzip');
+        $accepted = $this->acceptedEncodings($request);
 
-        $response = response($compressed ? $rendered['gzip'] : $rendered['raw'], 200)
+        // Brotli first: it is about half the gzip size on a token-per-line playlist.
+        // The null coalesce covers entries cached by an older revision.
+        [$encoding, $body] = match (true) {
+            ($rendered['br'] ?? null) !== null && in_array('br', $accepted, true) => ['br', $rendered['br']],
+            $rendered['gzip'] !== null && in_array('gzip', $accepted, true) => ['gzip', $rendered['gzip']],
+            default => [null, $rendered['raw']],
+        };
+
+        $response = response($body, 200)
             ->header('Content-Type', 'application/vnd.apple.mpegurl')
             ->header('Cache-Control', 'max-age=1')
             ->header('Vary', 'Accept-Encoding')
             ->header('X-Cache', $cacheState);
 
-        if ($compressed) {
-            $response->header('Content-Encoding', 'gzip');
+        if ($encoding !== null) {
+            $response->header('Content-Encoding', $encoding);
         }
 
         return $response;
+    }
+
+    /**
+     * Content codings the caller will take, with explicit q=0 refusals dropped.
+     *
+     * @return list<string>
+     */
+    private function acceptedEncodings(Request $request): array
+    {
+        $accepted = [];
+
+        foreach (explode(',', strtolower((string) $request->header('Accept-Encoding', ''))) as $candidate) {
+            $parameters = array_map('trim', explode(';', $candidate));
+            $coding = array_shift($parameters);
+
+            if ($coding === '') {
+                continue;
+            }
+
+            foreach ($parameters as $parameter) {
+                if (preg_match('/^q=0(\.0+)?$/', $parameter)) {
+                    continue 2;
+                }
+            }
+
+            $accepted[] = $coding;
+        }
+
+        return $accepted;
     }
 
     /**

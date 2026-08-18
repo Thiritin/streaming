@@ -11,7 +11,7 @@ ADD --chmod=0755 https://github.com/mlocati/docker-php-extension-installer/relea
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl git unzip openssl tar ca-certificates dnsutils ffmpeg \
-    && install-php-extensions gd bcmath pdo_mysql zip intl opcache pcntl redis @composer \
+    && install-php-extensions gd bcmath pdo_mysql zip intl opcache pcntl redis brotli @composer \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

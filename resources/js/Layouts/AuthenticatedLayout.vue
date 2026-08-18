@@ -139,6 +139,13 @@ const initial = computed(() => user.value?.name?.charAt(0)?.toUpperCase() || 'U'
                   </div>
 
                   <!-- Links -->
+                  <DropdownLink :href="route('settings.edit')">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="3" stroke-width="2" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1.08-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+                    </svg>
+                    Settings
+                  </DropdownLink>
                   <DropdownLink v-if="emotesEnabled" :href="route('emotes.index')">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <circle cx="12" cy="12" r="9" stroke-width="2" />
@@ -249,6 +256,9 @@ const initial = computed(() => user.value?.name?.charAt(0)?.toUpperCase() || 'U'
               </div>
 
               <div class="mt-3 space-y-1">
+                <ResponsiveNavLink :href="route('settings.edit')" :active="route().current('settings.*')" prefetch>
+                  Settings
+                </ResponsiveNavLink>
                 <ResponsiveNavLink v-if="emotesEnabled" :href="route('emotes.index')" :active="route().current('emotes.*')" prefetch>
                   Emotes
                 </ResponsiveNavLink>

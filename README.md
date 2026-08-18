@@ -98,7 +98,7 @@ The settings that matter live in `.env`:
 |---|---|
 | `OIDC_URL`, `OIDC_CLIENT_ID`, `OIDC_SECRET` | Identity provider |
 | `AUTH_REQUIRED` | Whether guests can watch |
-| `CHAT_ENABLED`, `CHAT_*` | Chat rate limits, slow mode, link handling. `CHAT_ENABLED` is only the initial default now; chat, emotes and boops are switched from /manage > Settings > Features |
+| `CHAT_ENABLED`, `CHAT_*` | Chat rate limits, slow mode, link handling. `CHAT_ENABLED` is only the initial default now; chat, emotes and boops are switched from /manage > Settings > Features, and each viewer can switch them off again for themselves at /settings |
 | `HLS_VIEWER_SECRET`, `HLS_EMBED_SECRET` | Playback tokens the edges verify |
 | `AWS_*`, `DVR_AWS_*` | Archive and DVR buckets |
 | `HETZNER_TOKEN`, `DNS_*` | Server provisioning and DNS records |

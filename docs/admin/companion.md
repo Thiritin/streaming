@@ -22,24 +22,29 @@ same key, and its buttons carry their own labels because every variable is per c
 
 ### 1. Set the control key, once per installation
 
-```
-COMPANION_API_KEY=<a long random string>
-```
+`/manage` > Settings > **Control surfaces** > **Generate**, then save. The field is readable
+and copyable, because the key is one you hand to whoever wires the surfaces.
 
 One key for the whole installation, not one per source. Everyone who can reach one room can
 reach the others anyway, and a per-source secret would only be a second thing to rotate. An
 empty key means the control API is off, which is what a fresh install has.
 
-Rotate it by changing the value and reconfiguring the surfaces.
+Rotate it by generating a new one, saving, and reconfiguring the surfaces. Between the save
+and the last surface being updated, the surfaces still on the old key get 401s.
 
-### 2. Copy the endpoint for the source
+`COMPANION_API_KEY` in the environment still works and is the fallback a host can boot with,
+but a saved key always wins, so clearing the field falls back to the environment rather than
+switching the API off on a host that sets one.
+
+### 2. Copy the endpoint and key for the source
 
 `/manage` > Sources > the source > **Control surface**.
 
 ![The control surface block on the source page](img/manage-source-control-surface.png)
 
 The URL ends in the source's stream name, so the same key drives every stage and the URL is
-what says which one this surface is on.
+what says which one this surface is on. The key is repeated on the page, hidden until asked
+for, so a connection can be wired without leaving it.
 
 ### 3. Install the module
 
@@ -202,7 +207,8 @@ the connection's base URL at that instead.
 | Which show Start and Stop apply to | `app/Services/ShowControlService.php` |
 | The endpoints | `app/Http/Controllers/Api/CompanionController.php` |
 | Key check | `app/Http/Middleware/CheckCompanionTokenMiddleware.php` |
-| The key itself | `COMPANION_API_KEY`, read in `config/stream.php` |
+| The key itself | Settings > Control surfaces, resolved by `app/Support/ControlKey.php` |
+| Its fallback | `COMPANION_API_KEY`, read in `config/stream.php` |
 | The Companion module | `companion/module-stream-control/` |
 | Ready-made button page | `companion/stream-control-page.companionconfig` |
 | Companion in Docker | `docker-compose.companion.yml`, `scripts/companion.sh` |

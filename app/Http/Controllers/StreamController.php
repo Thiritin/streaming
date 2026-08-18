@@ -32,7 +32,7 @@ class StreamController extends Controller
      */
     protected function chatProps(?int $sourceId, ?User $user): array
     {
-        if (! Features::chat()) {
+        if (! Features::enabledFor('chat', $user)) {
             return $this->emptyChatProps();
         }
 
@@ -421,7 +421,7 @@ class StreamController extends Controller
      */
     private function featuredChatExcerpt(?User $user, ?array $featured): array
     {
-        if (! Features::chat()) {
+        if (! Features::enabledFor('chat', $user)) {
             return ['source_id' => null, 'messages' => []];
         }
 

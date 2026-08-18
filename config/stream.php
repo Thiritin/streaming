@@ -198,8 +198,10 @@ return [
     // which source a surface drives is part of its request, and the people who
     // run the rooms are the same people either way.
     //
-    // Empty disables the control API outright, which is the default: nothing is
-    // reachable until someone sets the key.
+    // Only the fallback: the key is edited at /manage > Settings and read through
+    // App\Support\ControlKey, so a saved row wins over this. Empty on both sides
+    // disables the control API outright, which is the default: nothing is
+    // reachable until someone sets a key.
     'control_key' => env('COMPANION_API_KEY'),
 
     // Local dev loops: with DEV_STREAMS=true, sources play the HLS that

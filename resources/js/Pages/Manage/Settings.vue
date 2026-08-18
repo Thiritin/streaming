@@ -15,6 +15,7 @@ import FileUploadField from '@/Components/Manage/FileUploadField.vue';
 import FormActions from '@/Components/Manage/FormActions.vue';
 import FormField from '@/Components/Manage/FormField.vue';
 import FormSection from '@/Components/Manage/FormSection.vue';
+import ManageIcon from '@/Components/Manage/ManageIcon.vue';
 import PageHeader from '@/Components/Manage/PageHeader.vue';
 
 const props = defineProps({
@@ -162,6 +163,37 @@ const testPretalx = () => {
       },
     },
   );
+};
+
+/*
+ * A secret is the other half of the password case: a value this installation hands out
+ * rather than one an operator pastes in, so it is readable here and generated here.
+ * Hidden by default all the same, because the settings page is often on a projector.
+ */
+const revealed = reactive({});
+const copied = ref(null);
+
+const generate = (field) => {
+  const bytes = new Uint8Array(24);
+
+  window.crypto.getRandomValues(bytes);
+
+  form.values[field.key] = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  revealed[field.key] = true;
+};
+
+const copyValue = async (field) => {
+  const value = form.values[field.key];
+
+  if (!value) return;
+
+  try {
+    await navigator.clipboard.writeText(value);
+    copied.value = field.key;
+    window.setTimeout(() => (copied.value = null), 1500);
+  } catch {
+    // Clipboard needs a secure context; nothing to recover from.
+  }
 };
 
 /**
@@ -455,6 +487,63 @@ onBeforeUnmount(clearAccentPreview);
                 >
                   Keep it
                 </button>
+              </div>
+            </FormField>
+
+            <FormField
+              v-else-if="field.type === 'secret'"
+              :label="field.label"
+              :helper="field.helper"
+              :error="form.errors[`values.${field.key}`]"
+              :class="field.full ? 'md:col-span-full' : ''"
+            >
+              <div class="flex flex-col gap-1.5">
+                <div class="flex items-center gap-2">
+                  <input
+                    v-model="form.values[field.key]"
+                    :type="revealed[field.key] ? 'text' : 'password'"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Not set"
+                    class="h-8 min-w-0 flex-1 rounded border border-hairline bg-surface-2 px-2 font-mono text-[13px] text-fg-1 outline-none transition-colors focus:border-state-live/50"
+                    :aria-label="field.label"
+                    @focus="$event.target.select()"
+                  />
+
+                  <button
+                    type="button"
+                    class="grid size-8 shrink-0 place-items-center rounded border border-hairline text-fg-3 transition-colors hover:text-fg-1"
+                    :title="revealed[field.key] ? 'Hide' : 'Reveal'"
+                    @click="revealed[field.key] = !revealed[field.key]"
+                  >
+                    <ManageIcon :name="revealed[field.key] ? 'lock' : 'eye'" :size="13" />
+                  </button>
+
+                  <button
+                    type="button"
+                    class="grid size-8 shrink-0 place-items-center rounded border border-hairline text-fg-3 transition-colors hover:text-fg-1 disabled:opacity-40"
+                    :disabled="!form.values[field.key]"
+                    :title="copied === field.key ? 'Copied' : 'Copy'"
+                    @click="copyValue(field)"
+                  >
+                    <ManageIcon :name="copied === field.key ? 'check' : 'copy'" :size="13" />
+                  </button>
+
+                  <button
+                    type="button"
+                    class="h-8 shrink-0 rounded border border-hairline px-3 text-[13px] text-fg-1 transition-colors hover:bg-surface-3"
+                    @click="generate(field)"
+                  >
+                    Generate
+                  </button>
+                </div>
+
+                <p v-if="!form.values[field.key]" class="text-[11px] text-fg-3">
+                  Nothing set: the control API answers every request with 401.
+                </p>
+                <p v-else-if="!isDefault(field) && form.isDirty" class="text-[11px] text-fg-3">
+                  Not in effect until you save, and every surface has to be given the new key.
+                </p>
               </div>
             </FormField>
 

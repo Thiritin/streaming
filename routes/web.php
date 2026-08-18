@@ -13,6 +13,7 @@ use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\RecordingPlaylistController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\StreamController;
+use App\Http\Controllers\UserSettingsController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 
@@ -118,6 +119,16 @@ Route::middleware(['auth.optional:web'])->group(function () {
     Route::get('/archive/{recording}', [RecordingController::class, 'show'])->name('recordings.show');
     Route::redirect('/recordings', '/archive');
     Route::get('/recordings/{recording}', fn ($recording) => redirect("/archive/{$recording}"));
+});
+
+/*
+ * A viewer's own settings: which of the installation's features they want. Not
+ * behind any feature middleware, because this is the page that turns them back
+ * on.
+ */
+Route::middleware('auth:web')->group(function () {
+    Route::get('/settings', [UserSettingsController::class, 'edit'])->name('settings.edit');
+    Route::patch('/settings', [UserSettingsController::class, 'update'])->name('settings.update');
 });
 
 /*

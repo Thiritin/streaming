@@ -267,8 +267,10 @@ final class Settings
             $default = (bool) $default;
         }
 
-        // A secret is never sent to the browser: a stored one is represented by the mask,
-        // which the save side reads back as "unchanged".
+        // A password is never sent to the browser: a stored one is represented by the mask,
+        // which the save side reads back as "unchanged". A `secret` is the other case -
+        // a value this installation hands out rather than one an operator pastes in - so
+        // it goes to the page in full and falls through to the generic branch below.
         if ($field['type'] === 'password') {
             $stored = is_string($value) && trim($value) !== '';
 
@@ -301,6 +303,9 @@ final class Settings
             'required' => in_array('required', $field['rules'] ?? [], true),
             'value' => $value,
             'default' => $default,
+            // Whether anything is set at all, which a secret renders differently from
+            // a blank text field.
+            'hasValue' => is_string($value) ? trim($value) !== '' : ! empty($value),
             // Whether this key is currently overriding the shipped default.
             'overridden' => $value !== $default,
             'previewUrl' => in_array($field['type'], ['image', 'video'], true)

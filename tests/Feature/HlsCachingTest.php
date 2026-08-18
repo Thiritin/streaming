@@ -197,7 +197,7 @@ class HlsCachingTest extends TestCase
 
         $compressed = $this->get(
             '/hls/test-stream_hd.m3u8?streamkey=test-streamkey-123',
-            ['Accept-Encoding' => 'gzip, deflate, br'],
+            ['Accept-Encoding' => 'gzip, deflate'],
         );
         $compressed->assertStatus(200);
         $compressed->assertHeader('Content-Encoding', 'gzip');
@@ -205,6 +205,39 @@ class HlsCachingTest extends TestCase
 
         $this->assertEquals($plain->getContent(), gzdecode($compressed->getContent()));
         $this->assertLessThan(strlen($plain->getContent()) / 4, strlen($compressed->getContent()));
+    }
+
+    public function test_a_playlist_prefers_brotli_over_gzip()
+    {
+        if (! function_exists('brotli_uncompress')) {
+            $this->markTestSkipped('ext-brotli only ships in the production image');
+        }
+
+        $segments = '';
+        for ($i = 1; $i <= 400; $i++) {
+            $segments .= "#EXTINF:2.000000,\ntest-stream_hd_".str_pad((string) $i, 5, '0', STR_PAD_LEFT).".ts\n";
+        }
+
+        Http::fake(['*' => Http::response("#EXTM3U\n#EXT-X-VERSION:3\n".$segments, 200)]);
+
+        $brotlied = $this->get(
+            '/hls/test-stream_hd.m3u8?streamkey=test-streamkey-123',
+            ['Accept-Encoding' => 'gzip, deflate, br'],
+        );
+        $brotlied->assertStatus(200);
+        $brotlied->assertHeader('Content-Encoding', 'br');
+
+        $gzipped = $this->get(
+            '/hls/test-stream_hd.m3u8?streamkey=test-streamkey-123',
+            ['Accept-Encoding' => 'gzip, deflate, br;q=0'],
+        );
+        $gzipped->assertHeader('Content-Encoding', 'gzip');
+
+        $this->assertEquals(
+            gzdecode($gzipped->getContent()),
+            brotli_uncompress($brotlied->getContent()),
+        );
+        $this->assertLessThan(strlen($gzipped->getContent()), strlen($brotlied->getContent()));
     }
 
     public function test_cache_expires_after_2_seconds()
