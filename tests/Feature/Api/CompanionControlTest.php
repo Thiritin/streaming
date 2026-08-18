@@ -5,6 +5,7 @@ namespace Tests\Feature\Api;
 use App\Enum\SourceStatusEnum;
 use App\Events\ShowEnded;
 use App\Events\ShowWentLive;
+use App\Models\BrandingSetting;
 use App\Models\Show;
 use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -73,6 +74,18 @@ class CompanionControlTest extends TestCase
         $this->getJson($this->url('status'))->assertStatus(401);
         $this->getJson($this->url('status'), $this->headers(''))->assertStatus(401);
         $this->getJson($this->url('status'), $this->headers(self::KEY))->assertStatus(401);
+    }
+
+    /**
+     * Rotating the key happens at /manage > Settings, so a saved one has to beat the
+     * environment fallback the host booted with.
+     */
+    public function test_a_saved_control_key_wins_over_the_environment(): void
+    {
+        BrandingSetting::setValue('control_key', 'rotated-control-key');
+
+        $this->getJson($this->url('status'), $this->headers(self::KEY))->assertStatus(401);
+        $this->getJson($this->url('status'), $this->headers('rotated-control-key'))->assertSuccessful();
     }
 
     public function test_an_unknown_stream_name_is_a_not_found(): void

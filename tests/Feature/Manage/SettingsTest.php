@@ -4,6 +4,7 @@ namespace Tests\Feature\Manage;
 
 use App\Models\BrandingSetting;
 use App\Services\BrandingService;
+use App\Support\ControlKey;
 use App\Support\Manage\Settings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -307,6 +308,63 @@ class SettingsTest extends TestCase
             ->put(route('manage.settings.update'), $this->payload(['pretalx_token' => Settings::CLEAR_SECRET]));
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'pretalx_token']);
+    }
+
+    /**
+     * The control key is the other kind of secret: one this installation hands out, so
+     * the page has to be able to show it. It is guarded by the admin-only settings page
+     * rather than by never leaving the server.
+     */
+    public function test_the_control_key_is_readable_on_the_page_and_saved(): void
+    {
+        config(['stream.control_key' => null]);
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['control_key' => 'a-long-enough-control-key']));
+
+        $this->assertSame('a-long-enough-control-key', BrandingSetting::getValue('control_key'));
+        $this->assertSame('a-long-enough-control-key', ControlKey::current());
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings'))
+            ->assertSuccessful()
+            ->assertInertia(function (Assert $page) {
+                $field = collect($page->toArray()['props']['groups'])
+                    ->flatMap(fn (array $group) => $group['fields'])
+                    ->firstWhere('key', 'control_key');
+
+                $this->assertSame('a-long-enough-control-key', $field['value']);
+                $this->assertTrue($field['hasValue']);
+            });
+    }
+
+    public function test_a_saved_control_key_wins_over_the_environment_and_clearing_falls_back(): void
+    {
+        config(['stream.control_key' => 'from-the-environment']);
+
+        $this->assertSame('from-the-environment', ControlKey::current());
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['control_key' => 'saved-control-key-value']));
+
+        $this->assertSame('saved-control-key-value', ControlKey::current());
+
+        // Emptying the field deletes the row, which hands the key back to the
+        // environment rather than pinning a blank over it.
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['control_key' => '']));
+
+        $this->assertDatabaseMissing('branding_settings', ['key' => 'control_key']);
+        $this->assertSame('from-the-environment', ControlKey::current());
+    }
+
+    public function test_a_short_control_key_is_rejected(): void
+    {
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update'), $this->payload(['control_key' => 'short']))
+            ->assertSessionHasErrors('values.control_key');
+
+        $this->assertDatabaseMissing('branding_settings', ['key' => 'control_key']);
     }
 
     public function test_turning_the_source_credit_off_stores_it_and_hides_it_from_the_frontend(): void

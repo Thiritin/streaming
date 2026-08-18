@@ -39,12 +39,17 @@ watch(open, (isOpen) => {
 });
 
 const submit = () => {
-  const method = props.action.method;
   const payload = { ...props.data, ...form };
 
   processing.value = true;
 
-  router[method](props.action.url, payload, {
+  // router.visit rather than router[method]: router.delete takes (url, options) with no
+  // data argument, so a delete called like the others dropped both the payload and the
+  // options - bulk delete arrived without its ids and the dialog never closed.
+  router.visit(props.action.url, {
+    method: props.action.method,
+    data: payload,
+    preserveState: true,
     preserveScroll: true,
     onFinish: () => {
       processing.value = false;

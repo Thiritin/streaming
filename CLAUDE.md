@@ -172,11 +172,13 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
 - Sources, Shows, the Show planner and Stream Control
 - Import: pulls sessions from pretalx into shows; see docs/admin/pretalx-import.md
 - Each source page carries its control-surface endpoint (`/api/companion/<stream name>`,
-  start/stop/status, one `COMPANION_API_KEY` for the installation); see
-  docs/admin/companion.md
+  start/stop/status, one control key for the installation); see docs/admin/companion.md.
+  Read the key through `App\Support\ControlKey::current()`, never `config('stream.control_key')`
+  directly - the config value is only the environment fallback, so a `config()` read ignores
+  what Settings > Control surfaces saved
 - Servers, including the generated install script
 - Users, Roles, Emotes and Recordings
-- Settings: branding, login copy, accent colour and footer links
+- Settings: branding, login copy, accent colour, footer links and the control key
 
 Tables, filters, row/bulk actions and toasts are declared server-side with the
 `App\Support\Manage` toolkit (`Table`, `Column`, `Filter`, `Action`, `Status`, `Toast`) and
