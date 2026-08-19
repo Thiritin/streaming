@@ -12,7 +12,8 @@ running now, and if no slot has begun it starts the next one on the schedule.
 
 - A source in `/manage` > Sources, with shows scheduled on it
 - [Bitfocus Companion](https://bitfocus.io/companion) 5.x
-- The `stream-control` module, from `companion/module-stream-control/` in this repo
+- The `stream-control` module, packaged from `companion/module-stream-control/` in this
+  repo with `./scripts/companion-package.sh` and imported into Companion
 
 One connection controls one source: the stream name is the last part of the API URL, and
 that is what picks it. A second stage is a second connection with a different URL and the
@@ -48,10 +49,25 @@ for, so a connection can be wired without leaving it.
 
 ### 3. Install the module
 
-Companion loads modules it did not ship with from a developer module path. Copy
-`companion/module-stream-control/` onto the Companion machine and point Companion at its
-parent directory (Settings, then the developer modules path), or run Companion in Docker,
-where the path is already mounted:
+Companion does not ship this module, so it has to be handed over as a package. Build one
+from the repo:
+
+```bash
+./scripts/companion-package.sh
+```
+
+That writes `companion/module-stream-control/stream-control-1.0.0.tgz`, a few kilobytes
+with the dependencies bundled in. On the Companion machine: **Modules**, then **Import
+module package**, then pick the file. Nothing else is needed there - no Node, no npm, no
+developer module path - so this is the way to get the module onto someone else's server.
+
+Rebuild and reimport to upgrade. Bump `version` in the module's `package.json` when you do,
+because that is what Companion shows and what tells two builds apart.
+
+For working on the module itself there is the developer path instead: point Companion at
+the directory that holds `companion/module-stream-control/` (Settings, then the developer
+modules path), so an edit needs a restart rather than a rebuild. Docker has that path
+already mounted:
 
 ```bash
 ./scripts/companion.sh up      # http://localhost:8000

@@ -1,6 +1,10 @@
 /.phpunit.cache
 /node_modules
 /companion/*/node_modules
+
+# Built Companion module packages (scripts/companion-package.sh)
+/companion/*/pkg
+/companion/*/*.tgz
 /public/build
 /public/hot
 /public/storage
