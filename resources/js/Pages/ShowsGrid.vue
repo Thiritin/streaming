@@ -47,33 +47,74 @@
       </div>
     </div>
 
-    <!-- One grid for everything: live, upcoming and the archive -->
-    <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 py-6">
-      <!-- One keyed child per item, so the group can track a tile across a filter
-           switch or an Echo update. `--stagger` caps at 12 to keep the tail of a
-           long grid from waiting on a delay nobody sees. -->
-      <TransitionGroup v-if="visibleItems.length" tag="div" name="tile" appear class="stream-grid">
-        <component
-          :is="item.kind === 'archive' ? RecordingTile : ShowTile"
-          v-for="(item, index) in visibleItems"
-          :key="`${item.kind}-${item.id}`"
-          v-bind="item.kind === 'archive' ? { recording: item.data } : { show: item.data }"
-          :priority="index < 8"
-          :style="{ '--stagger': Math.min(index, 12) }"
-        />
-      </TransitionGroup>
+    <!-- One section per state: on air now, coming up, already streamed. The
+         filter chips narrow which sections render; they no longer flatten
+         three different kinds of tile into one undifferentiated grid. -->
+    <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 py-6 space-y-10">
+      <section v-for="group in visibleGroups" :key="group.key">
+        <div class="flex items-center gap-3 pb-4">
+          <span v-if="group.key === 'live'" class="w-2 h-2 rounded-full bg-red-500" aria-hidden="true" />
+          <h2 class="text-sm font-semibold uppercase tracking-[0.12em] text-primary-300">{{ group.label }}</h2>
+          <span class="text-xs tabular-nums text-primary-500">{{ group.items.length }}</span>
+          <span class="h-px flex-1 bg-primary-800/60" aria-hidden="true" />
+        </div>
 
-      <p v-else class="py-16 text-center text-primary-400">
+        <!-- One keyed child per item, so the group can track a tile across a filter
+             switch or an Echo update. `--stagger` caps at 12 to keep the tail of a
+             long grid from waiting on a delay nobody sees. -->
+        <TransitionGroup tag="div" name="tile" appear class="stream-grid">
+          <component
+            :is="item.kind === 'archive' ? RecordingTile : ShowTile"
+            v-for="(item, index) in group.items"
+            :key="`${item.kind}-${item.id}`"
+            v-bind="item.kind === 'archive' ? { recording: item.data } : { show: item.data }"
+            :priority="group.key === 'live' && index < 8"
+            :style="{ '--stagger': Math.min(index, 12) }"
+          />
+        </TransitionGroup>
+      </section>
+
+      <p v-if="!visibleGroups.length && !showOlderSection" class="py-16 text-center text-primary-400">
         Nothing here right now.
       </p>
 
-      <div v-if="showArchiveLink" class="mt-8 flex justify-center">
+      <div v-if="showArchiveLink" class="flex justify-center">
         <Link
           :href="route('recordings.index')"
           class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-primary-700 hover:border-primary-500 text-sm font-medium text-primary-200 transition-colors"
         >
-          Browse all {{ archiveTotal }} archive shows
+          Browse all {{ archiveTotal + olderTotal }} archive shows
         </Link>
+      </div>
+    </div>
+
+    <!-- Older than six months: past events, kept out of the grid above so the
+         current event's shows are not buried under previous years. -->
+    <div v-if="showOlderSection" class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pb-14">
+      <div class="border-t border-primary-800/50 pt-8">
+        <div class="flex items-center justify-between pb-4">
+          <div class="space-y-1">
+            <h2 class="text-sm font-semibold uppercase tracking-[0.12em] text-primary-300">From the archive</h2>
+            <p class="text-sm text-primary-400">
+              {{ olderTotal }} {{ olderTotal === 1 ? 'show' : 'shows' }} older than six months.
+            </p>
+          </div>
+          <Link
+            :href="route('recordings.index')"
+            class="text-sm text-primary-300 hover:text-white transition-colors"
+          >
+            Browse archive
+          </Link>
+        </div>
+
+        <TransitionGroup tag="div" name="tile" appear class="stream-grid">
+          <RecordingTile
+            v-for="(recording, index) in olderRecordings"
+            :key="`older-${recording.id}`"
+            :recording="recording"
+            :style="{ '--stagger': Math.min(index, 12) }"
+          />
+        </TransitionGroup>
       </div>
     </div>
   </div>
@@ -99,6 +140,9 @@ const props = defineProps({
   upcomingShows: { type: Array, default: () => [] },
   archiveRecordings: { type: Array, default: () => [] },
   archiveTotal: { type: Number, default: 0 },
+  // Older than six months: rendered in their own section under the grid.
+  olderRecordings: { type: Array, default: () => [] },
+  olderTotal: { type: Number, default: 0 },
   featured: { type: Object, default: null },
   featuredChat: { type: Object, default: () => ({ source_id: null, messages: [] }) },
   primaryChannel: { type: String, default: null },
@@ -134,7 +178,7 @@ const filters = computed(() => {
     { key: 'live', label: 'Live', count: countOf('live') + (featured.value?.status === 'live' ? 1 : 0) },
     { key: 'soon', label: 'Starting soon', count: countOf('soon') },
     { key: 'upcoming', label: 'Upcoming', count: countOf('upcoming') },
-    { key: 'archive', label: 'Archive', count: props.archiveTotal || countOf('archive') },
+    { key: 'archive', label: 'Archive', count: (props.archiveTotal || countOf('archive')) + props.olderTotal },
   ].filter((filter) => filter.key === 'all' || filter.count > 0);
 
   const channelFilters = props.channels
@@ -155,8 +199,29 @@ const visibleItems = computed(() => {
   return items.value.filter((item) => item.kind === activeFilter.value);
 });
 
+// Section order is the order a viewer cares about: what is on now, what is next,
+// what already happened. Empty sections drop out rather than render a bare heading.
+const GROUPS = [
+  { key: 'live', label: 'On air now' },
+  { key: 'soon', label: 'Starting soon' },
+  { key: 'upcoming', label: 'Coming up' },
+  { key: 'archive', label: 'Recently streamed' },
+];
+
+const visibleGroups = computed(() =>
+  GROUPS
+    .map((group) => ({ ...group, items: visibleItems.value.filter((item) => item.kind === group.key) }))
+    .filter((group) => group.items.length > 0)
+);
+
 const showArchiveLink = computed(() =>
-  props.archiveTotal > props.archiveRecordings.length
+  props.archiveTotal + props.olderTotal > props.archiveRecordings.length + props.olderRecordings.length
+  && ['all', 'archive'].includes(activeFilter.value)
+);
+
+// Channel filters never match an archive tile, so the older section hides with them.
+const showOlderSection = computed(() =>
+  props.olderRecordings.length > 0
   && ['all', 'archive'].includes(activeFilter.value)
 );
 

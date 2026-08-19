@@ -66,7 +66,8 @@
         <!-- Placeholder when no thumbnail -->
         <TilePlaceholder
           v-if="!currentThumbnail && !showVideoPreview"
-          :label="show.source"
+          :label="placeholderDay"
+          :sublabel="placeholderTime"
         />
 
         <!-- Loading art for a lazy thumbnail that has not decoded yet, so a grid
@@ -187,6 +188,24 @@ const metaTime = computed(() => {
     return formatScheduledTime(props.show.scheduled_start);
   }
   return null;
+});
+
+// Placeholder art carries when the show is on rather than which channel it is on:
+// the channel is already in the meta row, the start time is not.
+const startTime = computed(() => props.show.scheduled_start ?? props.show.started_at ?? null);
+
+const placeholderDay = computed(() => {
+  if (!startTime.value) return null;
+  return new Date(startTime.value).toLocaleDateString('en-US', { weekday: 'long' });
+});
+
+const placeholderTime = computed(() => {
+  if (!startTime.value) return null;
+  return new Date(startTime.value).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 });
 
 // Get the stream URL for preview

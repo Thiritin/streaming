@@ -8,15 +8,20 @@
  * spacing are fixed so a wall of placeholders lines up instead of shimmering.
  */
 defineProps({
-  /** Optional short text drawn over the stripes, e.g. a channel name. */
+  /** Optional short text drawn over the stripes, e.g. a weekday or a year. */
   label: { type: String, default: null },
+  /** Optional second line under the label, e.g. a start time. */
+  sublabel: { type: String, default: null },
 });
 </script>
 
 <template>
   <div class="tile-placeholder">
     <div class="tile-placeholder-stripes" aria-hidden="true" />
-    <span v-if="label" class="tile-placeholder-label">{{ label }}</span>
+    <div v-if="label || sublabel" class="tile-placeholder-label">
+      <span v-if="label">{{ label }}</span>
+      <span v-if="sublabel" class="tile-placeholder-sublabel tabular-nums">{{ sublabel }}</span>
+    </div>
   </div>
 </template>
 
@@ -48,6 +53,10 @@ defineProps({
 /* Centred, not bottom-left: the corners belong to the live badge, viewer count
    and duration, and a label down there collides with all three. */
 .tile-placeholder-label {
-  @apply absolute inset-0 flex items-center justify-center px-4 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-300/60;
+  @apply absolute inset-0 flex flex-col items-center justify-center gap-1 px-4 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-300/60;
+}
+
+.tile-placeholder-sublabel {
+  @apply text-base font-bold tracking-normal text-primary-200/70;
 }
 </style>

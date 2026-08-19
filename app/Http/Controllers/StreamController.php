@@ -238,15 +238,36 @@ class StreamController extends Controller
         // Archive: everything that already happened, newest first. The browse page
         // shows a slice of it inline so the grid never looks empty between shows;
         // the full list lives on the archive page.
+        //
+        // Split at six months. Recent recordings still read as part of this event and
+        // sit in the main grid; anything older belongs to a past event and gets its own
+        // section, the same separation the archive page makes with year collections.
+        $archiveCutoff = now()->subMonths(6);
+
         $archiveRecordings = Recording::accessibleBy($user)
             ->where('is_published', true)
+            ->where('date', '>=', $archiveCutoff)
             ->orderBy('date', 'desc')
             ->limit(12)
             ->get()
             ->map(fn ($recording) => $this->mapRecording($recording));
 
+        $olderRecordings = Recording::accessibleBy($user)
+            ->where('is_published', true)
+            ->where('date', '<', $archiveCutoff)
+            ->orderBy('date', 'desc')
+            ->limit(8)
+            ->get()
+            ->map(fn ($recording) => $this->mapRecording($recording));
+
         $archiveTotal = Recording::accessibleBy($user)
             ->where('is_published', true)
+            ->where('date', '>=', $archiveCutoff)
+            ->count();
+
+        $olderTotal = Recording::accessibleBy($user)
+            ->where('is_published', true)
+            ->where('date', '<', $archiveCutoff)
             ->count();
 
         $primarySource = Source::featured();
@@ -266,6 +287,8 @@ class StreamController extends Controller
             'popularRecordings' => $popularRecordings,
             'archiveRecordings' => $archiveRecordings,
             'archiveTotal' => $archiveTotal,
+            'olderRecordings' => $olderRecordings,
+            'olderTotal' => $olderTotal,
             'featured' => $featured,
             'featuredChat' => $this->featuredChatExcerpt($user, $featured),
             'primaryChannel' => $primarySource?->name,
