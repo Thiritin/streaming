@@ -1,5 +1,5 @@
 <script setup>
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import ManageLayout from '@/Layouts/ManageLayout.vue';
 import ActionButton from '@/Components/Manage/ActionButton.vue';
@@ -82,6 +82,18 @@ watch(
   },
 );
 
+/**
+ * The frame grabbed in the cut editor goes through the ordinary upload field, so it lands
+ * on the same endpoint, the same storage rules and the same preview as a picked file. Like
+ * a picked file it only sets the form value: nothing is attached to the recording until
+ * the form is saved.
+ */
+const thumbnailField = ref(null);
+
+const uploadingThumbnail = computed(() => Boolean(thumbnailField.value?.uploading));
+
+const onCapture = (file) => thumbnailField.value?.uploadFile(file);
+
 const submit = () => {
   if (isEdit.value) {
     form.put(route('manage.recordings.update', props.recording.id), { preserveScroll: true });
@@ -151,6 +163,8 @@ const submit = () => {
               v-model:ends-at="form.ends_at"
               :available="available"
               :recording-id="recording.id"
+              :capturing="uploadingThumbnail"
+              @capture="onCapture"
             />
 
             <p v-if="form.errors.starts_at || form.errors.ends_at" class="text-xs text-danger-500">
@@ -188,9 +202,12 @@ const submit = () => {
             :error="form.errors.thumbnail_path"
             :helper="recording?.thumbnail_error
               ? `Last automatic capture failed: ${recording.thumbnail_error}`
-              : 'Left empty, a frame is captured from the video.'"
+              : isCut
+                ? 'Left empty, a frame is captured from the video. Capture thumbnail in the cut editor grabs the frame on screen instead.'
+                : 'Left empty, a frame is captured from the video.'"
           >
             <FileUploadField
+              ref="thumbnailField"
               v-model="form.thumbnail_path"
               purpose="recording_thumbnail"
               :preview-url="recording?.thumbnail_url ?? null"

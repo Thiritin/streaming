@@ -30,6 +30,15 @@ const upload = (event) => {
     return;
   }
 
+  uploadFile(file);
+};
+
+/**
+ * Exposed so a caller that produced a file itself - the cut editor grabbing the frame on
+ * screen - lands on the same endpoint and the same preview as a picked file, rather than
+ * growing a second upload path that has to be kept in step with this one.
+ */
+const uploadFile = (file) => {
   uploading.value = true;
 
   router.post(
@@ -57,6 +66,8 @@ const upload = (event) => {
     },
   );
 };
+
+defineExpose({ uploadFile, uploading });
 
 const clear = () => {
   emit('update:modelValue', null);

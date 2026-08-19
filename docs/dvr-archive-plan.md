@@ -412,6 +412,15 @@ every cut at the moment the observer first dispatches the job. `RecordingService
 renders the playlist to a temp file and points ffmpeg at that; the segment URLs inside
 are absolute and signed, so it still fetches the media itself.
 
+That temp file carried a second, quieter failure with it. ffmpeg derives the demuxer's
+protocol whitelist from the input, and for a *file* input that is `file,crypto,data`, so
+every `https` segment in the staged playlist was refused with `Protocol 'https' not on
+whitelist` before it was ever fetched. Duration survived because it is summed from the
+playlist text, which is what made the symptom "cuts get a duration and never a
+thumbnail". Both ffmpeg calls now pass `-protocol_whitelist` explicitly. The generated
+thumbnail is also stored `private`, matching the `recording_thumbnail` upload purpose and
+`Recording::getThumbnailUrlAttribute`, which reads it back through a temporary URL.
+
 `DvrExtractorService`, `dvr-extract.sh`, `dvr-process.sh`, `dvr-convert.sh` and
 `ExtractDvrSegments` are **deleted**. The SRS `dvr` block stays until after the next
 event; see Sequencing.

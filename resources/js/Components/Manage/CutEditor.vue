@@ -23,9 +23,11 @@ const props = defineProps({
     segmentSeconds: { type: Number, default: 2 },
     /** Minutes of archive shown on either side of the cut. */
     padMinutes: { type: Number, default: 5 },
+    /** Set while the parent is uploading a frame this editor handed it. */
+    capturing: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['update:startsAt', 'update:endsAt']);
+const emit = defineEmits(['update:startsAt', 'update:endsAt', 'capture']);
 
 const video = ref(null);
 const track = ref(null);
@@ -406,6 +408,55 @@ const markHere = (which) => {
     setMarker(which, playheadMs.value);
 };
 
+/** Set while the frame is being encoded, which is asynchronous and can miss. */
+const encoding = ref(false);
+const captureError = ref(null);
+const busyCapturing = computed(() => encoding.value || props.capturing);
+
+/**
+ * Hand the frame currently on screen to the parent as a JPEG.
+ *
+ * Reading the picture back is allowed even though the segments behind it are presigned
+ * URLs on another origin: hls.js feeds the element through MSE, so as far as the canvas
+ * is concerned the media is same-origin. The exception is a browser playing the playlist
+ * natively (the Safari branch in loadPreview), where the canvas is tainted and toBlob
+ * throws rather than returning a blank frame - hence the message instead of a silent no-op.
+ */
+const captureFrame = () => {
+    const el = video.value;
+    captureError.value = null;
+
+    if (!el?.videoWidth || !el?.videoHeight) {
+        captureError.value = 'No frame on screen yet. Seek to the moment you want first.';
+        return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = el.videoWidth;
+    canvas.height = el.videoHeight;
+
+    encoding.value = true;
+
+    try {
+        canvas.getContext('2d').drawImage(el, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+            (blob) => {
+                encoding.value = false;
+                if (!blob) {
+                    captureError.value = 'The browser could not encode that frame.';
+                    return;
+                }
+                emit('capture', new File([blob], 'frame.jpg', { type: 'image/jpeg' }));
+            },
+            'image/jpeg',
+            0.92,
+        );
+    } catch (e) {
+        encoding.value = false;
+        captureError.value = `Could not read that frame: ${e.message}`;
+    }
+};
+
 /**
  * Play from an instant, loading its window first if need be.
  *
@@ -468,6 +519,9 @@ const onKeydown = (event) => {
     const tag = event.target?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable) return;
     if (!root.value?.contains(event.target)) return;
+    // Shift is a modifier here; the rest belong to the browser. Without this, C inside
+    // the editor swallowed Cmd/Ctrl+C.
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
 
     const step = event.shiftKey ? 5 : 1;
     const handled = () => {
@@ -487,6 +541,7 @@ const onKeydown = (event) => {
         case ']': nudge('in', step); return handled();
         case '{': nudge('out', -step); return handled();
         case '}': nudge('out', step); return handled();
+        case 'c': captureFrame(); return handled();
         case 'home': previewStart(); return handled();
         case 'end': previewEnd(); return handled();
     }
@@ -647,8 +702,21 @@ onBeforeUnmount(() => {
                 <button type="button" class="cut-btn" @click="fitToCut">Fit to cut</button>
                 <button type="button" class="cut-btn" @click="showWholeArchive">Whole archive</button>
 
+                <span class="mx-1 text-fg-3">|</span>
+                <button
+                    type="button"
+                    class="cut-btn disabled:opacity-50"
+                    :disabled="busyCapturing"
+                    title="Use the frame on screen as this recording's thumbnail"
+                    @click="captureFrame"
+                >
+                    {{ busyCapturing ? 'Capturing…' : 'Capture thumbnail (C)' }}
+                </button>
+
                 <span class="ml-auto font-mono text-fg-2">{{ formatClock(playheadMs) }}</span>
             </div>
+
+            <p v-if="captureError" class="text-xs text-danger-500">{{ captureError }}</p>
             </div>
 
             <!-- Spans a padded view of the archive, not just the cut, so material outside
@@ -774,6 +842,7 @@ onBeforeUnmount(() => {
             <p class="font-mono text-[11px] text-fg-3">
                 space play &middot; J/L &plusmn;1s &middot; &larr;/&rarr; &plusmn;{{ segmentSeconds }}s
                 &middot; I/O set in/out &middot; [ ] in &middot; { } out &middot; Home/End preview
+                &middot; C thumbnail
             </p>
         </template>
     </div>

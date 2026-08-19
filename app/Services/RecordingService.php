@@ -11,6 +11,14 @@ use Illuminate\Support\Str;
 
 class RecordingService
 {
+    /**
+     * Protocols ffmpeg may follow out of a playlist we handed it as a local file.
+     *
+     * Everything the archive puts in a playlist is either a presigned S3 URL or an app
+     * route, so http/https/tcp/tls are all that is added to ffmpeg's file defaults.
+     */
+    protected const PROTOCOL_WHITELIST = 'file,crypto,data,http,https,tcp,tls';
+
     protected string $thumbnailStoragePath = 'recordings/thumbnails';
 
     protected int $thumbnailWidth = 1280;
@@ -121,6 +129,9 @@ class RecordingService
             $command = [
                 'ffprobe',
                 '-v', 'error',
+                // Same reason as captureFrameAtTime: a staged playlist is a local file
+                // pointing at https segments.
+                '-protocol_whitelist', self::PROTOCOL_WHITELIST,
                 '-show_entries', 'format=duration',
                 '-of', 'default=noprint_wrappers=1:nokey=1',
                 $url,
@@ -296,11 +307,15 @@ class RecordingService
             }
 
             // Store to S3
+            // Private, like every other recording thumbnail: the bucket is read through
+            // temporary URLs (see Recording::getThumbnailUrlAttribute and the
+            // recording_thumbnail entry in config/manage.php), and asking for a public
+            // ACL on a bucket that has them disabled throws rather than degrading.
             $uploaded = Storage::disk('s3')->putFileAs(
                 $this->thumbnailStoragePath,
                 $tempPath,
                 $filename,
-                'public'
+                ['visibility' => 'private']
             );
 
             if (! $uploaded) {
@@ -359,6 +374,13 @@ class RecordingService
         $command = [
             'ffmpeg',
             '-y', // Overwrite output
+            // A staged playlist is a local file whose segment URLs are absolute and
+            // presigned, and ffmpeg derives the demuxer's protocol whitelist from the
+            // input: for a file input that is file,crypto,data, so every segment is
+            // refused with "Protocol 'https' not on whitelist" before it is fetched.
+            // Duration comes from parsing the playlist text, which is why a cut ended up
+            // with a duration and never a thumbnail.
+            '-protocol_whitelist', self::PROTOCOL_WHITELIST,
             '-ss', (string) $timeInSeconds, // Seek to specific time
             '-i', $inputUrl,
             '-frames:v', '1', // Capture 1 frame
