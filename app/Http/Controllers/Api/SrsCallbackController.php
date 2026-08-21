@@ -17,6 +17,26 @@ use Illuminate\Support\Facades\Log;
 class SrsCallbackController extends Controller
 {
     /**
+     * The callback body, with the credential taken out of it.
+     *
+     * `param` is the publisher's RTMP query string, so logging the body verbatim wrote
+     * every source's stream key into the log on every publish and every disconnect - a
+     * permanent credential, in plaintext, sitting wherever the logs are shipped.
+     *
+     * @return array<string, mixed>
+     */
+    private function loggable(Request $request): array
+    {
+        $data = $request->all();
+
+        if (isset($data['param']) && is_string($data['param'])) {
+            $data['param'] = preg_replace('/(secret|shared_secret|streamkey|session_id)=[^&]*/i', '$1=[redacted]', $data['param']);
+        }
+
+        return $data;
+    }
+
+    /**
      * Handle SRS on_publish webhook for stream authentication
      * Called when a client wants to publish a stream
      */
@@ -24,7 +44,7 @@ class SrsCallbackController extends Controller
     {
         // Log the incoming request for debugging
         Log::info('SRS auth webhook called', [
-            'data' => $request->all(),
+            'data' => $this->loggable($request),
             'ip' => $request->ip(),
         ]);
 
@@ -192,7 +212,7 @@ class SrsCallbackController extends Controller
     {
         // Log the play event
         Log::info('SRS play webhook called', [
-            'data' => $request->all(),
+            'data' => $this->loggable($request),
         ]);
 
         // For now, allow all play requests
@@ -209,7 +229,7 @@ class SrsCallbackController extends Controller
     {
         // Log the stop event
         Log::info('SRS stop webhook called', [
-            'data' => $request->all(),
+            'data' => $this->loggable($request),
         ]);
 
         // Clean up any session data if needed
@@ -224,7 +244,7 @@ class SrsCallbackController extends Controller
     public function unpublish(Request $request)
     {
         Log::info('SRS unpublish webhook called', [
-            'data' => $request->all(),
+            'data' => $this->loggable($request),
         ]);
 
         $stream = $request->input('stream');
@@ -236,10 +256,12 @@ class SrsCallbackController extends Controller
             $previousStatus = $source->status->value;
 
             // Check if there's still a live show for this source
-            $hasLiveShow = Show::where(function ($query) use ($source) {
-                $query->where('source_id', $source->id)
-                    ->orWhere('source_id', $source->slug);
-            })
+            // `shows.source_id` is a bigint foreign key. Matching it against the slug as
+            // well threw on Postgres (22P02, invalid input syntax for bigint), which
+            // turned every on_unpublish into a 500 and left the source reading `online`
+            // long after its encoder had gone. MySQL only hid it, by coercing the slug
+            // to 0 and comparing against that.
+            $hasLiveShow = Show::where('source_id', $source->id)
                 ->where('status', 'live')
                 ->exists();
 
@@ -289,7 +311,7 @@ class SrsCallbackController extends Controller
     public function error(Request $request)
     {
         Log::info('SRS error webhook called', [
-            'data' => $request->all(),
+            'data' => $this->loggable($request),
         ]);
 
         $stream = $request->input('stream');
@@ -335,7 +357,7 @@ class SrsCallbackController extends Controller
     {
         $data = $request->all();
 
-        Log::info('SRS on_hls callback', $data);
+        Log::info('SRS on_hls callback', $this->loggable($request));
 
         // Extract parameters from SRS callback
         $stream = $data['stream'] ?? '';

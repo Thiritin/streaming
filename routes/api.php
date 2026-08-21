@@ -13,6 +13,7 @@ use App\Http\Middleware\CheckCompanionTokenMiddleware;
 use App\Http\Middleware\CheckImportKeyMiddleware;
 use App\Http\Middleware\CheckRecordingApiKeyMiddleware;
 use App\Http\Middleware\CheckSharedSecretMiddleware;
+use App\Http\Middleware\CheckSrsCallbackMiddleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -74,9 +75,22 @@ Route::prefix('hls')->group(function () {
     Route::post('heartbeat', [HlsSessionController::class, 'heartbeat'])->name('api.hls.heartbeat');
 });
 
-// SRS callbacks
+// SRS callbacks.
+//
+// `auth` is on_publish and stands on its own: it resolves the source's stream key out of
+// the publisher's RTMP query string itself, and it is the one callback whose response SRS
+// acts on, so a second gate in front of it could only ever reject a live publisher.
 Route::prefix('srs')->group(function () {
     Route::post('auth', [SrsCallbackController::class, 'auth'])->name('api.srs.auth');
+});
+
+// The rest are notifications, and every one of them used to be open to anyone who could
+// reach the app - on_unpublish takes a source off air on nothing but a slug in the body.
+// CheckSrsCallbackMiddleware proves the caller is a server using what SRS already sends,
+// so no deployed origin needs reconfiguring. Refusing a notification cannot interrupt a
+// stream: the publisher has gone by the time on_unpublish fires, and SRS discards the
+// reply.
+Route::middleware([CheckSrsCallbackMiddleware::class])->prefix('srs')->group(function () {
     Route::post('play', [SrsCallbackController::class, 'play'])->name('api.srs.play');
     Route::post('stop', [SrsCallbackController::class, 'stop'])->name('api.srs.stop');
     Route::post('unpublish', [SrsCallbackController::class, 'unpublish'])->name('api.srs.unpublish');

@@ -350,6 +350,9 @@ class SrsCallbackControllerTest extends TestCase
 
     /**
      * Test unpublish webhook handles unknown stream gracefully
+     *
+     * The credential is a registered server's shared secret rather than a stream key,
+     * since the point of the case is that no source answers to the slug.
      */
     public function test_unpublish_handles_unknown_stream_gracefully()
     {
@@ -357,12 +360,85 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'ingress',
             'stream' => 'non-existent-stream',
             'tcUrl' => 'rtmp://localhost/ingress',
-            'param' => '',
+            'param' => '?shared_secret='.$this->originServer->shared_secret,
         ]);
 
         // Should still return success but log a warning
         $response->assertStatus(200)
             ->assertJson(['code' => 0]);
+    }
+
+    /**
+     * An unpublish carrying no credential is refused, and leaves the source alone.
+     *
+     * Before CheckSrsCallbackMiddleware this was the whole attack: the slug is public,
+     * so anyone who could reach the app could black out a live channel with one POST.
+     */
+    public function test_unpublish_without_a_credential_is_refused()
+    {
+        $this->source->status = SourceStatusEnum::ONLINE;
+        $this->source->save();
+
+        $response = $this->postJson('/api/srs/unpublish', [
+            'app' => 'ingress',
+            'stream' => 'test-source',
+            'tcUrl' => 'rtmp://localhost/ingress',
+            'param' => '',
+        ]);
+
+        $response->assertStatus(403);
+
+        $this->source->refresh();
+        $this->assertEquals(SourceStatusEnum::ONLINE, $this->source->status);
+    }
+
+    /**
+     * The same for the error callback, which is the other one that writes a status.
+     */
+    public function test_error_without_a_credential_is_refused()
+    {
+        $this->source->status = SourceStatusEnum::ONLINE;
+        $this->source->save();
+
+        $response = $this->postJson('/api/srs/error', [
+            'app' => 'ingress',
+            'stream' => 'test-source',
+            'error' => 'connection reset',
+            'param' => '',
+        ]);
+
+        $response->assertStatus(403);
+
+        $this->source->refresh();
+        $this->assertEquals(SourceStatusEnum::ONLINE, $this->source->status);
+    }
+
+    /**
+     * A stream key belonging to another source does not authorise this one.
+     */
+    public function test_unpublish_rejects_another_sources_stream_key()
+    {
+        $other = Source::create([
+            'name' => 'Other Source',
+            'slug' => 'other-source',
+            'stream_key' => 'other_stream_key_456',
+            'status' => SourceStatusEnum::OFFLINE,
+        ]);
+
+        $this->source->status = SourceStatusEnum::ONLINE;
+        $this->source->save();
+
+        $response = $this->postJson('/api/srs/unpublish', [
+            'app' => 'ingress',
+            'stream' => 'test-source',
+            'tcUrl' => 'rtmp://localhost/ingress',
+            'param' => '?secret='.$other->stream_key,
+        ]);
+
+        $response->assertStatus(403);
+
+        $this->source->refresh();
+        $this->assertEquals(SourceStatusEnum::ONLINE, $this->source->status);
     }
 
     /**
@@ -375,7 +451,7 @@ class SrsCallbackControllerTest extends TestCase
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/ingress',
             'pageUrl' => 'http://example.com',
-            'param' => '',
+            'param' => '?secret='.$this->source->stream_key,
         ]);
 
         $response->assertStatus(200)
@@ -391,7 +467,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/ingress',
-            'param' => '',
+            'param' => '?secret='.$this->source->stream_key,
         ]);
 
         $response->assertStatus(200)
@@ -480,7 +556,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/ingress',
-            'param' => '',
+            'param' => '?secret='.$this->source->stream_key,
         ]);
 
         $response->assertStatus(200);
@@ -693,7 +769,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/ingress',
-            'param' => '',
+            'param' => '?secret='.$this->source->stream_key,
         ]);
         $response->assertStatus(200);
 
@@ -721,7 +797,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://localhost/ingress',
-            'param' => '',
+            'param' => '?secret='.$this->source->stream_key,
         ]);
         $response->assertStatus(200);
 
