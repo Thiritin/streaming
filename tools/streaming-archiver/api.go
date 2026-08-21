@@ -63,9 +63,46 @@ type StartResponse struct {
 }
 
 type SignedURL struct {
-	Key     string            `json:"key"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"`
+	Key     string    `json:"key"`
+	URL     string    `json:"url"`
+	Headers headerMap `json:"headers"`
+}
+
+// headerMap accepts either shape the API can answer with.
+//
+// A presigned upload's headers come out of the AWS SDK as PSR-7 style lists -
+// {"Host": ["bucket.example"]} - and older builds of the site pass them through
+// untouched, while newer ones flatten to {"Host": "bucket.example"}. A client that
+// insisted on one of those failed the whole import after the encode was already done,
+// which is an expensive way to disagree about JSON.
+type headerMap map[string]string
+
+func (h *headerMap) UnmarshalJSON(data []byte) error {
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	out := make(headerMap, len(raw))
+	for name, value := range raw {
+		switch typed := value.(type) {
+		case string:
+			out[name] = typed
+		case []any:
+			parts := make([]string, 0, len(typed))
+			for _, item := range typed {
+				parts = append(parts, fmt.Sprint(item))
+			}
+			out[name] = strings.Join(parts, ", ")
+		case nil:
+			// Nothing to send.
+		default:
+			out[name] = fmt.Sprint(typed)
+		}
+	}
+
+	*h = out
+	return nil
 }
 
 type CommitResult struct {

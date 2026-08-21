@@ -22,6 +22,10 @@ type Progress struct {
 	lastDraw  time.Time
 	lastValue float64
 	finished  bool
+
+	// Suffix is appended to the line, for a second dimension the caller tracks itself -
+	// megabytes a second next to a count of objects, say.
+	Suffix string
 }
 
 func NewProgress(label string, total float64, unit string) *Progress {
@@ -94,11 +98,28 @@ func (p *Progress) Set(value float64, rate float64) {
 		eta,
 	)
 
+	if p.Suffix != "" {
+		line += "  " + p.Suffix
+	}
+
 	if p.tty {
 		fmt.Fprintf(os.Stderr, "\r\033[K%s", line)
 		return
 	}
 	fmt.Fprintln(os.Stderr, line)
+}
+
+// Interrupt puts a line above the bar without disturbing it: a retry, a warning, anything
+// the operator should see while a long job carries on.
+func (p *Progress) Interrupt(message string) {
+	if p.tty {
+		fmt.Fprintf(os.Stderr, "\r\033[K%s\n", message)
+		p.lastDraw = time.Time{}
+		p.Set(p.lastValue, 0)
+		return
+	}
+
+	fmt.Fprintln(os.Stderr, message)
 }
 
 // Done leaves the finished line in place and moves off it.

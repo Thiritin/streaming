@@ -50,6 +50,31 @@ streaming-archiver import "Opening Ceremony.mp4" --title "Opening Ceremony"
 It prints the import window, encodes, uploads, and ends with the manage URL of a **draft**
 recording. Nothing is published automatically: someone still has to watch it and decide.
 
+## Encoders
+
+By default the tool uses Apple's media engine (`h264_videotoolbox`) when ffmpeg offers it,
+and libx264 everywhere else. Both were measured on the same 1080p50 material at the ladder's
+6000k top rung, VMAF against a lossless reference, 30s per slice:
+
+| slice | encoder | delivered | VMAF mean | VMAF min |
+|---|---|---|---|---|
+| static, talking heads | x264 veryfast | 3.3 Mbps | 94.7 | 83.7 |
+| static, talking heads | videotoolbox | 4.0 Mbps | 94.5 | 76.1 |
+| high motion, stage | x264 veryfast | 5.8 Mbps | 78.0 | 56.8 |
+| high motion, stage | videotoolbox | 6.1 Mbps | 79.1 | 53.4 |
+
+Within a point of each other, at roughly eight times the speed and a fraction of the CPU.
+The difference is bit spend, not quality: VideoToolbox stays near the target rate on easy
+content where x264 drops well under it, so an import comes out somewhat larger.
+
+Getting there needed one thing: **no `-maxrate`/`-bufsize` on the VideoToolbox rungs**. Its
+rate control answers a ceiling by spending far less than the target, not by trimming peaks
+- the same high-motion slice scored 68.5 at 3.7 Mbps with the ladder's 6500k cap and 75.0
+at 4.8 Mbps with a loose 8400k one. The cap was the entire quality gap people attribute to
+hardware encoders.
+
+`--preset` only applies to x264; VideoToolbox has no equivalent knob.
+
 Both long waits - the encode and the upload - draw a progress bar with an ETA, from
 ffmpeg's own reported speed rather than a guess. Off a terminal (CI, `tee`) the bar becomes
 a line every ten seconds instead.

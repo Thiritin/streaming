@@ -75,9 +75,13 @@ final class ArchiveLadder
                 'maxrate' => '6500k',
                 'bufsize' => '13000k',
                 'profile' => 'main',
-                // Offline encodes are not racing a live stream, so the top rung can afford
-                // a slower preset than the transcoder's `faster`.
-                'preset' => 'slow',
+                // Matches the live transcoder rather than reaching for a slower preset.
+                // "Offline can afford it" is false on the machine this actually runs on: at
+                // 1080p50 the x264 `slow` preset costs 5-8x `veryfast`, which turned a
+                // 65 minute master into a six hour encode on an M3 Pro. The bitrate is
+                // fixed either way, so the whole trade was a few percent of efficiency for
+                // most of a working day.
+                'preset' => 'veryfast',
                 'audio_bitrate' => '192k',
                 'halve_frame_rate' => false,
             ],

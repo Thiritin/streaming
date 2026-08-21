@@ -45,9 +45,15 @@ The key travels as `X-Import-Key`. It is not the same as `RECORDING_API_KEY`, wh
 guards the older `/api/recording/shows` and `/api/recording/create` endpoints and is set at
 deploy time; the import API does not accept it.
 
-Roughly 3x realtime on a recent laptop for three rungs of 1080p50, so an hour of video is
-about twenty minutes of encoding plus the upload. `--preset faster` trades a little
-efficiency for speed; `--parallel` tunes concurrent uploads.
+On Apple silicon it encodes with the media engine by default, which is around eight times
+faster than software and leaves the machine usable: an hour of 1080p50 lands in roughly
+half an hour of encoding plus the upload. Measured against a lossless reference the two
+encoders land within a point of VMAF at the same rung, so the default is not a quality
+compromise; `--encoder x264` is there for when an import is worth several times the wall
+clock anyway. `--parallel` tunes concurrent uploads.
+
+The ladder's presets come from the server (`App\Support\ArchiveLadder`), so changing what
+importers encode with does not mean reissuing binaries.
 
 ## Where imports land
 

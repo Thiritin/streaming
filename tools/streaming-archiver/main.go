@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -68,7 +69,10 @@ flags:
   --prefix      archive prefix to import under (default: the site's, normally "vod")
   --api         site base url (default: $ARCHIVER_API)
   --key         import key, from /manage > Settings > Imports (default: $ARCHIVER_KEY)
-  --preset      override the x264 preset on every rung, e.g. faster
+  --encoder     auto (default), videotoolbox or x264. auto uses Apple's media
+                engine when ffmpeg offers it, which is many times faster; x264
+                keeps a little more detail per bit
+  --preset      override the x264 preset on every rung, e.g. faster (x264 only)
   --parallel    concurrent uploads (default 8)
   --work        working directory for the encode (default: a temp dir, removed after)
   --keep        keep the encoded segments instead of removing them
@@ -88,6 +92,7 @@ func runImport(argv []string) error {
 	api := flags.String("api", os.Getenv("ARCHIVER_API"), "site base url")
 	key := flags.String("key", os.Getenv("ARCHIVER_KEY"), "import key")
 	preset := flags.String("preset", "", "x264 preset override")
+	encoderChoice := flags.String("encoder", "auto", "auto, videotoolbox or x264")
 	parallel := flags.Int("parallel", 8, "concurrent uploads")
 	work := flags.String("work", "", "working directory")
 	keep := flags.Bool("keep", false, "keep encoded segments")
@@ -124,6 +129,11 @@ func runImport(argv []string) error {
 		return fmt.Errorf("%s is a directory", input)
 	}
 
+	encoder, err := resolveEncoder(*encoderChoice)
+	if err != nil {
+		return err
+	}
+
 	probe, err := ffprobe(input)
 	if err != nil {
 		return err
@@ -153,6 +163,7 @@ func runImport(argv []string) error {
 	}
 
 	imp := started.Import
+	resumed := false
 	ladder := ladderFor(started.Recipe, probe)
 	if len(ladder) == 0 {
 		return fmt.Errorf("the master is %dp, below every rung the site asks for", probe.Height)
@@ -163,10 +174,6 @@ func runImport(argv []string) error {
 		names = append(names, rendition.Name)
 	}
 
-	fmt.Printf("Import    %s\n", imp.ID)
-	fmt.Printf("Archive   %s, starting %s\n", imp.Prefix, imp.StartsAt)
-	fmt.Printf("Ladder    %s\n\n", strings.Join(names, ", "))
-
 	dir := *work
 	if dir == "" {
 		dir, err = os.MkdirTemp("", "streaming-archiver-")
@@ -176,8 +183,48 @@ func runImport(argv []string) error {
 	} else if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	if !*keep {
-		defer os.RemoveAll(dir)
+
+	// A directory that already belongs to an import keeps it: same session, so the object
+	// keys are the ones the last run was already writing, whatever landed then still
+	// counts, and nothing is left orphaned in the bucket under a name no index mentions.
+	if state, ok := loadImportState(dir, input); ok {
+		imp = state.Import
+		resumed = true
+	} else if err := saveImportState(dir, input, imp); err != nil {
+		return err
+	}
+
+	if resumed {
+		fmt.Printf("Import    %s (resumed from %s)\n", imp.ID, dir)
+	} else {
+		fmt.Printf("Import    %s\n", imp.ID)
+	}
+	fmt.Printf("Archive   %s, starting %s\n", imp.Prefix, imp.StartsAt)
+	fmt.Printf("Ladder    %s\n", strings.Join(names, ", "))
+	fmt.Printf("Encoder   %s\n\n", encoderLabel(encoder, ladder, *preset))
+
+	// The encode is only thrown away when the import as a whole succeeded. Anything else -
+	// a rejected key, an S3 that stopped answering, a closed lid - keeps it, because
+	// re-encoding an hour of video to recover from a failed upload is half an hour nobody
+	// gets back. See the --work note printed on the way out.
+	completed := false
+	defer func() {
+		if *keep {
+			return
+		}
+		if completed {
+			os.RemoveAll(dir)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "\nThe encode is kept at %s\n", dir)
+		fmt.Fprintf(os.Stderr, "Rerun with --work %q to carry on without encoding again.\n", dir)
+	}()
+
+	if existing, ok, err := reuse(dir, imp, ladder); err != nil {
+		return err
+	} else if ok {
+		fmt.Printf("Reusing the encode in %s (%d segments)\n\n", dir, len(existing))
+		return finish(client, imp, ladder, names, existing, dir, *parallel, &completed)
 	}
 
 	fmt.Printf("Encoding into %s\n", dir)
@@ -186,7 +233,7 @@ func runImport(argv []string) error {
 	// The ladder is encoded in one pass, so the timeline position ffmpeg reports is the
 	// progress of the whole job - three rungs included.
 	encoding := NewProgress("  encode ", probe.Duration, "s")
-	err = encode(input, dir, imp, started.Recipe, ladder, probe, *preset, func(done, speed float64) {
+	err = encode(input, dir, imp, started.Recipe, ladder, probe, encoder, *preset, func(done, speed float64) {
 		encoding.Set(done, speed)
 	})
 	if err != nil {
@@ -215,6 +262,22 @@ func runImport(argv []string) error {
 
 	fmt.Printf("Encoded   %d segments in %s\n\n", len(reference), humanDuration(time.Since(encodeStart).Seconds()))
 
+	return finish(client, imp, ladder, names, reference, dir, *parallel, &completed)
+}
+
+// finish is everything after the media exists: work out which hour each segment belongs to,
+// upload them, and commit. Shared by a fresh encode and a reused one, so a resumed import
+// cannot drift from a first attempt.
+func finish(
+	client *Client,
+	imp Import,
+	ladder []Rendition,
+	names []string,
+	reference []float64,
+	dir string,
+	parallel int,
+	completed *bool,
+) error {
 	startsAt, err := time.Parse(time.RFC3339, imp.StartsAt)
 	if err != nil {
 		return fmt.Errorf("the site returned an unreadable start time %q: %w", imp.StartsAt, err)
@@ -231,9 +294,28 @@ func runImport(argv []string) error {
 	}
 
 	total := len(reference) * len(ladder)
-	fmt.Printf("Uploading %d objects\n", total)
-	uploaded := 0
+
+	// Keys that already landed in an earlier run of this work directory. Reported rather
+	// than silently skipped, because "5859 objects" and "1200 objects" on the same import
+	// otherwise looks like something went missing.
+	tracker, err := openManifest(dir)
+	if err != nil {
+		return err
+	}
+	defer tracker.close()
+
+	if done := tracker.count(); done > 0 {
+		fmt.Printf("Uploading %d objects (%d already in the bucket from an earlier run)\n", total, done)
+	} else {
+		fmt.Printf("Uploading %d objects\n", total)
+	}
+
+	uploaded := tracker.count()
 	uploading := NewProgress("  upload ", float64(total), "objects")
+	uploading.Set(float64(uploaded), 0)
+
+	var sent atomic.Int64
+	uploadStarted := time.Now()
 
 	for start := 0; start < len(reference); start += uploadBatch {
 		end := min(start+uploadBatch, len(reference))
@@ -253,20 +335,44 @@ func runImport(argv []string) error {
 			return fmt.Errorf("asked for %d upload urls and got %d", len(wanted), len(signed))
 		}
 
-		jobs := make([]uploadJob, len(signed))
+		jobs := make([]uploadJob, 0, len(signed))
 		for i, url := range signed {
-			jobs[i] = uploadJob{
-				Path:   filepath.Join(dir, fmt.Sprintf("%s_%s_%s_%06d.ts", imp.Prefix, wanted[i].Rendition, imp.Session, wanted[i].Number)),
-				Signed: url,
+			if tracker.has(url.Key) {
+				continue
 			}
+
+			path := filepath.Join(dir, fmt.Sprintf("%s_%s_%s_%06d.ts", imp.Prefix, wanted[i].Rendition, imp.Session, wanted[i].Number))
+
+			info, err := os.Stat(path)
+			if err != nil {
+				return fmt.Errorf("segment missing from the encode: %w", err)
+			}
+
+			jobs = append(jobs, uploadJob{Path: path, Size: info.Size(), Signed: url})
+		}
+
+		if len(jobs) == 0 {
+			continue
 		}
 
 		base := uploaded
-		if err := upload(jobs, *parallel, func(done, _ int) {
-			uploading.Set(float64(base+done), 0)
-		}); err != nil {
+		err = upload(jobs, parallel, tracker, uploadReport{
+			Done: func(objects int, bytes int64) {
+				uploading.Suffix = throughput(sent.Load()+bytes, uploadStarted)
+				uploading.Set(float64(base+objects), 0)
+			},
+			Retry: func(name string, attempt int, wait time.Duration, cause error) {
+				// Printed above the bar rather than swallowed: an upload that is quietly
+				// retrying for two minutes and one that has hung look identical otherwise.
+				uploading.Interrupt(fmt.Sprintf("  retry %s (attempt %d, waiting %s): %s",
+					name, attempt, wait.Round(time.Second), short(cause)))
+			},
+		})
+		if err != nil {
 			return err
 		}
+
+		sent.Add(batchBytes(jobs))
 		uploaded += len(jobs)
 	}
 
@@ -282,6 +388,10 @@ func runImport(argv []string) error {
 	if err != nil {
 		return fmt.Errorf("commit failed: %w", err)
 	}
+
+	// Only now is the encode disposable: the archive holds the segments and the site has
+	// a recording pointing at them.
+	*completed = true
 
 	fmt.Printf("Committed as recording %d (%s)\n", result.RecordingID, result.Slug)
 	fmt.Printf("  duration   %s across %d segments\n", humanDuration(float64(result.Duration)), result.SegmentCount)
@@ -349,6 +459,61 @@ func permute(flags *flag.FlagSet, argv []string) []string {
 	// The terminator is put back, so an operand that begins with a dash - an oddly named
 	// file, or one produced by a shell glob - is still read as a filename.
 	return append(append(options, "--"), operands...)
+}
+
+// encoderLabel names the encoder and, for x264, the presets in play - "slow on the top
+// rung" is the difference between a twenty minute import and an overnight one, so it
+// belongs on screen before the encode starts rather than in a process listing.
+func encoderLabel(encoder string, ladder []Rendition, presetOverride string) string {
+	if encoder == encoderVideoToolbox {
+		return "h264_videotoolbox (Apple media engine)"
+	}
+
+	presets := make([]string, 0, len(ladder))
+	for _, rendition := range ladder {
+		preset := rendition.Preset
+		if presetOverride != "" {
+			preset = presetOverride
+		}
+		presets = append(presets, fmt.Sprintf("%s:%s", rendition.Name, preset))
+	}
+
+	return "libx264 (" + strings.Join(presets, " ") + ")"
+}
+
+func batchBytes(jobs []uploadJob) int64 {
+	var total int64
+	for _, job := range jobs {
+		total += job.Size
+	}
+	return total
+}
+
+// throughput is the second half of the upload readout: objects say how far along it is,
+// megabytes a second say whether the link is working.
+func throughput(bytes int64, since time.Time) string {
+	elapsed := time.Since(since).Seconds()
+	if elapsed <= 0 || bytes <= 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("%.1f GB at %.1f MB/s",
+		float64(bytes)/(1<<30),
+		float64(bytes)/(1<<20)/elapsed,
+	)
+}
+
+// short trims an error to something that fits beside a progress bar. The full text is a
+// signed URL and a stack of context; the last clause is the part that says what happened.
+func short(err error) string {
+	text := err.Error()
+	if index := strings.LastIndex(text, ": "); index != -1 && len(text)-index < 80 {
+		return text[index+2:]
+	}
+	if len(text) > 80 {
+		return text[:77] + "..."
+	}
+	return text
 }
 
 func humanDuration(seconds float64) string {

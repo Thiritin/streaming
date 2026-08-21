@@ -156,7 +156,12 @@ class ArchiveImportService
             $urls[] = [
                 'key' => $key,
                 'url' => $signed['url'],
-                'headers' => $signed['headers'] ?? [],
+                // Flattened to one string per header. The SDK answers in the PSR-7 shape,
+                // a list per header, which reads as a type error in any client that
+                // expects what an HTTP header actually is.
+                'headers' => collect($signed['headers'] ?? [])
+                    ->map(fn ($value) => is_array($value) ? implode(', ', $value) : (string) $value)
+                    ->all(),
             ];
         }
 

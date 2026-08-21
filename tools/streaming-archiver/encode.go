@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -104,7 +106,101 @@ func ladderFor(recipe Recipe, probe *Probe) []Rendition {
 // Mirrors docker/ffmpeg-hls/stream-manager.sh, with the differences an offline encode
 // allows: a slower preset on the top rung, and no sliding window because nothing is
 // watching this live.
-func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, probe *Probe, presetOverride string, onProgress func(done, speed float64)) error {
+// rungArgs is how one rendition is encoded, which is where the two encoders differ.
+//
+// x264 is the reference: the live transcoder uses it, and at a fixed bitrate it keeps more
+// detail than the hardware block does, particularly on the high-motion material a stage
+// camera produces.
+//
+// VideoToolbox hands the work to the media engine on Apple silicon instead. It is an order
+// of magnitude faster and barely touches the CPU, and it ignores -preset entirely: rate
+// control is the bitrate and nothing else. The quality cost at these bitrates is real but
+// small, and it is the difference between an import finishing over lunch and finishing
+// overnight.
+func rungArgs(i int, rendition Rendition, recipe Recipe, encoder string, presetOverride string) []string {
+	args := []string{"-map", fmt.Sprintf("[v%dout]", i)}
+
+	if encoder == encoderVideoToolbox {
+		// No -maxrate/-bufsize, unlike the x264 rung. VideoToolbox's rate control reacts to
+		// a ceiling by spending far less than the target rather than by trimming peaks:
+		// measured on 30s of high-motion 1080p50 at a 6000k target, it delivered 3.7 Mbps
+		// and VMAF 68.5 with the ladder's 6500k cap, 4.8 Mbps and 74.9 with a loose 8400k
+		// one, and 6.1 Mbps and 79.1 with no cap at all - the last of those slightly ahead
+		// of x264 veryfast on the same clip. The cap was the whole quality gap.
+		//
+		// What it costs is a softer ceiling: easy content lands nearer the target than
+		// x264 would (4.0 Mbps against 3.3 on a static slice), so an import is a little
+		// larger. Worth it to keep the hard passages intact.
+		return append(args,
+			fmt.Sprintf("-c:v:%d", i), "h264_videotoolbox",
+			fmt.Sprintf("-b:v:%d", i), rendition.VideoBitrate,
+			fmt.Sprintf("-profile:v:%d", i), rendition.Profile,
+			// The encoder is allowed to fall back to software rather than fail outright,
+			// e.g. for a rung whose dimensions the media engine will not take.
+			fmt.Sprintf("-allow_sw:v:%d", i), "1",
+			fmt.Sprintf("-force_key_frames:v:%d", i),
+			fmt.Sprintf("expr:gte(t,n_forced*%d)", recipe.SegmentSeconds),
+		)
+	}
+
+	preset := rendition.Preset
+	if presetOverride != "" {
+		preset = presetOverride
+	}
+
+	return append(args,
+		fmt.Sprintf("-c:v:%d", i), "libx264",
+		fmt.Sprintf("-b:v:%d", i), rendition.VideoBitrate,
+		fmt.Sprintf("-maxrate:v:%d", i), rendition.Maxrate,
+		fmt.Sprintf("-bufsize:v:%d", i), rendition.Bufsize,
+		fmt.Sprintf("-preset:v:%d", i), preset,
+		fmt.Sprintf("-profile:v:%d", i), rendition.Profile,
+		fmt.Sprintf("-sc_threshold:v:%d", i), "0",
+		fmt.Sprintf("-force_key_frames:v:%d", i),
+		fmt.Sprintf("expr:gte(t,n_forced*%d)", recipe.SegmentSeconds),
+	)
+}
+
+const (
+	encoderX264         = "x264"
+	encoderVideoToolbox = "videotoolbox"
+)
+
+// resolveEncoder answers what to encode with, and says so out loud: which encoder ran is
+// the first thing anyone asks when comparing two imports.
+func resolveEncoder(choice string) (string, error) {
+	switch choice {
+	case "", "auto":
+		if hasVideoToolbox() {
+			return encoderVideoToolbox, nil
+		}
+		return encoderX264, nil
+	case encoderX264, "libx264", "software":
+		return encoderX264, nil
+	case encoderVideoToolbox, "hw", "hardware":
+		if !hasVideoToolbox() {
+			return "", errors.New("this machine's ffmpeg has no h264_videotoolbox encoder")
+		}
+		return encoderVideoToolbox, nil
+	default:
+		return "", fmt.Errorf("unknown encoder %q: use auto, x264 or videotoolbox", choice)
+	}
+}
+
+func hasVideoToolbox() bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+
+	out, err := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(string(out), "h264_videotoolbox")
+}
+
+func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, probe *Probe, encoder string, presetOverride string, onProgress func(done, speed float64)) error {
 	var (
 		filters   []string
 		splits    strings.Builder
@@ -132,23 +228,7 @@ func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, pr
 			i, rendition.Width, rendition.Height, rate, i,
 		))
 
-		preset := rendition.Preset
-		if presetOverride != "" {
-			preset = presetOverride
-		}
-
-		maps = append(maps,
-			"-map", fmt.Sprintf("[v%dout]", i),
-			fmt.Sprintf("-c:v:%d", i), "libx264",
-			fmt.Sprintf("-b:v:%d", i), rendition.VideoBitrate,
-			fmt.Sprintf("-maxrate:v:%d", i), rendition.Maxrate,
-			fmt.Sprintf("-bufsize:v:%d", i), rendition.Bufsize,
-			fmt.Sprintf("-preset:v:%d", i), preset,
-			fmt.Sprintf("-profile:v:%d", i), rendition.Profile,
-			fmt.Sprintf("-sc_threshold:v:%d", i), "0",
-			fmt.Sprintf("-force_key_frames:v:%d", i),
-			fmt.Sprintf("expr:gte(t,n_forced*%d)", recipe.SegmentSeconds),
-		)
+		maps = append(maps, rungArgs(i, rendition, recipe, encoder, presetOverride)...)
 
 		audio = append(audio,
 			"-map", "0:a:0",
@@ -162,7 +242,16 @@ func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, pr
 
 	filterComplex := fmt.Sprintf("[0:v]split=%d%s; %s", len(ladder), splits.String(), strings.Join(filters, "; "))
 
-	args := []string{"-hide_banner", "-y", "-i", input, "-filter_complex", filterComplex}
+	args := []string{"-hide_banner", "-y"}
+
+	// Decoding is its own cost: a 10-bit HEVC master at 50p is heavy in software, and the
+	// same media engine that encodes can decode. Frames come back to system memory for the
+	// scale filters either way, so this is a straight saving.
+	if encoder == encoderVideoToolbox {
+		args = append(args, "-hwaccel", "videotoolbox")
+	}
+
+	args = append(args, "-i", input, "-filter_complex", filterComplex)
 	args = append(args, maps...)
 	args = append(args, audio...)
 	args = append(args,
@@ -268,4 +357,77 @@ func durations(dir, prefix, rendition string) ([]float64, error) {
 	}
 
 	return out, scanner.Err()
+}
+
+// reuse looks for a finished encode in dir and adopts it for this import.
+//
+// An encode is the expensive half of an import - half an hour for a feature-length master -
+// and everything after it can fail for reasons that have nothing to do with the media: an
+// expired key, a bucket that stopped answering, a laptop lid. Re-encoding to recover from
+// that is pure waste, so a work directory that already holds a complete ladder is reused.
+//
+// Segments carry the session id of the import they were encoded for, and this is a new
+// import with a new one, so the files are renamed. That is a few thousand renames, which
+// costs milliseconds and keeps the naming rule in one place.
+func reuse(dir string, imp Import, ladder []Rendition) ([]float64, bool, error) {
+	reference, err := durations(dir, imp.Prefix, ladder[0].Name)
+	if err != nil || len(reference) == 0 {
+		return nil, false, nil
+	}
+
+	for _, rendition := range ladder[1:] {
+		other, err := durations(dir, imp.Prefix, rendition.Name)
+		if err != nil || len(other) != len(reference) {
+			return nil, false, nil
+		}
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// The session is whatever the segments already say, taken from any one of them.
+	session := ""
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".ts") {
+			continue
+		}
+		parts := strings.Split(strings.TrimSuffix(name, ".ts"), "_")
+		if len(parts) >= 4 {
+			session = parts[len(parts)-2]
+			break
+		}
+	}
+
+	if session == "" {
+		return nil, false, nil
+	}
+
+	if session != imp.Session {
+		for _, entry := range entries {
+			name := entry.Name()
+			if !strings.HasSuffix(name, ".ts") || !strings.Contains(name, "_"+session+"_") {
+				continue
+			}
+			renamed := strings.Replace(name, "_"+session+"_", "_"+imp.Session+"_", 1)
+			if err := os.Rename(filepath.Join(dir, name), filepath.Join(dir, renamed)); err != nil {
+				return nil, false, fmt.Errorf("could not adopt %s: %w", name, err)
+			}
+		}
+	}
+
+	// Every segment the playlists promise has to be on disk, or the upload would carry a
+	// gap into the archive.
+	for n := range reference {
+		for _, rendition := range ladder {
+			path := filepath.Join(dir, fmt.Sprintf("%s_%s_%s_%06d.ts", imp.Prefix, rendition.Name, imp.Session, n))
+			if _, err := os.Stat(path); err != nil {
+				return nil, false, nil
+			}
+		}
+	}
+
+	return reference, true, nil
 }
