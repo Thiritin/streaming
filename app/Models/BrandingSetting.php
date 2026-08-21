@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Announcement;
 use App\Support\Features;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
@@ -58,11 +59,13 @@ class BrandingSetting extends Model
         static::saved(function ($setting) {
             Cache::forget("branding_setting_{$setting->key}");
             Features::flush();
+            Announcement::flush();
         });
 
         static::deleted(function ($setting) {
             Cache::forget("branding_setting_{$setting->key}");
             Features::flush();
+            Announcement::flush();
         });
     }
 }

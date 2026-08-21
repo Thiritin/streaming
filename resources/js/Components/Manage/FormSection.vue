@@ -1,10 +1,7 @@
 <script setup>
 /**
- * A titled block of fields, the equivalent of Filament's Section.
- *
- * One column of label/control rows by default (see FormField): the form is read top to
- * bottom rather than scanned in a grid. `columns` is kept for the few blocks that are
- * genuinely a row of short read-only values, e.g. statistics.
+ * A titled block of fields. One column of label/control rows by default; `columns` is
+ * for the few blocks that are genuinely a row of short read-only values.
  */
 import { ref } from 'vue';
 import ManageIcon from './ManageIcon.vue';

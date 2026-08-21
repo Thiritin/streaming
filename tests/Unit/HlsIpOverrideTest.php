@@ -6,6 +6,7 @@ use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Helpers\IpSubnetHelper;
 use App\Models\Server;
+use App\Models\Show;
 use App\Models\Source;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,6 +27,9 @@ class HlsIpOverrideTest extends TestCase
             'slug' => 'test-stream',
             'name' => 'Test Stream',
         ]);
+
+        // A channel is only open to viewers while a show on it is live.
+        Show::factory()->live()->create(['source_id' => $this->source->id]);
 
         // Create a test user
         $this->user = User::factory()->create([

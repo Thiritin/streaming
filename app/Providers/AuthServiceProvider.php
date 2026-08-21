@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Models\DisplayScreen;
 use App\Models\EmbedKey;
 use App\Models\Emote;
+use App\Models\FeedbackReport;
 use App\Models\Recording;
 use App\Models\Role;
 use App\Models\Server;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Policies\DisplayScreenPolicy;
 use App\Policies\EmbedKeyPolicy;
 use App\Policies\EmotePolicy;
+use App\Policies\FeedbackReportPolicy;
 use App\Policies\RecordingPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\ServerPolicy;
@@ -36,6 +38,7 @@ class AuthServiceProvider extends ServiceProvider
         DisplayScreen::class => DisplayScreenPolicy::class,
         EmbedKey::class => EmbedKeyPolicy::class,
         Emote::class => EmotePolicy::class,
+        FeedbackReport::class => FeedbackReportPolicy::class,
         Recording::class => RecordingPolicy::class,
         Role::class => RolePolicy::class,
         Server::class => ServerPolicy::class,

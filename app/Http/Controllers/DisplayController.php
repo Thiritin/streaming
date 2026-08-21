@@ -221,6 +221,13 @@ class DisplayController extends Controller
      * display" rather than "which channel". The token is still per source, because
      * the `src` claim is what an edge checks; a wildcard would mean changing the
      * verifier.
+     *
+     * A channel with no live show on it is listed but carries no token and no URLs.
+     * Screens sit in public corridors and stay on whatever they were left on for
+     * days, which is exactly how a hall camera running through setup ends up on a
+     * wall; the show is what opens the channel, here as everywhere else. Listing it
+     * anyway is deliberate - somebody standing at the screen can see the channel
+     * exists and is simply not on air yet, rather than watching it vanish.
      */
     private function sources(EmbedKey $key): array
     {
@@ -228,12 +235,15 @@ class DisplayController extends Controller
         $configured = $tokens->isConfigured(PlaybackTokenTypeEnum::EMBED);
 
         return Source::query()
+            ->withLiveShowCount()
             ->orderByDesc('is_featured')
             ->orderByDesc('priority')
             ->orderBy('name')
             ->get()
             ->map(function (Source $source) use ($key, $tokens, $configured) {
-                $token = $configured
+                $available = $source->isPlayable();
+
+                $token = $configured && $available
                     ? $tokens->issueEmbed(keyId: (string) $key->id, source: $source)
                     : null;
 
@@ -247,6 +257,9 @@ class DisplayController extends Controller
                     'description' => $source->description,
                     'isFeatured' => (bool) $source->is_featured,
                     'isOnline' => $source->status === SourceStatusEnum::ONLINE,
+                    // Whether a show is on. Separate from isOnline, which is only
+                    // whether the feed is arriving.
+                    'isAvailable' => $available,
                     'status' => $source->status?->value,
                     'url' => $master,
                     // VLC follows the master fine, but a fixed rendition is the
@@ -278,14 +291,16 @@ class DisplayController extends Controller
 
         $featured = $bySlug->firstWhere('isFeatured', true);
 
-        if ($featured && $featured['isOnline']) {
+        // On air means both: a show is running and the feed is arriving. A channel
+        // that is only ingesting is not something to start a screen on.
+        if ($featured && $featured['isOnline'] && $featured['isAvailable']) {
             return $featured['slug'];
         }
 
-        $online = $bySlug->where('isOnline', true);
+        $onAir = $bySlug->where('isOnline', true)->where('isAvailable', true);
 
-        if ($online->isNotEmpty()) {
-            return $online->random()['slug'];
+        if ($onAir->isNotEmpty()) {
+            return $onAir->random()['slug'];
         }
 
         return $featured['slug'] ?? $bySlug->keys()->first();

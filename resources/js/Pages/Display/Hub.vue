@@ -16,7 +16,18 @@ const copied = ref(null);
 let pollTimer = null;
 let copiedTimer = null;
 
-const onlineCount = computed(() => sources.value.filter((s) => s.isOnline).length);
+/*
+ * On air means both: a show is running on the channel and the feed is arriving.
+ * A channel that only ingests - a hall camera through setup - is listed but cannot
+ * be started, and carries no playback URLs.
+ */
+const onAir = (source) => Boolean(source?.isAvailable && source?.isOnline);
+const onAirCount = computed(() => sources.value.filter(onAir).length);
+
+const channelState = (source) => {
+  if (!source.isAvailable) return 'No show on air';
+  return source.isOnline ? 'Live' : 'Waiting for stream';
+};
 
 /*
  * A screen parked on the hub can be sent somewhere from /manage, but it cannot obey:
@@ -28,6 +39,8 @@ const directed = computed(
 );
 
 const startPlayback = (slug = null) => {
+  if (slug && !sources.value.find((s) => s.slug === slug)?.isAvailable) return;
+
   /*
    * This click is what makes the kiosk work. Browsers only allow fullscreen and
    * audible playback off a real user gesture, so the player page cannot put itself
@@ -114,8 +127,8 @@ onBeforeUnmount(() => { clearInterval(pollTimer); clearTimeout(copiedTimer); });
         <p class="text-xs uppercase tracking-widest text-primary-500">Display</p>
         <h1 class="mt-1 text-3xl font-bold text-white">{{ screenName ?? keyName }}</h1>
         <p class="mt-2 text-primary-400">
-          {{ onlineCount }} of {{ sources.length }} sources live. This screen stays signed in
-          until the key is revoked.
+          {{ onAirCount }} of {{ sources.length }} channels on air. A channel opens when a
+          show on it goes live. This screen stays signed in until the key is revoked.
         </p>
       </header>
 
@@ -132,10 +145,11 @@ onBeforeUnmount(() => { clearInterval(pollTimer); clearTimeout(copiedTimer); });
         </div>
         <button
           type="button"
-          class="rounded-lg bg-primary-600 px-4 py-2 font-semibold text-white transition hover:bg-primary-500"
+          :disabled="!directed.isAvailable"
+          class="rounded-lg bg-primary-600 px-4 py-2 font-semibold text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-800 disabled:text-primary-500"
           @click="startPlayback(directed.slug)"
         >
-          Start {{ directed.name }}
+          {{ directed.isAvailable ? `Start ${directed.name}` : 'Waiting for a show' }}
         </button>
       </div>
 
@@ -154,19 +168,22 @@ onBeforeUnmount(() => { clearInterval(pollTimer); clearTimeout(copiedTimer); });
           v-for="source in sources"
           :key="source.slug"
           type="button"
+          :disabled="!source.isAvailable"
           class="flex aspect-square flex-col items-center justify-center gap-2 rounded-lg border p-4 text-center transition"
-          :class="source.isOnline
-            ? 'border-primary-700 bg-primary-900 hover:border-primary-500'
-            : 'border-primary-800 bg-primary-900/50 text-primary-500'"
+          :class="!source.isAvailable
+            ? 'cursor-not-allowed border-primary-800 bg-primary-900/30 text-primary-600'
+            : source.isOnline
+              ? 'border-primary-700 bg-primary-900 hover:border-primary-500'
+              : 'border-primary-800 bg-primary-900/50 text-primary-500'"
           @click="startPlayback(source.slug)"
         >
           <span
             class="h-2.5 w-2.5 rounded-full"
-            :class="source.isOnline ? 'bg-green-500' : 'bg-primary-600'"
+            :class="onAir(source) ? 'bg-green-500' : 'bg-primary-600'"
           ></span>
           <span class="font-medium">{{ source.name }}</span>
           <span class="text-xs uppercase tracking-wide">
-            {{ source.isOnline ? 'Live' : 'Offline' }}<template v-if="source.isFeatured"> · Featured</template>
+            {{ channelState(source) }}<template v-if="source.isFeatured"> · Featured</template>
           </span>
         </button>
       </section>
@@ -180,35 +197,43 @@ onBeforeUnmount(() => { clearInterval(pollTimer); clearTimeout(copiedTimer); });
 
         <div v-for="source in sources" :key="source.slug" class="mb-4 rounded-lg border border-primary-800 bg-primary-900 p-4">
           <div class="mb-3 flex items-center gap-2">
-            <span class="h-2 w-2 rounded-full" :class="source.isOnline ? 'bg-green-500' : 'bg-primary-600'"></span>
+            <span class="h-2 w-2 rounded-full" :class="onAir(source) ? 'bg-green-500' : 'bg-primary-600'"></span>
             <h3 class="font-medium text-white">{{ source.name }}</h3>
           </div>
 
-          <div
-            v-for="entry in [
-              { id: `${source.slug}-master`, label: 'Adaptive', url: source.url },
-              { id: `${source.slug}-fhd`, label: '1080p', url: source.renditions?.fhd },
-              { id: `${source.slug}-hd`, label: '720p', url: source.renditions?.hd },
-              { id: `${source.slug}-sd`, label: '480p', url: source.renditions?.sd },
-            ]"
-            :key="entry.id"
-            class="mb-2 flex items-center gap-2 last:mb-0"
-          >
-            <span class="w-20 shrink-0 text-xs uppercase tracking-wide text-primary-500">{{ entry.label }}</span>
-            <input
-              class="flex-1 truncate rounded border border-primary-700 bg-primary-950 px-2 py-1 font-mono text-xs text-primary-300"
-              :value="absolute(entry.url)"
-              readonly
-              @focus="$event.target.select()"
-            />
-            <button
-              type="button"
-              class="shrink-0 rounded bg-primary-800 px-3 py-1 text-xs text-primary-200 hover:bg-primary-700"
-              @click="copy(absolute(entry.url), entry.id)"
+          <!-- No show on the channel means no token was issued, so there is nothing
+               to paste. Saying so beats handing over a URL that answers 404. -->
+          <p v-if="!source.isAvailable" class="text-sm text-primary-500">
+            No show on air. URLs appear here once a show on this channel goes live.
+          </p>
+
+          <template v-else>
+            <div
+              v-for="entry in [
+                { id: `${source.slug}-master`, label: 'Adaptive', url: source.url },
+                { id: `${source.slug}-fhd`, label: '1080p', url: source.renditions?.fhd },
+                { id: `${source.slug}-hd`, label: '720p', url: source.renditions?.hd },
+                { id: `${source.slug}-sd`, label: '480p', url: source.renditions?.sd },
+              ]"
+              :key="entry.id"
+              class="mb-2 flex items-center gap-2 last:mb-0"
             >
-              {{ copied === entry.id ? 'Copied' : 'Copy' }}
-            </button>
-          </div>
+              <span class="w-20 shrink-0 text-xs uppercase tracking-wide text-primary-500">{{ entry.label }}</span>
+              <input
+                class="flex-1 truncate rounded border border-primary-700 bg-primary-950 px-2 py-1 font-mono text-xs text-primary-300"
+                :value="absolute(entry.url)"
+                readonly
+                @focus="$event.target.select()"
+              />
+              <button
+                type="button"
+                class="shrink-0 rounded bg-primary-800 px-3 py-1 text-xs text-primary-200 hover:bg-primary-700"
+                @click="copy(absolute(entry.url), entry.id)"
+              >
+                {{ copied === entry.id ? 'Copied' : 'Copy' }}
+              </button>
+            </div>
+          </template>
         </div>
       </section>
 

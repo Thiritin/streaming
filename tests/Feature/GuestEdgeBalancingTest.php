@@ -40,6 +40,9 @@ class GuestEdgeBalancingTest extends TestCase
 
         $this->source = Source::factory()->create(['slug' => 'main-stage']);
 
+        // A channel is only open to viewers while a show on it is live.
+        Show::factory()->live()->create(['source_id' => $this->source->id]);
+
         Http::fake([
             '*_master.m3u8' => Http::response(
                 "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3500000\nmain-stage_hd.m3u8\n", 200

@@ -2,8 +2,16 @@
   <div class="min-h-screen">
     <Head title="Browse" />
 
+    <AnnouncementBanner :announcement="announcement" />
+
     <!-- Featured channel: the primary channel owns this slot, live or not -->
-    <StageHero v-if="featured" :show="featured" :chat="featuredChat" :source-status="featuredSourceStatus" />
+    <StageHero
+      v-if="featured"
+      :show="featured"
+      :chat="featuredChat"
+      :source-status="featuredSourceStatus"
+      :side-shows="sideShows"
+    />
 
     <!-- Nothing on any channel and nothing scheduled -->
     <div v-else class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-16 pb-10">
@@ -75,7 +83,7 @@
       </section>
 
       <p v-if="!visibleGroups.length && !showOlderSection" class="py-16 text-center text-primary-400">
-        Nothing here right now.
+        {{ emptyMessage }}
       </p>
 
       <div v-if="showArchiveLink" class="flex justify-center">
@@ -124,6 +132,7 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import AnnouncementBanner from '@/Components/AnnouncementBanner.vue';
 import { useRealtimeResync } from '@/composables/useRealtimeResync';
 import StageHero from '@/Components/Shows/StageHero.vue';
 import ShowTile from '@/Components/Shows/ShowTile.vue';
@@ -135,6 +144,8 @@ defineOptions({
 });
 
 const props = defineProps({
+  /** The banner from /manage > Settings > Announcement, or null when there is none. */
+  announcement: { type: Object, default: null },
   liveShows: { type: Array, default: () => [] },
   startingSoonShows: { type: Array, default: () => [] },
   upcomingShows: { type: Array, default: () => [] },
@@ -159,8 +170,22 @@ const featuredSourceStatus = ref(props.featured?.source_status ?? null);
 const activeFilter = ref('all');
 
 // The featured show already has the hero, so it is not repeated in the grid.
-const gridLiveShows = computed(() =>
+const otherLiveShows = computed(() =>
   liveShows.value.filter((show) => show.id !== featured.value?.id)
+);
+
+/*
+ * The two channels beside the featured one. Only shows with a playlist qualify:
+ * the side slots exist to show what is on, and a still frame in a slot that reads
+ * as a player is worse than not offering the slot.
+ */
+const sideShows = computed(() =>
+  otherLiveShows.value.filter((show) => show.hls_url).slice(0, 2)
+);
+
+// Everything the hero already carries stays out of the grid below it.
+const gridLiveShows = computed(() =>
+  otherLiveShows.value.filter((show) => !sideShows.value.some((side) => side.id === show.id))
 );
 
 const items = computed(() => [
@@ -175,7 +200,7 @@ const countOf = (kind) => items.value.filter((item) => item.kind === kind).lengt
 const filters = computed(() => {
   const base = [
     { key: 'all', label: 'All' },
-    { key: 'live', label: 'Live', count: countOf('live') + (featured.value?.status === 'live' ? 1 : 0) },
+    { key: 'live', label: 'Live', count: countOf('live') + sideShows.value.length + (featured.value?.status === 'live' ? 1 : 0) },
     { key: 'soon', label: 'Starting soon', count: countOf('soon') },
     { key: 'upcoming', label: 'Upcoming', count: countOf('upcoming') },
     { key: 'archive', label: 'Archive', count: (props.archiveTotal || countOf('archive')) + props.olderTotal },
@@ -212,6 +237,14 @@ const visibleGroups = computed(() =>
   GROUPS
     .map((group) => ({ ...group, items: visibleItems.value.filter((item) => item.kind === group.key) }))
     .filter((group) => group.items.length > 0)
+);
+
+// Everything on air can already be in the hero, in which case the live grid is
+// empty without anything being off.
+const emptyMessage = computed(() =>
+  activeFilter.value === 'live' && featured.value
+    ? 'Everything on air is up top.'
+    : 'Nothing here right now.'
 );
 
 const showArchiveLink = computed(() =>

@@ -14,6 +14,7 @@ use App\Services\Chat\ChatSettingsService;
 use App\Services\Chat\MessagePresenter;
 use App\Services\PlaybackTokenService;
 use App\Services\StreamInfoService;
+use App\Support\Announcement;
 use App\Support\Features;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -281,6 +282,8 @@ class StreamController extends Controller
             ->values();
 
         return Inertia::render('ShowsGrid', [
+            // The banner is the front page's, not the layout's: it is for arrivals.
+            'announcement' => Announcement::current(),
             'liveShows' => $liveShows,
             'startingSoonShows' => $startingSoonShows,
             'upcomingShows' => $upcomingShows,
@@ -524,6 +527,17 @@ class StreamController extends Controller
             return null;
         }
 
+        /*
+         * Nothing to mint until the show is actually live. A slot three minutes from
+         * its start gets the starting-soon page, not a credential, and the channel
+         * under it may well be sending an empty hall in the meantime. The playlist
+         * path turns the same request down, so issuing here would only hand out a
+         * token that cannot open anything.
+         */
+        if (! $show->isLive()) {
+            return null;
+        }
+
         // A guest only gets here when login is optional, and only for a show
         // canBeAccessedBy() already cleared, which for them means an
         // unrestricted one.
@@ -675,8 +689,10 @@ class StreamController extends Controller
                 ];
             });
 
-        // Get HLS URL from the selected show
-        $hlsUrl = $show->getHlsUrl();
+        // Get HLS URL from the selected show. Only while it is live: the channel is
+        // closed to viewers otherwise, and ShowWentLive carries the URL in when the
+        // show does start, which is how the player already picks it up.
+        $hlsUrl = $show->isLive() ? $show->getHlsUrl() : null;
 
         return Inertia::render('ShowPlayer', [
             'initialProvisioning' => false,

@@ -35,4 +35,23 @@ return [
      */
     'boops' => true,
 
+    /*
+     | The banner on the front page and the page behind it. Off answers 404 on
+     | /announcement and shows nothing, whatever is written in the settings.
+     */
+    'announcement' => true,
+
+    /*
+     | Viewer feedback: the report button and the reports module in /manage. Off
+     | closes the endpoint and drops the module from the panel.
+     */
+    'feedback' => true,
+
+    /*
+     | Unattended displays: /d, the display hub, and the Display Keys and Screens
+     | modules in /manage. Off answers 404 on all of them; a screen already signed
+     | in stops being served rather than being logged out.
+     */
+    'screens' => true,
+
 ];

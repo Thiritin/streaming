@@ -4,6 +4,7 @@ namespace App\Support\Manage;
 
 use App\Models\BrandingSetting;
 use App\Support\ColorPresets;
+use App\Support\ImportCli;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -38,21 +39,119 @@ final class Settings
     {
         return array_map(function (array $group) {
             $group['fields'] = array_map(fn (array $field) => $this->field($field), $group['fields']);
+            $group['note'] = $this->note($group);
 
             return $group;
         }, config('settings.groups', []));
     }
 
     /**
+     * A pane's note: one line of copy, optionally with a link beside it. Nothing is
+     * saved by it, so it stays out of the field list.
+     *
+     * A note that names `url_config` takes its link from config rather than repeating
+     * a URL the rest of the app already owns, and drops out entirely when that config
+     * value is empty - which is how an installation with nothing published hides the
+     * link instead of offering a dead one.
+     *
+     * @param  array<string, mixed>  $group
+     * @return array<string, mixed>|null
+     */
+    private function note(array $group): ?array
+    {
+        $note = $group['note'] ?? null;
+
+        if (! is_array($note)) {
+            return null;
+        }
+
+        // A note that names `downloads_config` offers one link per platform, built from the
+        // base URL that config key holds. Same reasoning as `url_config`: the panel should
+        // not repeat a URL a release already decides.
+        if (isset($note['downloads_config'])) {
+            $downloads = ImportCli::downloads(config($note['downloads_config']));
+
+            if ($downloads === []) {
+                return null;
+            }
+
+            $note['downloads'] = $downloads;
+            unset($note['downloads_config']);
+
+            return $note;
+        }
+
+        if (isset($note['url_config'])) {
+            $url = trim((string) config($note['url_config']));
+
+            if ($url === '') {
+                return null;
+            }
+
+            $note['url'] = $url;
+            unset($note['url_config']);
+        }
+
+        return $note;
+    }
+
+    /**
+     * One resolved group, or null when nothing in the registry has that key. Each
+     * group is a pane of its own at /manage/settings/{key}, so this is what a page
+     * request renders; the rest of the registry only supplies the menu.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function group(string $key): ?array
+    {
+        foreach ($this->groups() as $group) {
+            if ($group['key'] === $key) {
+                return $group;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The key of the first group, which is the pane /manage/settings itself shows.
+     */
+    public function firstGroupKey(): ?string
+    {
+        return config('settings.groups.0.key');
+    }
+
+    /**
+     * The settings menu, in registry order: what each pane is called, what it is for
+     * and where it lives.
+     *
+     * @return array<int, array{key: string, label: string, blurb: ?string, icon: ?string}>
+     */
+    public function navigation(): array
+    {
+        return array_map(fn (array $group) => [
+            'key' => $group['key'],
+            'label' => $group['label'],
+            'blurb' => $group['blurb'] ?? $group['description'] ?? null,
+            'action' => $group['action'] ?? null,
+            'icon' => $group['icon'] ?? 'cog',
+        ], config('settings.groups', []));
+    }
+
+    /**
      * Validation rules for an update, keyed as the form posts them.
+     *
+     * Scoped to one group when a key is given, because a pane posts only its own
+     * fields: applying the whole registry's rules to it would fail every `required`
+     * belonging to a pane that was never on screen.
      *
      * @return array<string, array<int, mixed>>
      */
-    public function rules(): array
+    public function rules(?string $group = null): array
     {
         $rules = [];
 
-        foreach ($this->fields() as $field) {
+        foreach ($this->fields($group) as $field) {
             $rules['values.'.$field['key']] = $field['rules'] ?? ['nullable', 'string'];
 
             // A repeater validates its rows too, one rule set per column.
@@ -69,11 +168,11 @@ final class Settings
      *
      * @return array<string, string>
      */
-    public function attributes(): array
+    public function attributes(?string $group = null): array
     {
         $attributes = [];
 
-        foreach ($this->fields() as $field) {
+        foreach ($this->fields($group) as $field) {
             $attributes['values.'.$field['key']] = strtolower($field['label']);
 
             foreach (array_keys($field['itemRules'] ?? []) as $column) {
@@ -236,12 +335,15 @@ final class Settings
     }
 
     /**
+     * Every registered field, or only one group's.
+     *
      * @return array<int, array<string, mixed>>
      */
-    private function fields(): array
+    private function fields(?string $group = null): array
     {
         return collect(config('settings.groups', []))
-            ->flatMap(fn (array $group) => $group['fields'])
+            ->when($group !== null, fn ($groups) => $groups->where('key', $group))
+            ->flatMap(fn (array $registered) => $registered['fields'])
             ->all();
     }
 
@@ -281,7 +383,9 @@ final class Settings
                 'helper' => $field['helper'] ?? null,
                 'purpose' => null,
                 'full' => $field['full'] ?? false,
+                'rows' => null,
                 'presets' => null,
+                'options' => null,
                 'required' => in_array('required', $field['rules'] ?? [], true),
                 'value' => $stored ? self::MASK_SECRET : '',
                 'default' => '',
@@ -298,11 +402,21 @@ final class Settings
             'helper' => $field['helper'] ?? null,
             'purpose' => $field['purpose'] ?? null,
             'full' => $field['full'] ?? false,
+            // Height of a textarea, for the few fields that expect paragraphs.
+            'rows' => $field['rows'] ?? null,
             // Colour fields may offer a swatch row; hex => label, in order.
             'presets' => $this->presets($field),
+            // Select fields carry their choices as a list, so the order survives.
+            'options' => $this->options($field),
             'required' => in_array('required', $field['rules'] ?? [], true),
             'value' => $value,
             'default' => $default,
+            // What a secret says when nothing is stored, and when it has been changed but
+            // not yet saved. Field-driven because the consequence differs per key: an empty
+            // control key switches the control API off, an empty import key switches
+            // importing off, and each has its own set of people to re-key afterwards.
+            'emptyNote' => $field['empty_note'] ?? null,
+            'dirtyNote' => $field['dirty_note'] ?? null,
             // Whether anything is set at all, which a secret renders differently from
             // a blank text field.
             'hasValue' => is_string($value) ? trim($value) !== '' : ! empty($value),
@@ -348,6 +462,25 @@ final class Settings
         }
 
         return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? (bool) $value;
+    }
+
+    /**
+     * Select choices as a list of {value, label}. Declared as value => label in the
+     * registry, because that is what the `in:` rule beside them reads.
+     *
+     * @param  array<string, mixed>  $field
+     * @return array<int, array{value: string, label: string}>|null
+     */
+    private function options(array $field): ?array
+    {
+        if (($field['type'] ?? null) !== 'select') {
+            return null;
+        }
+
+        return collect($field['options'] ?? [])
+            ->map(fn ($label, $value) => ['value' => (string) $value, 'label' => (string) $label])
+            ->values()
+            ->all();
     }
 
     /**

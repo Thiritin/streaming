@@ -7,6 +7,7 @@ use App\Enum\ServerTypeEnum;
 use App\Enum\SourceStatusEnum;
 use App\Models\EmbedKey;
 use App\Models\Server;
+use App\Models\Show;
 use App\Models\Source;
 use App\Services\PlaybackTokenService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -42,6 +43,9 @@ class DisplayKeyTest extends TestCase
             'is_featured' => true,
             'status' => SourceStatusEnum::ONLINE,
         ]);
+
+        // A screen may only open a channel that has a show on it.
+        Show::factory()->live()->create(['source_id' => $this->featured->id]);
 
         Server::create([
             'hostname' => 'edge.example.com',
@@ -249,11 +253,13 @@ class DisplayKeyTest extends TestCase
     {
         $this->featured->update(['status' => SourceStatusEnum::OFFLINE]);
 
-        Source::factory()->create([
+        $panelRoom = Source::factory()->create([
             'slug' => 'panel-room',
             'name' => 'Panel Room',
             'status' => SourceStatusEnum::ONLINE,
         ]);
+
+        Show::factory()->live()->create(['source_id' => $panelRoom->id]);
 
         $this->withSession(['display_key_id' => $this->key->id])
             ->get('/display/play')

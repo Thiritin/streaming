@@ -6,6 +6,7 @@ import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import Logo from "@/Components/Logo.vue";
+import FeedbackButton from '@/Components/Feedback/FeedbackButton.vue';
 
 const showingNavigationDropdown = ref(false);
 
@@ -28,6 +29,7 @@ const user = computed(() => page.props.auth?.user ?? null);
 const loginUrl = computed(() => page.props.features?.loginUrl ?? '/login');
 const chatEnabled = computed(() => page.props.features?.chat !== false);
 const emotesEnabled = computed(() => page.props.features?.emotes !== false);
+const feedbackEnabled = computed(() => page.props.features?.feedback !== false);
 
 // Picture from the identity provider, stored on the user at sign-in. A dead or
 // blocked URL falls back to the initial rather than a broken image.
@@ -97,6 +99,10 @@ const initial = computed(() => user.value?.name?.charAt(0)?.toUpperCase() || 'U'
 
             <!-- Right side -->
             <div class="hidden sm:flex sm:items-center justify-end gap-3">
+              <!-- Tell us something. Ahead of the user block so the account controls
+                   keep the corner they have always had. -->
+              <FeedbackButton v-if="feedbackEnabled" />
+
               <!-- Signed out, on an installation where login is optional -->
               <a
                 v-if="!user"
@@ -229,6 +235,7 @@ const initial = computed(() => user.value?.name?.charAt(0)?.toUpperCase() || 'U'
               <ResponsiveNavLink v-if="$page.props.auth.can_access_manage" :href="route('manage.home')" :active="route().current('manage.*')">
                 Admin
               </ResponsiveNavLink>
+              <FeedbackButton v-if="feedbackEnabled" variant="menu" />
             </div>
 
             <!-- Mobile User Info -->

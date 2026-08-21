@@ -6,6 +6,7 @@ use App\Events\ShowCancelled;
 use App\Events\ShowEnded;
 use App\Events\ShowWentLive;
 use App\Models\Show;
+use App\Models\Source;
 use Illuminate\Support\Facades\Log;
 
 class ShowObserver
@@ -20,6 +21,12 @@ class ShowObserver
         if ($show->wasChanged('status')) {
             $previousStatus = $show->getOriginal('status');
             $newStatus = $show->status;
+
+            // A channel is open to viewers only while a show on it is live, and the
+            // playlist path answers that from a short-lived cache. Dropping it here is
+            // what makes going live and ending take effect on the next playlist poll
+            // instead of whenever the entry happens to lapse.
+            $this->forgetPlayable($show);
 
             Log::info('Show status changed via Observer', [
                 'show_id' => $show->id,
@@ -72,6 +79,28 @@ class ShowObserver
                     }
                     break;
             }
+        }
+    }
+
+    /**
+     * A show created live, or a live show deleted outright, moves the same answer.
+     */
+    public function created(Show $show): void
+    {
+        $this->forgetPlayable($show);
+    }
+
+    public function deleted(Show $show): void
+    {
+        $this->forgetPlayable($show);
+    }
+
+    private function forgetPlayable(Show $show): void
+    {
+        $slug = $show->source?->slug;
+
+        if ($slug) {
+            Source::forgetPlayable($slug);
         }
     }
 }

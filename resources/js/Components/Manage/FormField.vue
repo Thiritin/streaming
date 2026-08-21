@@ -2,17 +2,9 @@
 /**
  * One field, laid out as a row: label on the left, control on the right.
  *
- * Two-column forms fit more per screen but make an operator's eye jump; a single column of
- * label/control rows reads straight down and keeps every helper text directly under the
- * thing it explains. The label column is a fixed width so controls line up down the form.
- *
- * A read-only field renders as text rather than a disabled input: Filament used
- * Placeholder for exactly these (created_at, viewer counts) and a greyed-out box invites
- * clicking something that can never change.
- *
- * The row is a <label> only when it owns the control, so the caption focuses it. A slotted
- * field is a <div>: a label forwards every click inside it to its first labelable
- * descendant, which would fire a slotted button twice and cancel its own toggle.
+ * A read-only field renders as text rather than a disabled input. The row is a <label>
+ * only when it owns the control; a slotted field is a <div>, because a label would
+ * forward clicks to its first labelable descendant and fire a slotted button twice.
  */
 import { useSlots } from 'vue';
 

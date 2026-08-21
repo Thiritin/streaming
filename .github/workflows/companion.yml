@@ -1,0 +1,70 @@
+name: Companion module
+
+# Packages the Stream Control module and attaches it to the release, so the admin panel
+# can link to a build rather than telling whoever runs the desk to check out the repo and
+# install Node. Two assets go up: the versioned file, which is what Companion shows once
+# it is imported, and a copy under a fixed name so that
+# /releases/latest/download/stream-control-companion.tgz always answers with the newest.
+
+on:
+  release:
+    types:
+      - created
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package-companion-module:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The module's own version is what Companion displays and what tells two builds
+      # apart, so a release stamps its tag onto it instead of shipping whatever was last
+      # committed in package.json.
+      - name: Stamp the release version
+        if: ${{ github.event_name == 'release' }}
+        working-directory: companion/module-stream-control
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            npm version --no-git-tag-version --allow-same-version "$version"
+          else
+            echo "Tag $GITHUB_REF_NAME is not semver; keeping the committed version." >&2
+          fi
+
+      - name: Build the package
+        run: ./scripts/companion-package.sh
+
+      - name: Name the assets
+        id: assets
+        working-directory: companion/module-stream-control
+        run: |
+          built="$(ls -t ./*.tgz | head -n 1)"
+          cp "$built" stream-control-companion.tgz
+          echo "versioned=companion/module-stream-control/${built#./}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to the release
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "${{ steps.assets.outputs.versioned }}" \
+            companion/module-stream-control/stream-control-companion.tgz \
+            --clobber
+
+      # A manual run has no release to attach to, so the build lands as a workflow
+      # artifact instead: enough to check the packaging still works.
+      - name: Upload as an artifact
+        if: ${{ github.event_name != 'release' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: stream-control-companion
+          path: companion/module-stream-control/stream-control-companion.tgz

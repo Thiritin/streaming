@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ArchiveImportController;
 use App\Http\Controllers\Api\CommandController;
 use App\Http\Controllers\Api\CompanionController;
 use App\Http\Controllers\Api\HlsSessionController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\Api\ServerProvisionController;
 use App\Http\Controllers\Api\SrsCallbackController;
 use App\Http\Controllers\Api\StreamController;
 use App\Http\Middleware\CheckCompanionTokenMiddleware;
+use App\Http\Middleware\CheckImportKeyMiddleware;
 use App\Http\Middleware\CheckRecordingApiKeyMiddleware;
 use App\Http\Middleware\CheckSharedSecretMiddleware;
 use Illuminate\Http\Request;
@@ -88,6 +90,18 @@ Route::prefix('srs')->group(function () {
 Route::middleware([CheckRecordingApiKeyMiddleware::class])->prefix('recording')->group(function () {
     Route::get('shows', [RecordingApiController::class, 'shows'])->name('api.recording.shows');
     Route::post('create', [RecordingApiController::class, 'create'])->name('api.recording.create');
+});
+
+// Offline imports: an edit encoded on someone's machine, uploaded into the archive and
+// committed as a cut. See App\Services\ArchiveImportService and tools/streaming-archiver.
+//
+// Its own key, from /manage > Settings > Imports, rather than the deploy-time
+// RECORDING_API_KEY above: an import key is handed to a person for as long as they are
+// cutting recordings, and taken back by rotating a row.
+Route::middleware([CheckImportKeyMiddleware::class])->prefix('recording/imports')->group(function () {
+    Route::post('/', [ArchiveImportController::class, 'store'])->name('api.recording.imports.store');
+    Route::post('{import}/urls', [ArchiveImportController::class, 'urls'])->name('api.recording.imports.urls');
+    Route::post('{import}/commit', [ArchiveImportController::class, 'commit'])->name('api.recording.imports.commit');
 });
 
 // Public recording endpoint

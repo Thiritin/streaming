@@ -21,6 +21,7 @@ import ShowCancelledStatusPage from "@/Components/Livestream/StatusPages/ShowCan
 import ShowTile from "@/Components/Shows/ShowTile.vue";
 import MobileDrawer from "@/Components/MobileDrawer.vue";
 import Container from "@/Components/Container.vue";
+import FeedbackDialog from "@/Components/Feedback/FeedbackDialog.vue";
 
 // Define the layout using defineOptions for persistent layout
 defineOptions({
@@ -114,6 +115,7 @@ const listeners = ref(props.initialListeners);
 const provisioning = ref(props.initialProvisioning);
 const streamPlayer = ref(null);
 const isChatDrawerOpen = ref(false);
+const isReportOpen = ref(false);
 const isReconnecting = ref(false);
 const isTheaterMode = ref(false);
 const isChatHidden = ref(false);
@@ -138,6 +140,26 @@ const toggleTheaterMode = () => {
 
     revealChrome();
 };
+
+/*
+ * Reporting a problem with what is on screen. The player instance is handed over as
+ * a getter rather than a value: a source change rebuilds it, and the snapshot has to
+ * come from whichever one is playing when the button is pressed.
+ */
+const reportPlayer = () => streamPlayer.value?.getPlayer?.() ?? null;
+
+// What the page knows and the browser cannot see: which stream state the app itself
+// believes it is in, and how many others are watching the same thing.
+const reportContext = computed(() => ({
+    stream: {
+        status: status.value,
+        sourceStatus: sourceStatus.value,
+        hlsUrl: hlsUrl.value ?? null,
+        viewers: listeners.value,
+        reconnecting: isReconnecting.value,
+        theaterMode: isTheaterMode.value,
+    },
+}));
 
 const revealChrome = () => {
     isChromeVisible.value = true;
@@ -191,6 +213,7 @@ const loadTheaterModePreference = () => {
 // Computed properties
 const chatEnabled = computed(() => page.props.features?.chat !== false);
 const boopsEnabled = computed(() => page.props.features?.boops !== false);
+const feedbackEnabled = computed(() => page.props.features?.feedback !== false);
 const showChatBox = computed(() => chatEnabled.value && status.value !== 'offline' && activeShow.value?.status === 'live');
 const showPlayer = computed(() => activeShow.value && activeShow.value.status === 'live' && hlsUrl.value && status.value === 'online' && sourceStatus.value === 'online' && provisioning.value === false && otherDevice.value === false && !isReconnecting.value);
 const showTitle = computed(() => activeShow.value ? activeShow.value.title : 'No Show Active');
@@ -660,6 +683,21 @@ onUnmounted(() => {
                                     :disabled="activeShow.status !== 'live'"
                                 />
 
+                                <!-- Report a Problem. Beside Theater on purpose: it is
+                                     where a viewer is already looking when the picture
+                                     misbehaves. -->
+                                <button
+                                    v-if="feedbackEnabled"
+                                    @click="isReportOpen = true"
+                                    class="inline-flex items-center gap-1.5 px-3 py-1 text-sm rounded bg-primary-800 text-primary-300 hover:bg-primary-700 hover:text-white transition-colors"
+                                    title="Report a problem with this stream"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                                    </svg>
+                                    <span class="hidden md:inline">Report</span>
+                                </button>
+
                                 <!-- Theater Mode Toggle -->
                                 <button
                                     @click="toggleTheaterMode"
@@ -853,6 +891,17 @@ onUnmounted(() => {
                 class="h-full"
             />
         </MobileDrawer>
+
+        <!-- Opened from the player controls. Sits outside the theater container so a
+             faded-out chrome cannot take the dialog with it. -->
+        <FeedbackDialog
+            v-if="feedbackEnabled"
+            v-model:open="isReportOpen"
+            type="issue"
+            :show="activeShow"
+            :player="reportPlayer"
+            :extra="reportContext"
+        />
     </div>
 </template>
 

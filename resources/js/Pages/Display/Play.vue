@@ -34,7 +34,22 @@ let chromeTimer = null;
 let offlineSince = null;
 
 const current = computed(() => sources.value.find((s) => s.slug === currentSlug.value) ?? null);
-const onlineSources = computed(() => sources.value.filter((s) => s.isOnline));
+
+/*
+ * On air means both: a show is running on the channel and the feed is arriving.
+ * A channel that only ingests carries no token and no URL, so there is nothing for
+ * a screen to fall back to there.
+ */
+const availableSources = computed(() => sources.value.filter((s) => s.isAvailable));
+const onAirSources = computed(() => availableSources.value.filter((s) => s.isOnline));
+
+const idleMessage = computed(() => {
+  if (!current.value) return 'No channel selected';
+  if (!current.value.isAvailable) return 'No show on air';
+  if (!current.value.isOnline) return 'Offline, waiting for the stream';
+
+  return 'Playback failed, retrying';
+});
 
 const teardown = () => {
   if (hlsInstance) {
@@ -96,6 +111,7 @@ const play = async () => {
 
 const switchTo = (slug) => {
   if (slug === currentSlug.value) return;
+
   currentSlug.value = slug;
   offlineSince = null;
 };
@@ -117,9 +133,20 @@ const reconcile = () => {
   if (directed.value) return;
 
   const now = Date.now();
-  const live = current.value?.isOnline ?? false;
 
-  if (live) {
+  /*
+   * A show ending closes the channel outright, and unlike a publisher hiccup it is
+   * not going to resolve itself. So that moves the screen immediately, where a feed
+   * simply dropping still gets the grace window.
+   */
+  if (current.value && !current.value.isAvailable) {
+    offlineSince = null;
+    const next = pickNext();
+    if (next) switchTo(next.slug);
+    return;
+  }
+
+  if (current.value?.isOnline) {
     offlineSince = null;
     return;
   }
@@ -128,10 +155,21 @@ const reconcile = () => {
 
   if (now - offlineSince < OFFLINE_GRACE_MS) return;
 
-  const featured = sources.value.find((s) => s.isFeatured && s.isOnline);
-  const next = featured ?? onlineSources.value[Math.floor(Math.random() * onlineSources.value.length)];
+  const next = pickNext();
 
   if (next) switchTo(next.slug);
+};
+
+/*
+ * Where to send a screen that cannot stay where it is. On air is the first answer,
+ * featured first. Failing that, a channel with a show on it whose feed has not
+ * arrived yet still beats one with no show at all: it is where the picture is about
+ * to be, and the screen shows "waiting for the stream" in the meantime.
+ */
+const pickNext = () => {
+  const pick = (pool) => pool.find((s) => s.isFeatured) ?? pool[Math.floor(Math.random() * pool.length)];
+
+  return pick(onAirSources.value) ?? pick(availableSources.value) ?? null;
 };
 
 const pollState = async () => {
@@ -253,13 +291,11 @@ watch(currentSlug, play);
     ></video>
 
     <div
-      v-if="!current?.isOnline || failed"
+      v-if="!current?.isAvailable || !current?.isOnline || failed"
       class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-center"
     >
-      <p class="text-2xl font-semibold text-white">{{ current?.name ?? 'No source' }}</p>
-      <p class="text-primary-400">
-        {{ failed ? 'Playback failed, retrying' : 'Offline, waiting for the stream' }}
-      </p>
+      <p class="text-2xl font-semibold text-white">{{ current?.name ?? 'No channel' }}</p>
+      <p class="text-primary-400">{{ idleMessage }}</p>
     </div>
 
     <!-- Chrome hides itself so a screen left alone shows only the picture. -->
@@ -274,15 +310,18 @@ watch(currentSlug, play);
           v-for="source in sources"
           :key="source.slug"
           type="button"
+          :disabled="!source.isAvailable"
           class="rounded px-3 py-2 text-sm font-medium transition-colors"
           :class="source.slug === currentSlug
             ? 'bg-primary-600 text-white'
-            : 'bg-primary-800/80 text-primary-200 hover:bg-primary-700'"
+            : source.isAvailable
+              ? 'bg-primary-800/80 text-primary-200 hover:bg-primary-700'
+              : 'cursor-not-allowed bg-primary-900/60 text-primary-600'"
           @click="switchTo(source.slug)"
         >
           <span
             class="mr-2 inline-block h-2 w-2 rounded-full"
-            :class="source.isOnline ? 'bg-green-500' : 'bg-primary-600'"
+            :class="source.isAvailable && source.isOnline ? 'bg-green-500' : 'bg-primary-600'"
           ></span>
           {{ source.name }}
         </button>

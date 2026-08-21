@@ -45,8 +45,9 @@ When a big show is about to start, screens can be moved without walking to them.
 - Everything that is polling: **Send All Screens** at the top of Screens.
 
 A screen picks the instruction up on its next poll, so give it about ten seconds. It
-switches even if the target source is not live yet, which is the point: send the walls
-before the doors open and they are already on the right channel when the stream starts.
+switches even if the target source has no show on it yet, which is the point: send the
+walls before the doors open, they sit on **No show on air**, and the picture appears by
+itself the moment the show goes live.
 
 The instruction is spent as soon as the screen reports it arrived. After that anyone
 standing at the screen can switch channel from the on-screen bar again, and the
@@ -56,6 +57,21 @@ Choosing **Leave where it is** withdraws an instruction that has not landed yet.
 A screen sitting on the setup page cannot be started remotely - a browser will not go
 fullscreen or unmute without someone touching it. It shows a **Sent to ...** prompt
 instead, so whoever is there presses one button.
+
+## What a screen may play
+
+A channel is playable only while a show on it is live. Several sources send around the
+clock without being for anyone to watch - a hall camera up through setup, a stage on
+colour bars between slots - so ingest arriving is not what opens a channel.
+
+A channel with no show on it is still listed on the setup page and in the on-screen bar,
+greyed out and not selectable, and its VLC URLs are withheld until a show starts. A
+screen already playing a channel moves off it as soon as the show there ends: to the
+featured channel if that one is on air, otherwise to any channel that is, and if nothing
+is on it waits on **No show on air**.
+
+If a screen has to show a channel that has no programme against it - a lobby loop, a
+holding card - put a show on that channel and press live. The show is what opens it.
 
 ## When a screen should lose access
 

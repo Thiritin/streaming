@@ -58,6 +58,9 @@ defineExpose({
     play: () => playerRef.value?.play(),
     pause: () => playerRef.value?.pause(),
     seekToLive: () => playerRef.value?.seekToLive(),
+    // Read by the issue reporter, which snapshots what the player was doing at the
+    // moment the viewer pressed the button. Same instance the stats overlay reads.
+    getPlayer: () => playerRef.value?.getPlayer(),
     handleToggleStats
 });
 </script>

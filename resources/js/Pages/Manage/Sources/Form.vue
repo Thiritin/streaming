@@ -7,6 +7,7 @@ import CopyableText from '@/Components/Manage/CopyableText.vue';
 import FormActions from '@/Components/Manage/FormActions.vue';
 import FormField from '@/Components/Manage/FormField.vue';
 import FormSection from '@/Components/Manage/FormSection.vue';
+import ManageIcon from '@/Components/Manage/ManageIcon.vue';
 import PageHeader from '@/Components/Manage/PageHeader.vue';
 import StatusBadge from '@/Components/Manage/StatusBadge.vue';
 
@@ -192,6 +193,20 @@ const submit = () => {
               masked
               placeholder="Not set - the control API is off"
             />
+          </FormField>
+
+          <FormField
+            v-if="source.companion_module_url"
+            label="Companion module"
+            helper="Import it in Companion: Modules, then Import module package. The link always serves the newest build."
+          >
+            <a
+              :href="source.companion_module_url"
+              class="inline-flex items-center gap-1.5 text-[13px] text-state-live hover:underline"
+            >
+              <ManageIcon name="download" :size="14" />
+              Download stream-control
+            </a>
           </FormField>
         </FormSection>
 

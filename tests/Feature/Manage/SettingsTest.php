@@ -7,6 +7,7 @@ use App\Services\BrandingService;
 use App\Support\ControlKey;
 use App\Support\Manage\Settings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\CreatesManageUsers;
 use Tests\TestCase;
@@ -24,33 +25,49 @@ class SettingsTest extends TestCase
     }
 
     /**
+     * One pane's fields as they currently stand, which is what an untouched form posts.
+     *
+     * Built from the registry rather than written out, so a pane that gains a required
+     * field does not silently start failing every test that saves it.
+     *
      * @return array<string, mixed>
      */
-    private function payload(array $overrides = []): array
+    private function values(string $group, array $overrides = []): array
     {
-        return ['values' => array_merge([
-            'convention_name' => 'Testcon',
-            'site_name' => 'Testcon Streaming',
-            'identity_name' => 'Testcon Identity',
-            'identity_register_url' => 'https://id.example.test/register',
-            'identity_logout_url' => 'https://id.example.test/logout',
-            'login_eyebrow' => 'Testcon',
-            'login_headline' => 'Watch live',
-            'login_tagline' => 'Everyone welcome',
-            'login_button_label' => 'Sign in',
-            'login_body' => 'You only need an account.',
-            'primary_color' => '#ff8800',
-            'logo_path' => 'branding/logo.png',
-            'login_background_image' => '',
-            'login_background_video' => '',
-            'footer_links' => [
-                ['label' => 'Support', 'url' => 'https://help.example.test'],
-                ['label' => 'Privacy', 'url' => 'https://help.example.test/privacy'],
-            ],
-        ], $overrides)];
+        $fields = app(Settings::class)->group($group)['fields'];
+
+        $values = [];
+
+        foreach ($fields as $field) {
+            // A password is never sent to the page, so an untouched form posts nothing
+            // for it, which the save side reads as "keep what is stored".
+            $values[$field['key']] = $field['type'] === 'password' ? '' : $field['value'];
+        }
+
+        return array_merge($values, $overrides);
     }
 
-    public function test_the_page_lists_every_registered_group_and_field(): void
+    /**
+     * Save one pane as the administrator.
+     */
+    private function save(string $group, array $overrides = []): TestResponse
+    {
+        return $this->actingAs($this->admin)
+            ->from(route('manage.settings.group', $group))
+            ->put(route('manage.settings.update', $group), ['values' => $this->values($group, $overrides)]);
+    }
+
+    /**
+     * One field of the pane on screen.
+     *
+     * @return array<string, mixed>
+     */
+    private function field(Assert $page, string $key): array
+    {
+        return collect($page->toArray()['props']['group']['fields'])->firstWhere('key', $key);
+    }
+
+    public function test_the_menu_lists_every_registered_pane(): void
     {
         $this->actingAs($this->admin)
             ->get(route('manage.settings'))
@@ -58,25 +75,53 @@ class SettingsTest extends TestCase
             ->assertInertia(function (Assert $page) {
                 $page->component('Manage/Settings');
 
-                $groups = collect($page->toArray()['props']['groups']);
-
                 $this->assertSame(
                     collect(config('settings.groups'))->pluck('key')->all(),
-                    $groups->pluck('key')->all(),
+                    collect($page->toArray()['props']['navigation'])->pluck('key')->all(),
                 );
 
-                $keys = $groups->flatMap(fn (array $group) => collect($group['fields'])->pluck('key'))->all();
-
-                foreach (array_keys(BrandingService::EDITABLE) as $editable) {
-                    $this->assertContains($editable, $keys, "[{$editable}] is not editable any more.");
-                }
+                // The bare URL is the first pane rather than a redirect.
+                $this->assertSame(config('settings.groups.0.key'), $page->toArray()['props']['group']['key']);
             });
+    }
+
+    public function test_every_editable_key_lives_on_a_pane(): void
+    {
+        $keys = collect(app(Settings::class)->groups())
+            ->flatMap(fn (array $group) => collect($group['fields'])->pluck('key'))
+            ->all();
+
+        foreach (array_keys(BrandingService::EDITABLE) as $editable) {
+            $this->assertContains($editable, $keys, "[{$editable}] is not editable any more.");
+        }
+    }
+
+    public function test_a_pane_carries_only_its_own_fields(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings.group', 'login'))
+            ->assertSuccessful()
+            ->assertInertia(function (Assert $page) {
+                $keys = collect($page->toArray()['props']['group']['fields'])->pluck('key');
+
+                $this->assertContains('login_headline', $keys);
+                $this->assertNotContains('control_key', $keys);
+            });
+    }
+
+    public function test_an_unknown_pane_is_not_there(): void
+    {
+        $this->actingAs($this->admin)->get(route('manage.settings.group', 'nonsense'))->assertNotFound();
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.settings.update', 'nonsense'), ['values' => ['site_name' => 'x']])
+            ->assertNotFound();
     }
 
     public function test_a_field_reports_the_shipped_default_until_it_is_overridden(): void
     {
         $this->actingAs($this->admin)
-            ->get(route('manage.settings'))
+            ->get(route('manage.settings.group', 'identity'))
             ->assertInertia(function (Assert $page) {
                 $field = $this->field($page, 'site_name');
 
@@ -88,7 +133,7 @@ class SettingsTest extends TestCase
         BrandingSetting::setValue('site_name', 'Something else');
 
         $this->actingAs($this->admin)
-            ->get(route('manage.settings'))
+            ->get(route('manage.settings.group', 'identity'))
             ->assertInertia(function (Assert $page) {
                 $field = $this->field($page, 'site_name');
 
@@ -100,20 +145,30 @@ class SettingsTest extends TestCase
 
     public function test_saving_stores_the_values(): void
     {
-        $this->actingAs($this->admin)
-            ->from(route('manage.settings'))
-            ->put(route('manage.settings.update'), $this->payload())
-            ->assertRedirect(route('manage.settings'));
+        $this->save('identity', ['convention_name' => 'Testcon'])
+            ->assertRedirect(route('manage.settings.group', 'identity'));
+
+        $this->save('look', ['primary_color' => '#ff8800']);
+        $this->save('login', ['login_headline' => 'Watch live']);
 
         $this->assertSame('Testcon', BrandingSetting::getValue('convention_name'));
         $this->assertSame('#ff8800', BrandingSetting::getValue('primary_color'));
         $this->assertSame('Watch live', app(BrandingService::class)->get('login_headline'));
     }
 
+    public function test_saving_one_pane_leaves_the_others_alone(): void
+    {
+        BrandingSetting::setValue('control_key', 'a-long-enough-control-key');
+
+        $this->save('identity', ['convention_name' => 'Testcon']);
+
+        $this->assertSame('a-long-enough-control-key', ControlKey::current());
+    }
+
     public function test_the_saved_values_reach_the_public_frontend_shape(): void
     {
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['login_headline' => 'Livestream 2026']));
+        $this->save('login', ['login_headline' => 'Livestream 2026']);
+        $this->save('identity', ['convention_name' => 'Testcon']);
 
         $branding = app(BrandingService::class)->forFrontend();
 
@@ -123,30 +178,24 @@ class SettingsTest extends TestCase
 
     public function test_required_copy_cannot_be_emptied(): void
     {
-        $this->actingAs($this->admin)
-            ->from(route('manage.settings'))
-            ->put(route('manage.settings.update'), $this->payload(['login_headline' => '']))
-            ->assertSessionHasErrors('values.login_headline');
+        $this->save('login', ['login_headline' => ''])->assertSessionHasErrors('values.login_headline');
     }
 
     public function test_a_url_field_rejects_something_that_is_not_a_url(): void
     {
-        $this->actingAs($this->admin)
-            ->from(route('manage.settings'))
-            ->put(route('manage.settings.update'), $this->payload(['identity_register_url' => 'not a url']))
+        $this->save('identity', ['identity_register_url' => 'not a url'])
             ->assertSessionHasErrors('values.identity_register_url');
     }
 
     public function test_footer_links_are_stored_as_an_ordered_list(): void
     {
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload([
-                'footer_links' => [
-                    ['label' => 'Code of Conduct', 'url' => 'https://example.test/coc'],
-                    ['label' => 'Support', 'url' => 'https://example.test/help'],
-                    ['label' => 'Privacy', 'url' => 'https://example.test/privacy'],
-                ],
-            ]));
+        $this->save('links', [
+            'footer_links' => [
+                ['label' => 'Code of Conduct', 'url' => 'https://example.test/coc'],
+                ['label' => 'Support', 'url' => 'https://example.test/help'],
+                ['label' => 'Privacy', 'url' => 'https://example.test/privacy'],
+            ],
+        ]);
 
         $this->assertSame([
             ['label' => 'Code of Conduct', 'url' => 'https://example.test/coc'],
@@ -157,18 +206,10 @@ class SettingsTest extends TestCase
 
     public function test_a_footer_link_needs_both_a_title_and_a_valid_url(): void
     {
-        $this->actingAs($this->admin)
-            ->from(route('manage.settings'))
-            ->put(route('manage.settings.update'), $this->payload([
-                'footer_links' => [['label' => 'Broken', 'url' => 'not a url']],
-            ]))
+        $this->save('links', ['footer_links' => [['label' => 'Broken', 'url' => 'not a url']]])
             ->assertSessionHasErrors('values.footer_links.0.url');
 
-        $this->actingAs($this->admin)
-            ->from(route('manage.settings'))
-            ->put(route('manage.settings.update'), $this->payload([
-                'footer_links' => [['label' => '', 'url' => 'https://example.test']],
-            ]))
+        $this->save('links', ['footer_links' => [['label' => '', 'url' => 'https://example.test']]])
             ->assertSessionHasErrors('values.footer_links.0.label');
     }
 
@@ -178,8 +219,7 @@ class SettingsTest extends TestCase
             ['label' => 'Support', 'url' => 'https://example.test/help'],
         ]));
 
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['footer_links' => []]));
+        $this->save('links', ['footer_links' => []]);
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'footer_links']);
         $this->assertSame([], app(BrandingService::class)->footerLinks());
@@ -188,16 +228,13 @@ class SettingsTest extends TestCase
 
     public function test_the_accent_colour_must_be_a_hex_value(): void
     {
-        $this->actingAs($this->admin)
-            ->from(route('manage.settings'))
-            ->put(route('manage.settings.update'), $this->payload(['primary_color' => 'rebeccapurple']))
+        $this->save('look', ['primary_color' => 'rebeccapurple'])
             ->assertSessionHasErrors('values.primary_color');
     }
 
     public function test_an_unregistered_key_is_ignored_rather_than_stored(): void
     {
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['rtmp_host' => 'evil.example.test']));
+        $this->save('identity', ['rtmp_host' => 'evil.example.test']);
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'rtmp_host']);
     }
@@ -219,10 +256,7 @@ class SettingsTest extends TestCase
     {
         BrandingSetting::setValue('login_headline', 'Something else');
 
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload([
-                'login_headline' => config('branding.login_headline'),
-            ]));
+        $this->save('login', ['login_headline' => config('branding.login_headline')]);
 
         // Not merely equal to the default: no row at all, so a later change to
         // the shipped default applies instead of being shadowed forever.
@@ -236,8 +270,7 @@ class SettingsTest extends TestCase
         // leave a row behind either.
         BrandingSetting::setValue('login_eyebrow', 'Testcon');
 
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['login_eyebrow' => '']));
+        $this->save('login', ['login_eyebrow' => '']);
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'login_eyebrow']);
     }
@@ -252,8 +285,7 @@ class SettingsTest extends TestCase
 
         BrandingSetting::setValue('login_tagline', 'Custom wording');
 
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['login_tagline' => '']));
+        $this->save('login', ['login_tagline' => '']);
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'login_tagline']);
         $this->assertSame(config('branding.login_tagline'), BrandingSetting::getValue('login_tagline'));
@@ -264,13 +296,11 @@ class SettingsTest extends TestCase
         BrandingSetting::setValue('pretalx_token', 'secret-token');
 
         $this->actingAs($this->admin)
-            ->get(route('manage.settings'))
+            ->get(route('manage.settings.group', 'pretalx'))
             ->assertSuccessful()
             ->assertDontSee('secret-token')
             ->assertInertia(function (Assert $page) {
-                $field = collect($page->toArray()['props']['groups'])
-                    ->flatMap(fn (array $group) => $group['fields'])
-                    ->firstWhere('key', 'pretalx_token');
+                $field = $this->field($page, 'pretalx_token');
 
                 // Masked rather than empty, so the field shows that something is stored.
                 $this->assertSame(Settings::MASK_SECRET, $field['value']);
@@ -284,13 +314,11 @@ class SettingsTest extends TestCase
         // neither when it posts nothing nor when it posts the mask back.
         BrandingSetting::setValue('pretalx_token', 'secret-token');
 
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['pretalx_token' => '']));
+        $this->save('pretalx', ['pretalx_token' => '']);
 
         $this->assertSame('secret-token', BrandingSetting::getValue('pretalx_token'));
 
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['pretalx_token' => Settings::MASK_SECRET]));
+        $this->save('pretalx', ['pretalx_token' => Settings::MASK_SECRET]);
 
         $this->assertSame('secret-token', BrandingSetting::getValue('pretalx_token'));
     }
@@ -299,13 +327,11 @@ class SettingsTest extends TestCase
     {
         BrandingSetting::setValue('pretalx_token', 'secret-token');
 
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['pretalx_token' => 'new-token']));
+        $this->save('pretalx', ['pretalx_token' => 'new-token']);
 
         $this->assertSame('new-token', BrandingSetting::getValue('pretalx_token'));
 
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['pretalx_token' => Settings::CLEAR_SECRET]));
+        $this->save('pretalx', ['pretalx_token' => Settings::CLEAR_SECRET]);
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'pretalx_token']);
     }
@@ -317,36 +343,59 @@ class SettingsTest extends TestCase
      */
     public function test_the_control_key_is_readable_on_the_page_and_saved(): void
     {
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['control_key' => 'a-long-enough-control-key']));
+        $this->save('control', ['control_key' => 'a-long-enough-control-key']);
 
         $this->assertSame('a-long-enough-control-key', BrandingSetting::getValue('control_key'));
         $this->assertSame('a-long-enough-control-key', ControlKey::current());
 
         $this->actingAs($this->admin)
-            ->get(route('manage.settings'))
+            ->get(route('manage.settings.group', 'control'))
             ->assertSuccessful()
             ->assertInertia(function (Assert $page) {
-                $field = collect($page->toArray()['props']['groups'])
-                    ->flatMap(fn (array $group) => $group['fields'])
-                    ->firstWhere('key', 'control_key');
+                $field = $this->field($page, 'control_key');
 
                 $this->assertSame('a-long-enough-control-key', $field['value']);
                 $this->assertTrue($field['hasValue']);
             });
     }
 
+    /**
+     * The pane hands over the module as well as the key, and a note saves nothing: it
+     * is not a field, so it never reaches the values a save posts.
+     */
+    public function test_the_control_pane_links_to_the_companion_module(): void
+    {
+        config(['stream.companion_module_url' => 'https://example.test/stream-control.tgz']);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings.group', 'control'))
+            ->assertSuccessful()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('group.note.url', 'https://example.test/stream-control.tgz')
+            );
+    }
+
+    public function test_a_note_with_nothing_behind_it_is_not_shown(): void
+    {
+        config(['stream.companion_module_url' => '']);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings.group', 'control'))
+            ->assertSuccessful()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('group.note', null)
+            );
+    }
+
     public function test_clearing_the_control_key_closes_the_control_api(): void
     {
         // The table is the only source, so an emptied field is not a fallback to
         // anything: it switches the control API off.
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['control_key' => 'saved-control-key-value']));
+        $this->save('control', ['control_key' => 'saved-control-key-value']);
 
         $this->assertSame('saved-control-key-value', ControlKey::current());
 
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['control_key' => '']));
+        $this->save('control', ['control_key' => '']);
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'control_key']);
         $this->assertSame('', ControlKey::current());
@@ -354,9 +403,7 @@ class SettingsTest extends TestCase
 
     public function test_a_short_control_key_is_rejected(): void
     {
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['control_key' => 'short']))
-            ->assertSessionHasErrors('values.control_key');
+        $this->save('control', ['control_key' => 'short'])->assertSessionHasErrors('values.control_key');
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'control_key']);
     }
@@ -366,8 +413,7 @@ class SettingsTest extends TestCase
         $this->assertTrue(app(BrandingService::class)->showSourceLink());
         $this->assertNotNull(app(BrandingService::class)->forFrontend()['source']);
 
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['show_source_link' => false]));
+        $this->save('links', ['show_source_link' => false]);
 
         // Stored as a string, because that is what the settings table holds.
         $this->assertSame('0', BrandingSetting::getValue('show_source_link'));
@@ -379,8 +425,7 @@ class SettingsTest extends TestCase
     {
         BrandingSetting::setValue('show_source_link', '0');
 
-        $this->actingAs($this->admin)
-            ->put(route('manage.settings.update'), $this->payload(['show_source_link' => true]));
+        $this->save('links', ['show_source_link' => true]);
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'show_source_link']);
         $this->assertTrue(app(BrandingService::class)->showSourceLink());
@@ -390,21 +435,12 @@ class SettingsTest extends TestCase
     {
         // The moderator holds the manage gate but not admin.access.
         $this->actingAs($this->moderator)->get(route('manage.settings'))->assertForbidden();
+        $this->actingAs($this->moderator)->get(route('manage.settings.group', 'login'))->assertForbidden();
 
         $this->actingAs($this->moderator)
-            ->put(route('manage.settings.update'), $this->payload())
+            ->put(route('manage.settings.update', 'login'), ['values' => $this->values('login')])
             ->assertForbidden();
 
         $this->actingAs($this->moderator)->post(route('manage.settings.reset'))->assertForbidden();
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function field(Assert $page, string $key): array
-    {
-        return collect($page->toArray()['props']['groups'])
-            ->flatMap(fn (array $group) => $group['fields'])
-            ->firstWhere('key', $key);
     }
 }

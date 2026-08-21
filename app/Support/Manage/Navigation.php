@@ -5,6 +5,7 @@ namespace App\Support\Manage;
 use App\Enum\ServerStatusEnum;
 use App\Enum\SourceStatusEnum;
 use App\Models\Emote;
+use App\Models\FeedbackReport;
 use App\Models\Role;
 use App\Models\Server;
 use App\Models\Show;
@@ -44,6 +45,7 @@ final class Navigation
             ]],
             ['label' => 'Streaming', 'items' => [
                 $this->item('Sources', 'video', 'manage.sources.index', $badges['sources'] ?? null),
+                $this->item('Preview', 'eye', 'manage.sources.preview'),
                 $this->item('Shows', 'play-circle', 'manage.shows.index', $badges['shows'] ?? null),
                 $this->item('Planner', 'calendar', 'manage.shows.planner'),
                 // Import has no rail entry on purpose: it is reached from the Shows
@@ -52,10 +54,13 @@ final class Navigation
             ]],
             ['label' => 'Infrastructure', 'items' => [
                 $this->item('Servers', 'server', 'manage.servers.index'),
-                $this->item('Display Keys', 'monitor', 'manage.embed-keys.index'),
-                $this->item('Screens', 'monitor-play', 'manage.displays.index'),
+                Features::screens() ? $this->item('Display Keys', 'monitor', 'manage.embed-keys.index') : null,
+                Features::screens() ? $this->item('Screens', 'monitor-play', 'manage.displays.index') : null,
             ]],
             ['label' => 'Administration', 'items' => [
+                Features::feedback()
+                    ? $this->item('Feedback', 'message-square', 'manage.feedback.index', $badges['feedback'] ?? null)
+                    : null,
                 $this->item('Users', 'users', 'manage.users.index'),
                 $this->item('Roles', 'shield-check', 'manage.roles.index', $badges['roles'] ?? null),
                 Features::emotes()
@@ -107,6 +112,7 @@ final class Navigation
             $upcoming = Show::upcoming()->count();
             $online = Source::where('status', SourceStatusEnum::ONLINE)->count();
             $pending = Emote::pending()->count();
+            $unread = FeedbackReport::unread()->count();
             $roles = Role::count();
 
             /*
@@ -129,6 +135,7 @@ final class Navigation
                 },
                 'sources' => $online > 0 ? ['label' => (string) $online, 'tone' => Status::OK] : null,
                 'emotes' => $pending > 0 ? ['label' => (string) $pending, 'tone' => Status::WARN] : null,
+                'feedback' => $unread > 0 ? ['label' => (string) $unread, 'tone' => Status::WARN] : null,
                 'roles' => $roles > 0 ? ['label' => (string) $roles, 'tone' => Status::IDLE] : null,
             ];
         });

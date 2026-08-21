@@ -26,6 +26,14 @@ final class Features
 {
     public const CACHE_KEY = 'feature_flags';
 
+    /**
+     * Flags the installation owns outright. A viewer opting out of an announcement
+     * or of the report button is not a preference worth offering.
+     *
+     * @var array<int, string>
+     */
+    private const INSTALLATION_ONLY = ['announcement', 'feedback', 'screens'];
+
     private const TTL = 3600;
 
     /**
@@ -72,6 +80,10 @@ final class Features
         $preferences = $user?->feature_preferences ?? [];
 
         foreach ($flags as $key => $enabled) {
+            if (in_array($key, self::INSTALLATION_ONLY, true)) {
+                continue;
+            }
+
             // Only an explicit false counts. An absent key means the viewer has
             // never touched this feature, which is not the same as turning it off.
             if ($enabled && array_key_exists($key, $preferences) && $preferences[$key] === false) {
@@ -103,7 +115,7 @@ final class Features
         $flags = self::all();
         $flags['emotes'] = $flags['emotes'] && $flags['chat'];
 
-        return array_keys(array_filter($flags));
+        return array_values(array_diff(array_keys(array_filter($flags)), self::INSTALLATION_ONLY));
     }
 
     public static function chat(): bool
@@ -122,6 +134,21 @@ final class Features
     public static function boops(): bool
     {
         return self::enabled('boops');
+    }
+
+    public static function announcement(): bool
+    {
+        return self::enabled('announcement');
+    }
+
+    public static function feedback(): bool
+    {
+        return self::enabled('feedback');
+    }
+
+    public static function screens(): bool
+    {
+        return self::enabled('screens');
     }
 
     /**

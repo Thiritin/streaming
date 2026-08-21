@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Recording;
+use App\Support\ArchiveLadder;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -23,17 +24,24 @@ use Illuminate\Support\Facades\Storage;
  */
 class ArchivePlaylistService
 {
-    /** Renditions in ascending quality, matching the transcoder's var_stream_map. */
-    protected const RENDITIONS = [
-        'sd' => ['bandwidth' => 1_500_000, 'resolution' => '854x480'],
-        'hd' => ['bandwidth' => 3_500_000, 'resolution' => '1280x720'],
-        'fhd' => ['bandwidth' => 6_000_000, 'resolution' => '1920x1080'],
-    ];
+    /**
+     * Renditions in ascending quality, matching the transcoder's var_stream_map.
+     *
+     * Read from ArchiveLadder rather than restated here, because importers are told the
+     * same ladder over the API and a master playlist that disagreed with what was encoded
+     * would advertise rungs the archive does not hold.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    protected static function ladder(): array
+    {
+        return ArchiveLadder::renditions();
+    }
 
     /**
      * The publisher's own bitstream, archived but never served live.
      *
-     * Not part of RENDITIONS because almost nothing about it is shared with the
+     * Not part of the ladder because almost nothing about it is shared with the
      * ladder. It is cut on the publisher's keyframes rather than the ladder's
      * forced 2s marks, so it has its own hour index; its bitrate and resolution are
      * whatever the encoder on the con floor was set to, so they are measured from
@@ -126,7 +134,7 @@ class ArchivePlaylistService
     {
         $lines = ['#EXTM3U', '#EXT-X-VERSION:6', '#EXT-X-INDEPENDENT-SEGMENTS'];
 
-        foreach (self::RENDITIONS as $rendition => $meta) {
+        foreach (self::ladder() as $rendition => $meta) {
             $lines[] = sprintf(
                 '#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS="avc1.64001f,mp4a.40.2"',
                 $meta['bandwidth'],
@@ -214,7 +222,7 @@ class ArchivePlaylistService
         $ladder ??= $this->segmentsInRange($source, $from, $to);
 
         $ladderSeconds = array_sum(array_column($ladder, 'duration'));
-        $ladderBitrate = array_sum(array_column(self::RENDITIONS, 'bandwidth'));
+        $ladderBitrate = array_sum(array_column(self::ladder(), 'bandwidth'));
 
         $sourceBytes = array_sum(array_column(
             $this->segmentsInRange($source, $from, $to, self::SOURCE_RENDITION),
@@ -245,7 +253,7 @@ class ArchivePlaylistService
 
     public function renditions(): array
     {
-        return [...array_keys(self::RENDITIONS), self::SOURCE_RENDITION];
+        return [...array_keys(self::ladder()), self::SOURCE_RENDITION];
     }
 
     protected function assertRendition(string $rendition): void

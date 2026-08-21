@@ -1,7 +1,6 @@
 <script setup>
 /**
- * Sticky footer for a form. Stays in view on long forms so Save is never scrolled away,
- * and reports unsaved changes rather than silently discarding them on navigation.
+ * Sticky footer for a form: Save stays in view, and unsaved changes are reported.
  */
 defineProps({
   processing: { type: Boolean, default: false },

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\Auth\FrontChannelLogoutController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\OidcClientController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\Chat\ChatUserController;
 use App\Http\Controllers\Chat\ModerationController;
 use App\Http\Controllers\DisplayController;
 use App\Http\Controllers\EmoteController;
+use App\Http\Controllers\FeedbackController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\RecordingPlaylistController;
@@ -56,21 +58,23 @@ Route::get('/auth/frontchannel-logout', FrontChannelLogoutController::class)->na
  * throttle is load-bearing - it is what keeps an 8-character code out of reach of
  * a guesser.
  */
-Route::get('/d', [DisplayController::class, 'prompt'])->name('display.prompt');
+Route::middleware('screens.enabled')->group(function () {
+    Route::get('/d', [DisplayController::class, 'prompt'])->name('display.prompt');
 
-Route::post('/d', [DisplayController::class, 'redeem'])
-    ->middleware('throttle:10,1')
-    ->name('display.redeem');
+    Route::post('/d', [DisplayController::class, 'redeem'])
+        ->middleware('throttle:10,1')
+        ->name('display.redeem');
 
-Route::get('/d/{key}', [DisplayController::class, 'enter'])
-    ->middleware('throttle:10,1')
-    ->name('display.enter');
+    Route::get('/d/{key}', [DisplayController::class, 'enter'])
+        ->middleware('throttle:10,1')
+        ->name('display.enter');
 
-Route::prefix('display')->name('display.')->group(function () {
-    Route::get('/', [DisplayController::class, 'hub'])->name('hub');
-    Route::get('/play', [DisplayController::class, 'play'])->name('play');
-    Route::get('/state', [DisplayController::class, 'state'])->name('state');
-    Route::post('/leave', [DisplayController::class, 'leave'])->name('leave');
+    Route::prefix('display')->name('display.')->group(function () {
+        Route::get('/', [DisplayController::class, 'hub'])->name('hub');
+        Route::get('/play', [DisplayController::class, 'play'])->name('play');
+        Route::get('/state', [DisplayController::class, 'state'])->name('state');
+        Route::post('/leave', [DisplayController::class, 'leave'])->name('leave');
+    });
 });
 
 /*
@@ -94,8 +98,20 @@ Route::middleware(['auth.optional:web'])->group(function () {
         ->middleware('throttle:120,1')
         ->name('show.boop');
 
+    /*
+     * Feedback from the top bar, and stream problem reports from the player. Guests
+     * included: the viewer whose stream is broken is the least likely to be signed
+     * in, and the throttle is what bounds an unauthenticated write.
+     */
+    Route::post('/feedback', [FeedbackController::class, 'store'])
+        ->middleware(['feedback.enabled', 'throttle:10,1'])
+        ->name('feedback.store');
+
     // Programme guide
     Route::get('/schedule', [ScheduleController::class, 'index'])->name('schedule.index');
+
+    // The announcement in full, behind the banner's "read more".
+    Route::get('/announcement', [AnnouncementController::class, 'show'])->name('announcement');
 
     // Archive (formerly "recordings"; route names kept so existing links still resolve)
     Route::get('/archive', [RecordingController::class, 'index'])->name('recordings.index');

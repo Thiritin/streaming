@@ -381,6 +381,38 @@ class SourcesTest extends TestCase
             );
     }
 
+    /**
+     * Wiring a surface takes the module as well as the endpoint, so the page carries the
+     * download rather than sending an operator to the repo to build one.
+     */
+    public function test_the_edit_page_links_to_the_companion_module(): void
+    {
+        config(['stream.companion_module_url' => 'https://example.test/stream-control.tgz']);
+
+        $source = Source::factory()->create();
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.sources.edit', $source))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('source.companion_module_url', 'https://example.test/stream-control.tgz')
+            );
+    }
+
+    public function test_the_module_link_is_absent_when_no_build_is_published(): void
+    {
+        config(['stream.companion_module_url' => '']);
+
+        $source = Source::factory()->create();
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.sources.edit', $source))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('source.companion_module_url', null)
+            );
+    }
+
     // ---------------------------------------------------------------- deletes
 
     public function test_a_source_without_live_shows_can_be_deleted(): void
@@ -413,7 +445,7 @@ class SourcesTest extends TestCase
         ], $this->toast());
     }
 
-    public function test_a_table_row_only_offers_open_and_delete(): void
+    public function test_a_table_row_only_offers_open_preview_and_delete(): void
     {
         Source::factory()->create();
 
@@ -423,8 +455,9 @@ class SourcesTest extends TestCase
                 $names = collect($page->toArray()['props']['table']['rows'][0]['actions'])->pluck('name')->all();
 
                 // Status overrides and key rotation act on one source and have consequences
-                // past the row, so they live on the detail page, not in the table.
-                $this->assertSame(['edit', 'delete'], $names);
+                // past the row, so they live on the detail page, not in the table. Preview
+                // changes nothing at all, which is why it is offered here.
+                $this->assertSame(['edit', 'preview', 'delete'], $names);
             });
     }
 
@@ -437,7 +470,7 @@ class SourcesTest extends TestCase
             ->assertInertia(function (Assert $page) {
                 $names = collect($page->toArray()['props']['actions'])->pluck('name')->all();
 
-                $this->assertSame(['update_status', 'regenerate_key', 'delete'], $names);
+                $this->assertSame(['preview', 'update_status', 'regenerate_key', 'delete'], $names);
             });
     }
 

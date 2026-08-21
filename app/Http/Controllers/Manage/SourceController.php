@@ -106,6 +106,9 @@ class SourceController extends Controller
                 // One key for the installation, shown here so a surface can be wired
                 // without leaving the page it is being wired for.
                 'companion_key' => ControlKey::current(),
+                // The built module, so wiring a surface is one page: endpoint, key,
+                // and the file Companion imports.
+                'companion_module_url' => trim((string) config('stream.companion_module_url')) ?: null,
                 'shows_count' => $source->shows()->count(),
                 'live_shows_count' => $source->liveShows()->count(),
                 'created_at' => $source->created_at?->diffForHumans() ?? '-',
@@ -285,6 +288,8 @@ class SourceController extends Controller
     {
         $actions = [
             Action::link('edit', 'Edit', route('manage.sources.edit', $source))->icon('pencil'),
+            Action::link('preview', 'Preview', route('manage.sources.preview', ['source' => $source->slug]))
+                ->icon('eye'),
         ];
 
         if (request()->user()->can('update', $source)) {
@@ -302,7 +307,13 @@ class SourceController extends Controller
     private function recordActions(Source $source): array
     {
         $user = request()->user();
-        $actions = [];
+
+        // Watching what is arriving needs no permission beyond reaching this page, so
+        // it sits ahead of the actions that change something.
+        $actions = [
+            Action::link('preview', 'Preview', route('manage.sources.preview', ['source' => $source->slug]))
+                ->icon('eye'),
+        ];
 
         if ($user->can('update', $source)) {
             $actions[] = Action::post('update_status', 'Update Status', route('manage.sources.status', $source))
@@ -387,13 +398,15 @@ class SourceController extends Controller
      */
     private function pageActions(): array
     {
-        if (! request()->user()->can('create', Source::class)) {
-            return [];
+        $actions = [
+            Action::link('preview', 'Preview', route('manage.sources.preview'))->icon('eye'),
+        ];
+
+        if (request()->user()->can('create', Source::class)) {
+            $actions[] = Action::link('create', 'New Source', route('manage.sources.create'))->icon('plus');
         }
 
-        return [
-            Action::link('create', 'New Source', route('manage.sources.create'))->icon('plus'),
-        ];
+        return $actions;
     }
 
     /**

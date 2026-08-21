@@ -4,6 +4,7 @@ use App\Http\Controllers\Manage\DashboardController;
 use App\Http\Controllers\Manage\DisplayScreenController;
 use App\Http\Controllers\Manage\EmbedKeyController;
 use App\Http\Controllers\Manage\EmoteController;
+use App\Http\Controllers\Manage\FeedbackController;
 use App\Http\Controllers\Manage\PretalxConnectionController;
 use App\Http\Controllers\Manage\PretalxImportController;
 use App\Http\Controllers\Manage\RecordingController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\Manage\ShowController;
 use App\Http\Controllers\Manage\ShowPlannerController;
 use App\Http\Controllers\Manage\ShowStatisticsController;
 use App\Http\Controllers\Manage\SourceController;
+use App\Http\Controllers\Manage\SourcePreviewController;
 use App\Http\Controllers\Manage\TableColumnController;
 use App\Http\Controllers\Manage\UploadController;
 use App\Http\Controllers\Manage\UserController;
@@ -75,25 +77,35 @@ Route::post('sources/{source}/stream-key', [SourceController::class, 'regenerate
  * Display keys. No edit route on purpose: a key is a name and a secret, and
  * revoking is deleting the row.
  */
-Route::get('embed-keys', [EmbedKeyController::class, 'index'])->name('embed-keys.index');
-Route::get('embed-keys/create', [EmbedKeyController::class, 'create'])->name('embed-keys.create');
-Route::post('embed-keys', [EmbedKeyController::class, 'store'])->name('embed-keys.store');
-Route::post('embed-keys/{embedKey}/sign-out', [EmbedKeyController::class, 'signOut'])->name('embed-keys.sign-out');
-Route::delete('embed-keys/{embedKey}', [EmbedKeyController::class, 'destroy'])->name('embed-keys.destroy');
-Route::post('embed-keys/{embedKey}/direct', [EmbedKeyController::class, 'direct'])->name('embed-keys.direct');
+Route::middleware('screens.enabled')->group(function () {
+    Route::get('embed-keys', [EmbedKeyController::class, 'index'])->name('embed-keys.index');
+    Route::get('embed-keys/create', [EmbedKeyController::class, 'create'])->name('embed-keys.create');
+    Route::post('embed-keys', [EmbedKeyController::class, 'store'])->name('embed-keys.store');
+    Route::post('embed-keys/{embedKey}/sign-out', [EmbedKeyController::class, 'signOut'])->name('embed-keys.sign-out');
+    Route::delete('embed-keys/{embedKey}', [EmbedKeyController::class, 'destroy'])->name('embed-keys.destroy');
+    Route::post('embed-keys/{embedKey}/direct', [EmbedKeyController::class, 'direct'])->name('embed-keys.direct');
+});
 
 /*
  * The screens those keys let in. Bulk routes first, so 'displays/bulk' is not read
  * as a screen id.
  */
-Route::post('displays/bulk/direct', [DisplayScreenController::class, 'bulkDirect'])->name('displays.bulk.direct');
-Route::post('displays/direct-all', [DisplayScreenController::class, 'directAll'])->name('displays.direct-all');
-Route::get('displays', [DisplayScreenController::class, 'index'])->name('displays.index');
-Route::post('displays/{displayScreen}/direct', [DisplayScreenController::class, 'direct'])->name('displays.direct');
-Route::post('displays/{displayScreen}/rename', [DisplayScreenController::class, 'rename'])->name('displays.rename');
-Route::delete('displays/{displayScreen}', [DisplayScreenController::class, 'destroy'])->name('displays.destroy');
+Route::middleware('screens.enabled')->group(function () {
+    Route::post('displays/bulk/direct', [DisplayScreenController::class, 'bulkDirect'])->name('displays.bulk.direct');
+    Route::post('displays/direct-all', [DisplayScreenController::class, 'directAll'])->name('displays.direct-all');
+    Route::get('displays', [DisplayScreenController::class, 'index'])->name('displays.index');
+    Route::post('displays/{displayScreen}/direct', [DisplayScreenController::class, 'direct'])->name('displays.direct');
+    Route::post('displays/{displayScreen}/rename', [DisplayScreenController::class, 'rename'])->name('displays.rename');
+    Route::delete('displays/{displayScreen}', [DisplayScreenController::class, 'destroy'])->name('displays.destroy');
+});
 
 Route::get('sources', [SourceController::class, 'index'])->name('sources.index');
+/*
+ * Declared before `sources/{source}` so it is not read as a slug. The player here
+ * asks for the playlist with `preview=1`, which HlsController honours for an operator
+ * and which keeps the check out of the source's viewer count.
+ */
+Route::get('sources/preview', SourcePreviewController::class)->name('sources.preview');
 Route::get('sources/create', [SourceController::class, 'create'])->name('sources.create');
 Route::post('sources', [SourceController::class, 'store'])->name('sources.store');
 Route::get('sources/{source}', [SourceController::class, 'edit'])->name('sources.edit');
@@ -147,6 +159,19 @@ Route::get('users/{user}', [UserController::class, 'edit'])->name('users.edit');
 Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
 Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
 
+/*
+ * Viewer reports: feedback from the top bar, stream problems from the player. Bulk
+ * routes first, so 'feedback/bulk' is not read as a report id.
+ */
+Route::middleware('feedback.enabled')->group(function () {
+    Route::post('feedback/bulk/resolve', [FeedbackController::class, 'bulkResolve'])->name('feedback.bulk.resolve');
+    Route::delete('feedback/bulk', [FeedbackController::class, 'bulkDestroy'])->name('feedback.bulk.destroy');
+    Route::get('feedback', [FeedbackController::class, 'index'])->name('feedback.index');
+    Route::get('feedback/{feedback}', [FeedbackController::class, 'show'])->name('feedback.show');
+    Route::post('feedback/{feedback}/status', [FeedbackController::class, 'updateStatus'])->name('feedback.status');
+    Route::delete('feedback/{feedback}', [FeedbackController::class, 'destroy'])->name('feedback.destroy');
+});
+
 Route::post('roles/seed', [RoleController::class, 'seedDefaults'])->name('roles.seed');
 Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
 Route::get('roles/create', [RoleController::class, 'create'])->name('roles.create');
@@ -193,10 +218,13 @@ Route::put('recordings/{recording}', [RecordingController::class, 'update'])->na
 Route::delete('recordings/{recording}', [RecordingController::class, 'destroy'])->name('recordings.destroy');
 
 /*
- * System settings: identity, login copy, colours, links. Generated from
- * config/settings.php, so a new knob needs no route change.
+ * System settings: identity, login copy, colours, links, the announcement banner.
+ * Generated from config/settings.php, so a new knob needs no route change and a new
+ * pane needs no route of its own.
  */
 Route::post('settings/pretalx/test', PretalxConnectionController::class)->name('settings.pretalx.test');
 Route::get('settings', [SettingsController::class, 'edit'])->name('settings');
-Route::put('settings', [SettingsController::class, 'update'])->name('settings.update');
+// One pane per registry group; the bare /manage/settings above is the first of them.
+Route::get('settings/{group}', [SettingsController::class, 'edit'])->name('settings.group');
+Route::put('settings/{group}', [SettingsController::class, 'update'])->name('settings.update');
 Route::post('settings/reset', [SettingsController::class, 'reset'])->name('settings.reset');

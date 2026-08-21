@@ -12,8 +12,8 @@ running now, and if no slot has begun it starts the next one on the schedule.
 
 - A source in `/manage` > Sources, with shows scheduled on it
 - [Bitfocus Companion](https://bitfocus.io/companion) 5.x
-- The `stream-control` module, packaged from `companion/module-stream-control/` in this
-  repo with `./scripts/companion-package.sh` and imported into Companion
+- The `stream-control` module, downloaded from `/manage` > Settings > **Control surfaces**
+  (or from any source page) and imported into Companion
 
 One connection controls one source: the stream name is the last part of the API URL, and
 that is what picks it. A second stage is a second connection with a different URL and the
@@ -49,20 +49,32 @@ for, so a connection can be wired without leaving it.
 
 ### 3. Install the module
 
-Companion does not ship this module, so it has to be handed over as a package. Build one
-from the repo:
+Companion does not ship this module, so it has to be handed over as a package. The panel
+links to a built one: **Download the Companion module**, on `/manage` > Settings > **Control
+surfaces** and on every source page under **Control surface**. The link is
+`releases/latest/download/stream-control-companion.tgz` on the repo, so it keeps answering
+with the newest build and never has to be updated per release.
+
+On the Companion machine: **Modules**, then **Import module package**, then pick the file.
+Nothing else is needed there - no Node, no npm, no developer module path - which is why this
+is the way onto someone else's server. Upgrading is downloading the file again and
+reimporting it; the version Companion shows is the release tag the package was built from.
+
+The link comes from `stream.companion_module_url`. A fork that publishes its own builds
+points `COMPANION_MODULE_URL` at them, and an empty value hides the link, which is what an
+installation with nothing published wants.
+
+To build one locally instead - an unreleased change, or an installation that does not reach
+GitHub:
 
 ```bash
 ./scripts/companion-package.sh
 ```
 
-That writes `companion/module-stream-control/stream-control-1.0.0.tgz`, a few kilobytes
-with the dependencies bundled in. On the Companion machine: **Modules**, then **Import
-module package**, then pick the file. Nothing else is needed there - no Node, no npm, no
-developer module path - so this is the way to get the module onto someone else's server.
-
-Rebuild and reimport to upgrade. Bump `version` in the module's `package.json` when you do,
-because that is what Companion shows and what tells two builds apart.
+That writes `companion/module-stream-control/stream-control-<version>.tgz`, a few kilobytes
+with the dependencies bundled in, and imports the same way. Bump `version` in the module's
+`package.json` for a hand-built upgrade, because that is what Companion shows and what tells
+two builds apart; a released build gets its version stamped from the tag instead.
 
 For working on the module itself there is the developer path instead: point Companion at
 the directory that holds `companion/module-stream-control/` (Settings, then the developer
@@ -216,6 +228,18 @@ plus a connection restart is the whole loop. The container reaches the app on
 `streaming.test` through `host-gateway`; if the app is on a different host or port, point
 the connection's base URL at that instead.
 
+## Releasing a build
+
+Creating a GitHub release runs `.github/workflows/companion.yml`, which stamps the tag onto
+the module's version, packages it with `./scripts/companion-package.sh` and attaches two
+files to the release: `stream-control-<version>.tgz`, which is what Companion shows once
+imported, and a copy named `stream-control-companion.tgz`, which is what the panel's
+download link resolves to. Nothing in the panel has to be touched for a new build to be the
+one people get.
+
+Running the workflow by hand builds the same package and leaves it as a workflow artifact,
+since a manual run has no release to attach it to.
+
 ## Where it lives
 
 | Piece | File |
@@ -225,6 +249,8 @@ the connection's base URL at that instead.
 | Key check | `app/Http/Middleware/CheckCompanionTokenMiddleware.php` |
 | The key itself | Settings > Control surfaces, read by `app/Support/ControlKey.php` |
 | The Companion module | `companion/module-stream-control/` |
+| Packaging and release | `scripts/companion-package.sh`, `.github/workflows/companion.yml` |
+| The download link | `stream.companion_module_url` |
 | Ready-made button page | `companion/stream-control-page.companionconfig` |
 | Companion in Docker | `docker-compose.companion.yml`, `scripts/companion.sh` |
 | Tests | `tests/Feature/Api/CompanionControlTest.php`, `companion/module-stream-control/test/` |

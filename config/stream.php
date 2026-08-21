@@ -204,6 +204,31 @@ return [
     // means the control API is off, which is what a fresh install has.
     'control_key' => null,
 
+    // Same shape, for the key an offline import authenticates with (tools/streaming-archiver,
+    // docs/admin/archive-import.md). A null placeholder naming where the settings registry
+    // stores it, never an env(): the table is the only source, so nothing can disagree
+    // with what the panel shows. Read it through App\Support\ImportKey::current().
+    'import_key' => null,
+
+    // Where the panel points at a built Stream Control module. Every release attaches
+    // one under a fixed asset name (.github/workflows/companion.yml), so the "latest"
+    // URL keeps answering with the newest build and nothing has to be updated per
+    // release. A fork that publishes its own builds overrides this; empty hides the
+    // download link, which is what an installation with no published release wants.
+    'companion_module_url' => env(
+        'COMPANION_MODULE_URL',
+        'https://github.com/Thiritin/streaming/releases/latest/download/stream-control-companion.tgz',
+    ),
+
+    // Where the panel points at built streaming-archiver binaries. One asset per platform is
+    // attached to every release under a fixed name (.github/workflows/streaming-archiver.yml), so
+    // the "latest" URL keeps answering with the newest build. Empty hides the download
+    // links; see App\Support\ImportCli for the asset names this has to agree with.
+    'import_cli_base_url' => env(
+        'IMPORT_CLI_BASE_URL',
+        'https://github.com/Thiritin/streaming/releases/latest/download',
+    ),
+
     // Local dev loops: with DEV_STREAMS=true, sources play the HLS that
     // scripts/dev-streams.sh writes into public/dev-streams/<slug> instead of
     // being proxied to an edge server that does not exist on a laptop.

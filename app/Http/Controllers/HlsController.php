@@ -18,6 +18,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Cookie;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -120,7 +121,13 @@ class HlsController extends Controller
             return $rejection;
         }
 
-        $server = $this->placeViewer($request, $source, $user);
+        $preview = $this->isPreview($request, $user);
+
+        if ($closed = $this->closedToViewers($source, $streamkey, $preview)) {
+            return $closed;
+        }
+
+        $server = $this->placeViewer($request, $source, $user, $preview);
 
         if (! $server) {
             return response('No server available', 503)
@@ -130,8 +137,9 @@ class HlsController extends Controller
         $port = $server->port ?? 8080;
 
         // As in variant(): the credential varies per caller, the body does not, so it
-        // is substituted on the way out rather than baked into the cache key.
-        $cacheKey = "hls_master:{$stream}:{$server->hostname}:{$port}";
+        // is substituted on the way out rather than baked into the cache key. A preview
+        // gets its own entry because its variant URLs carry the flag onwards.
+        $cacheKey = "hls_master:{$stream}:{$server->hostname}:{$port}".($preview ? ':preview' : '');
 
         $embedToken = $this->embedTokenFor($request, $stream);
         $credential = match (true) {
@@ -160,7 +168,7 @@ class HlsController extends Controller
             // dropping its token here would 401 the very next request.
             fn (string $playlist) => preg_replace_callback(
                 '/^('.preg_quote($stream, '/').'_(sd|hd|fhd)\.m3u8)$/m',
-                fn ($matches) => '/hls/'.$matches[1].'?'.self::CREDENTIAL_PLACEHOLDER,
+                fn ($matches) => '/hls/'.$matches[1].'?'.($preview ? 'preview=1&' : '').self::CREDENTIAL_PLACEHOLDER,
                 $playlist
             ),
             [
@@ -210,7 +218,13 @@ class HlsController extends Controller
             return $rejection;
         }
 
-        $server = $this->placeViewer($request, $source, $user);
+        $preview = $this->isPreview($request, $user);
+
+        if ($closed = $this->closedToViewers($source, $streamkey, $preview)) {
+            return $closed;
+        }
+
+        $server = $this->placeViewer($request, $source, $user, $preview);
 
         if (! $server || ! $server->hostname) {
             return response('No server available', 503)
@@ -304,9 +318,7 @@ class HlsController extends Controller
         $streamkey = $request->get('streamkey');
 
         if ($streamkey) {
-            $systemStreamkey = config('stream.system_streamkey');
-
-            if ($systemStreamkey && hash_equals((string) $systemStreamkey, (string) $streamkey)) {
+            if ($this->isSystemStreamkey((string) $streamkey)) {
                 // Internal callers are not viewers; a stand-in user carries that.
                 $system = new User;
                 $system->id = 0;
@@ -336,6 +348,50 @@ class HlsController extends Controller
         }
 
         return [$user, null, null];
+    }
+
+    /**
+     * The show gate: a channel is watchable only while a show on it is live.
+     *
+     * Several channels send around the clock without being for anyone to watch -
+     * a hall camera up through setup, a stage sitting on colour bars - so ingest
+     * arriving is not what opens a channel. Being signed in, holding a streamkey
+     * or presenting a display token all get a viewer past identify(); this is what
+     * they get past it *to*, and it applies to every one of them.
+     *
+     * 404, not 403: the player treats 403 as a credential problem worth retrying,
+     * and there is nothing here to fix by retrying. It is also the honest answer,
+     * since a channel with no show on it is not a stream that exists to a viewer.
+     *
+     * Two callers are exempt, and neither is a viewer. The system streamkey belongs
+     * to the thumbnailer and the archive uploader, which are the machinery a show
+     * needs in order to have gone live at all. And an operator preview from /manage
+     * is the one case where looking at a channel with nothing scheduled on it is the
+     * whole point - checking that a feed is arriving before the show is put live.
+     */
+    private function closedToViewers(Source $source, ?string $streamkey, bool $preview = false): ?Response
+    {
+        if ($preview) {
+            return null;
+        }
+
+        if ($streamkey && $this->isSystemStreamkey($streamkey)) {
+            return null;
+        }
+
+        if (Source::playable($source->slug)) {
+            return null;
+        }
+
+        return response('No show on air', 404)
+            ->header('Content-Type', 'text/plain');
+    }
+
+    private function isSystemStreamkey(string $streamkey): bool
+    {
+        $systemStreamkey = config('stream.system_streamkey');
+
+        return (bool) $systemStreamkey && hash_equals((string) $systemStreamkey, $streamkey);
     }
 
     private function userForStreamkey(string $streamkey): ?User
@@ -454,19 +510,39 @@ class HlsController extends Controller
     }
 
     /**
+     * Whether this request is an operator checking what is arriving rather than a
+     * viewer watching.
+     *
+     * It grants no access: the caller is signed in and past `access-manage` before it
+     * answers true, and the credential the playlist carries is the same one any
+     * viewer gets. What it skips is the viewer bookkeeping - no `source_users` row,
+     * so glancing at a source from /manage does not move its viewer count, and no
+     * edge pin, so the check is not stuck to whichever edge the operator watched from
+     * last.
+     */
+    private function isPreview(Request $request, ?User $user): bool
+    {
+        if (! $request->boolean('preview') || ! $user || ! $user->exists) {
+            return false;
+        }
+
+        return Gate::forUser($user)->allows('access-manage');
+    }
+
+    /**
      * Pick the edge that serves this request, and keep the viewer's session row alive.
      *
      * Both answers are cached together for RESOLUTION_TTL, so a viewer costs one
      * select and at most two writes a minute instead of several per second. See the
      * constant for what that replaced.
      */
-    private function placeViewer(Request $request, Source $source, ?User $user): ?Server
+    private function placeViewer(Request $request, Source $source, ?User $user, bool $preview = false): ?Server
     {
         $override = $this->localOverrideEdge($request);
 
         // Internal callers (thumbnail capture, monitoring) are not viewers and get
-        // no session row.
-        if ($user && $user->id === 0) {
+        // no session row. Neither is an operator previewing the source from /manage.
+        if ($preview || ($user && $user->id === 0)) {
             return $override ?? $this->activeEdges()->first();
         }
 
@@ -786,8 +862,8 @@ class HlsController extends Controller
     private function applyCredential(string $playlist, ?string $credential): string
     {
         return str_replace(
-            '?'.self::CREDENTIAL_PLACEHOLDER,
-            $credential === null ? '' : '?'.$credential,
+            ['?'.self::CREDENTIAL_PLACEHOLDER, '&'.self::CREDENTIAL_PLACEHOLDER],
+            $credential === null ? ['', ''] : ['?'.$credential, '&'.$credential],
             $playlist,
         );
     }

@@ -14,7 +14,7 @@
 # Required:
 #   ORIGIN_RTMP    rtmp://<origin-ip>:1935
 #   SOURCES        slug:key,slug:key,...   (from /manage > Sources)
-#   APP_URL        https://stream.eurofurence.org
+#   APP_URL        https://stream.example.org
 #   VIEWER_KEY     a streamkey or token the edges accept
 #
 # WHERE TO RUN THIS
@@ -46,7 +46,7 @@ DURATION="${3:-300}"
 
 : "${ORIGIN_RTMP:?set ORIGIN_RTMP, e.g. rtmp://167.233.244.142:1935}"
 : "${SOURCES:?set SOURCES, e.g. main:key1,docks-nightclub:key2}"
-: "${APP_URL:?set APP_URL, e.g. https://stream.eurofurence.org}"
+: "${APP_URL:?set APP_URL, e.g. https://stream.example.org}"
 : "${VIEWER_KEY:?set VIEWER_KEY to a streamkey the edges accept}"
 
 # Time given to the ladder before viewers start. Measured against production: about

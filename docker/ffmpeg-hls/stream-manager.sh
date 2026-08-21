@@ -258,15 +258,25 @@ start_ffmpeg() {
             -avoid_negative_ts make_zero -fflags +genpts
         )
     else
-        # Every -bufsize matches its -maxrate rather than doubling it. A VBV buffer
-        # two seconds wide at hls_time 2 lets a whole segment sit above maxrate and
-        # be paid back by the next one, and measured on air that is what it did:
-        # consecutive fhd segments ran 4.7 to 7.9 Mbps against a 6.5 Mbps ceiling,
-        # with every rung peaking 15-17% over the BANDWIDTH its own master playlist
-        # advertises. A player picks a rung by that number, so the overshoot lands as
-        # a segment that takes longer to fetch than it takes to play. One second of
-        # VBV holds the overshoot inside a segment, which is what the advertised
-        # bitrate has to mean for ABR to work.
+        # Every -bufsize matches its -maxrate rather than doubling it.
+        #
+        # -bufsize is how many bits a segment may borrow ahead and pay back later,
+        # so over a window T the ceiling is maxrate*T + bufsize, and -maxrate on its
+        # own bounds nothing at segment scale. At hls_time 2, fhd was 6.5 Mbps with a
+        # 13 Mbit buffer: 26 Mbit in one segment, a 13 Mbps ceiling. Measured on air
+        # consecutive fhd segments ran 4.7 to 7.9 Mbps, and every rung peaked 15-17%
+        # over the BANDWIDTH its own master playlist advertises. A player picks a rung
+        # by that number, so the overshoot lands as a segment that takes longer to
+        # fetch than it takes to play.
+        #
+        # Halving the buffer halves the borrow. It does not clamp a segment to maxrate
+        # - the fhd ceiling only drops from 13 to 9.75 Mbps - it narrows the swing so
+        # the advertised bitrate is close to true rather than 17% under it.
+        #
+        # The cost is that each segment opens on a forced IDR and now has less room to
+        # spend on it, so hard content (fast motion, stage lighting, crowd pans) softens
+        # slightly. Modest at 6 Mbps for 1080p30, where -preset faster is the larger
+        # quality limit anyway.
         ladder_args=(
             -filter_complex
                 "[0:v]split=3[v1][v2][v3]; \

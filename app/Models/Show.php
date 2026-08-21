@@ -410,21 +410,18 @@ class Show extends Model
     }
 
     /**
-     * Check if show can be watched (is live or about to start).
+     * Check if show can be watched.
+     *
+     * Live and nothing else. This used to open five minutes before the scheduled
+     * start, which was harmless when a channel was only up while its show was, and
+     * is not now: a channel sending an empty hall through setup would be watchable
+     * on the strength of a slot that had not been put live yet. A viewer arriving
+     * early gets the starting-soon page and the player picks the stream up off
+     * ShowWentLive.
      */
     public function canWatch()
     {
-        // Allow watching if live
-        if ($this->status === 'live') {
-            return true;
-        }
-
-        // Allow watching 5 minutes before scheduled start
-        if ($this->status === 'scheduled' && $this->scheduled_start) {
-            return now()->diffInMinutes($this->scheduled_start, false) <= 5;
-        }
-
-        return false;
+        return $this->status === 'live';
     }
 
     /**

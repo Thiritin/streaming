@@ -10,7 +10,17 @@ Nothing convention-specific is hardcoded. Names, copy, links, logo, login backgr
 
 Branding has exactly one source: the `branding_settings` table, edited at `/manage` > Settings or via `php artisan branding:set key=value`. Do not add `env()` to `config/branding.php` or `BRANDING_*` vars to `.env` - a saved row always wins, so a second source could only disagree. The accent colour is applied as runtime CSS custom properties (`app.blade.php`, after `@vite`), so changing it needs no rebuild; never move it into a `VITE_` var.
 
-Feature switches (chat, emotes, boops) have two layers. The installation's switches live in the same table, edited at `/manage` > Settings > Features with defaults in `config/features.php`; a signed-in viewer can then switch any of those off for themselves at `/settings`, stored in `users.feature_preferences`. A viewer can only subtract, never add. Read them through `App\Support\Features`: `Features::enabledFor($key, $user)` or `Features::forUser($user)` anywhere a request has a viewer, `Features::chat()`/`::emotes()`/`::boops()` only where the installation-wide answer is what you want. Never `config('features.*')` directly - the config value is only the fallback, so a `config()` read ignores both layers. Emotes fold into chat on both layers. The installation's set is cached under one key and dropped by `BrandingSetting` on write.
+The announcement lives in the same table, edited at `/manage` > Settings > Announcement
+with defaults in `config/announcement.php`. Two pieces of text: a banner line, rendered on
+the front page only (`StreamController@index` passes it; it is not a shared prop and never
+appears on the player, the archive or a display), and the full text behind it at
+`/announcement`. Read it through `App\Support\Announcement::current()` for the banner and
+`::page()` for the page; both answer `null` when the `announcement` feature is off, the
+banner is switched off, or the text is empty. Markdown is sanitised by `App\Support\Markdown`,
+and the banner's `id` is a hash of its text, which is what a viewer's dismissal is
+remembered against.
+
+Feature switches (chat, emotes, boops, announcement, feedback, screens) have two layers. The installation's switches live in the same table, edited at `/manage` > Settings > Features with defaults in `config/features.php`; a signed-in viewer can then switch any of those off for themselves at `/settings`, stored in `users.feature_preferences`. A viewer can only subtract, never add, and the installation-only flags listed in `Features::INSTALLATION_ONLY` are not offered to viewers at all. Read them through `App\Support\Features`: `Features::enabledFor($key, $user)` or `Features::forUser($user)` anywhere a request has a viewer, `Features::chat()`/`::emotes()`/`::boops()` only where the installation-wide answer is what you want. Never `config('features.*')` directly - the config value is only the fallback, so a `config()` read ignores both layers. Emotes fold into chat on both layers. The installation's set is cached under one key and dropped by `BrandingSetting` on write.
 
 ## Core Architecture
 
@@ -58,6 +68,25 @@ Feature switches (chat, emotes, boops) have two layers. The installation's switc
      `server_metrics`, one row a minute, and is charted on the server page at
      `/manage/servers/{id}`. Viewer counts are never taken from the box - they stay
      derived from `source_users`, which knows about guests too.
+
+5. **The show gate**
+   - A channel is watchable only while a show on it is `live`. Plenty of sources ingest
+     around the clock without being for anyone to watch - a hall camera up through setup,
+     a stage sitting on colour bars - so a feed arriving never opens a channel, and
+     neither does holding a credential.
+   - Enforced in one place on the playlist path: `HlsController::closedToViewers()`,
+     which answers 404 rather than 403 (a player treats 403 as worth retrying) off
+     `Source::playable($slug)`. That answer is cached for a few seconds and dropped by
+     `ShowObserver` whenever a show is created, deleted or changes status, so going live
+     and ending both land on the next playlist poll.
+   - Nothing hands out a credential ahead of it either. `StreamController::playbackProps()`
+     and `initialHlsUrl` answer only for a live show, `Show::canWatch()` is live and
+     nothing else (it used to open five minutes before the scheduled start), and
+     `DisplayController` mints an embed token per source only while that source has a
+     show on it - a screen lists a dark channel but cannot start it.
+   - Two callers are exempt and neither is a viewer: the system streamkey (thumbnailer,
+     archive uploader) and an operator preview from `/manage` (`?preview=1`, past
+     `access-manage`), which exists precisely to check a feed before the show is put live.
 
 ## Development Commands
 
@@ -171,18 +200,39 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
 `/manage` covers:
 - Dashboard: capacity, server health, alerts, live viewers, the next few hours of programme
 - Sources, Shows, the Show planner and Stream Control
+- Preview (`/manage/sources/preview`): the operator's view of what an encoder is actually
+  pushing, before a show exists to open the channel. The player asks for the playlist with
+  `?preview=1`, which `HlsController::isPreview()` honours for anyone past `access-manage`:
+  it skips the show gate, the `source_users` row and the edge pin, so checking a feed never
+  shows up as a viewer. Beside it, `App\Support\SourceProbe` reads the ladder off the edge
+  directly - which renditions exist, how many segments and how old the newest one is
 - Import: pulls sessions from pretalx into shows; see docs/admin/pretalx-import.md
 - Each source page carries its control-surface endpoint (`/api/companion/<stream name>`,
   start/stop/status, one control key for the installation); see docs/admin/companion.md.
   Read the key through `App\Support\ControlKey::current()`, never `config('stream.control_key')`
   directly - the table is the only source, and the config entry is a null placeholder that
-  names where the settings registry stores it. Never give it an `env()`
+  names where the settings registry stores it. Never give it an `env()`. The page and
+  Settings > Control surfaces also link to the built Companion module, which every
+  GitHub release attaches under a fixed asset name
+  (`.github/workflows/companion.yml`); the link is `stream.companion_module_url`,
+  which unlike the key is a build location rather than an installation setting
 - Display Keys and Screens: the codes unattended displays sign in with, plus the screens
   themselves - what each is playing and where to send it. A screen reports itself on its
   poll and picks up a directed source the same way; see docs/admin/displays.md
 - Servers, including the generated install script
-- Users, Roles, Emotes and Recordings
-- Settings: branding, login copy, accent colour, footer links and the control key
+- Users, Roles, Emotes and Recordings. An edit that never went out live is imported into
+  the archive with `tools/streaming-archiver` rather than uploaded; see docs/admin/archive-import.md.
+  It authenticates with the import key from Settings > Imports, read through
+  `App\Support\ImportKey::current()` and never `config('stream.import_key')` directly -
+  same rule as the control key, and `RECORDING_API_KEY` does not open it
+- Feedback: what viewers sent in from the site - the Feedback button in the top bar
+  and "Report" on the player. Each report carries the browser, screen, connection and
+  player snapshot the client collected, bounded by `App\Support\Diagnostics`, plus an
+  optional Telegram handle for a follow-up. Reading is open to anyone past
+  `access-manage`; triaging and deleting needs `stream.manage`
+- Settings: one pane per group in `config/settings.php`, each with its own URL and its
+  own entry in the menu down the left. Branding, login copy, accent colour, footer links,
+  the announcement, the feature switches and the control key
 
 Tables, filters, row/bulk actions and toasts are declared server-side with the
 `App\Support\Manage` toolkit (`Table`, `Column`, `Filter`, `Action`, `Status`, `Toast`) and

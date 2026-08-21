@@ -136,6 +136,37 @@ final class Status
     }
 
     /**
+     * Where a viewer report has got to.
+     *
+     * @return array{label: string, tone: string, icon: string|null}
+     */
+    public static function feedback(?string $status): array
+    {
+        return match ($status) {
+            'new' => self::make('New', self::WARN, 'sparkles'),
+            'open' => self::make('Open', self::INFO, 'clock'),
+            'resolved' => self::make('Resolved', self::OK, 'circle-check'),
+            default => self::make((string) $status, self::IDLE, null),
+        };
+    }
+
+    /**
+     * Feedback from the top bar against a problem reported from a player. The tone
+     * is the whole point of splitting them: one is a suggestion, the other is
+     * somebody watching something broken right now.
+     *
+     * @return array{label: string, tone: string, icon: string|null}
+     */
+    public static function feedbackType(?string $type): array
+    {
+        return match ($type) {
+            'issue' => self::make('Stream issue', self::DANGER, 'triangle-alert'),
+            'feedback' => self::make('Feedback', self::INFO, 'message-square'),
+            default => self::make((string) $type, self::IDLE, null),
+        };
+    }
+
+    /**
      * Two-state badge, e.g. Auto/Manual or Restricted/Public.
      *
      * @return array{label: string, tone: string, icon: string|null}

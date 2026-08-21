@@ -7,12 +7,16 @@ use App\Enum\ServerTypeEnum;
 use App\Enum\SourceStatusEnum;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class Source extends Model
 {
     use HasFactory;
+
+    /** How long the playable answer is reused on the playlist path. */
+    private const PLAYABLE_CACHE_TTL = 5;
 
     protected $fillable = [
         'status',
@@ -153,6 +157,63 @@ class Source extends Model
     public function currentLiveShow()
     {
         return $this->liveShows()->first();
+    }
+
+    /**
+     * Whether viewers may open this channel at all right now.
+     *
+     * Plenty of channels ingest around the clock - a stage camera left up through
+     * setup, a hall that is empty until the doors open - and a feed arriving is not
+     * permission to watch it. A live show is what opens a channel, and the only thing
+     * that does. Source status is a separate question: a live show on a channel that
+     * has stopped sending stays open, so the viewer gets the technical-difficulties
+     * page rather than a dead end.
+     */
+    public function isPlayable(): bool
+    {
+        if (array_key_exists('live_shows_count', $this->attributes)) {
+            return (int) $this->attributes['live_shows_count'] > 0;
+        }
+
+        return $this->hasLiveShow();
+    }
+
+    /**
+     * The same question for a whole list, without a query per row.
+     */
+    public function scopeWithLiveShowCount($query)
+    {
+        return $query->withCount([
+            'shows as live_shows_count' => fn ($q) => $q->where('status', 'live'),
+        ]);
+    }
+
+    /**
+     * The same question on the playlist path, where it is asked once per poll per
+     * viewer and must not cost a query.
+     *
+     * The window is short, and going live or ending drops the entry outright through
+     * ShowObserver, so it only ever applies to a status changed behind the model.
+     */
+    public static function playable(string $slug): bool
+    {
+        return (bool) Cache::remember(
+            self::playableCacheKey($slug),
+            self::PLAYABLE_CACHE_TTL,
+            fn () => static::where('slug', $slug)
+                ->whereHas('shows', fn ($q) => $q->where('status', 'live'))
+                ->exists(),
+        );
+    }
+
+    public static function forgetPlayable(string $slug): void
+    {
+        Cache::forget(self::playableCacheKey($slug));
+    }
+
+    private static function playableCacheKey(string $slug): string
+    {
+        return 'source_playable:'.$slug;
     }
 
     /**

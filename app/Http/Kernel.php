@@ -7,6 +7,8 @@ use App\Http\Middleware\AuthenticateIfRequired;
 use App\Http\Middleware\EncryptCookies;
 use App\Http\Middleware\EnsureChatIsEnabled;
 use App\Http\Middleware\EnsureEmotesAreEnabled;
+use App\Http\Middleware\EnsureFeedbackIsEnabled;
+use App\Http\Middleware\EnsureScreensAreEnabled;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PreventRequestsDuringMaintenance;
 use App\Http\Middleware\RedirectIfAuthenticated;
@@ -105,6 +107,8 @@ class Kernel extends HttpKernel
         'auth.basic' => AuthenticateWithBasicAuth::class,
         'chat.enabled' => EnsureChatIsEnabled::class,
         'emotes.enabled' => EnsureEmotesAreEnabled::class,
+        'feedback.enabled' => EnsureFeedbackIsEnabled::class,
+        'screens.enabled' => EnsureScreensAreEnabled::class,
         'auth.session' => AuthenticateSession::class,
         'cache.headers' => SetCacheHeaders::class,
         'can' => Authorize::class,
