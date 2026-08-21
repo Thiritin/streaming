@@ -45,8 +45,9 @@ The key travels as `X-Import-Key`. It is not the same as `RECORDING_API_KEY`, wh
 guards the older `/api/recording/shows` and `/api/recording/create` endpoints and is set at
 deploy time; the import API does not accept it.
 
-On Apple silicon it encodes with the media engine by default, which is around eight times
-faster than software and leaves the machine usable: an hour of 1080p50 lands in roughly
+It encodes on whatever hardware the importing machine has - Apple's media engine on a Mac,
+an NVIDIA card on Windows - which is around eight times faster than software and leaves the
+machine usable: an hour of 1080p50 lands in roughly
 half an hour of encoding plus the upload. Measured against a lossless reference the two
 encoders land within a point of VMAF at the same rung, so the default is not a quality
 compromise; `--encoder x264` is there for when an import is worth several times the wall

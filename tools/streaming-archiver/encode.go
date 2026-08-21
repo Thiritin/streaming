@@ -143,6 +143,36 @@ func rungArgs(i int, rendition Rendition, recipe Recipe, encoder string, presetO
 		)
 	}
 
+	if encoder == encoderNVENC {
+		// Unlike VideoToolbox, NVENC's VBR honours a ceiling properly, so the ladder's
+		// maxrate and bufsize are passed through and a rung stays inside the bandwidth its
+		// master playlist advertises.
+		//
+		// Baseline becomes main: NVENC does not encode baseline, and main is what every
+		// device made this decade decodes anyway.
+		profile := rendition.Profile
+		if profile == "baseline" {
+			profile = "main"
+		}
+
+		args = append(args,
+			fmt.Sprintf("-c:v:%d", i), "h264_nvenc",
+			fmt.Sprintf("-b:v:%d", i), rendition.VideoBitrate,
+			fmt.Sprintf("-maxrate:v:%d", i), rendition.Maxrate,
+			fmt.Sprintf("-bufsize:v:%d", i), rendition.Bufsize,
+			fmt.Sprintf("-profile:v:%d", i), profile,
+		)
+
+		for _, tuning := range encoderTuning(encoderNVENC) {
+			args = append(args, tuning)
+		}
+
+		return append(args,
+			fmt.Sprintf("-force_key_frames:v:%d", i),
+			fmt.Sprintf("expr:gte(t,n_forced*%d)", recipe.SegmentSeconds),
+		)
+	}
+
 	preset := rendition.Preset
 	if presetOverride != "" {
 		preset = presetOverride
@@ -164,40 +194,103 @@ func rungArgs(i int, rendition Rendition, recipe Recipe, encoder string, presetO
 const (
 	encoderX264         = "x264"
 	encoderVideoToolbox = "videotoolbox"
+	encoderNVENC        = "nvenc"
 )
+
+// encoderAvailable is swapped out in tests: whether a machine can encode with NVIDIA
+// hardware is not something a test on any other machine can answer.
+var encoderAvailable = usable
 
 // resolveEncoder answers what to encode with, and says so out loud: which encoder ran is
 // the first thing anyone asks when comparing two imports.
+//
+// auto follows the hardware: Apple's media engine on a Mac, NVIDIA's on a machine with a
+// usable GeForce or Quadro, software everywhere else. Both hardware paths are within a
+// point of VMAF of x264 at these bitrates and many times faster, so the default is speed.
 func resolveEncoder(choice string) (string, error) {
 	switch choice {
 	case "", "auto":
-		if hasVideoToolbox() {
+		if runtime.GOOS == "darwin" && encoderAvailable(encoderVideoToolbox) {
 			return encoderVideoToolbox, nil
 		}
+		if encoderAvailable(encoderNVENC) {
+			return encoderNVENC, nil
+		}
 		return encoderX264, nil
+
 	case encoderX264, "libx264", "software":
 		return encoderX264, nil
-	case encoderVideoToolbox, "hw", "hardware":
-		if !hasVideoToolbox() {
-			return "", errors.New("this machine's ffmpeg has no h264_videotoolbox encoder")
+
+	case encoderVideoToolbox, "apple":
+		if !encoderAvailable(encoderVideoToolbox) {
+			return "", errors.New("this machine cannot encode with h264_videotoolbox")
 		}
 		return encoderVideoToolbox, nil
+
+	case encoderNVENC, "nvidia", "cuda":
+		if !encoderAvailable(encoderNVENC) {
+			return "", errors.New("this machine cannot encode with h264_nvenc: check the NVIDIA driver, and that ffmpeg was built with nvenc")
+		}
+		return encoderNVENC, nil
+
+	case "hw", "hardware":
+		if runtime.GOOS == "darwin" && encoderAvailable(encoderVideoToolbox) {
+			return encoderVideoToolbox, nil
+		}
+		if encoderAvailable(encoderNVENC) {
+			return encoderNVENC, nil
+		}
+		return "", errors.New("no hardware encoder is usable on this machine")
+
 	default:
-		return "", fmt.Errorf("unknown encoder %q: use auto, x264 or videotoolbox", choice)
+		return "", fmt.Errorf("unknown encoder %q: use auto, x264, videotoolbox or nvenc", choice)
 	}
 }
 
-func hasVideoToolbox() bool {
-	if runtime.GOOS != "darwin" {
+// ffmpegEncoder is the encoder name each choice actually passes to ffmpeg.
+func ffmpegEncoder(encoder string) string {
+	switch encoder {
+	case encoderVideoToolbox:
+		return "h264_videotoolbox"
+	case encoderNVENC:
+		return "h264_nvenc"
+	default:
+		return "libx264"
+	}
+}
+
+// usable answers whether this machine can really encode with something, which is not the
+// same question as whether ffmpeg was built with it.
+//
+// A Windows ffmpeg almost always lists h264_nvenc whether or not there is an NVIDIA card
+// in the machine or a driver new enough to drive it, and the failure without this check
+// lands after the ladder has been set up, several thousand frames into an import. Two
+// tenths of a second of nullsrc up front is a much better way to find out.
+func usable(encoder string) bool {
+	name := ffmpegEncoder(encoder)
+
+	listed, err := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
+	if err != nil || !strings.Contains(string(listed), name) {
 		return false
 	}
 
-	out, err := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
-	if err != nil {
-		return false
-	}
+	args := []string{"-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "nullsrc=s=256x256:d=0.1", "-c:v", name}
+	args = append(args, encoderTuning(encoder)...)
+	args = append(args, "-f", "null", "-")
 
-	return strings.Contains(string(out), "h264_videotoolbox")
+	return exec.Command("ffmpeg", args...).Run() == nil
+}
+
+// encoderTuning is the quality/speed knob each hardware encoder takes, kept in one place
+// because the capability probe has to use the same flags the real encode will: a preset an
+// older NVENC build does not know is exactly the kind of failure the probe exists to catch.
+func encoderTuning(encoder string) []string {
+	if encoder == encoderNVENC {
+		// p4 is NVENC's balanced preset in the modern naming (p1 fastest, p7 slowest), and
+		// vbr is what actually honours a bitrate target rather than a quality one.
+		return []string{"-preset", "p4", "-rc", "vbr"}
+	}
+	return nil
 }
 
 func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, probe *Probe, encoder string, presetOverride string, onProgress func(done, speed float64)) error {
@@ -247,8 +340,14 @@ func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, pr
 	// Decoding is its own cost: a 10-bit HEVC master at 50p is heavy in software, and the
 	// same media engine that encodes can decode. Frames come back to system memory for the
 	// scale filters either way, so this is a straight saving.
-	if encoder == encoderVideoToolbox {
+	switch encoder {
+	case encoderVideoToolbox:
 		args = append(args, "-hwaccel", "videotoolbox")
+	case encoderNVENC:
+		// Frames come back to system memory for the scale filters, which is why this is
+		// plain -hwaccel rather than a CUDA filter chain: the decode is the expensive part
+		// on a 10-bit HEVC master, and scaling three rungs on the CPU is not.
+		args = append(args, "-hwaccel", "cuda")
 	}
 
 	args = append(args, "-i", input, "-filter_complex", filterComplex)

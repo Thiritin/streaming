@@ -69,9 +69,9 @@ flags:
   --prefix      archive prefix to import under (default: the site's, normally "vod")
   --api         site base url (default: $ARCHIVER_API)
   --key         import key, from /manage > Settings > Imports (default: $ARCHIVER_KEY)
-  --encoder     auto (default), videotoolbox or x264. auto uses Apple's media
-                engine when ffmpeg offers it, which is many times faster; x264
-                keeps a little more detail per bit
+  --encoder     auto (default), videotoolbox, nvenc or x264. auto takes the
+                hardware: Apple's media engine on a Mac, NVIDIA's on a machine
+                with a usable card, software otherwise
   --preset      override the x264 preset on every rung, e.g. faster (x264 only)
   --parallel    concurrent uploads (default 8)
   --work        working directory for the encode (default: a temp dir, removed after)
@@ -472,8 +472,11 @@ func permute(flags *flag.FlagSet, argv []string) []string {
 // rung" is the difference between a twenty minute import and an overnight one, so it
 // belongs on screen before the encode starts rather than in a process listing.
 func encoderLabel(encoder string, ladder []Rendition, presetOverride string) string {
-	if encoder == encoderVideoToolbox {
+	switch encoder {
+	case encoderVideoToolbox:
 		return "h264_videotoolbox (Apple media engine)"
+	case encoderNVENC:
+		return "h264_nvenc (NVIDIA, preset p4)"
 	}
 
 	presets := make([]string, 0, len(ladder))

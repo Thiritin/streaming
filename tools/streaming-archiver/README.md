@@ -52,9 +52,17 @@ recording. Nothing is published automatically: someone still has to watch it and
 
 ## Encoders
 
-By default the tool uses Apple's media engine (`h264_videotoolbox`) when ffmpeg offers it,
-and libx264 everywhere else. Both were measured on the same 1080p50 material at the ladder's
-6000k top rung, VMAF against a lossless reference, 30s per slice:
+By default the tool takes whatever hardware the machine has: Apple's media engine
+(`h264_videotoolbox`) on a Mac, NVIDIA's (`h264_nvenc`) on a machine with a usable card -
+the normal case on Windows - and libx264 otherwise.
+
+Availability is settled with a 0.1 second test encode rather than by reading
+`ffmpeg -encoders`, because a Windows build lists `h264_nvenc` whether or not there is a
+card in the machine, and finding that out several thousand frames into an import is an
+expensive way to learn it. Naming an encoder explicitly fails up front, with what to check.
+
+Apple's engine and libx264 were measured on the same 1080p50 material at the ladder's 6000k
+top rung, VMAF against a lossless reference, 30s per slice:
 
 | slice | encoder | delivered | VMAF mean | VMAF min |
 |---|---|---|---|---|
@@ -73,7 +81,13 @@ rate control answers a ceiling by spending far less than the target, not by trim
 at 4.8 Mbps with a loose 8400k one. The cap was the entire quality gap people attribute to
 hardware encoders.
 
-`--preset` only applies to x264; VideoToolbox has no equivalent knob.
+NVENC is configured differently, because it behaves differently: it keeps the ladder's
+`-maxrate`/`-bufsize` on preset `p4` with `-rc vbr`, honouring a ceiling by trimming peaks
+rather than by underspending. Its rungs encode `main` where the ladder asks for `baseline`,
+which NVENC does not offer and nothing made this decade needs.
+
+`--preset` only applies to x264; neither hardware encoder has an equivalent knob.
+`--encoder nvenc`, `--encoder videotoolbox` or `--encoder x264` insist on one.
 
 Both long waits - the encode and the upload - draw a progress bar with an ETA, from
 ffmpeg's own reported speed rather than a guess. Off a terminal (CI, `tee`) the bar becomes
