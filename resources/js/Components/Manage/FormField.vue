@@ -9,7 +9,13 @@
  * A read-only field renders as text rather than a disabled input: Filament used
  * Placeholder for exactly these (created_at, viewer counts) and a greyed-out box invites
  * clicking something that can never change.
+ *
+ * The row is a <label> only when it owns the control, so the caption focuses it. A slotted
+ * field is a <div>: a label forwards every click inside it to its first labelable
+ * descendant, which would fire a slotted button twice and cancel its own toggle.
  */
+import { useSlots } from 'vue';
+
 defineProps({
   label: { type: String, required: true },
   modelValue: { type: [String, Number, Boolean, null], default: null },
@@ -28,16 +34,21 @@ defineProps({
   mono: { type: Boolean, default: false },
   /** Cap the control width for fields whose content is always short. */
   narrow: { type: Boolean, default: false },
+  /** Textarea height, for a field that expects paragraphs rather than a line. */
+  rows: { type: [String, Number], default: 3 },
 });
 
 defineEmits(['update:modelValue']);
+
+const slots = useSlots();
+const row = () => (slots.default ? 'div' : 'label');
 
 const control =
   'h-8 w-full rounded border border-hairline bg-surface-2 px-2 text-[13px] text-fg-1 outline-none transition-colors focus:border-state-live/50 disabled:cursor-not-allowed disabled:opacity-50';
 </script>
 
 <template>
-  <label class="grid grid-cols-1 items-baseline gap-1 py-1.5 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-4">
+  <component :is="row()" class="grid grid-cols-1 items-baseline gap-1 py-1.5 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-4">
     <span class="flex items-center gap-1 pt-1.5 text-[12px] font-medium text-fg-2 sm:justify-end sm:text-right">
       {{ label }}
       <span v-if="required" class="text-state-danger" aria-hidden="true">*</span>
@@ -74,7 +85,7 @@ const control =
         <textarea
           v-else-if="type === 'textarea'"
           :value="modelValue"
-          rows="3"
+          :rows="rows"
           class="w-full rounded border border-hairline bg-surface-2 px-2 py-1.5 text-[13px] text-fg-1 outline-none focus:border-state-live/50"
           :disabled="disabled"
           :placeholder="placeholder"
@@ -98,5 +109,5 @@ const control =
       <p v-if="error" class="mt-1 text-[11px] text-state-danger">{{ error }}</p>
       <p v-else-if="helper" class="mt-1 text-[11px] text-fg-3">{{ helper }}</p>
     </div>
-  </label>
+  </component>
 </template>
