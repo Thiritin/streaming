@@ -18,13 +18,16 @@ import (
 // A stand-in for the site: the three endpoints the CLI calls, plus somewhere for the
 // presigned PUTs to land. Enough to drive a real encode and a real upload without an S3.
 type stubSite struct {
-	mu        sync.Mutex
-	sessions  int
-	byImport  map[string]string
-	failures  int
-	attempts  int
-	uploaded  map[string]int
-	committed struct {
+	mu               sync.Mutex
+	sessions         int
+	byImport         map[string]string
+	failures         int
+	attempts         int
+	commits          int
+	commitErr        int
+	alreadyCommitted bool
+	uploaded         map[string]int
+	committed        struct {
 		Segments   []commitSegment `json:"segments"`
 		Renditions []string        `json:"renditions"`
 	}
@@ -112,6 +115,22 @@ func newStubSite(t *testing.T, startsAt time.Time) *stubSite {
 	mux.HandleFunc("POST /api/recording/imports/{id}/commit", func(w http.ResponseWriter, r *http.Request) {
 		site.mu.Lock()
 		defer site.mu.Unlock()
+
+		site.commits++
+
+		// A commit that fails the way a slow one does: the work may or may not have
+		// happened, and the client only sees a 500.
+		if site.commitErr > 0 {
+			site.commitErr--
+			writeJSON(w, 500, map[string]any{"message": "Server Error"})
+			return
+		}
+
+		// Or one the site has already done, which is success wearing a 422.
+		if site.commits > 1 && site.alreadyCommitted {
+			writeJSON(w, 422, map[string]any{"error": "This import has already been committed."})
+			return
+		}
 		if err := json.NewDecoder(r.Body).Decode(&site.committed); err != nil {
 			writeJSON(w, 422, map[string]any{"error": err.Error()})
 			return
@@ -434,5 +453,66 @@ func TestResumeKeepsTheImportAndSkipsWhatLanded(t *testing.T) {
 	if len(site.uploaded) != uploadedFirst {
 		t.Errorf("object count changed from %d to %d: keys were rewritten under a new session",
 			uploadedFirst, len(site.uploaded))
+	}
+}
+
+// A commit that times out or 500s is retried rather than throwing away a finished upload.
+func TestCommitIsRetried(t *testing.T) {
+	master := fixture(t)
+	site := newStubSite(t, time.Date(2026, 8, 20, 14, 0, 0, 0, time.UTC))
+
+	site.mu.Lock()
+	site.commitErr = 2
+	site.mu.Unlock()
+
+	err := runImport([]string{
+		"--api", site.server.URL,
+		"--key", "test-key",
+		"--title", "Slow Commit",
+		"--work", t.TempDir(),
+		"--preset", "ultrafast",
+		"--encoder", "x264",
+		master,
+	})
+	if err != nil {
+		t.Fatalf("import failed although the commit was retryable: %v", err)
+	}
+
+	site.mu.Lock()
+	defer site.mu.Unlock()
+	if site.commits != 3 {
+		t.Errorf("expected 3 commit attempts, saw %d", site.commits)
+	}
+}
+
+// If the site already committed the import - its answer just never arrived - a rerun is a
+// success, not an error the operator has to interpret.
+func TestAlreadyCommittedIsSuccess(t *testing.T) {
+	master := fixture(t)
+	site := newStubSite(t, time.Date(2026, 8, 20, 15, 0, 0, 0, time.UTC))
+	work := t.TempDir()
+
+	site.mu.Lock()
+	site.alreadyCommitted = true
+	site.mu.Unlock()
+
+	run := func() error {
+		return runImport([]string{
+			"--api", site.server.URL,
+			"--key", "test-key",
+			"--title", "Twice",
+			"--work", work,
+			"--keep",
+			"--preset", "ultrafast",
+			"--encoder", "x264",
+			master,
+		})
+	}
+
+	if err := run(); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	if err := run(); err != nil {
+		t.Fatalf("a rerun of a committed import should succeed, got: %v", err)
 	}
 }

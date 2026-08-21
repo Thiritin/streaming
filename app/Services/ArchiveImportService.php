@@ -175,6 +175,18 @@ class ArchiveImportService
      */
     public function commit(array $import, array $segments, array $renditions): Recording
     {
+        // Commit is the one request in this flow that does real work: it lists every hour
+        // the import touched to check the objects landed, writes the indexes, then builds
+        // the cut. Listing is the slow part and it is the bucket's speed, not ours - an
+        // hour holding 5400 objects has taken 13 seconds to enumerate, so a 65 minute
+        // import ran past PHP's 30 second default and answered 500 with every segment
+        // already safely uploaded.
+        //
+        // Raised rather than moved to a queue because the work is seconds when the bucket
+        // is behaving, and a synchronous answer is what lets the client report the
+        // recording it just created. A multi-hour import is the case to revisit it for.
+        @set_time_limit(600);
+
         if ($import['committed_recording_id'] !== null) {
             throw new \RuntimeException('This import has already been committed.');
         }

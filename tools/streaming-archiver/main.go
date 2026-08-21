@@ -385,6 +385,13 @@ func finish(
 	}
 
 	result, err := client.Commit(imp.ID, segments, names)
+	if errors.Is(err, ErrAlreadyCommitted) {
+		// The site finished this import on an earlier attempt whose answer never arrived.
+		// Nothing left to do, and nothing to warn about.
+		*completed = true
+		fmt.Println("Already committed on an earlier run; the recording is in the panel.")
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("commit failed: %w", err)
 	}

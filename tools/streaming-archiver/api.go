@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -129,6 +130,13 @@ func NewClient(baseURL, key string) *Client {
 	}
 }
 
+// ErrAlreadyCommitted is what the site says when this import already produced a recording.
+//
+// Reachable on a perfectly healthy run: commit does real work against the bucket, so a
+// response can time out or a connection drop after the server finished. A rerun then finds
+// the work done, which is success, not failure.
+var ErrAlreadyCommitted = errors.New("this import has already been committed")
+
 func (c *Client) post(path string, body any, out any) error {
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -164,6 +172,9 @@ func (c *Client) post(path string, body any, out any) error {
 		}
 		if json.Unmarshal(answer, &wrapped) == nil {
 			if wrapped.Error != "" {
+				if strings.Contains(wrapped.Error, "already been committed") {
+					return ErrAlreadyCommitted
+				}
 				return fmt.Errorf("%s (HTTP %d)", wrapped.Error, resp.StatusCode)
 			}
 			if wrapped.Message != "" {
@@ -216,13 +227,39 @@ type commitSegment struct {
 }
 
 func (c *Client) Commit(importID string, segments []commitSegment, renditions []string) (*CommitResult, error) {
-	var out CommitResult
-	err := c.post("/api/recording/imports/"+importID+"/commit", map[string]any{
-		"segments":   segments,
-		"renditions": renditions,
-	}, &out)
-	if err != nil {
-		return nil, err
+	body := map[string]any{"segments": segments, "renditions": renditions}
+
+	var last error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if attempt > 1 {
+			time.Sleep(time.Duration(attempt) * 5 * time.Second)
+		}
+
+		var out CommitResult
+		err := c.post("/api/recording/imports/"+importID+"/commit", body, &out)
+		if err == nil {
+			return &out, nil
+		}
+
+		last = err
+
+		// A rejected payload will be rejected again; only transient failures are retried.
+		if errors.Is(err, ErrAlreadyCommitted) || !transient(err) {
+			return nil, err
+		}
 	}
-	return &out, nil
+
+	return nil, last
+}
+
+// transient recognises the failures a second attempt can fix: the far end having a bad
+// minute, or the connection going away mid-request.
+func transient(err error) bool {
+	text := err.Error()
+	for _, fragment := range []string{"HTTP 5", "HTTP 429", "HTTP 408", "EOF", "connection", "timeout", "GOAWAY"} {
+		if strings.Contains(text, fragment) {
+			return true
+		}
+	}
+	return false
 }
