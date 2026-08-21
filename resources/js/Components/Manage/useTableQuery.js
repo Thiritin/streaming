@@ -5,7 +5,7 @@ import { router } from '@inertiajs/vue3';
  * filter[...]. That keeps every view linkable and shareable, and means a poll can reload
  * just the data props without losing where the operator was.
  */
-export function useTableQuery(only = ['rows', 'meta', 'filters', 'sort', 'search']) {
+export function useTableQuery(only = ['table']) {
   const current = () => Object.fromEntries(new URLSearchParams(window.location.search));
 
   const visit = (params, { resetPage = true } = {}) => {
