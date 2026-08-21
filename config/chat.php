@@ -39,7 +39,5 @@ return [
         'initial' => 60,
         'page' => 50,
         'buffer' => 300,
-        // Lines sent to the browse page chat excerpt; it shows as many as fit.
-        'excerpt' => 40,
     ],
 ];
