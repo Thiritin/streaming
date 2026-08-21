@@ -150,7 +150,13 @@ http {
             proxy_cache hls_cache;
             # Cache key uses URI without query parameters
             proxy_cache_key "$scheme$proxy_host$uri";
-            proxy_cache_valid 200 2s;
+            # One second, not the segment duration. Laravel's playlist proxy caches
+            # the same body again on its own phase, so the two windows add up: at 2s
+            # each, a viewer's playlist end measured 3 to 6 seconds behind the newest
+            # segment, and a live player's whole forward buffer is only a few seconds
+            # of that. Halving this halves the jitter and costs one extra request per
+            # variant per second to the origin, which is per stream, not per viewer.
+            proxy_cache_valid 200 1s;
             proxy_cache_valid 404 1s;
             proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
             proxy_cache_lock on;

@@ -104,8 +104,26 @@ const onProviderChange = (event) => {
         backBufferLength: backBufferLength.value,
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
-        liveSyncDurationCount: 3,
-        abrEwmaDefaultEstimate: 4_000_000,
+        /*
+         * How far behind the playlist end playback sits, in segments, and so the
+         * only forward buffer a live stream has - nothing can be buffered past the
+         * end of the playlist, which is why maxBufferLength above does not help here.
+         *
+         * hls.js defaults to 3, which assumes the playlist a viewer holds is current.
+         * Ours is not: the edge caches m3u8 and HlsController caches it again, and a
+         * measured playlist end runs 3 to 6 seconds behind the segment that actually
+         * exists. Three segments of margin against several seconds of jitter drains
+         * to empty on any hiccup, which is what the reports of micro buffering were.
+         * Six segments is 12s of margin for 6s more latency.
+         */
+        liveSyncDurationCount: 6,
+        /*
+         * Cold-start bandwidth guess, before any segment has been timed. The ladder's
+         * top rung peaks near 8 Mbps, so starting at 4 Mbps puts a viewer on hd or fhd
+         * before anything is known about their connection and makes the first seconds
+         * a fallback. Start low and let the estimator climb.
+         */
+        abrEwmaDefaultEstimate: 2_000_000,
         manifestLoadingMaxRetry: 6,
         levelLoadingMaxRetry: 6,
         fragLoadingMaxRetry: 6,

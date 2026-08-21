@@ -90,13 +90,13 @@ echo
 measure "current ladder (3 encodes)" \
   ffmpeg -hide_banner -nostats -benchmark -y -i "$SRC" \
     -filter_complex "[0:v]split=3[v1][v2][v3]; [v1]scale=w=854:h=480[v1out]; [v2]scale=w=1280:h=720[v2out]; [v3]scale=w=1920:h=1080[v3out]" \
-    -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 3000k \
+    -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 2000k \
       -preset:v:0 veryfast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0 \
       -force_key_frames "expr:gte(t,n_forced*2)" \
-    -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 8000k \
+    -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 4000k \
       -preset:v:1 veryfast -profile:v:1 main -g 60 -keyint_min 60 -sc_threshold 0 \
       -force_key_frames "expr:gte(t,n_forced*2)" \
-    -map "[v3out]" -c:v:2 libx264 -b:v:2 6000k -maxrate:v:2 6500k -bufsize:v:2 13000k \
+    -map "[v3out]" -c:v:2 libx264 -b:v:2 6000k -maxrate:v:2 6500k -bufsize:v:2 6500k \
       -preset:v:2 faster -profile:v:2 main -g 60 -keyint_min 60 -sc_threshold 0 \
       -force_key_frames "expr:gte(t,n_forced*2)" \
     -map 0:a -c:a:0 aac -b:a:0 128k -ac 2 \
@@ -113,10 +113,10 @@ measure "current ladder (3 encodes)" \
 measure "fhd passed through (2 encodes)" \
   ffmpeg -hide_banner -nostats -benchmark -y -i "$SRC" \
     -filter_complex "[0:v]split=2[v1][v2]; [v1]scale=w=854:h=480[v1out]; [v2]scale=w=1280:h=720[v2out]" \
-    -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 3000k \
+    -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 2000k \
       -preset:v:0 veryfast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0 \
       -force_key_frames "expr:gte(t,n_forced*2)" \
-    -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 8000k \
+    -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 4000k \
       -preset:v:1 veryfast -profile:v:1 main -g 60 -keyint_min 60 -sc_threshold 0 \
       -force_key_frames "expr:gte(t,n_forced*2)" \
     -map 0:v -c:v:2 copy \
@@ -152,17 +152,17 @@ if [[ -n "${STREAMS:-}" ]]; then
       if [[ "$variant" == full ]]; then
         ffmpeg -hide_banner -loglevel error -nostats -re -i "$SRC" \
           -filter_complex "[0:v]split=3[v1][v2][v3]; [v1]scale=w=854:h=480[v1out]; [v2]scale=w=1280:h=720[v2out]; [v3]scale=w=1920:h=1080[v3out]" \
-          -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 3000k -preset:v:0 veryfast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*2)" \
-          -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 8000k -preset:v:1 veryfast -profile:v:1 main -g 60 -keyint_min 60 -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*2)" \
-          -map "[v3out]" -c:v:2 libx264 -b:v:2 6000k -maxrate:v:2 6500k -bufsize:v:2 13000k -preset:v:2 faster -profile:v:2 main -g 60 -keyint_min 60 -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*2)" \
+          -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 2000k -preset:v:0 veryfast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*2)" \
+          -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 4000k -preset:v:1 veryfast -profile:v:1 main -g 60 -keyint_min 60 -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*2)" \
+          -map "[v3out]" -c:v:2 libx264 -b:v:2 6000k -maxrate:v:2 6500k -bufsize:v:2 6500k -preset:v:2 faster -profile:v:2 main -g 60 -keyint_min 60 -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*2)" \
           -map 0:a -c:a:0 aac -b:a:0 128k -ac 2 -map 0:a -c:a:1 aac -b:a:1 160k -ac 2 -map 0:a -c:a:2 aac -b:a:2 192k -ac 2 \
           "${HLS_ARGS[@]}" -hls_segment_filename "$WORK/c${i}_%v_%05d.ts" -master_pl_name "c${i}_master.m3u8" \
           -var_stream_map "v:0,a:0,name:sd v:1,a:1,name:hd v:2,a:2,name:fhd" "$WORK/c${i}_%v.m3u8" >/dev/null 2>&1 &
       else
         ffmpeg -hide_banner -loglevel error -nostats -re -i "$SRC" \
           -filter_complex "[0:v]split=2[v1][v2]; [v1]scale=w=854:h=480[v1out]; [v2]scale=w=1280:h=720[v2out]" \
-          -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 3000k -preset:v:0 veryfast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*2)" \
-          -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 8000k -preset:v:1 veryfast -profile:v:1 main -g 60 -keyint_min 60 -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*2)" \
+          -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 2000k -preset:v:0 veryfast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*2)" \
+          -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 4000k -preset:v:1 veryfast -profile:v:1 main -g 60 -keyint_min 60 -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*2)" \
           -map 0:v -c:v:2 copy \
           -map 0:a -c:a:0 aac -b:a:0 128k -ac 2 -map 0:a -c:a:1 aac -b:a:1 160k -ac 2 -map 0:a -c:a:2 copy \
           "${HLS_ARGS[@]}" -hls_segment_filename "$WORK/c${i}_%v_%05d.ts" -master_pl_name "c${i}_master.m3u8" \

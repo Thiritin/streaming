@@ -54,10 +54,17 @@ class HlsController extends Controller
     /**
      * How long a fetched playlist is handed out before the edge is asked again.
      *
-     * A segment is two seconds, so this is the shortest window that never serves a
-     * playlist the edge has already replaced.
+     * One second rather than the segment duration, because this cache is not the only
+     * one in the path: the edge caches m3u8 for a second of its own, and the two hold
+     * independent phases, so their staleness adds. At two seconds each a viewer's
+     * playlist end measured 3 to 6 seconds behind the newest segment, which is most of
+     * the forward buffer a live player has. Halving both halves the jitter.
+     *
+     * It costs nothing upstream. The cache is Redis and shared by every app pod, so
+     * the fetch rate is per variant rather than per pod and certainly not per viewer:
+     * twenty-odd playlists a second across the whole installation.
      */
-    private const PLAYLIST_TTL = 2;
+    private const PLAYLIST_TTL = 1;
 
     /**
      * How long the previous copy is kept for a caller that could not take the fetch

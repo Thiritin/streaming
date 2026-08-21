@@ -258,19 +258,28 @@ start_ffmpeg() {
             -avoid_negative_ts make_zero -fflags +genpts
         )
     else
+        # Every -bufsize matches its -maxrate rather than doubling it. A VBV buffer
+        # two seconds wide at hls_time 2 lets a whole segment sit above maxrate and
+        # be paid back by the next one, and measured on air that is what it did:
+        # consecutive fhd segments ran 4.7 to 7.9 Mbps against a 6.5 Mbps ceiling,
+        # with every rung peaking 15-17% over the BANDWIDTH its own master playlist
+        # advertises. A player picks a rung by that number, so the overshoot lands as
+        # a segment that takes longer to fetch than it takes to play. One second of
+        # VBV holds the overshoot inside a segment, which is what the advertised
+        # bitrate has to mean for ABR to work.
         ladder_args=(
             -filter_complex
                 "[0:v]split=3[v1][v2][v3]; \
                  [v1]scale=w=854:h=480[v1out]; \
                  [v2]scale=w=1280:h=720[v2out]; \
                  [v3]scale=w=1920:h=1080[v3out]"
-            -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 3000k
+            -map "[v1out]" -c:v:0 libx264 -b:v:0 1500k -maxrate:v:0 2000k -bufsize:v:0 2000k
                 -preset:v:0 veryfast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0
                 -force_key_frames "expr:gte(t,n_forced*2)"
-            -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 8000k
+            -map "[v2out]" -c:v:1 libx264 -b:v:1 3500k -maxrate:v:1 4000k -bufsize:v:1 4000k
                 -preset:v:1 veryfast -profile:v:1 main -g 60 -keyint_min 60 -sc_threshold 0
                 -force_key_frames "expr:gte(t,n_forced*2)"
-            -map "[v3out]" -c:v:2 libx264 -b:v:2 6000k -maxrate:v:2 6500k -bufsize:v:2 13000k
+            -map "[v3out]" -c:v:2 libx264 -b:v:2 6000k -maxrate:v:2 6500k -bufsize:v:2 6500k
                 -preset:v:2 faster -profile:v:2 main -g 60 -keyint_min 60 -sc_threshold 0
                 -force_key_frames "expr:gte(t,n_forced*2)"
             -map 0:a -c:a:0 aac -b:a:0 128k -ac 2 -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0"
