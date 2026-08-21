@@ -9,6 +9,7 @@ use App\Jobs\PruneServerMetricsJob;
 use App\Jobs\SaveViewCountJob;
 use App\Jobs\ScanArchiveStorageJob;
 use App\Jobs\Server\ServerHealthCheckJob;
+use App\Jobs\Telegram\NotifyUpcomingShowsJob;
 use App\Jobs\UpdateListenerCountJob;
 use App\Jobs\UpdateServerViewerCountsJob;
 use Illuminate\Console\Scheduling\Schedule;
@@ -47,6 +48,12 @@ class Kernel extends ConsoleKernel
 
         // Check auto mode shows every minute to start/end them based on schedule and source status
         $schedule->command('shows:check-auto-mode')->everyMinute();
+
+        // Tell the linked Telegram chats about shows whose slot is about to begin. The
+        // message is what carries the Start button, so this is also how a show gets
+        // started from a phone. A show already announced is skipped, so this is safe to
+        // run every minute.
+        $schedule->job(new NotifyUpcomingShowsJob)->everyMinute();
 
         // Totals for the archive bucket, which the recordings page reads from the cache.
         // A full listing of a con-long archive is hundreds of requests and minutes of

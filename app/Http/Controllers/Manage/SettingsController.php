@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Manage;
 
 use App\Http\Controllers\Controller;
 use App\Services\PretalxService;
+use App\Services\Telegram\TelegramClient;
 use App\Support\Manage\Settings;
 use App\Support\Manage\Toast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Response;
 
 /**
@@ -56,9 +58,51 @@ class SettingsController extends Controller
 
         $settings->save($validated['values']);
 
+        if ($group === 'telegram') {
+            $this->syncTelegramWebhook();
+
+            return back();
+        }
+
         Toast::flashSuccess('Settings saved', 'The public site picks the change up immediately.');
 
         return back();
+    }
+
+    /**
+     * A token is only half of a working bot: Telegram has to be told where to deliver
+     * updates, or the buttons in a chat do nothing at all. Doing it on save means an
+     * operator never has to know that setWebhook exists.
+     */
+    private function syncTelegramWebhook(): void
+    {
+        Cache::forget('telegram_bot_status');
+
+        $client = app(TelegramClient::class);
+
+        if (! $client->enabled()) {
+            Toast::flashSuccess('Settings saved', 'No bot token, so the bot is off and its webhook is closed.');
+
+            return;
+        }
+
+        $result = $client->registerWebhook();
+
+        if ($result['ok'] ?? false) {
+            $me = $client->me();
+
+            Toast::flashSuccess(
+                'Settings saved',
+                'Webhook registered'.(isset($me['username']) ? ' for @'.$me['username'] : '').'.',
+            );
+
+            return;
+        }
+
+        Toast::flashDanger(
+            'Saved, but Telegram refused the webhook',
+            (string) ($result['description'] ?? 'Check the token and that this site is reachable from the internet.'),
+        );
     }
 
     public function reset(Settings $settings): RedirectResponse

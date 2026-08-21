@@ -9,6 +9,7 @@ use App\Http\Middleware\EnsureChatIsEnabled;
 use App\Http\Middleware\EnsureEmotesAreEnabled;
 use App\Http\Middleware\EnsureFeedbackIsEnabled;
 use App\Http\Middleware\EnsureScreensAreEnabled;
+use App\Http\Middleware\EnsureTelegramIsEnabled;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PreventRequestsDuringMaintenance;
 use App\Http\Middleware\RedirectIfAuthenticated;
@@ -108,6 +109,7 @@ class Kernel extends HttpKernel
         'chat.enabled' => EnsureChatIsEnabled::class,
         'emotes.enabled' => EnsureEmotesAreEnabled::class,
         'feedback.enabled' => EnsureFeedbackIsEnabled::class,
+        'telegram.enabled' => EnsureTelegramIsEnabled::class,
         'screens.enabled' => EnsureScreensAreEnabled::class,
         'auth.session' => AuthenticateSession::class,
         'cache.headers' => SetCacheHeaders::class,

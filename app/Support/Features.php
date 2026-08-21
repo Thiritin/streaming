@@ -32,7 +32,7 @@ final class Features
      *
      * @var array<int, string>
      */
-    private const INSTALLATION_ONLY = ['announcement', 'feedback', 'screens'];
+    private const INSTALLATION_ONLY = ['announcement', 'feedback', 'screens', 'telegram'];
 
     private const TTL = 3600;
 
@@ -149,6 +149,11 @@ final class Features
     public static function screens(): bool
     {
         return self::enabled('screens');
+    }
+
+    public static function telegram(): bool
+    {
+        return self::enabled('telegram');
     }
 
     /**

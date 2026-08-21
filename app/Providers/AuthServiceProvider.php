@@ -11,6 +11,7 @@ use App\Models\Role;
 use App\Models\Server;
 use App\Models\Show;
 use App\Models\Source;
+use App\Models\TelegramChat;
 use App\Models\User;
 use App\Policies\DisplayScreenPolicy;
 use App\Policies\EmbedKeyPolicy;
@@ -21,6 +22,7 @@ use App\Policies\RolePolicy;
 use App\Policies\ServerPolicy;
 use App\Policies\ShowPolicy;
 use App\Policies\SourcePolicy;
+use App\Policies\TelegramChatPolicy;
 use App\Policies\UserPolicy;
 use Illuminate\Auth\SessionGuard;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
@@ -44,6 +46,7 @@ class AuthServiceProvider extends ServiceProvider
         Server::class => ServerPolicy::class,
         Show::class => ShowPolicy::class,
         Source::class => SourcePolicy::class,
+        TelegramChat::class => TelegramChatPolicy::class,
         User::class => UserPolicy::class,
     ];
 

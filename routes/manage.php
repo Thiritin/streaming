@@ -19,6 +19,7 @@ use App\Http\Controllers\Manage\ShowStatisticsController;
 use App\Http\Controllers\Manage\SourceController;
 use App\Http\Controllers\Manage\SourcePreviewController;
 use App\Http\Controllers\Manage\TableColumnController;
+use App\Http\Controllers\Manage\TelegramController;
 use App\Http\Controllers\Manage\UploadController;
 use App\Http\Controllers\Manage\UserController;
 use Illuminate\Support\Facades\Route;
@@ -178,6 +179,21 @@ Route::middleware('feedback.enabled')->group(function () {
     Route::get('feedback/{feedback}', [FeedbackController::class, 'show'])->name('feedback.show');
     Route::post('feedback/{feedback}/status', [FeedbackController::class, 'updateStatus'])->name('feedback.status');
     Route::delete('feedback/{feedback}', [FeedbackController::class, 'destroy'])->name('feedback.destroy');
+});
+
+/*
+ * The Telegram bot's chats. One bot for the installation lives in Settings; this is
+ * which chats it talks to and what each of them may do. Behind the telegram feature
+ * switch, so an installation that does not use it has no module and no routes.
+ */
+Route::middleware('telegram.enabled')->group(function () {
+    Route::post('telegram/code', [TelegramController::class, 'code'])->name('telegram.code');
+    Route::get('telegram', [TelegramController::class, 'index'])->name('telegram.index');
+    Route::post('telegram', [TelegramController::class, 'store'])->name('telegram.store');
+    Route::get('telegram/{telegram}', [TelegramController::class, 'edit'])->name('telegram.edit');
+    Route::put('telegram/{telegram}', [TelegramController::class, 'update'])->name('telegram.update');
+    Route::post('telegram/{telegram}/test', [TelegramController::class, 'test'])->name('telegram.test');
+    Route::delete('telegram/{telegram}', [TelegramController::class, 'destroy'])->name('telegram.destroy');
 });
 
 Route::post('roles/seed', [RoleController::class, 'seedDefaults'])->name('roles.seed');

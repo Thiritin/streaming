@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\Telegram\SendFeedbackAlertJob;
 use App\Models\FeedbackReport;
 use App\Models\Show;
 use App\Support\Diagnostics;
@@ -50,7 +51,7 @@ class FeedbackController extends Controller
             ? Show::where('slug', $validated['show_slug'])->first()
             : null;
 
-        FeedbackReport::create([
+        $report = FeedbackReport::create([
             'type' => $validated['type'],
             'status' => FeedbackReport::STATUS_NEW,
             'user_id' => $request->user()?->id,
@@ -65,6 +66,10 @@ class FeedbackController extends Controller
             'ip' => $request->ip(),
             'diagnostics' => Diagnostics::sanitize($validated['diagnostics'] ?? []),
         ]);
+
+        // Queued: the viewer whose stream is broken should not wait on the Telegram API
+        // to be told their report arrived.
+        SendFeedbackAlertJob::dispatch($report->id);
 
         return back()->with('status', $validated['type'] === FeedbackReport::TYPE_ISSUE
             ? 'Thanks - your report is with the stream team.'

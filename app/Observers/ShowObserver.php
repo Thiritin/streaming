@@ -5,8 +5,11 @@ namespace App\Observers;
 use App\Events\ShowCancelled;
 use App\Events\ShowEnded;
 use App\Events\ShowWentLive;
+use App\Jobs\Telegram\SyncTelegramMessagesJob;
 use App\Models\Show;
 use App\Models\Source;
+use App\Models\TelegramMessage;
+use App\Support\Features;
 use Illuminate\Support\Facades\Log;
 
 class ShowObserver
@@ -27,6 +30,13 @@ class ShowObserver
             // what makes going live and ending take effect on the next playlist poll
             // instead of whenever the entry happens to lapse.
             $this->forgetPlayable($show);
+
+            // A chat holding a Start button for a show that the control room already
+            // started is worse than no button at all, so every status change rewrites
+            // whatever the bot has posted about this show, whoever made the change.
+            if (Features::telegram()) {
+                SyncTelegramMessagesJob::dispatch(TelegramMessage::KIND_SHOW, $show->id);
+            }
 
             Log::info('Show status changed via Observer', [
                 'show_id' => $show->id,

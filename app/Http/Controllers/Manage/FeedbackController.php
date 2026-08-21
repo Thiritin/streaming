@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Manage;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\Telegram\SyncTelegramMessagesJob;
 use App\Models\FeedbackReport;
+use App\Models\TelegramMessage;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
 use App\Support\Manage\Filter;
@@ -97,7 +99,9 @@ class FeedbackController extends Controller
                 'user_agent' => $feedback->user_agent,
                 'received' => $feedback->created_at?->diffForHumans(),
                 'received_exact' => $feedback->created_at?->toDayDateTimeString(),
-                'handled_by' => $feedback->handler?->name,
+                // A report closed from a Telegram chat has no account behind it, only
+                // the handle of whoever pressed the button.
+                'handled_by' => $feedback->handler?->name ?? $feedback->handled_note,
                 'handled_at' => $feedback->handled_at?->diffForHumans(),
                 'diagnostics' => $feedback->diagnosticGroups(),
                 'index_url' => route('manage.feedback.index'),
@@ -191,8 +195,12 @@ class FeedbackController extends Controller
             // Who last touched it, not who resolved it: reopening is a decision worth
             // attributing too.
             'handled_by' => $request->user()?->id,
+            'handled_note' => null,
             'handled_at' => now(),
         ])->save();
+
+        // Whatever the bot posted about this report says what the panel now says.
+        SyncTelegramMessagesJob::dispatch(TelegramMessage::KIND_FEEDBACK, $report->id);
     }
 
     /**
@@ -215,7 +223,7 @@ class FeedbackController extends Controller
             'browser' => $this->summary($browser, ['name', 'version', 'os']),
             'connection' => $this->summary($connection, ['effectiveType', 'downlink']),
             'created_at' => $report->created_at,
-            'handled' => $report->handler?->name ?? '-',
+            'handled' => $report->handler?->name ?? $report->handled_note ?? '-',
         ];
     }
 

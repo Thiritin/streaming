@@ -9,11 +9,13 @@ use App\Http\Controllers\Api\ServerFileController;
 use App\Http\Controllers\Api\ServerProvisionController;
 use App\Http\Controllers\Api\SrsCallbackController;
 use App\Http\Controllers\Api\StreamController;
+use App\Http\Controllers\Api\TelegramWebhookController;
 use App\Http\Middleware\CheckCompanionTokenMiddleware;
 use App\Http\Middleware\CheckImportKeyMiddleware;
 use App\Http\Middleware\CheckRecordingApiKeyMiddleware;
 use App\Http\Middleware\CheckSharedSecretMiddleware;
 use App\Http\Middleware\CheckSrsCallbackMiddleware;
+use App\Http\Middleware\CheckTelegramWebhookMiddleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -120,3 +122,10 @@ Route::middleware([CheckImportKeyMiddleware::class])->prefix('recording/imports'
 
 // Public recording endpoint
 Route::get('recording/{slug}', [RecordingApiController::class, 'getBySlug'])->name('api.recording.get');
+
+// The Telegram bot's only inbound endpoint: commands from a linked chat and the buttons
+// the bot itself put there. Authenticated by the secret token Telegram echoes back on
+// every call, which is set when the webhook is registered; anything else gets a 404.
+Route::post('telegram/webhook', TelegramWebhookController::class)
+    ->middleware([CheckTelegramWebhookMiddleware::class])
+    ->name('api.telegram.webhook');

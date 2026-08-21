@@ -61,6 +61,11 @@ final class Navigation
                 Features::feedback()
                     ? $this->item('Feedback', 'message-square', 'manage.feedback.index', $badges['feedback'] ?? null)
                     : null,
+                // Administrators only, like the settings pane the bot's token lives in:
+                // an interactive chat can start and end shows.
+                Features::telegram() && request()->user()?->hasPermission('admin.access')
+                    ? $this->item('Telegram', 'send', 'manage.telegram.index')
+                    : null,
                 $this->item('Users', 'users', 'manage.users.index'),
                 $this->item('Roles', 'shield-check', 'manage.roles.index', $badges['roles'] ?? null),
                 Features::emotes()

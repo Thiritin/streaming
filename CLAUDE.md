@@ -20,7 +20,7 @@ banner is switched off, or the text is empty. Markdown is sanitised by `App\Supp
 and the banner's `id` is a hash of its text, which is what a viewer's dismissal is
 remembered against.
 
-Feature switches (chat, emotes, boops, announcement, feedback, screens) have two layers. The installation's switches live in the same table, edited at `/manage` > Settings > Features with defaults in `config/features.php`; a signed-in viewer can then switch any of those off for themselves at `/settings`, stored in `users.feature_preferences`. A viewer can only subtract, never add, and the installation-only flags listed in `Features::INSTALLATION_ONLY` are not offered to viewers at all. Read them through `App\Support\Features`: `Features::enabledFor($key, $user)` or `Features::forUser($user)` anywhere a request has a viewer, `Features::chat()`/`::emotes()`/`::boops()` only where the installation-wide answer is what you want. Never `config('features.*')` directly - the config value is only the fallback, so a `config()` read ignores both layers. Emotes fold into chat on both layers. The installation's set is cached under one key and dropped by `BrandingSetting` on write.
+Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram) have two layers. The installation's switches live in the same table, edited at `/manage` > Settings > Features with defaults in `config/features.php`; a signed-in viewer can then switch any of those off for themselves at `/settings`, stored in `users.feature_preferences`. A viewer can only subtract, never add, and the installation-only flags listed in `Features::INSTALLATION_ONLY` are not offered to viewers at all. Read them through `App\Support\Features`: `Features::enabledFor($key, $user)` or `Features::forUser($user)` anywhere a request has a viewer, `Features::chat()`/`::emotes()`/`::boops()` only where the installation-wide answer is what you want. Never `config('features.*')` directly - the config value is only the fallback, so a `config()` read ignores both layers. Emotes fold into chat on both layers. The installation's set is cached under one key and dropped by `BrandingSetting` on write.
 
 ## Core Architecture
 
@@ -229,6 +229,13 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   It authenticates with the import key from Settings > Imports, read through
   `App\Support\ImportKey::current()` and never `config('stream.import_key')` directly -
   same rule as the control key, and `RECORDING_API_KEY` does not open it
+- Telegram: the installation's bot and the chats it posts into. One token in Settings >
+  Telegram registers the webhook; each chat then decides what it hears (shows, feedback,
+  which sources) and whether its messages carry buttons. A show message starts as Start,
+  becomes End with a confirmation step, and is kept in step whoever changed the show;
+  a report message carries Resolve. Groups link with `/link <code>`, direct messages by
+  chat id. See docs/admin/telegram.md. Administrators only, since an interactive chat can
+  take a show on and off air
 - Feedback: what viewers sent in from the site - the Feedback button in the top bar
   and "Report" on the player. Each report carries the browser, screen, connection and
   player snapshot the client collected, bounded by `App\Support\Diagnostics`, plus an

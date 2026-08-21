@@ -54,4 +54,12 @@ return [
      */
     'screens' => true,
 
+    /*
+     | The Telegram bot: notifications into linked chats, and the buttons in them
+     | that start and end shows or resolve reports. Off stops every outgoing
+     | message and answers 404 on the webhook, so the bot goes quiet without
+     | anything being unlinked.
+     */
+    'telegram' => true,
+
 ];
