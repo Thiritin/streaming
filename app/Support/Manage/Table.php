@@ -36,6 +36,8 @@ final class Table
 
     private ?Closure $rowActionsUsing = null;
 
+    private ?Closure $inlineEditUsing = null;
+
     /** @var array<int, Action> */
     private array $bulkActions = [];
 
@@ -80,6 +82,21 @@ final class Table
     public function filters(array $filters): self
     {
         $this->filters = $filters;
+
+        return $this;
+    }
+
+    /**
+     * The fields a row offers for editing from the list itself.
+     *
+     * Answer null for a record that must not be changed from here; the client then
+     * renders it read-only even with inline editing switched on.
+     *
+     * @param  Closure(Model): ?InlineEdit  $callback
+     */
+    public function inlineEdit(Closure $callback): self
+    {
+        $this->inlineEditUsing = $callback;
 
         return $this;
     }
@@ -168,16 +185,24 @@ final class Table
         $perPage = $this->resolvePerPage($request);
         $paginator = $this->query->paginate($perPage)->withQueryString();
 
+        $rows = collect($paginator->items())->map(fn (Model $record) => [
+            'id' => $record->getKey(),
+            'url' => $this->recordUrlUsing ? ($this->recordUrlUsing)($record) : null,
+            'cells' => $this->rowsUsing ? ($this->rowsUsing)($record) : $record->attributesToArray(),
+            'actions' => $this->rowActionsUsing
+                ? array_map(fn (Action $action) => $action->toArray(), array_values(($this->rowActionsUsing)($record)))
+                : [],
+            'inline' => $this->inlineEditUsing
+                ? ($this->inlineEditUsing)($record)?->toArray()
+                : null,
+        ])->all();
+
         return [
             'name' => $this->name,
-            'rows' => collect($paginator->items())->map(fn (Model $record) => [
-                'id' => $record->getKey(),
-                'url' => $this->recordUrlUsing ? ($this->recordUrlUsing)($record) : null,
-                'cells' => $this->rowsUsing ? ($this->rowsUsing)($record) : $record->attributesToArray(),
-                'actions' => $this->rowActionsUsing
-                    ? array_map(fn (Action $action) => $action->toArray(), array_values(($this->rowActionsUsing)($record)))
-                    : [],
-            ])->all(),
+            'rows' => $rows,
+            // Whether the toolbar offers the switch at all. Declared by the table rather
+            // than by the page, so a list nobody may edit never grows the button.
+            'inlineEditable' => collect($rows)->contains(fn (array $row) => $row['inline'] !== null),
             'columns' => array_map(fn (Column $column) => $column->toArray(), $this->columns),
             'hiddenColumns' => $this->hiddenColumns(),
             'filters' => array_map(

@@ -235,8 +235,13 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   the announcement, the feature switches and the control key
 
 Tables, filters, row/bulk actions and toasts are declared server-side with the
-`App\Support\Manage` toolkit (`Table`, `Column`, `Filter`, `Action`, `Status`, `Toast`) and
-rendered by the shared components in `resources/js/Components/Manage`. Access runs through
+`App\Support\Manage` toolkit (`Table`, `Column`, `Filter`, `Action`, `Status`, `Toast`,
+`InlineEdit`) and rendered by the shared components in `resources/js/Components/Manage`.
+`Table::inlineEdit()` declares the few fields a row may be changed with from the list
+itself; answer null for a record that must not be. The toolbar then offers an "Inline
+edit" switch, each control saves on its own to that row's endpoint, and the page's poll
+stops while the mode is on. Shows use it for source and the scheduled times
+(`ShowController::inlineUpdate`, `PATCH /manage/shows/{show}/inline`). Access runs through
 the `access-manage` gate plus a policy per model.
 
 ## Important Development Rules

@@ -7,6 +7,7 @@
 import { computed, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import ManageIcon from './ManageIcon.vue';
+import { useInlineEdit } from './useInlineEdit.js';
 import { useTableQuery } from './useTableQuery.js';
 
 const props = defineProps({
@@ -15,6 +16,7 @@ const props = defineProps({
 });
 
 const { setFilter, setSearch } = useTableQuery();
+const { isEnabled: inlineEditing, toggle: toggleInlineEdit } = useInlineEdit(() => props.table.name);
 
 const filters = computed(() => props.table.filters ?? []);
 const toggleableColumns = computed(() => props.table.columns.filter((column) => column.toggleable));
@@ -174,6 +176,25 @@ const control =
           @input="onSearch"
         />
       </label>
+
+      <!-- Only when the server declared inline fields on at least one row. -->
+      <button
+        v-if="table.inlineEditable"
+        type="button"
+        :class="[
+          control,
+          'inline-flex items-center gap-1.5 transition-colors',
+          inlineEditing
+            ? 'border-state-live/40 bg-state-live/10 text-state-live'
+            : 'text-fg-2 hover:bg-surface-3',
+        ]"
+        :aria-pressed="inlineEditing"
+        title="Edit key fields straight in the table. Every change saves on its own."
+        @click="toggleInlineEdit"
+      >
+        <ManageIcon name="pencil" />
+        Inline edit
+      </button>
 
       <div v-if="toggleableColumns.length" class="relative">
         <button

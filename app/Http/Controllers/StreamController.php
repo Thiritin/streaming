@@ -145,6 +145,13 @@ class StreamController extends Controller
                     'description' => $show->description,
                     'description_html' => $show->description_html,
                     'source' => $show->source ? $show->source->name : null,
+                    /*
+                     * The channel's own state, not the show's. The front page plays
+                     * the busiest live shows inline, and a show can be live while its
+                     * channel has stopped publishing - which is "offline", not a
+                     * preview that is still connecting.
+                     */
+                    'source_status' => $show->source?->status->value,
                     'status' => $show->status,
                     'thumbnail_url' => $show->thumbnail_url,
                     'viewer_count' => $show->viewer_count,

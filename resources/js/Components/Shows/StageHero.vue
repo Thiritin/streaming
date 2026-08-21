@@ -45,6 +45,7 @@
             variant="compact"
             :with-text="true"
             :low-quality="true"
+            :source-status="side.source_status ?? null"
           />
 
           <ChatExcerpt

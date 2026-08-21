@@ -114,6 +114,7 @@ class ShowsTest extends TestCase
                     'source',
                     'status',
                     'scheduled_start',
+                    'scheduled_end',
                     'actual_start',
                     'viewer_count',
                     'peak_viewer_count',
@@ -865,5 +866,146 @@ class ShowsTest extends TestCase
                     collect($table['rows'][0]['actions'])->pluck('name')->all(),
                 );
             });
+    }
+
+    // ---------------------------------------------------------------- inline editing
+
+    public function test_a_row_declares_the_fields_it_can_be_edited_with_from_the_list(): void
+    {
+        $show = $this->show();
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.shows.index'))
+            ->assertInertia(function (Assert $page) use ($show) {
+                $table = $page->toArray()['props']['table'];
+                $inline = $table['rows'][0]['inline'];
+
+                $this->assertTrue($table['inlineEditable']);
+                $this->assertSame(route('manage.shows.inline', $show), $inline['url']);
+                $this->assertSame(
+                    ['source', 'scheduled_start', 'scheduled_end'],
+                    collect($inline['fields'])->pluck('key')->all(),
+                );
+            });
+    }
+
+    public function test_a_user_who_cannot_update_is_offered_no_inline_fields(): void
+    {
+        $this->show();
+
+        $this->actingAs($this->moderator)
+            ->get(route('manage.shows.index'))
+            ->assertInertia(function (Assert $page) {
+                $table = $page->toArray()['props']['table'];
+
+                $this->assertNull($table['rows'][0]['inline']);
+                $this->assertFalse($table['inlineEditable']);
+            });
+    }
+
+    public function test_one_field_is_saved_on_its_own(): void
+    {
+        $show = $this->show([
+            'scheduled_start' => '2026-08-01 10:00:00',
+            'scheduled_end' => '2026-08-01 11:00:00',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->patch(route('manage.shows.inline', $show), ['scheduled_end' => '2026-08-01T12:30'])
+            ->assertRedirect();
+
+        $show->refresh();
+
+        $this->assertSame('2026-08-01 12:30:00', $show->scheduled_end->format('Y-m-d H:i:s'));
+        // Nothing else moved: the request carried one key.
+        $this->assertSame('2026-08-01 10:00:00', $show->scheduled_start->format('Y-m-d H:i:s'));
+        $this->assertSame('success', $this->toast()['tone']);
+    }
+
+    public function test_the_source_can_be_changed_from_the_list(): void
+    {
+        $show = $this->show();
+        $other = Source::factory()->create(['name' => 'Second Stage']);
+
+        $this->actingAs($this->admin)
+            ->patch(route('manage.shows.inline', $show), ['source_id' => $other->id])
+            ->assertRedirect();
+
+        $this->assertSame($other->id, $show->refresh()->source_id);
+    }
+
+    public function test_an_end_before_the_stored_start_is_refused(): void
+    {
+        $show = $this->show([
+            'scheduled_start' => '2026-08-01 10:00:00',
+            'scheduled_end' => '2026-08-01 11:00:00',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->patch(route('manage.shows.inline', $show), ['scheduled_end' => '2026-08-01T09:00']);
+
+        $this->assertSame('2026-08-01 11:00:00', $show->refresh()->scheduled_end->format('Y-m-d H:i:s'));
+        $this->assertSame('danger', $this->toast()['tone']);
+    }
+
+    public function test_a_live_show_cannot_be_moved_to_another_source_inline(): void
+    {
+        $show = $this->show(['status' => 'live']);
+        $other = Source::factory()->create(['name' => 'Second Stage']);
+
+        $this->actingAs($this->admin)
+            ->patch(route('manage.shows.inline', $show), ['source_id' => $other->id]);
+
+        $this->assertSame($this->source->id, $show->refresh()->source_id);
+        $this->assertSame('danger', $this->toast()['tone']);
+
+        // The field is still declared, carrying the reason, so the UI can explain itself.
+        $this->actingAs($this->admin)
+            ->get(route('manage.shows.index', ['filter' => ['hide_ended' => 0]]))
+            ->assertInertia(function (Assert $page) {
+                $fields = collect($page->toArray()['props']['table']['rows'][0]['inline']['fields']);
+
+                $this->assertNotNull($fields->firstWhere('key', 'source')['disabled']);
+                $this->assertNull($fields->firstWhere('key', 'scheduled_start')['disabled'] ?? null);
+            });
+    }
+
+    public function test_the_auto_stop_follows_an_end_time_it_was_pinned_to(): void
+    {
+        $show = $this->show([
+            'scheduled_start' => '2026-08-01 10:00:00',
+            'scheduled_end' => '2026-08-01 11:00:00',
+            'auto_mode' => true,
+            'auto_stop_at' => '2026-08-01 11:00:00',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->patch(route('manage.shows.inline', $show), ['scheduled_end' => '2026-08-01T12:00']);
+
+        $this->assertSame('2026-08-01 12:00:00', $show->refresh()->auto_stop_at->format('Y-m-d H:i:s'));
+    }
+
+    public function test_a_hand_set_auto_stop_is_left_alone(): void
+    {
+        $show = $this->show([
+            'scheduled_start' => '2026-08-01 10:00:00',
+            'scheduled_end' => '2026-08-01 11:00:00',
+            'auto_mode' => true,
+            'auto_stop_at' => '2026-08-01 10:45:00',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->patch(route('manage.shows.inline', $show), ['scheduled_end' => '2026-08-01T12:00']);
+
+        $this->assertSame('2026-08-01 10:45:00', $show->refresh()->auto_stop_at->format('Y-m-d H:i:s'));
+    }
+
+    public function test_a_user_without_manage_permission_cannot_save_inline(): void
+    {
+        $show = $this->show();
+
+        $this->actingAs($this->moderator)
+            ->patch(route('manage.shows.inline', $show), ['scheduled_end' => '2026-08-01T12:00'])
+            ->assertForbidden();
     }
 }

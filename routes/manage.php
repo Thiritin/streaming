@@ -135,6 +135,13 @@ Route::post('shows/{show}/archive', [ShowController::class, 'archive'])->name('s
 Route::post('shows/{show}/unarchive', [ShowController::class, 'unarchive'])->name('shows.unarchive');
 Route::get('shows/{show}/statistics', ShowStatisticsController::class)->name('shows.statistics');
 
+/*
+ * One field of one show, saved from the list while inline editing is switched on. Its own
+ * endpoint rather than the form's PUT: that one validates a whole show, and this one is
+ * sent a single key.
+ */
+Route::patch('shows/{show}/inline', [ShowController::class, 'inlineUpdate'])->name('shows.inline');
+
 Route::get('shows', [ShowController::class, 'index'])->name('shows.index');
 Route::get('shows/create', [ShowController::class, 'create'])->name('shows.create');
 Route::post('shows', [ShowController::class, 'store'])->name('shows.store');

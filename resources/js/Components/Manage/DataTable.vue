@@ -6,12 +6,14 @@
  * from the server. This component only knows the cell types documented on
  * App\Support\Manage\Column.
  */
-import { computed, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import ActionButton from './ActionButton.vue';
+import InlineCell from './InlineCell.vue';
 import ManageIcon from './ManageIcon.vue';
 import StatusBadge from './StatusBadge.vue';
 import { resolve, toneText } from './tones.js';
+import { useInlineEdit } from './useInlineEdit.js';
 import { useTableQuery } from './useTableQuery.js';
 
 const props = defineProps({
@@ -19,6 +21,56 @@ const props = defineProps({
 });
 
 const { toggleSort } = useTableQuery();
+const { isEnabled: inlineEditing } = useInlineEdit(() => props.table.name);
+
+/*
+ * Inline editing, when the operator has switched it on: a cell whose column key matches
+ * a field the server declared on that row renders the control instead of the value, and
+ * every change is saved on its own. There is no form and no submit, so nothing can be
+ * left half-entered - and nothing is offered that the server did not declare, which is
+ * where the permission check lives.
+ */
+const drafts = reactive({});
+const states = reactive({});
+
+const fieldKey = (row, field) => `${row.id}:${field.key}`;
+
+const inlineField = (row, key) =>
+  inlineEditing.value ? (row.inline?.fields ?? []).find((field) => field.key === key) ?? null : null;
+
+const draftValue = (row, field) => drafts[fieldKey(row, field)] ?? field.value ?? '';
+
+const save = (row, field, value) => {
+  const key = fieldKey(row, field);
+
+  if (String(value) === String(field.value ?? '')) {
+    return;
+  }
+
+  drafts[key] = value;
+  states[key] = 'saving';
+
+  // No `only`: the flashed toast rides on the shared props, and a partial reload of the
+  // table alone would drop it.
+  router.patch(
+    row.inline.url,
+    { [field.field ?? field.key]: value },
+    {
+      preserveScroll: true,
+      preserveState: true,
+      onSuccess: () => {
+        // The reloaded row carries the saved value, so the draft has nothing left to say.
+        delete drafts[key];
+        states[key] = 'saved';
+        window.setTimeout(() => {
+          if (states[key] === 'saved') delete states[key];
+        }, 1500);
+      },
+      // The draft stays put on a refusal, so the operator can see and fix what they typed.
+      onError: () => (states[key] = 'error'),
+    },
+  );
+};
 
 const selected = ref([]);
 
@@ -176,7 +228,16 @@ const open = (row, event) => {
               class="h-8 px-3 whitespace-nowrap text-fg-1"
               :class="[align[column.align] ?? align.left, column.type === 'number' ? 'tabular-nums' : '']"
             >
-              <template v-if="column.type === 'badge'">
+              <template v-if="inlineField(row, column.key)">
+                <InlineCell
+                  :field="inlineField(row, column.key)"
+                  :value="draftValue(row, inlineField(row, column.key))"
+                  :state="states[fieldKey(row, inlineField(row, column.key))]"
+                  @save="save(row, inlineField(row, column.key), $event)"
+                />
+              </template>
+
+              <template v-else-if="column.type === 'badge'">
                 <StatusBadge :status="cell(row, column.key)" />
               </template>
 

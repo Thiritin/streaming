@@ -11,9 +11,11 @@ use App\Services\PretalxService;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
 use App\Support\Manage\Filter;
+use App\Support\Manage\InlineEdit;
 use App\Support\Manage\Status;
 use App\Support\Manage\Table;
 use App\Support\Manage\Toast;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -41,6 +43,7 @@ class ShowController extends Controller
                 Column::badge('source', 'Source')->searchable('source.name'),
                 Column::badge('status', 'Status'),
                 Column::datetime('scheduled_start', 'Scheduled')->sortable(),
+                Column::datetime('scheduled_end', 'Ends')->sortable()->toggleable(),
                 Column::datetime('actual_start', 'Went Live')
                     ->sortable()
                     ->fallback('Not started')
@@ -81,6 +84,7 @@ class ShowController extends Controller
             ->rows(fn (Show $show) => $this->row($show))
             ->recordUrl(fn (Show $show) => route('manage.shows.edit', $show))
             ->rowActions(fn (Show $show) => $this->recordActions($show, includeEdit: true))
+            ->inlineEdit(fn (Show $show) => $this->inlineEdit($show))
             ->bulkActions($this->bulkActions())
             ->pageActions($this->pageActions());
 
@@ -350,6 +354,122 @@ class ShowController extends Controller
     /**
      * @return array<string, mixed>
      */
+    /**
+     * What the running order gets edited for: which stage it is on, and when.
+     *
+     * Nothing else is offered here. Titles, access and auto mode are one-off decisions
+     * made on the show's own page; the times and the source are what move all afternoon
+     * while a programme is being reshuffled, and opening a form for each of them is the
+     * whole cost of doing it.
+     */
+    private function inlineEdit(Show $show): ?InlineEdit
+    {
+        if (! request()->user()->can('update', $show)) {
+            return null;
+        }
+
+        // Moving a running show onto another stage would cut the stream out from under
+        // whoever is watching it. The times stay editable: an overrunning show having its
+        // end pushed back is the ordinary case.
+        $live = $show->status === 'live';
+
+        return InlineEdit::patch(route('manage.shows.inline', $show))->fields([
+            [
+                'key' => 'source',
+                'field' => 'source_id',
+                'type' => 'select',
+                'label' => 'Source',
+                'value' => $show->source_id,
+                'options' => $this->sourceOptions(),
+                'disabled' => $live ? 'The show is on air; end it before moving it.' : null,
+            ],
+            [
+                'key' => 'scheduled_start',
+                'field' => 'scheduled_start',
+                'type' => 'datetime',
+                'label' => 'Scheduled start',
+                'value' => $show->scheduled_start?->format('Y-m-d\TH:i'),
+            ],
+            [
+                'key' => 'scheduled_end',
+                'field' => 'scheduled_end',
+                'type' => 'datetime',
+                'label' => 'Scheduled end',
+                'value' => $show->scheduled_end?->format('Y-m-d\TH:i'),
+            ],
+        ]);
+    }
+
+    /**
+     * One field of one show, saved on its own from the list.
+     *
+     * Everything is `sometimes`: the client sends the field that changed and nothing
+     * else, so a missing key means "leave it", not "clear it". The pair rule reads the
+     * stored value for whichever half was not sent, which is what stops an end time
+     * being dragged in front of a start time that is not on screen.
+     */
+    public function inlineUpdate(Request $request, Show $show): RedirectResponse
+    {
+        $this->authorize('update', $show);
+
+        $validated = $request->validate([
+            'source_id' => ['sometimes', 'integer', 'exists:sources,id'],
+            'scheduled_start' => ['sometimes', 'required', 'date'],
+            'scheduled_end' => ['sometimes', 'required', 'date'],
+        ]);
+
+        $start = isset($validated['scheduled_start'])
+            ? CarbonImmutable::parse($validated['scheduled_start'])
+            : $show->scheduled_start;
+        $end = isset($validated['scheduled_end'])
+            ? CarbonImmutable::parse($validated['scheduled_end'])
+            : $show->scheduled_end;
+
+        if ($start && $end && $end->lessThanOrEqualTo($start)) {
+            Toast::flashDanger('Not saved', 'The scheduled end must be later than the scheduled start.');
+
+            return back();
+        }
+
+        if (isset($validated['source_id']) && $show->status === 'live') {
+            Toast::flashDanger('Not saved', 'The show is on air; end it before moving it to another source.');
+
+            return back();
+        }
+
+        /*
+         * The hard stop tracks the scheduled end unless someone has moved it by hand, as
+         * on the form. Without this, pushing an overrunning show's end back in auto mode
+         * would leave the stop where it was and cut it off anyway.
+         */
+        if (
+            isset($validated['scheduled_end'])
+            && $show->auto_mode
+            && $show->auto_stop_at
+            && $show->scheduled_end
+            && $show->auto_stop_at->equalTo($show->scheduled_end)
+        ) {
+            $validated['auto_stop_at'] = $validated['scheduled_end'];
+        }
+
+        $show->update($validated);
+
+        Toast::flashSuccess('Show updated', "'{$show->title}' saved.");
+
+        return back();
+    }
+
+    /**
+     * @return array<int, array{value: int, label: string}>
+     */
+    private function sourceOptions(): array
+    {
+        return Source::ordered()
+            ->get(['id', 'name'])
+            ->map(fn (Source $source) => ['value' => $source->id, 'label' => $source->name])
+            ->all();
+    }
+
     private function row(Show $show): array
     {
         return [
@@ -360,6 +480,7 @@ class ShowController extends Controller
                 : null,
             'status' => Status::show($show->status),
             'scheduled_start' => $show->scheduled_start?->format('M j, Y H:i'),
+            'scheduled_end' => $show->scheduled_end?->format('M j, Y H:i'),
             'archived_at' => $show->archived_at?->format('M j, Y H:i'),
             'actual_start' => $show->actual_start?->format('M j, Y H:i'),
             'viewer_count' => $show->viewer_count,
