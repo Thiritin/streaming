@@ -38,7 +38,7 @@ const submit = () => form.put(route('manage.telegram.update', props.chat.id));
 
     <PageHeader
       :title="chat.title ?? `Chat ${chat.chat_id}`"
-      :subtitle="`${chat.type ?? 'chat'} · ${chat.chat_id}`"
+      :subtitle="chat.topic ? `${chat.type ?? 'chat'} · ${chat.chat_id} · ${chat.topic}` : `${chat.type ?? 'chat'} · ${chat.chat_id}`"
     >
       <template #actions>
         <Link

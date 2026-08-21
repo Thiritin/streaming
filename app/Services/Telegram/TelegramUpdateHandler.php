@@ -62,22 +62,55 @@ class TelegramUpdateHandler
             return;
         }
 
+        $threadId = $this->threadId($message);
+
         // "/link@stream_bot CODE" in a group: Telegram appends the bot name whenever
         // more than one bot might answer.
         $parts = preg_split('/\s+/', $text) ?: [];
         $command = mb_strtolower(explode('@', ltrim((string) array_shift($parts), '/'))[0]);
         $argument = trim(implode(' ', $parts));
 
-        $chat = TelegramChat::where('chat_id', $chatId)->first();
+        $chat = $this->find($chatId, $threadId);
 
         match ($command) {
             'link' => $this->link($message, $argument),
-            'unlink' => $this->unlink($chatId, $chat),
-            'status' => $this->status($chatId, $chat),
-            'chatid' => $this->client->reply($chatId, 'Chat id: <code>'.e($chatId).'</code>'),
-            'start', 'help' => $this->client->reply($chatId, $this->help()),
+            'unlink' => $this->unlink($chatId, $threadId, $chat),
+            'status' => $this->status($chatId, $threadId, $chat),
+            'chatid' => $this->client->reply(
+                $chatId,
+                'Chat id: <code>'.e($chatId).'</code>'
+                .($threadId > 0 ? "\nTopic id: <code>{$threadId}</code>" : ''),
+                $threadId,
+            ),
+            'start', 'help' => $this->client->reply($chatId, $this->help(), $threadId),
             default => null,
         };
+    }
+
+    /**
+     * The topic a message came from, or 0 for a plain chat.
+     *
+     * General carries no thread id, and neither does a reply in a non-forum group, so
+     * both land on 0 - the same row a group without topics has always had.
+     *
+     * @param  array<string, mixed>  $message
+     */
+    private function threadId(array $message): int
+    {
+        return ($message['is_topic_message'] ?? false)
+            ? (int) ($message['message_thread_id'] ?? 0)
+            : 0;
+    }
+
+    /**
+     * The row for one topic. Falls back to the chat's other row when the exact topic has
+     * none, so a group that was linked before topics were switched on keeps working
+     * instead of going silent.
+     */
+    private function find(string $chatId, int $threadId): ?TelegramChat
+    {
+        return TelegramChat::forChat($chatId)->where('thread_id', $threadId)->first()
+            ?? ($threadId > 0 ? null : TelegramChat::forChat($chatId)->first());
     }
 
     /**
@@ -89,10 +122,11 @@ class TelegramUpdateHandler
     private function link(array $message, string $argument): void
     {
         $chatId = (string) $message['chat']['id'];
+        $threadId = $this->threadId($message);
         $code = mb_strtoupper(trim($argument));
 
         if ($code === '') {
-            $this->client->reply($chatId, 'Send <code>/link CODE</code> with the code from Settings > Telegram.');
+            $this->client->reply($chatId, 'Send <code>/link CODE</code> with the code from Settings > Telegram.', $threadId);
 
             return;
         }
@@ -100,16 +134,17 @@ class TelegramUpdateHandler
         $link = TelegramLinkCode::where('code', $code)->first();
 
         if (! $link || ! $link->usable()) {
-            $this->client->reply($chatId, '❌ That code is not valid any more. Generate a new one in Settings > Telegram.');
+            $this->client->reply($chatId, '❌ That code is not valid any more. Generate a new one in Settings > Telegram.', $threadId);
 
             return;
         }
 
-        $existing = TelegramChat::where('chat_id', $chatId)->first();
+        $existing = TelegramChat::forChat($chatId)->where('thread_id', $threadId)->first();
 
         if ($existing) {
             $existing->forceFill([
                 'title' => $this->title($message['chat']),
+                'topic_title' => $this->topicTitle($message) ?? $existing->topic_title,
                 'type' => $message['chat']['type'] ?? null,
                 'enabled' => true,
                 'last_error' => null,
@@ -117,7 +152,7 @@ class TelegramUpdateHandler
 
             $link->forceFill(['used_at' => now(), 'telegram_chat_id' => $existing->id])->save();
 
-            $this->client->reply($chatId, "✅ Already linked.\n".e($this->notifier->summary($existing)));
+            $this->client->reply($chatId, "✅ Already linked.\n".e($this->notifier->summary($existing)), $threadId);
 
             return;
         }
@@ -127,7 +162,12 @@ class TelegramUpdateHandler
         // see which room this is, not by whoever happened to paste the code.
         $chat = TelegramChat::create([
             'chat_id' => $chatId,
+            // One topic is one configuration. A forum group can send shows to the stage
+            // topic and reports to the support topic, which is the whole point of using
+            // topics rather than several groups.
+            'thread_id' => $threadId,
             'title' => $this->title($message['chat']),
+            'topic_title' => $this->topicTitle($message),
             'type' => $message['chat']['type'] ?? null,
             'enabled' => true,
             'interactive' => false,
@@ -141,10 +181,14 @@ class TelegramUpdateHandler
 
         $this->client->reply(
             $chatId,
-            "✅ <b>Linked.</b>\nNothing is switched on yet. Pick what this chat should get - shows, feedback, and whether it may press buttons - in /manage > Telegram.",
+            ($threadId > 0
+                ? "✅ <b>Linked this topic.</b>\nPosts land here rather than in General."
+                : '✅ <b>Linked.</b>')
+            ."\nNothing is switched on yet. Pick what this chat should get - shows, feedback, and whether it may press buttons - in /manage > Telegram.",
+            $threadId,
         );
 
-        Log::info('Telegram chat linked', ['chat_id' => $chatId, 'code' => $code]);
+        Log::info('Telegram chat linked', ['chat_id' => $chatId, 'thread_id' => $threadId, 'code' => $code]);
     }
 
     private function unlink(string $chatId, ?TelegramChat $chat): void
@@ -192,7 +236,15 @@ class TelegramUpdateHandler
         $data = (string) ($query['data'] ?? '');
         $actor = $this->actor($query['from'] ?? []);
 
-        $chat = TelegramChat::where('chat_id', $chatId)->first();
+        // The message that was pressed knows which row posted it, which is a surer answer
+        // than matching the topic again - and it still works for a group whose topics were
+        // rearranged after the message went out.
+        $record = TelegramMessage::with('chat')
+            ->where('message_id', $messageId)
+            ->whereHas('chat', fn ($query) => $query->where('chat_id', $chatId))
+            ->first();
+
+        $chat = $record?->chat ?? $this->find($chatId, $this->threadId($query['message'] ?? []));
 
         if (! $chat || ! $chat->enabled || ! $chat->interactive) {
             $this->client->answerCallback($callbackId, 'This chat is not allowed to do that.', alert: true);
@@ -201,10 +253,6 @@ class TelegramUpdateHandler
         }
 
         [$kind, $action, $id] = array_pad(explode(':', $data, 3), 3, null);
-
-        $record = TelegramMessage::where('telegram_chat_id', $chat->id)
-            ->where('message_id', $messageId)
-            ->first();
 
         match ($kind) {
             's' => $this->showAction($callbackId, $chat, $record, (string) $action, (int) $id, $actor),
@@ -366,22 +414,39 @@ class TelegramUpdateHandler
     {
         $status = $update['new_chat_member']['status'] ?? null;
         $chatId = (string) ($update['chat']['id'] ?? '');
-        $chat = TelegramChat::where('chat_id', $chatId)->first();
 
-        if (! $chat) {
-            return;
+        // Membership is of the group, not of one topic, so this applies to every row the
+        // group has.
+        $chats = TelegramChat::forChat($chatId)->get();
+
+        foreach ($chats as $chat) {
+            if (in_array($status, ['kicked', 'left'], true)) {
+                $chat->disable('Removed from the chat.');
+
+                continue;
+            }
+
+            $chat->forceFill([
+                'title' => $this->title($update['chat'] ?? []),
+                'last_error' => null,
+            ])->save();
         }
+    }
 
-        if (in_array($status, ['kicked', 'left'], true)) {
-            $chat->disable('Removed from the chat.');
+    /**
+     * The topic's name, when Telegram happens to send it. It rides along on the message
+     * that created the topic, so a command sent later has no name in it and the row keeps
+     * whatever it already knew.
+     *
+     * @param  array<string, mixed>  $message
+     */
+    private function topicTitle(array $message): ?string
+    {
+        $name = $message['reply_to_message']['forum_topic_created']['name']
+            ?? $message['forum_topic_created']['name']
+            ?? null;
 
-            return;
-        }
-
-        $chat->forceFill([
-            'title' => $this->title($update['chat'] ?? []),
-            'last_error' => null,
-        ])->save();
+        return is_string($name) && $name !== '' ? $name : null;
     }
 
     /**

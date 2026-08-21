@@ -42,7 +42,14 @@ Two ways in, because groups and direct messages behave differently.
 `/link ABC-123` in it. The code is good for half an hour. The bot answers, and the chat turns
 up in the list with nothing switched on.
 
-**By id:** `/manage` > Telegram > **Add by chat ID**. Send `/chatid` to the bot in the chat to
+**A topic in a forum group:** send `/link ABC-123` in the topic itself. Each topic links as
+a row of its own, with its own flags and its own source filter, and posts land in that topic
+rather than in General. A group with topics on can send shows to the stage topic and reports
+to the support topic - one code each, linked from the topic it belongs to. `/status` and
+`/unlink` sent in a topic apply to that topic only.
+
+**By id:** `/manage` > Telegram > **Add by chat ID**. For a topic, fill in the topic id too;
+`/chatid` sent in the topic names both. Send `/chatid` to the bot in the chat to
 find it; groups are negative numbers. Useful for a direct message, where a code is more
 ceremony than it is worth. Telegram will not let a bot write to a person who has never talked
 to it, so send the bot a `/start` first, then use **Send test post** on the row to prove it.
@@ -102,7 +109,7 @@ for a resolve.
 | --- | --- |
 | `/link CODE` | Links this chat, using a code from the panel |
 | `/status` | What this chat is set to receive |
-| `/chatid` | This chat's id, for adding it by hand |
+| `/chatid` | This chat's id, plus the topic id when sent in a topic |
 | `/unlink` | Removes the row; nothing more is posted here |
 
 ## When it goes quiet

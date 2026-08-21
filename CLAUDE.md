@@ -234,7 +234,8 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   which sources) and whether its messages carry buttons. A show message starts as Start,
   becomes End with a confirmation step, and is kept in step whoever changed the show;
   a report message carries Resolve. Groups link with `/link <code>`, direct messages by
-  chat id. See docs/admin/telegram.md. Administrators only, since an interactive chat can
+  chat id. A forum group's topics each link as a row of their own, so one group can split
+  shows and reports across topics. See docs/admin/telegram.md. Administrators only, since an interactive chat can
   take a show on and off air
 - Feedback: what viewers sent in from the site - the Feedback button in the top bar
   and "Report" on the player. Each report carries the browser, screen, connection and

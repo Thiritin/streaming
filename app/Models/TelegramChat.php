@@ -17,7 +17,9 @@ class TelegramChat extends Model
 
     protected $fillable = [
         'chat_id',
+        'thread_id',
         'title',
+        'topic_title',
         'type',
         'enabled',
         'interactive',
@@ -29,6 +31,7 @@ class TelegramChat extends Model
     ];
 
     protected $casts = [
+        'thread_id' => 'integer',
         'enabled' => 'boolean',
         'interactive' => 'boolean',
         'notify_feedback' => 'boolean',
@@ -90,6 +93,32 @@ class TelegramChat extends Model
 
     public function label(): string
     {
-        return $this->title ?: 'Chat '.$this->chat_id;
+        $chat = $this->title ?: 'Chat '.$this->chat_id;
+
+        if (! $this->isTopic()) {
+            return $chat;
+        }
+
+        return $chat.' · '.($this->topic_title ?: 'topic '.$this->thread_id);
+    }
+
+    /**
+     * Whether this row is one topic of a forum supergroup rather than a whole chat.
+     * General has no thread id of its own, so it reads as the chat itself.
+     */
+    public function isTopic(): bool
+    {
+        return (int) $this->thread_id > 0;
+    }
+
+    /**
+     * The rows for one chat id: every topic of a forum group, or the single row a plain
+     * group has. What "the bot was kicked out" applies to.
+     *
+     * @return Builder<TelegramChat>
+     */
+    public static function forChat(string $chatId): Builder
+    {
+        return self::where('chat_id', $chatId);
     }
 }

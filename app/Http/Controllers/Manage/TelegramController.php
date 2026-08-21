@@ -17,6 +17,7 @@ use App\Support\TelegramSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\Rule;
 use Inertia\Response;
 
 /**
@@ -41,6 +42,7 @@ class TelegramController extends Controller
             ->columns([
                 Column::text('title', 'Chat')->searchable()->sortable(),
                 Column::copyable('chat_id', 'Chat ID'),
+                Column::text('topic', 'Topic'),
                 Column::badge('mode', 'Buttons'),
                 Column::text('receives', 'Receives'),
                 Column::text('sources', 'Sources'),
@@ -91,14 +93,23 @@ class TelegramController extends Controller
         $this->authorize('create', TelegramChat::class);
 
         $validated = $request->validate([
-            'chat_id' => ['required', 'string', 'max:64', 'regex:/^-?\d+$/', 'unique:telegram_chats,chat_id'],
+            'chat_id' => [
+                'required', 'string', 'max:64', 'regex:/^-?\d+$/',
+                // One row per topic, so the same group may appear several times: the pair
+                // is what has to be unique, not the chat id.
+                Rule::unique('telegram_chats', 'chat_id')
+                    ->where('thread_id', (int) $request->input('thread_id', 0)),
+            ],
+            'thread_id' => ['nullable', 'integer', 'min:0'],
             'title' => ['nullable', 'string', 'max:120'],
         ], [
             'chat_id.regex' => 'A chat id is a number, negative for groups. Send /chatid to the bot to find it.',
+            'chat_id.unique' => 'That chat (and topic) is already in the list.',
         ]);
 
         $chat = TelegramChat::create([
             'chat_id' => $validated['chat_id'],
+            'thread_id' => (int) ($validated['thread_id'] ?? 0),
             'title' => $validated['title'] ?? null,
             'enabled' => true,
             'linked_by' => $request->user()->id,
@@ -118,6 +129,8 @@ class TelegramController extends Controller
             'chat' => [
                 'id' => $telegram->id,
                 'chat_id' => $telegram->chat_id,
+                'thread_id' => $telegram->thread_id,
+                'topic' => $telegram->isTopic() ? ($telegram->topic_title ?: 'Topic '.$telegram->thread_id) : null,
                 'title' => $telegram->title,
                 'type' => $telegram->type,
                 'enabled' => $telegram->enabled,
@@ -267,6 +280,7 @@ class TelegramController extends Controller
             'id' => $chat->id,
             'title' => $chat->label(),
             'chat_id' => $chat->chat_id,
+            'topic' => $chat->isTopic() ? ($chat->topic_title ?: (string) $chat->thread_id) : 'Whole chat',
             'mode' => Status::toggle($chat->interactive, 'Actions', 'Info only', Status::WARN, Status::IDLE),
             'receives' => $receives === [] ? 'Nothing' : implode(', ', $receives),
             'sources' => ($chat->source_ids ?? []) === [] ? 'All' : $chat->sources()->pluck('name')->implode(', '),
@@ -320,6 +334,12 @@ class TelegramController extends Controller
                         'label' => 'Chat ID',
                         'type' => 'text',
                         'helper' => 'Send /chatid to the bot in that chat to find it. Groups are negative.',
+                    ],
+                    [
+                        'key' => 'thread_id',
+                        'label' => 'Topic ID',
+                        'type' => 'number',
+                        'helper' => 'Only for a forum group, when posts should land in one topic. /chatid names it. Empty means the whole chat.',
                     ],
                     [
                         'key' => 'title',

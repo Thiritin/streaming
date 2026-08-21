@@ -112,6 +112,111 @@ class TelegramBotTest extends TestCase
         $this->assertNotNull($code->refresh()->used_at);
     }
 
+    /**
+     * A forum group is one chat id and many topics, and the point of using topics is that
+     * they are configured apart: shows in one, reports in another.
+     */
+    public function test_each_topic_links_as_its_own_configuration(): void
+    {
+        $stage = TelegramLinkCode::mint();
+        $support = TelegramLinkCode::mint();
+
+        $this->deliver(['message' => [
+            'text' => '/link '.$stage->code,
+            'is_topic_message' => true,
+            'message_thread_id' => 12,
+            'chat' => ['id' => '-100999', 'type' => 'supergroup', 'title' => 'Tech crew'],
+            'reply_to_message' => ['forum_topic_created' => ['name' => 'Main stage']],
+        ]])->assertOk();
+
+        $this->deliver(['message' => [
+            'text' => '/link '.$support->code,
+            'is_topic_message' => true,
+            'message_thread_id' => 34,
+            'chat' => ['id' => '-100999', 'type' => 'supergroup', 'title' => 'Tech crew'],
+            'reply_to_message' => ['forum_topic_created' => ['name' => 'Support']],
+        ]])->assertOk();
+
+        $this->assertDatabaseCount('telegram_chats', 2);
+
+        $stageChat = TelegramChat::where('thread_id', 12)->sole();
+
+        $this->assertSame('Main stage', $stageChat->topic_title);
+        $this->assertSame('Tech crew · Main stage', $stageChat->label());
+
+        // The answer went back into the topic it was asked from, not into General.
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/sendMessage')
+            && (int) $request['message_thread_id'] === 12);
+    }
+
+    public function test_a_topic_only_gets_what_that_topic_asked_for(): void
+    {
+        $shows = TelegramChat::create([
+            'chat_id' => '-100999',
+            'thread_id' => 12,
+            'title' => 'Tech crew',
+            'topic_title' => 'Main stage',
+            'enabled' => true,
+            'notify_shows' => true,
+            'notify_feedback' => false,
+        ]);
+
+        TelegramChat::create([
+            'chat_id' => '-100999',
+            'thread_id' => 34,
+            'title' => 'Tech crew',
+            'topic_title' => 'Support',
+            'enabled' => true,
+            'notify_shows' => false,
+            'notify_feedback' => true,
+        ]);
+
+        Show::factory()->create([
+            'status' => 'scheduled',
+            'scheduled_start' => now()->addMinutes(2),
+        ]);
+
+        (new NotifyUpcomingShowsJob)->handle(
+            app(TelegramClient::class),
+            app(TelegramNotifier::class),
+        );
+
+        $message = TelegramMessage::sole();
+
+        $this->assertSame($shows->id, $message->telegram_chat_id);
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/sendMessage')
+            && (int) $request['message_thread_id'] === 12);
+    }
+
+    public function test_a_button_pressed_in_a_topic_acts_on_that_topics_row(): void
+    {
+        $chat = TelegramChat::create([
+            'chat_id' => '-100999',
+            'thread_id' => 12,
+            'title' => 'Tech crew',
+            'enabled' => true,
+            'interactive' => true,
+            'notify_shows' => true,
+        ]);
+
+        $show = Show::factory()->create(['status' => 'scheduled']);
+        TelegramMessage::create([
+            'telegram_chat_id' => $chat->id,
+            'message_id' => 700,
+            'kind' => TelegramMessage::KIND_SHOW,
+            'subject_id' => $show->id,
+            'state' => TelegramMessage::STATE_UPCOMING,
+        ]);
+
+        $press = $this->press("s:start:{$show->id}", 700);
+        $press['callback_query']['message']['is_topic_message'] = true;
+        $press['callback_query']['message']['message_thread_id'] = 12;
+
+        $this->deliver($press)->assertOk();
+
+        $this->assertSame('live', $show->refresh()->status);
+    }
+
     public function test_a_used_code_does_not_work_twice(): void
     {
         $code = TelegramLinkCode::mint();

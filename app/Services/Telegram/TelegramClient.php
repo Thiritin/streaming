@@ -51,6 +51,9 @@ class TelegramClient
     {
         $response = $this->call('sendMessage', array_filter([
             'chat_id' => $chat->chat_id,
+            // A forum supergroup needs the thread, or the post lands in General however
+            // carefully somebody linked the topic they meant.
+            'message_thread_id' => $chat->isTopic() ? $chat->thread_id : null,
             'text' => $text,
             'parse_mode' => 'HTML',
             'disable_web_page_preview' => true,
@@ -72,14 +75,15 @@ class TelegramClient
      * Post into a chat that has no row here: the answer to a command from a group the
      * bot has never been linked to, which is most of what `/link` and `/chatid` are for.
      */
-    public function reply(string $chatId, string $text, ?int $replyTo = null): void
+    public function reply(string $chatId, string $text, ?int $threadId = null): void
     {
         $this->call('sendMessage', array_filter([
             'chat_id' => $chatId,
+            // Answer in the topic the command was sent from, not in General.
+            'message_thread_id' => $threadId ?: null,
             'text' => $text,
             'parse_mode' => 'HTML',
             'disable_web_page_preview' => true,
-            'reply_to_message_id' => $replyTo,
         ], fn ($value) => $value !== null));
     }
 
