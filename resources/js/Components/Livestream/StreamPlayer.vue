@@ -45,9 +45,28 @@ const handleUnmute = () => {
  * seeking. It no longer takes pointer events at all; any press on the player is
  * the gesture the browser was waiting for, and that press still reaches whatever
  * control it landed on.
+ *
+ * Over the picture it must not reach one thing: vidstack's toggle-paused gesture,
+ * which listens on [data-media-provider]. That press was doing both, so unmuting
+ * paused the stream. Swallow the release that follows an unmuting press over the
+ * picture, and only that one - a press on a control keeps its release.
  */
-const handlePointerDown = () => {
+const swallowPress = ref(false);
+
+const handlePointerDown = (event) => {
+    swallowPress.value = showUnmutePrompt.value
+        && !!event.target?.closest?.('[data-media-provider]');
+
     if (showUnmutePrompt.value) handleUnmute();
+};
+
+// touchend as well as pointerup: on a coarse pointer the gesture listens on that
+// instead, and the release comes through before pointerup does.
+const handlePressEnd = (event) => {
+    if (!swallowPress.value) return;
+
+    swallowPress.value = false;
+    event.stopPropagation();
 };
 
 const handleToggleStats = () => {
@@ -66,7 +85,13 @@ defineExpose({
 </script>
 
 <template>
-    <div class="stream-player-container" v-if="hlsUrl" @pointerdown.capture="handlePointerDown">
+    <div
+        class="stream-player-container"
+        v-if="hlsUrl"
+        @pointerdown.capture="handlePointerDown"
+        @pointerup.capture="handlePressEnd"
+        @touchend.capture="handlePressEnd"
+    >
         <VideoPlayer
             ref="playerRef"
             :src="hlsUrl"

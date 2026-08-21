@@ -92,12 +92,15 @@ func runImport(argv []string) error {
 	work := flags.String("work", "", "working directory")
 	keep := flags.Bool("keep", false, "keep encoded segments")
 
-	if err := flags.Parse(argv); err != nil {
+	if err := flags.Parse(permute(flags, argv)); err != nil {
 		return err
 	}
 
 	if flags.NArg() != 1 {
-		return errors.New("give exactly one input file")
+		if flags.NArg() == 0 {
+			return errors.New("give an input file")
+		}
+		return fmt.Errorf("give exactly one input file, got %d: %s", flags.NArg(), strings.Join(flags.Args(), ", "))
 	}
 	input := flags.Arg(0)
 
@@ -111,6 +114,14 @@ func runImport(argv []string) error {
 		if err := haveTool(tool); err != nil {
 			return err
 		}
+	}
+
+	// Checked before anything else so a typo in the path is not reported as a decode
+	// failure, which is what ffprobe would call it.
+	if info, err := os.Stat(input); err != nil {
+		return fmt.Errorf("cannot open %s: %w", input, err)
+	} else if info.IsDir() {
+		return fmt.Errorf("%s is a directory", input)
 	}
 
 	probe, err := ffprobe(input)
@@ -279,6 +290,65 @@ func runImport(argv []string) error {
 	fmt.Printf("  watch      %s\n", result.WatchURL)
 
 	return nil
+}
+
+// permute moves operands behind the flags.
+//
+// Go's flag package stops parsing at the first argument that is not a flag, so
+// `import file.mp4 --title X` silently treats --title and its value as operands and the
+// import dies claiming it was given four input files. Every other CLI on the machine
+// accepts flags after the filename, so this reorders rather than teaching people a rule.
+//
+// Whether a flag swallows the next argument is asked of the FlagSet, not guessed: a bool
+// flag does not, `--flag=value` never does, and anything after a bare `--` is an operand
+// whatever it looks like.
+func permute(flags *flag.FlagSet, argv []string) []string {
+	var options, operands []string
+
+	for i := 0; i < len(argv); i++ {
+		arg := argv[i]
+
+		if arg == "--" {
+			operands = append(operands, argv[i+1:]...)
+			break
+		}
+
+		if len(arg) < 2 || arg[0] != '-' {
+			operands = append(operands, arg)
+			continue
+		}
+
+		options = append(options, arg)
+
+		name := strings.TrimLeft(arg, "-")
+		if name, _, found := strings.Cut(name, "="); found {
+			_ = name
+			continue
+		}
+
+		flag := flags.Lookup(name)
+		if flag == nil {
+			// Unknown: let Parse produce its own message rather than guessing at arity.
+			continue
+		}
+
+		if boolFlag, ok := flag.Value.(interface{ IsBoolFlag() bool }); ok && boolFlag.IsBoolFlag() {
+			continue
+		}
+
+		if i+1 < len(argv) {
+			i++
+			options = append(options, argv[i])
+		}
+	}
+
+	if operands == nil {
+		return options
+	}
+
+	// The terminator is put back, so an operand that begins with a dash - an oddly named
+	// file, or one produced by a shell glob - is still read as a filename.
+	return append(append(options, "--"), operands...)
 }
 
 func humanDuration(seconds float64) string {

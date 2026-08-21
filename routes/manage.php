@@ -131,6 +131,7 @@ Route::delete('shows/bulk', [ShowController::class, 'bulkDestroy'])->name('shows
 Route::post('shows/{show}/go-live', [ShowController::class, 'goLive'])->name('shows.go-live');
 Route::post('shows/{show}/end', [ShowController::class, 'endStream'])->name('shows.end');
 Route::post('shows/{show}/cancel', [ShowController::class, 'cancel'])->name('shows.cancel');
+Route::post('shows/{show}/status', [ShowController::class, 'setStatus'])->name('shows.status');
 Route::post('shows/{show}/archive', [ShowController::class, 'archive'])->name('shows.archive');
 Route::post('shows/{show}/unarchive', [ShowController::class, 'unarchive'])->name('shows.unarchive');
 Route::get('shows/{show}/statistics', ShowStatisticsController::class)->name('shows.statistics');

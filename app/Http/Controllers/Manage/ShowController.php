@@ -19,6 +19,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Response;
 
 class ShowController extends Controller
@@ -228,6 +229,26 @@ class ShowController extends Controller
         $show->cancel($validated['reason'] ?? null);
 
         Toast::flashSuccess('Show cancelled', "'{$show->title}' will not be broadcast.");
+
+        return back();
+    }
+
+    /**
+     * The manual override behind the pen next to the status. Every other transition is a
+     * verb with side effects and is offered only from the one status it makes sense in,
+     * which is exactly why this exists: a show cancelled by mistake had no route back.
+     */
+    public function setStatus(Show $show, Request $request): RedirectResponse
+    {
+        $this->authorize('setStatus', $show);
+
+        $validated = $request->validate([
+            'status' => ['required', Rule::in(ShowRequest::STATUSES)],
+        ]);
+
+        $show->setStatus($validated['status']);
+
+        Toast::flashSuccess('Status updated', "'{$show->title}' is now ".$validated['status'].'.');
 
         return back();
     }
@@ -544,6 +565,29 @@ class ShowController extends Controller
                     'type' => 'text',
                     'required' => false,
                     'helper' => 'Shown to viewers on the schedule, e.g. "no stream, technical issue". Leave empty for a plain cancellation.',
+                ]]);
+        }
+
+        if ($user->can('setStatus', $show)) {
+            $actions[] = Action::post('set_status', 'Set Status', route('manage.shows.status', $show))
+                ->icon('pencil')
+                ->tone(Status::IDLE)
+                ->confirm(
+                    'Set status',
+                    'Writes the status directly, without the side effects of the transition buttons. '
+                    .'This is how a show cancelled or ended by mistake is put back.',
+                    'Set status',
+                )
+                ->fields([[
+                    'key' => 'status',
+                    'label' => 'Status',
+                    'type' => 'select',
+                    'required' => true,
+                    'default' => $show->status,
+                    'options' => array_map(
+                        fn (string $status) => ['value' => $status, 'label' => ucfirst($status)],
+                        ShowRequest::STATUSES,
+                    ),
                 ]]);
         }
 

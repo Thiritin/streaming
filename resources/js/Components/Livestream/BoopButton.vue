@@ -6,9 +6,11 @@ import { PawPrint } from 'lucide-vue-next';
  * The boop button under the player. Click it as often as you like; the number
  * is the whole room's, not yours.
  *
- * Clicks are counted locally and posted in batches, and the server broadcasts
- * at most once a second per show, so mashing costs one request per flush
- * instead of one per click.
+ * A click that stands alone goes out at once, so a quiet room sees its paw land
+ * immediately. Keep clicking and the batches grow further apart, up to about one
+ * request a second, so mashing costs a handful of requests rather than one per
+ * click. The server takes a viewer's boops up to a human's pace and trims the
+ * rest, which is what the `accepted` in each reply is for.
  */
 const props = defineProps({
     showId: {
@@ -29,7 +31,12 @@ const props = defineProps({
     },
 });
 
-const FLUSH_DELAY = 700;
+// The first flush of a burst is as good as instant; each one after it waits
+// longer, so a held-down clicker settles at about a request a second.
+const MIN_FLUSH_DELAY = 50;
+const MAX_FLUSH_DELAY = 900;
+const BURST_IDLE = 1500;
+const ECHO_TIMEOUT = 15000;
 const MAX_PER_REQUEST = 50;
 const MAX_PAWS_FROM_OTHERS = 6;
 
@@ -40,6 +47,13 @@ const isTicking = ref(false);
 
 let pending = 0;
 let inFlight = 0;
+// Our own boops come back in the room's broadcast. This is how many of them are
+// still on their way, so the echo does not throw a second paw for each one.
+let awaitingEcho = 0;
+let lastAcceptedAt = 0;
+let flushDelay = MIN_FLUSH_DELAY;
+let lastFlushAt = 0;
+let pausedUntil = 0;
 let flushTimer = null;
 let popTimer = null;
 let tickTimer = null;
@@ -81,32 +95,67 @@ const removePaw = (id) => {
     if (index !== -1) paws.value.splice(index, 1);
 };
 
+const scheduleFlush = () => {
+    if (flushTimer || pending === 0) return;
+
+    const now = Date.now();
+
+    // A burst that has gone quiet starts over at instant.
+    if (now - lastFlushAt > BURST_IDLE) flushDelay = MIN_FLUSH_DELAY;
+
+    flushTimer = setTimeout(flush, Math.max(flushDelay, pausedUntil - now));
+};
+
 const flush = async () => {
     flushTimer = null;
 
     if (pending === 0 || props.disabled) return;
 
+    if (Date.now() < pausedUntil) {
+        scheduleFlush();
+
+        return;
+    }
+
     const sending = Math.min(pending, MAX_PER_REQUEST);
     pending -= sending;
     inFlight += sending;
+    lastFlushAt = Date.now();
+    flushDelay = Math.min(flushDelay * 3 || MIN_FLUSH_DELAY, MAX_FLUSH_DELAY);
 
     try {
         const { data } = await window.axios.post(route('show.boop', props.showSlug), {
             count: sending,
         });
 
+        // Anything over the viewer's budget was trimmed rather than counted.
+        const accepted = data.accepted ?? sending;
+        const dropped = sending - accepted;
+
+        if (dropped > 0) total.value = Math.max(0, total.value - dropped);
+
+        awaitingEcho += accepted;
+        lastAcceptedAt = Date.now();
+
         // The server total already includes this batch; anything clicked while the
         // request was in the air is still only counted locally, so add it back.
         total.value = Math.max(total.value, data.total + pending);
     } catch (error) {
-        // A rejected batch (rate limit, show no longer live) just does not count.
+        // A rejected batch (over the budget, show no longer live) does not count,
+        // and a 429 says how long to sit out before trying again.
         total.value = Math.max(0, total.value - sending);
+
+        const retryAfter = Number(error?.response?.data?.retry_after ?? 0);
+
+        if (error?.response?.status === 429) {
+            pausedUntil = Date.now() + Math.min(Math.max(retryAfter, 1), 60) * 1000;
+            total.value = Math.max(0, total.value - pending);
+            pending = 0;
+        }
     } finally {
         inFlight -= sending;
 
-        if (pending > 0 && !flushTimer) {
-            flushTimer = setTimeout(flush, FLUSH_DELAY);
-        }
+        scheduleFlush();
     }
 };
 
@@ -122,9 +171,7 @@ const boop = () => {
     clearTimeout(popTimer);
     popTimer = setTimeout(() => (isPopping.value = false), 200);
 
-    if (!flushTimer) {
-        flushTimer = setTimeout(flush, FLUSH_DELAY);
-    }
+    scheduleFlush();
 };
 
 const subscribe = () => {
@@ -136,7 +183,18 @@ const subscribe = () => {
 
         // Our own un-acknowledged clicks are on top of the server's number.
         total.value = Math.max(total.value, event.total + pending + inFlight);
-        spawnPaws(Math.min(event.delta, MAX_PAWS_FROM_OTHERS));
+
+        // A broadcast that never arrived would otherwise leave our own boops
+        // outstanding forever and swallow the room's paws with them.
+        if (Date.now() - lastAcceptedAt > ECHO_TIMEOUT) awaitingEcho = 0;
+
+        const mine = Math.min(awaitingEcho, event.delta);
+        awaitingEcho -= mine;
+
+        // We already threw a paw for each of ours when it was clicked.
+        const others = event.delta - mine;
+
+        if (others > 0) spawnPaws(Math.min(others, MAX_PAWS_FROM_OTHERS));
     };
 
     channel.listen('.show.booped', boopListener);
@@ -149,6 +207,7 @@ const unsubscribe = () => {
 
     channel = null;
     boopListener = null;
+    awaitingEcho = 0;
 };
 
 // The digits flash on any change, ours or the room's, so a number that moves on

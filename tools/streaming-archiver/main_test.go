@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -199,4 +200,47 @@ func firstKey(m map[string]int) string {
 		return key
 	}
 	return ""
+}
+
+// The order people actually type: file first, flags after. Go's flag package stops at the
+// first operand, so without permute() this reads --title as a fourth input file.
+func TestFlagsAfterTheFilename(t *testing.T) {
+	flags := flag.NewFlagSet("import", flag.ContinueOnError)
+	title := flags.String("title", "", "")
+	keep := flags.Bool("keep", false, "")
+	preset := flags.String("preset", "", "")
+
+	argv := []string{"opening.mp4", "--title", "Opening Ceremony", "--keep", "--preset=faster"}
+
+	if err := flags.Parse(permute(flags, argv)); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if flags.NArg() != 1 || flags.Arg(0) != "opening.mp4" {
+		t.Fatalf("operands = %v, want [opening.mp4]", flags.Args())
+	}
+	if *title != "Opening Ceremony" {
+		t.Errorf("title = %q", *title)
+	}
+	if !*keep {
+		t.Error("--keep did not survive the reorder")
+	}
+	if *preset != "faster" {
+		t.Errorf("preset = %q", *preset)
+	}
+}
+
+// A bare -- means what follows is a filename even if it starts with a dash.
+func TestDoubleDashEndsFlags(t *testing.T) {
+	flags := flag.NewFlagSet("import", flag.ContinueOnError)
+	title := flags.String("title", "", "")
+
+	argv := []string{"--title", "T", "--", "-weird-name.mp4"}
+
+	if err := flags.Parse(permute(flags, argv)); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if *title != "T" || flags.NArg() != 1 || flags.Arg(0) != "-weird-name.mp4" {
+		t.Fatalf("title=%q operands=%v", *title, flags.Args())
+	}
 }

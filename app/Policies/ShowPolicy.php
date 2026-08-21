@@ -52,6 +52,17 @@ class ShowPolicy
     }
 
     /**
+     * The escape hatch behind the pen next to the status. The transition buttons only ever
+     * offer the move that is correct from where the show is, which leaves no way back out
+     * of a wrong one - a slot cancelled by mistake stayed cancelled. This writes the column
+     * whatever it currently says, so it is not gated on the status.
+     */
+    public function setStatus(User $user, Show $show): bool
+    {
+        return $this->manages($user);
+    }
+
+    /**
      * Filing away is not a status change, so it is allowed whatever the show ended as -
      * except while it is on air, where hiding the running order helps nobody.
      */

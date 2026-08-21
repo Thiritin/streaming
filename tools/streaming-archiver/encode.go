@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,9 +40,17 @@ func ffprobe(path string) (*Probe, error) {
 		path,
 	)
 
+	var complaint bytes.Buffer
+	cmd.Stderr = &complaint
+
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("ffprobe failed: %w", err)
+		// ffprobe's own words: "No such file or directory", "Invalid data found when
+		// processing input", "moov atom not found". Far more use than an exit status.
+		if detail := strings.TrimSpace(complaint.String()); detail != "" {
+			return nil, fmt.Errorf("could not read %s: %s", filepath.Base(path), detail)
+		}
+		return nil, fmt.Errorf("could not read %s: %w", filepath.Base(path), err)
 	}
 
 	var parsed struct {

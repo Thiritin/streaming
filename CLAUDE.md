@@ -185,9 +185,13 @@ Critical background jobs for server management:
 - `PruneServerMetricsJob`: drops `server_metrics` rows past the retention window, daily
 - `UpdateServerViewerCountsJob`: recomputes `servers.viewer_count`, every 30s
 - `CleanupStaleViewerSessionsJob`: closes sessions idle 3+ minutes, every minute
-- `FlushShowBoopsJob`: banks cached boops into `shows.boop_count` and broadcasts one
-  grouped total per show, every 5s. Clicks never write on the request; see
-  `App\Services\BoopCounter`
+- `FlushShowBoopsJob`: banks cached boops into `shows.boop_count` every 5s and
+  broadcasts whatever the request path has not announced yet. Clicks never write to
+  the database on the request; the first boop in a show's one-second broadcast
+  window does go out from the request, so a quiet room is instant and a busy one
+  stays at one message a second. A viewer's boops are budgeted per show in
+  `BoopController` (400 a minute, batches over it trimmed, not refused), which is
+  what keeps an auto-clicker down to a hand's pace. See `App\Services\BoopCounter`
 - Chat command jobs for moderation
 
 The schedule lives in `app/Console/Kernel.php`. There is no scaling job; see

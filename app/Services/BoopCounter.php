@@ -12,10 +12,16 @@ use Illuminate\Support\Facades\Log;
  *
  * A boop is one click of a button people are invited to mash, so the write path
  * has to survive a rate no other feature here produces. Nothing touches the
- * database or the websocket on the request itself: clicks land on a cache
- * counter, and FlushShowBoopsJob turns whatever piled up into one UPDATE and one
- * broadcast per show every few seconds. A room mashing 2000 boops a second costs
- * the same as a room mashing two.
+ * database on the request itself: clicks land on a cache counter, and
+ * FlushShowBoopsJob turns whatever piled up into one UPDATE per show every few
+ * seconds. A room mashing 2000 boops a second costs the same as a room mashing
+ * two.
+ *
+ * The broadcast is the one thing that does not wait for the tick. A quiet room
+ * should see its paw land at once, so the first boop in a broadcast window is
+ * sent out from the request itself; every boop behind it in that window rides
+ * the next one, which under load is the tick. That is one message per second
+ * per show at worst and no wait at all at best.
  *
  * The counter in the cache is the live number and `shows.boop_count` is its
  * durable copy, so a lost cache costs at most one tick's worth of boops.
@@ -27,6 +33,12 @@ class BoopCounter
     private const DIRTY_KEY = 'boops:dirty';
 
     /**
+     * How long one show's broadcast window is. The first boop to claim it is
+     * announced from the request; the rest are grouped behind it.
+     */
+    private const BROADCAST_WINDOW_SECONDS = 1;
+
+    /**
      * Count a batch of boops and return the room's running total.
      */
     public function add(Show $show, int $count): int
@@ -34,7 +46,12 @@ class BoopCounter
         $total = $this->bump($this->totalKey($show->id), $count, (int) $show->boop_count);
 
         $this->bump($this->pendingKey($show->id), $count, 0);
+        $this->bump($this->unannouncedKey($show->id), $count, 0);
         $this->markDirty($show->id);
+
+        if ($this->claimBroadcastWindow($show->id)) {
+            $this->announce($show->id);
+        }
 
         return $total;
     }
@@ -51,41 +68,81 @@ class BoopCounter
     }
 
     /**
-     * Bank what has piled up since the last tick: one UPDATE and one broadcast
-     * per show that saw any boops at all.
+     * Bank what has piled up since the last tick: one UPDATE per show that saw
+     * any boops at all, and one broadcast for whatever the request path did not
+     * already announce.
      */
     public function flush(): void
     {
         $stillDirty = [];
 
         foreach ($this->dirtyShowIds() as $showId) {
-            $delta = (int) Cache::pull($this->pendingKey($showId), 0);
+            // Boops arriving during the flush land on the cache total and on
+            // fresh pending counters, so they are counted on the next tick.
+            $banked = $this->bank($showId);
+            $announced = $this->announce($showId);
 
-            if ($delta <= 0) {
-                continue;
-            }
-
-            // Boops arriving during the flush land on the cache total and on a
-            // fresh pending counter, so they are counted on the next tick.
-            $stillDirty[] = $showId;
-
-            Show::whereKey($showId)->increment('boop_count', $delta);
-
-            $total = max(
-                (int) Show::whereKey($showId)->value('boop_count'),
-                (int) Cache::get($this->totalKey($showId), 0),
-            );
-
-            try {
-                broadcast(new ShowBooped($showId, $total, $delta));
-            } catch (\Throwable $e) {
-                // The boops are banked either way; a websocket server that is down
-                // costs the room its animation, not its count.
-                Log::warning('Boop broadcast failed', ['show_id' => $showId, 'error' => $e->getMessage()]);
+            if ($banked || $announced) {
+                $stillDirty[] = $showId;
             }
         }
 
         Cache::put(self::DIRTY_KEY, $stillDirty, now()->addHours(self::TTL_HOURS));
+    }
+
+    /**
+     * Write what piled up since the last tick to the column.
+     */
+    private function bank(int $showId): bool
+    {
+        $delta = (int) Cache::pull($this->pendingKey($showId), 0);
+
+        if ($delta <= 0) {
+            return false;
+        }
+
+        Show::whereKey($showId)->increment('boop_count', $delta);
+
+        return true;
+    }
+
+    /**
+     * Tell the room about every boop nobody has been told about yet.
+     */
+    private function announce(int $showId): bool
+    {
+        $delta = (int) Cache::pull($this->unannouncedKey($showId), 0);
+
+        if ($delta <= 0) {
+            return false;
+        }
+
+        $total = max(
+            (int) Cache::get($this->totalKey($showId), 0),
+            (int) Show::whereKey($showId)->value('boop_count'),
+        );
+
+        try {
+            broadcast(new ShowBooped($showId, $total, $delta));
+        } catch (\Throwable $e) {
+            // The boops are banked either way; a websocket server that is down
+            // costs the room its animation, not its count.
+            Log::warning('Boop broadcast failed', ['show_id' => $showId, 'error' => $e->getMessage()]);
+        }
+
+        return true;
+    }
+
+    /**
+     * True for the one caller that owns this show's broadcast window.
+     */
+    private function claimBroadcastWindow(int $showId): bool
+    {
+        return Cache::add(
+            "show:{$showId}:boops:window",
+            1,
+            now()->addSeconds(self::BROADCAST_WINDOW_SECONDS),
+        );
     }
 
     /**
@@ -137,5 +194,10 @@ class BoopCounter
     private function pendingKey(int $showId): string
     {
         return "show:{$showId}:boops:pending";
+    }
+
+    private function unannouncedKey(int $showId): string
+    {
+        return "show:{$showId}:boops:unannounced";
     }
 }

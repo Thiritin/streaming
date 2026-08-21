@@ -201,6 +201,30 @@ class Show extends Model
     }
 
     /**
+     * Set the status by hand, from the pen beside it in /manage.
+     *
+     * The transition buttons are one-way - there is no Go Live on a cancelled show - so
+     * this is the only way back out of a status set in error. It writes the column and
+     * lets ShowObserver fire whatever the change means, the same as the buttons do; the
+     * two leftovers it does clean up are a cancellation reason on a show that is no longer
+     * cancelled, and an out-point on a show that is being put back on air.
+     */
+    public function setStatus(string $status)
+    {
+        $changes = ['status' => $status];
+
+        if ($this->status === 'cancelled' && $status !== 'cancelled') {
+            $changes['cancellation_reason'] = null;
+        }
+
+        if ($status === 'live') {
+            $changes['actual_end'] = null;
+        }
+
+        $this->update($changes);
+    }
+
+    /**
      * Put the show out of the way. Archiving is independent of status: a past year's
      * run, cancelled slots included, is filed away without rewriting what happened to it.
      */
