@@ -300,7 +300,6 @@ class StreamController extends Controller
             'olderRecordings' => $olderRecordings,
             'olderTotal' => $olderTotal,
             'featured' => $featured,
-            'featuredChat' => $this->featuredChatExcerpt($user, $featured),
             'primaryChannel' => $primarySource?->name,
             'channels' => $channels,
             'currentTime' => now()->toIso8601String(),
@@ -462,36 +461,6 @@ class StreamController extends Controller
                 'slug' => $upNext->slug,
                 'scheduled_start' => $upNext->scheduled_start,
             ] : null,
-        ];
-    }
-
-    /**
-     * The last few chat lines for the featured channel.
-     *
-     * Chat is keyed by source, not by show, so the excerpt follows the channel and
-     * survives a show ending mid-conversation.
-     */
-    private function featuredChatExcerpt(?User $user, ?array $featured): array
-    {
-        if (! Features::enabledFor('chat', $user)) {
-            return ['source_id' => null, 'messages' => []];
-        }
-
-        if (! $featured || ! ($featured['source_id'] ?? null)) {
-            return ['source_id' => null, 'messages' => []];
-        }
-
-        $messages = Message::with(['user', 'replyTo.user'])
-            ->visibleTo($user)
-            ->where('source_id', $featured['source_id'])
-            ->orderByDesc('id')
-            ->limit((int) config('chat.history.excerpt', 8))
-            ->get()
-            ->reverse();
-
-        return [
-            'source_id' => $featured['source_id'],
-            'messages' => app(MessagePresenter::class)->presentMany($messages),
         ];
     }
 

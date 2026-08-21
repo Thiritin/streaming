@@ -41,8 +41,8 @@
         </span>
       </div>
 
-      <div v-if="isLive && show.started_at" class="absolute top-3 right-3 z-10">
-        <span class="preview-badge tabular-nums">{{ liveDuration }}</span>
+      <div v-if="isLive && startedLabel" class="absolute top-3 right-3 z-10">
+        <span class="preview-badge">{{ startedLabel }}</span>
       </div>
 
       <!-- The scrim is what makes the copy readable over an arbitrary frame of
@@ -52,12 +52,10 @@
       <div class="preview-copy">
         <p class="preview-eyebrow">
           <span v-if="isLive" class="live-pip" aria-hidden="true" />
-          <span class="truncate">{{ channelLabel }}</span>
+          <span class="truncate">{{ statusLabel }}</span>
         </p>
 
         <h3 v-if="withText" class="preview-title">{{ show.title }}</h3>
-
-        <p v-if="withText && show.description" class="preview-description">{{ show.description }}</p>
 
         <!-- Sits under the stretched link on purpose: it reads as the affordance,
              but the whole frame is what actually navigates, so there is no nested
@@ -104,13 +102,14 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import Hls from 'hls.js';
 import TilePlaceholder from '../TilePlaceholder.vue';
 import { useNow } from '@/composables/useNow';
+import { wentLiveAgo } from '@/utils/liveTime';
 import { claimMediaHero } from '@/composables/useMediaHero';
 
 const props = defineProps({
   show: { type: Object, required: true },
   /** `featured` is the big one; `compact` is a side entry point. */
   variant: { type: String, default: 'featured' },
-  /** Title and abstract in the overlay. Off when the page prints them beside it. */
+  /** The show's title in the overlay. Off when the page prints it beside the frame. */
   withText: { type: Boolean, default: false },
   withMute: { type: Boolean, default: false },
   /*
@@ -149,27 +148,16 @@ const playbackLabel = computed(() => {
   return failed.value ? 'Stream unavailable' : 'Connecting';
 });
 
-// The line the request called "EF PRIME LIVE": which channel this is, and whether
-// it is on. The channel name comes from the source, so nothing is hardcoded.
-const channelLabel = computed(() => {
-  const channel = props.show.source || 'Stream';
+// Whether this is on, and nothing else. The name over the picture is the show's,
+// not the channel's: a viewer came for the fursuit parade, not for "prime".
+const statusLabel = computed(() => {
+  if (isLive.value) return 'Live';
+  if (props.show.status === 'starting_soon') return 'Starting soon';
 
-  if (isLive.value) return `${channel} live`;
-  if (props.show.status === 'starting_soon') return `${channel} starting soon`;
-
-  return `${channel} off air`;
+  return 'Off air';
 });
 
-const liveDuration = computed(() => {
-  if (!props.show.started_at) return null;
-  const diff = Math.max(0, Math.floor((now.value - new Date(props.show.started_at)) / 1000));
-  const hours = Math.floor(diff / 3600);
-  const minutes = Math.floor((diff % 3600) / 60);
-  const seconds = diff % 60;
-  const pad = (n) => n.toString().padStart(2, '0');
-
-  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
-});
+const startedLabel = computed(() => wentLiveAgo(props.show.started_at, now.value));
 
 const startsLabel = computed(() => {
   if (!props.show.scheduled_start) return 'Nothing scheduled';
@@ -387,17 +375,6 @@ onUnmounted(() => {
   @apply text-sm;
 }
 
-.preview-description {
-  @apply text-xs sm:text-sm leading-relaxed text-white/75;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.live-preview-compact .preview-description {
-  display: none;
-}
 
 .watch-now {
   @apply mt-1 inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-primary-950 transition-colors;

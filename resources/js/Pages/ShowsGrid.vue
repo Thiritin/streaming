@@ -8,7 +8,6 @@
     <StageHero
       v-if="featured"
       :show="featured"
-      :chat="featuredChat"
       :source-status="featuredSourceStatus"
       :side-shows="sideShows"
     />
@@ -155,7 +154,6 @@ const props = defineProps({
   olderRecordings: { type: Array, default: () => [] },
   olderTotal: { type: Number, default: 0 },
   featured: { type: Object, default: null },
-  featuredChat: { type: Object, default: () => ({ source_id: null, messages: [] }) },
   primaryChannel: { type: String, default: null },
   channels: { type: Array, default: () => [] },
   currentTime: { type: String, required: false },
@@ -263,7 +261,7 @@ const showOlderSection = computed(() =>
 // cannot do is replay what it missed, so pull fresh props back after a gap.
 const resync = () => {
   router.reload({
-    only: ['liveShows', 'startingSoonShows', 'upcomingShows', 'featured', 'featuredChat'],
+    only: ['liveShows', 'startingSoonShows', 'upcomingShows', 'featured'],
   });
 };
 

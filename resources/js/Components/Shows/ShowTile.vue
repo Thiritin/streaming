@@ -104,8 +104,8 @@
           </span>
         </div>
 
-        <!-- Bottom right: Duration -->
-        <div v-if="isLive && show.started_at" class="absolute bottom-2 right-2 z-20">
+        <!-- Bottom right: how long it has been on -->
+        <div v-if="isLive && liveDuration" class="absolute bottom-2 right-2 z-20">
           <span class="duration-badge">
             {{ liveDuration }}
           </span>
@@ -145,6 +145,7 @@ import FaUsersIcon from '../Icons/FaUsersIcon.vue';
 import Hls from 'hls.js';
 import { useNow } from '@/composables/useNow';
 import { claimMediaHero } from '@/composables/useMediaHero';
+import { liveFor } from '@/utils/liveTime';
 
 // Props
 const props = defineProps({
@@ -176,13 +177,13 @@ const isLive = computed(() => props.show.status === 'live');
 const isStartingSoon = computed(() => props.show.status === 'starting_soon');
 const isUpcoming = computed(() => props.show.status === 'scheduled');
 
-const liveDuration = computed(() => formatDuration(props.show.started_at, now.value));
+const liveDuration = computed(() => liveFor(props.show.started_at, now.value));
 const timeUntilStart = computed(() => formatTimeUntil(props.show.scheduled_start, now.value));
 
 // The meta row shows how long a live show has been running, or when a scheduled one starts.
 const metaTime = computed(() => {
-  if (isLive.value && props.show.started_at) {
-    return `live ${liveDuration.value}`;
+  if (isLive.value && liveDuration.value) {
+    return liveDuration.value;
   }
   if ((isUpcoming.value || isStartingSoon.value) && props.show.scheduled_start) {
     return formatScheduledTime(props.show.scheduled_start);
@@ -302,20 +303,6 @@ const formatViewerCount = (count) => {
   return count?.toString() || '0';
 };
 
-const formatDuration = (startTime, reference = Date.now()) => {
-  const start = new Date(startTime);
-  const diff = Math.floor((reference - start) / 1000);
-
-  const hours = Math.floor(diff / 3600);
-  const minutes = Math.floor((diff % 3600) / 60);
-  const seconds = diff % 60;
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  }
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-};
-
 const formatTimeUntil = (scheduledTime, reference = Date.now()) => {
   const scheduled = new Date(scheduledTime);
   const diff = Math.floor((scheduled - reference) / 1000);
@@ -409,7 +396,7 @@ onUnmounted(() => {
 }
 
 .duration-badge {
-  @apply bg-black/80 text-white px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums;
+  @apply bg-black/80 text-white px-1.5 py-0.5 rounded text-[10px] font-medium;
 }
 
 .line-clamp-2 {
