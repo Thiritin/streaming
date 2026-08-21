@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Recording;
 use App\Support\ArchiveLadder;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
@@ -97,11 +98,15 @@ class ArchivePlaylistService
         // input, or a bare string in a seeder) is interpreted in the app timezone, which
         // silently shifts it into an hour bucket that holds no segments. The failure then
         // reads as "no archived segments cover that range" rather than as a timezone bug.
-        $segments = $this->segmentsInRange(
-            $source,
-            CarbonImmutable::parse($recording->starts_at)->utc(),
-            CarbonImmutable::parse($recording->ends_at)->utc(),
-        );
+        $from = CarbonImmutable::parse($recording->starts_at)->utc();
+        $to = CarbonImmutable::parse($recording->ends_at)->utc();
+
+        // A build is an operator asking what the archive holds right now, and it is
+        // rare and slow either way. Read the hours rather than whatever was cached
+        // the last time a viewer played a cut over the same range.
+        $this->forgetIndexes($source, $from, $to);
+
+        $segments = $this->segmentsInRange($source, $from, $to);
 
         if ($segments === []) {
             throw new \RuntimeException(
@@ -125,6 +130,25 @@ class ArchivePlaylistService
             'build_error' => null,
             'playlist_built_at' => now(),
         ])->save();
+
+        // Moving the markers already renders under a different key, but rebuilding the
+        // same range after the archive caught up would otherwise serve the old body.
+        $this->forgetPlaylists($recording);
+    }
+
+    /** Drops the cached playlist bodies for a cut's current range. */
+    public function forgetPlaylists(Recording $recording): void
+    {
+        if (! $recording->starts_at || ! $recording->ends_at) {
+            return;
+        }
+
+        $from = CarbonImmutable::parse($recording->starts_at)->utc();
+        $to = CarbonImmutable::parse($recording->ends_at)->utc();
+
+        foreach ($this->renditions() as $rendition) {
+            Cache::forget($this->mediaCacheKey($recording, $rendition, $from, $to));
+        }
     }
 
     /**
@@ -234,6 +258,18 @@ class ArchivePlaylistService
 
     /**
      * Media playlist for one rendition, with a presigned URL per segment.
+     *
+     * The rendered body is cached, because building it is linear in segments and an
+     * hour of archive is 1800 of them: reading the hour indexes off S3, then minting a
+     * signature per segment, then holding the megabytes of playlist that produces. A
+     * multi-hour cut spent seconds of CPU on that for every viewer and every reload,
+     * which is the wait between pressing play and the first frame.
+     *
+     * Cached under the cut's own markers, so re-trimming a recording renders afresh
+     * rather than serving the old range, and only for half the signatures' lifetime, so
+     * a viewer handed the oldest copy in the cache still has that long before the URLs
+     * inside it lapse. Nothing viewer-specific goes in - the access check stays on the
+     * request, in the controller, ahead of this.
      */
     public function renderMedia(Recording $recording, string $rendition): string
     {
@@ -241,14 +277,44 @@ class ArchivePlaylistService
 
         $source = $this->assertArchiveSource($recording);
 
-        $segments = $this->segmentsInRange(
-            $source,
-            CarbonImmutable::parse($recording->starts_at)->utc(),
-            CarbonImmutable::parse($recording->ends_at)->utc(),
-            $rendition,
-        );
+        $from = CarbonImmutable::parse($recording->starts_at)->utc();
+        $to = CarbonImmutable::parse($recording->ends_at)->utc();
 
-        return $this->renderMediaPlaylist($segments, $source, $rendition);
+        return Cache::remember(
+            $this->mediaCacheKey($recording, $rendition, $from, $to),
+            $this->playlistCacheTtl(),
+            fn () => $this->renderMediaPlaylist(
+                $this->segmentsInRange($source, $from, $to, $rendition),
+                $source,
+                $rendition,
+            ),
+        );
+    }
+
+    protected function mediaCacheKey(
+        Recording $recording,
+        string $rendition,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+    ): string {
+        return sprintf(
+            'archive:playlist:%s:%s:%d:%d',
+            $recording->getKey(),
+            $rendition,
+            $from->getTimestamp(),
+            $to->getTimestamp(),
+        );
+    }
+
+    /**
+     * How long a rendered playlist is reused for.
+     *
+     * Half the signed-URL lifetime, so the oldest copy the cache can hand out still
+     * carries the other half as playable time.
+     */
+    protected function playlistCacheTtl(): int
+    {
+        return max(60, (int) floor(self::signedUrlLifetime() / 2));
     }
 
     public function renditions(): array
@@ -454,11 +520,58 @@ class ArchivePlaylistService
         $name = $rendition === self::SOURCE_RENDITION ? 'index-source.m3u8' : 'index.m3u8';
         $path = self::ARCHIVE_PREFIX."/{$source}/{$hour}/{$name}";
 
-        if (! Storage::disk($this->disk)->exists($path)) {
-            return [];
+        $key = "archive:index:{$path}";
+        $contents = Cache::get($key);
+
+        if ($contents === null) {
+            $contents = $this->fetchHourIndex($path);
+
+            // An absent hour is cached as an empty body, because null is indistinguishable
+            // from a miss and would refetch on every request. It is held for half a minute
+            // and no longer: this is also where a transport failure lands, and an S3 hiccup
+            // must not blank an hour of archive for as long as a real index is kept.
+            $ttl = $contents === null ? 30 : $this->indexCacheTtl($hour);
+            $contents ??= '';
+
+            Cache::put($key, $contents, $ttl);
         }
 
-        return $this->parseHourIndex(Storage::disk($this->disk)->get($path));
+        return $contents === '' ? [] : $this->parseHourIndex($contents);
+    }
+
+    /** The index body, or null when the archive holds no such hour. */
+    protected function fetchHourIndex(string $path): ?string
+    {
+        try {
+            return Storage::disk($this->disk)->get($path);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * An hour the uploader has finished with never changes again, so it is cached for as
+     * long as a playlist built from it is. Recent hours are refetched every half minute:
+     * the hour in progress obviously moves, but so does the one before it while the
+     * uploader catches up, and an hour cached the moment it turned over would otherwise
+     * be served short for half a day - to a cut made right after the show ended, which
+     * is exactly when they are made.
+     */
+    protected function indexCacheTtl(string $hour): int
+    {
+        $settled = CarbonImmutable::now()->utc()->subHours(2)->format('Ymd/H');
+
+        return $hour >= $settled ? 30 : $this->playlistCacheTtl();
+    }
+
+    /** Drops the cached hour indexes a range reads, so the next read goes to the archive. */
+    protected function forgetIndexes(string $source, CarbonImmutable $from, CarbonImmutable $to): void
+    {
+        foreach ($this->hoursBetween($from, $to) as $hour) {
+            foreach (['index.m3u8', 'index-source.m3u8'] as $name) {
+                Cache::forget('archive:index:'.self::ARCHIVE_PREFIX."/{$source}/{$hour}/{$name}");
+            }
+        }
     }
 
     /**

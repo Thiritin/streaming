@@ -6,13 +6,8 @@
         <div class="sm:px-4 lg:px-8 sm:pt-8">
             <div class="max-w-6xl mx-auto">
                 <div class="relative bg-black sm:rounded-lg overflow-hidden sm:shadow-2xl">
-                    <!-- Loading Spinner -->
-                    <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-black/80 z-10">
-                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
-                    </div>
-
                     <!-- Error State -->
-                    <div v-if="error && !loading" class="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-10">
+                    <div v-if="error" class="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-10">
                         <FaVideoSlashIcon class="w-16 h-16 text-red-500 mb-4" />
                         <p class="text-white text-lg mb-4">{{ errorMessage }}</p>
                         <button
@@ -121,7 +116,6 @@ const props = defineProps({
     }
 });
 
-const loading = ref(true);
 const error = ref(false);
 const errorMessage = ref('');
 
@@ -130,20 +124,17 @@ const errorMessage = ref('');
 const playerKey = ref(0);
 
 const handleCanPlay = () => {
-    loading.value = false;
     error.value = false;
 };
 
 const handleError = (detail) => {
     console.error('Recording playback error:', detail);
-    loading.value = false;
     error.value = true;
     errorMessage.value = detail?.message || 'This recording could not be played.';
 };
 
 const retryPlayback = () => {
     error.value = false;
-    loading.value = true;
     playerKey.value += 1;
 };
 

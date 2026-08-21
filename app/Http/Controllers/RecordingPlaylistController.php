@@ -87,9 +87,12 @@ class RecordingPlaylistController extends Controller
     {
         return response($body, 200, [
             'Content-Type' => 'application/vnd.apple.mpegurl',
-            // The URLs inside are signed and time-limited, so a cached copy would hand
-            // out credentials and would also outlive them.
-            'Cache-Control' => 'private, no-store',
+            // Private, because the URLs inside are signed: a shared cache would hand out
+            // credentials to whoever asked next. The viewer's own browser may keep it
+            // briefly - a reload or a second player on the same page then skips several
+            // megabytes of playlist - but far short of the signatures' lifetime, so a
+            // re-trimmed recording is never played from a stale copy for long.
+            'Cache-Control' => 'private, max-age=300',
         ]);
     }
 }
