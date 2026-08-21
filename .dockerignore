@@ -1,0 +1,70 @@
+# Build context for the app image. The production stage ends in `COPY . /app/`, so
+# anything reachable from here is baked into a published image - including files git
+# never sees. Keep this list ahead of .gitignore rather than derived from it: a CI build
+# starts from a clean checkout, but a `docker build .` run in someone's working tree does
+# not, and that is the copy that would ship a live secret.
+#
+# The directories the app needs at runtime are kept even where their contents are not:
+# every storage/ and bootstrap/cache/ directory holds a .gitignore, which is what carries
+# the directory across. Dropping a directory outright breaks `artisan package:discover`
+# during the build, or booting afterwards.
+
+# Secrets. .env.build is the exception - the vite stage copies it in as its .env.
+.env
+.env.*
+!.env.build
+.env.backup
+dns.key
+auth.json
+storage/*.key
+install.sh
+
+# Version control. Full history in a shipped image, for nothing. .github itself stays:
+# the base stage copies its php ini files out of .github/docker.
+.git
+.gitattributes
+.github/workflows
+
+# Dependencies. vendor/ is the important one: the production stage installs it with
+# --no-dev at an earlier layer, and copying a working tree's vendor/ over the top puts
+# the dev dependencies back and invalidates the layer on every build.
+vendor
+node_modules
+companion/*/node_modules
+companion/*/pkg
+
+# Build output. public/build arrives from the vite stage, after this copy.
+public/build
+public/hot
+public/storage
+public/dev-streams
+
+# Generated at build or run time.
+bootstrap/cache/*.php
+storage/app/public/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/testing/*
+storage/framework/views/*
+storage/logs/*
+!**/.gitignore
+
+# Logs and local scratch.
+logs
+*.log
+.phpunit.cache
+.phpunit.result.cache
+.playwright-mcp
+
+# Not part of the running app.
+docs
+docker
+docker-compose*.yml
+.editorconfig
+Homestead.json
+Homestead.yaml
+.fleet
+.idea
+.vscode
+*.png
+*.jpg
