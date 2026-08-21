@@ -40,14 +40,14 @@ class TelegramTest extends TestCase
 
     public function test_the_list_shows_what_each_chat_is_set_to_receive(): void
     {
-        $this->chat(['notify_shows' => true, 'interactive' => true]);
+        $this->chat(['notify_shows' => true, 'notify_sources' => true, 'interactive' => true]);
 
         $this->actingAs($this->admin)
             ->get(route('manage.telegram.index'))
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('Manage/Telegram/Index')
-                ->where('table.rows.0.cells.receives', 'Shows')
+                ->where('table.rows.0.cells.receives', 'Shows, Sources')
                 ->where('table.rows.0.cells.mode.label', 'Actions')
                 ->where('bot.configured', false));
     }
@@ -114,6 +114,8 @@ class TelegramTest extends TestCase
                 'enabled' => true,
                 'interactive' => true,
                 'notify_shows' => true,
+                'notify_recordings' => true,
+                'notify_sources' => true,
                 'notify_feedback' => false,
                 'source_ids' => [$source->id],
             ])
@@ -122,6 +124,9 @@ class TelegramTest extends TestCase
         $chat->refresh();
 
         $this->assertTrue($chat->interactive);
+        $this->assertTrue($chat->notify_recordings);
+        $this->assertTrue($chat->notify_sources);
+        $this->assertFalse($chat->notify_feedback);
         $this->assertSame([$source->id], $chat->source_ids);
         $this->assertTrue($chat->coversSource($source->id));
         $this->assertFalse($chat->coversSource($source->id + 1));

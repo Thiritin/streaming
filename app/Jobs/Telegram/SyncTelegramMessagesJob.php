@@ -3,6 +3,7 @@
 namespace App\Jobs\Telegram;
 
 use App\Models\FeedbackReport;
+use App\Models\Recording;
 use App\Models\Show;
 use App\Models\TelegramMessage;
 use App\Services\Telegram\TelegramNotifier;
@@ -34,6 +35,16 @@ class SyncTelegramMessagesJob implements ShouldQueue
 
             if ($show) {
                 $notifier->syncShow($show);
+            }
+
+            return;
+        }
+
+        if ($this->kind === TelegramMessage::KIND_RECORDING) {
+            $recording = Recording::with(['show', 'source'])->find($this->subjectId);
+
+            if ($recording) {
+                $notifier->syncRecording($recording);
             }
 
             return;

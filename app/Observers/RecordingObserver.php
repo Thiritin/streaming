@@ -3,7 +3,11 @@
 namespace App\Observers;
 
 use App\Jobs\ProcessRecordingJob;
+use App\Jobs\Telegram\SendRecordingAlertJob;
+use App\Jobs\Telegram\SyncTelegramMessagesJob;
 use App\Models\Recording;
+use App\Models\TelegramMessage;
+use App\Support\Features;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
@@ -20,6 +24,12 @@ class RecordingObserver
             Log::info("Dispatching ProcessRecordingJob for newly created recording {$recording->id}");
             ProcessRecordingJob::dispatch($recording)->onQueue('recordings');
         }
+
+        // However it appeared - cut from a show, imported with the archiver, created by
+        // hand - the chats that asked for recordings hear about it once.
+        if (Features::telegram()) {
+            SendRecordingAlertJob::dispatch($recording->id);
+        }
     }
 
     /**
@@ -33,6 +43,12 @@ class RecordingObserver
                 Log::info("Dispatching ProcessRecordingJob for updated recording {$recording->id} (m3u8_url changed)");
                 ProcessRecordingJob::dispatch($recording)->onQueue('recordings');
             }
+        }
+
+        // Only the two things a chat is looking at. Processing writes duration,
+        // thumbnails and build state constantly, and none of that is worth an edit.
+        if (Features::telegram() && ($recording->wasChanged('is_published') || $recording->wasChanged('title'))) {
+            SyncTelegramMessagesJob::dispatch(TelegramMessage::KIND_RECORDING, $recording->id);
         }
 
         // Also dispatch if explicitly requested (e.g., force regenerate thumbnail)

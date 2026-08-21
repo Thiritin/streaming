@@ -14,6 +14,8 @@ class TelegramMessage extends Model
 
     public const KIND_FEEDBACK = 'feedback';
 
+    public const KIND_RECORDING = 'recording';
+
     public const STATE_UPCOMING = 'upcoming';
 
     public const STATE_LIVE = 'live';

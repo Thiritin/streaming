@@ -3,6 +3,7 @@
 namespace App\Services\Telegram;
 
 use App\Models\FeedbackReport;
+use App\Models\Recording;
 use App\Models\Show;
 use App\Models\TelegramChat;
 use App\Models\TelegramLinkCode;
@@ -257,6 +258,7 @@ class TelegramUpdateHandler
         match ($kind) {
             's' => $this->showAction($callbackId, $chat, $record, (string) $action, (int) $id, $actor),
             'f' => $this->feedbackAction($callbackId, (string) $action, (int) $id, $actor),
+            'r' => $this->recordingAction($callbackId, (string) $action, (int) $id, $actor, $chat),
             default => $this->client->answerCallback($callbackId, 'Unknown button.'),
         };
     }
@@ -384,6 +386,50 @@ class TelegramUpdateHandler
 
         $this->client->answerCallback($callbackId, 'Resolved.');
         $this->notifier->syncFeedback($report->refresh());
+    }
+
+    /**
+     * Publishing from the chat. No confirmation: publishing is reversible in a click and
+     * the worst case is a recording being visible a few minutes early.
+     */
+    private function recordingAction(
+        string $callbackId,
+        string $action,
+        int $recordingId,
+        string $actor,
+        TelegramChat $chat,
+    ): void {
+        $recording = Recording::with(['show', 'source'])->find($recordingId);
+
+        if (! $recording) {
+            $this->client->answerCallback($callbackId, 'That recording is gone.', alert: true);
+
+            return;
+        }
+
+        if ($action !== 'publish') {
+            $this->client->answerCallback($callbackId, 'Unknown button.');
+
+            return;
+        }
+
+        if ($recording->is_published) {
+            $this->client->answerCallback($callbackId, 'Already published.');
+            $this->notifier->syncRecording($recording);
+
+            return;
+        }
+
+        $recording->forceFill(['is_published' => true])->save();
+
+        Log::info('Telegram published a recording', [
+            'recording_id' => $recording->id,
+            'chat_id' => $chat->chat_id,
+            'actor' => $actor,
+        ]);
+
+        $this->client->answerCallback($callbackId, 'Published.');
+        $this->notifier->syncRecording($recording->refresh());
     }
 
     /**

@@ -230,10 +230,12 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   `App\Support\ImportKey::current()` and never `config('stream.import_key')` directly -
   same rule as the control key, and `RECORDING_API_KEY` does not open it
 - Telegram: the installation's bot and the chats it posts into. One token in Settings >
-  Telegram registers the webhook; each chat then decides what it hears (shows, feedback,
-  which sources) and whether its messages carry buttons. A show message starts as Start,
+  Telegram registers the webhook; each chat then decides what it hears (shows, recordings,
+  source alerts, feedback, and which sources those cover) and whether its messages carry
+  buttons. A show message starts as Start,
   becomes End with a confirmation step, and is kept in step whoever changed the show;
-  a report message carries Resolve. Groups link with `/link <code>`, direct messages by
+  a report message carries Resolve and a draft recording carries Publish. Source alerts are
+  a log: posted, never edited, and suppressed when the state is one the chat already holds. Groups link with `/link <code>`, direct messages by
   chat id. A forum group's topics each link as a row of their own, so one group can split
   shows and reports across topics. See docs/admin/telegram.md. Administrators only, since an interactive chat can
   take a show on and off air

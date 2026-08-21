@@ -25,6 +25,8 @@ const form = useForm({
   enabled: props.chat.enabled,
   interactive: props.chat.interactive,
   notify_shows: props.chat.notify_shows,
+  notify_recordings: props.chat.notify_recordings,
+  notify_sources: props.chat.notify_sources,
   notify_feedback: props.chat.notify_feedback,
   source_ids: [...props.chat.source_ids],
 });
@@ -82,6 +84,20 @@ const submit = () => form.put(route('manage.telegram.update', props.chat.id));
         />
 
         <FormField
+          v-model="form.notify_recordings"
+          type="checkbox"
+          label="Recordings"
+          helper="One message when a recording appears - cut, imported or created by hand - rewritten when it is published."
+        />
+
+        <FormField
+          v-model="form.notify_sources"
+          type="checkbox"
+          label="Source alerts"
+          helper="A line whenever a source goes online, offline or into error. A log, so nothing here is editable or pressable."
+        />
+
+        <FormField
           v-model="form.notify_feedback"
           type="checkbox"
           label="Feedback"
@@ -100,14 +116,14 @@ const submit = () => form.put(route('manage.telegram.update', props.chat.id));
 
       <FormSection
         title="Buttons"
-        description="An info-only chat gets the text and a link into this panel. With buttons, the message itself starts and ends the show."
+        description="An info-only chat gets the text and a link into this panel. With buttons, the message itself starts and ends the show, publishes a recording and resolves a report."
       >
         <FormField
           v-model="form.interactive"
           type="checkbox"
           label="Allow actions from this chat"
           :error="form.errors.interactive"
-          helper="Anyone who can read this chat can press them. Ending a show asks for a confirmation first; starting one does not."
+          helper="Anyone who can read this chat can press them. Ending a show asks for a confirmation first; starting one, publishing a recording and resolving a report do not."
         />
       </FormSection>
 

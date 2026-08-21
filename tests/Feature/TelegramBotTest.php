@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Enum\SourceStatusEnum;
 use App\Jobs\Telegram\NotifyUpcomingShowsJob;
 use App\Models\BrandingSetting;
 use App\Models\FeedbackReport;
+use App\Models\Recording;
 use App\Models\Role;
 use App\Models\Show;
 use App\Models\Source;
@@ -461,6 +463,146 @@ class TelegramBotTest extends TestCase
 
             return true;
         });
+    }
+
+    public function test_a_recording_is_announced_and_rewritten_when_published(): void
+    {
+        $chat = $this->chat(['notify_recordings' => true]);
+        $source = Source::factory()->create();
+
+        $recording = Recording::create([
+            'source_id' => $source->id,
+            'title' => 'Opening Ceremony',
+            'date' => now(),
+            'status' => 'draft',
+            'is_published' => false,
+        ]);
+
+        $message = TelegramMessage::where('kind', TelegramMessage::KIND_RECORDING)->sole();
+
+        $this->assertSame($recording->id, $message->subject_id);
+        $this->assertSame('draft', $message->state);
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), '/sendMessage')) {
+                return false;
+            }
+
+            $this->assertStringContainsString('Opening Ceremony', $request['text']);
+            $this->assertStringContainsString('Draft', $request['text']);
+            $this->assertStringContainsString('Publish', $request['reply_markup']);
+
+            return true;
+        });
+
+        $recording->forceFill(['is_published' => true])->save();
+
+        $this->assertSame('published', $message->refresh()->state);
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), '/editMessageText')) {
+                return false;
+            }
+
+            $this->assertStringContainsString('Published.', $request['text']);
+            $this->assertStringContainsString('Watch', $request['reply_markup']);
+            $this->assertStringNotContainsString('📢 Publish', $request['reply_markup']);
+
+            return true;
+        });
+    }
+
+    public function test_the_publish_button_publishes_the_recording(): void
+    {
+        $chat = $this->chat(['notify_recordings' => true]);
+        $recording = Recording::create([
+            'source_id' => Source::factory()->create()->id,
+            'title' => 'Closing Ceremony',
+            'date' => now(),
+            'status' => 'draft',
+            'is_published' => false,
+        ]);
+
+        $message = TelegramMessage::where('kind', TelegramMessage::KIND_RECORDING)->sole();
+
+        $this->deliver($this->press("r:publish:{$recording->id}", $message->message_id))->assertOk();
+
+        $this->assertTrue($recording->refresh()->is_published);
+        $this->assertSame('published', $message->refresh()->state);
+    }
+
+    public function test_processing_a_recording_does_not_touch_the_chat(): void
+    {
+        $this->chat(['notify_recordings' => true]);
+        $recording = Recording::create([
+            'source_id' => Source::factory()->create()->id,
+            'title' => 'Panel',
+            'date' => now(),
+            'status' => 'draft',
+            'is_published' => false,
+        ]);
+
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 900]])]);
+
+        // What ProcessRecordingJob writes back. None of it is worth an edit.
+        $recording->forceFill(['duration' => 3600, 'thumbnail_path' => 'a/b.jpg', 'views' => 5])->save();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_a_source_going_online_and_offline_is_logged(): void
+    {
+        $chat = $this->chat(['notify_sources' => true]);
+        $source = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE]);
+
+        $source->update(['status' => SourceStatusEnum::ONLINE]);
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), '/sendMessage')) {
+                return false;
+            }
+
+            $this->assertStringContainsString('is online', $request['text']);
+
+            return true;
+        });
+
+        // A log, not a conversation: nothing is kept to edit later.
+        $this->assertDatabaseCount('telegram_messages', 0);
+
+        $source->update(['status' => SourceStatusEnum::ERROR]);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/sendMessage')
+            && str_contains($request['text'], 'is in error'));
+    }
+
+    public function test_a_status_the_chat_already_holds_is_not_posted_twice(): void
+    {
+        $this->chat(['notify_sources' => true]);
+        $source = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE]);
+
+        $source->update(['status' => SourceStatusEnum::ONLINE]);
+        $sent = count(Http::recorded(fn ($request) => str_contains($request->url(), '/sendMessage')));
+
+        // Written again by a callback that changed nothing the chat has not been told.
+        $source->update(['status' => SourceStatusEnum::OFFLINE]);
+        $source->update(['status' => SourceStatusEnum::ONLINE]);
+        $source->forceFill(['status' => SourceStatusEnum::ONLINE])->save();
+
+        $after = count(Http::recorded(fn ($request) => str_contains($request->url(), '/sendMessage')));
+
+        $this->assertSame($sent + 2, $after);
+    }
+
+    public function test_a_chat_only_hears_about_its_own_sources_for_alerts(): void
+    {
+        $mine = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE]);
+        $theirs = Source::factory()->create(['status' => SourceStatusEnum::OFFLINE]);
+        $this->chat(['notify_sources' => true, 'source_ids' => [$mine->id]]);
+
+        $theirs->update(['status' => SourceStatusEnum::ONLINE]);
+
+        Http::assertNothingSent();
     }
 
     public function test_a_show_that_ends_unannounced_stays_quiet(): void

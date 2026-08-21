@@ -137,6 +137,8 @@ class TelegramController extends Controller
                 'interactive' => $telegram->interactive,
                 'notify_feedback' => $telegram->notify_feedback,
                 'notify_shows' => $telegram->notify_shows,
+                'notify_recordings' => $telegram->notify_recordings,
+                'notify_sources' => $telegram->notify_sources,
                 'source_ids' => array_map('intval', $telegram->source_ids ?? []),
                 'last_error' => $telegram->last_error,
                 'last_message' => $telegram->last_message_at?->diffForHumans(),
@@ -158,6 +160,8 @@ class TelegramController extends Controller
             'interactive' => ['boolean'],
             'notify_feedback' => ['boolean'],
             'notify_shows' => ['boolean'],
+            'notify_recordings' => ['boolean'],
+            'notify_sources' => ['boolean'],
             'source_ids' => ['nullable', 'array'],
             'source_ids.*' => ['integer', 'exists:sources,id'],
         ]);
@@ -167,6 +171,8 @@ class TelegramController extends Controller
             'enabled' => (bool) ($validated['enabled'] ?? false),
             'interactive' => (bool) ($validated['interactive'] ?? false),
             'notify_feedback' => (bool) ($validated['notify_feedback'] ?? false),
+            'notify_recordings' => (bool) ($validated['notify_recordings'] ?? false),
+            'notify_sources' => (bool) ($validated['notify_sources'] ?? false),
             'notify_shows' => (bool) ($validated['notify_shows'] ?? false),
             'source_ids' => array_values(array_map('intval', $validated['source_ids'] ?? [])),
             // Re-enabling is how an operator says the reason it was switched off is
@@ -273,6 +279,8 @@ class TelegramController extends Controller
     {
         $receives = array_filter([
             $chat->notify_shows ? 'Shows' : null,
+            $chat->notify_recordings ? 'Recordings' : null,
+            $chat->notify_sources ? 'Sources' : null,
             $chat->notify_feedback ? 'Feedback' : null,
         ]);
 

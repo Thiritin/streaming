@@ -4,7 +4,9 @@ namespace App\Observers;
 
 use App\Enum\SourceStatusEnum;
 use App\Events\SourceStatusChangedEvent;
+use App\Jobs\Telegram\SendSourceStatusAlertJob;
 use App\Models\Source;
+use App\Support\Features;
 use Illuminate\Support\Facades\Log;
 
 class SourceObserver
@@ -60,6 +62,13 @@ class SourceObserver
 
             // Broadcast the status change event
             broadcast(new SourceStatusChangedEvent($source, $previousStatus));
+
+            // Hung off the model rather than the broadcast event, because the SRS
+            // callbacks broadcast that event themselves as well - one status change has
+            // to be one line in the chat.
+            if (Features::telegram()) {
+                SendSourceStatusAlertJob::dispatch($source->id, $previousStatus);
+            }
 
             // Clean up the static storage
             unset(self::$previousStatuses[$source->id]);

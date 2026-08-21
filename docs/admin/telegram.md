@@ -60,6 +60,11 @@ to it, so send the bot a `/start` first, then use **Send test post** on the row 
 
 - **Shows** - one message a few minutes before each slot, which then tracks the show through
   live and ended.
+- **Recordings** - one message when a recording appears, however it appeared: cut from a show,
+  imported with the archiver, or created by hand. The same message is rewritten when it is
+  published, so a cut that is drafted and published ten minutes later is one line rather than
+  two. Processing - duration, thumbnails, playlist rebuilds - never touches the chat.
+- **Source alerts** - a line whenever a source goes online, offline or into error.
 - **Feedback** - every report a viewer sends in, with the browser and the stream it happened on.
 - **Sources** - nothing ticked means every source. Tick some to make it a single room's chat.
 - **Allow actions from this chat** - whether the messages carry buttons at all.
@@ -77,6 +82,10 @@ started a minute early is a smaller problem than a room full of people watching 
 A feedback message carries **✅ Resolve**, which closes the report and rewrites the message to
 say who did it. Resolving it in `/manage` instead rewrites the same message.
 
+A draft recording carries **📢 Publish**, with no confirmation - publishing is reversible in a
+click, and the worst case is a recording being visible a few minutes early. The message then
+reads as published and offers the public link beside the panel one.
+
 Messages are kept in step whoever made the change. A show started in the control room, on a
 Companion surface, by auto mode, or cancelled in the planner rewrites every chat that was told
 about it - the message turns red, reads "Live since 14:02", and swaps its Start button for
@@ -89,6 +98,17 @@ rather than posting history nobody was following.
 
 This runs through the queue, so a worker has to be processing (Horizon in production,
 `php artisan queue:work` locally) for the messages to be rewritten.
+
+## Source alerts
+
+The one category that is a log rather than a conversation. A source going online, offline or
+into error is a moment: it is posted, never edited, and carries no buttons beyond a link into
+the panel. Source alerts respect the chat's source list, so a hall group hears about its own
+camera and nothing else.
+
+An encoder that drops and reconnects writes two lines, which is the honest account of what
+happened. What is suppressed is a state the chat has already been told: a status written again
+without changing - by an SRS callback, a health check, or a save in the panel - posts nothing.
 
 ## Who can press them
 

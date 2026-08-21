@@ -2,11 +2,15 @@
 
 namespace App\Services\Telegram;
 
+use App\Enum\SourceStatusEnum;
 use App\Models\FeedbackReport;
+use App\Models\Recording;
 use App\Models\Show;
+use App\Models\Source;
 use App\Models\TelegramChat;
 use App\Models\TelegramMessage;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * What the bot actually says, and to whom.
@@ -140,6 +144,129 @@ class TelegramNotifier
         }
     }
 
+    /**
+     * Announce a recording that has just appeared: cut from a show, imported with the
+     * archiver, or created by hand.
+     *
+     * One message per chat, which is then rewritten when the recording is published, so
+     * a cut that is drafted and published ten minutes later is one line in the chat
+     * rather than two.
+     */
+    public function recordingCreated(Recording $recording): void
+    {
+        if (! $this->client->enabled()) {
+            return;
+        }
+
+        $already = TelegramMessage::where('kind', TelegramMessage::KIND_RECORDING)
+            ->where('subject_id', $recording->id)
+            ->pluck('telegram_chat_id')
+            ->all();
+
+        foreach ($this->chatsFor('notify_recordings', $recording->source_id) as $chat) {
+            if (in_array($chat->id, $already, true)) {
+                continue;
+            }
+
+            $messageId = $this->client->send(
+                $chat,
+                $this->recordingText($recording),
+                $this->recordingKeyboard($chat, $recording),
+            );
+
+            if ($messageId !== null) {
+                TelegramMessage::create([
+                    'telegram_chat_id' => $chat->id,
+                    'message_id' => $messageId,
+                    'kind' => TelegramMessage::KIND_RECORDING,
+                    'subject_id' => $recording->id,
+                    'state' => $recording->is_published ? 'published' : 'draft',
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Bring the posted messages for a recording back in line with it - published here,
+     * published from the chat, or renamed in between.
+     */
+    public function syncRecording(Recording $recording): void
+    {
+        if (! $this->client->enabled()) {
+            return;
+        }
+
+        // Published without ever having been announced - imported straight to published,
+        // or the flag turned on for something older than the bot. Post it now.
+        if ($recording->is_published) {
+            $this->recordingCreated($recording);
+        }
+
+        foreach ($this->messagesFor(TelegramMessage::KIND_RECORDING, $recording->id) as $message) {
+            $this->client->edit(
+                $message->chat,
+                $message->message_id,
+                $this->recordingText($recording),
+                $this->recordingKeyboard($message->chat, $recording),
+            );
+
+            $message->forceFill(['state' => $recording->is_published ? 'published' : 'draft'])->save();
+        }
+    }
+
+    public function recordingText(Recording $recording): string
+    {
+        $lines = [];
+
+        $lines[] = ($recording->is_published ? '📼 <b>' : '✂️ <b>').$this->escape($recording->title).'</b>';
+
+        $where = array_filter([
+            $recording->source?->name,
+            $recording->show?->title !== $recording->title ? $recording->show?->title : null,
+        ]);
+
+        $meta = array_filter([
+            $where === [] ? null : implode(' · ', array_map(fn ($part) => $this->escape($part), $where)),
+            $recording->formatted_duration ?: null,
+            $recording->date?->timezone(config('app.timezone'))->format('D d M, H:i'),
+        ]);
+
+        if ($meta !== []) {
+            $lines[] = implode(' · ', $meta);
+        }
+
+        $lines[] = $recording->is_published
+            ? 'Published.'
+            : 'Draft. Not visible in the archive yet.';
+
+        if ($recording->hasAccessRestriction()) {
+            $lines[] = '🔒 Restricted to '.$this->escape(implode(', ', $recording->required_roles ?? []));
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @return array<int, array<int, array<string, string>>>
+     */
+    public function recordingKeyboard(TelegramChat $chat, Recording $recording): array
+    {
+        $rows = [];
+
+        if ($chat->interactive && ! $recording->is_published) {
+            $rows[] = [['text' => '📢 Publish', 'callback_data' => "r:publish:{$recording->id}"]];
+        }
+
+        $rows[] = array_values(array_filter([
+            $recording->is_published
+                ? ['text' => 'Watch', 'url' => route('recordings.show', $recording)]
+                : null,
+            ['text' => 'Open in panel', 'url' => route('manage.recordings.edit', $recording)],
+        ]));
+
+        return $rows;
+    }
+
     public function syncFeedback(FeedbackReport $report): void
     {
         if (! $this->client->enabled()) {
@@ -156,6 +283,60 @@ class TelegramNotifier
 
             $message->forceFill(['state' => $report->status])->save();
         }
+    }
+
+    /**
+     * A source changing state, as a log line.
+     *
+     * Posted and never edited: unlike a show or a recording there is nothing to press and
+     * nothing that later becomes untrue. An encoder that drops and reconnects still writes
+     * two lines, which is the honest account of what happened - what is suppressed is only
+     * a change that ends where the chat already thinks the source is, so a status written
+     * twice does not read as a second outage.
+     */
+    public function sourceStatusChanged(Source $source, ?string $previous): void
+    {
+        if (! $this->client->enabled()) {
+            return;
+        }
+
+        $status = $source->status instanceof SourceStatusEnum ? $source->status->value : (string) $source->status;
+        $key = 'telegram_source_status_'.$source->id;
+
+        if (Cache::get($key) === $status) {
+            return;
+        }
+
+        Cache::put($key, $status, now()->addDay());
+
+        foreach ($this->chatsFor('notify_sources', $source->id) as $chat) {
+            $this->client->send($chat, $this->sourceText($source, $status, $previous), [[
+                ['text' => 'Open in panel', 'url' => route('manage.sources.edit', $source)],
+            ]]);
+        }
+    }
+
+    public function sourceText(Source $source, string $status, ?string $previous): string
+    {
+        $icon = match ($status) {
+            SourceStatusEnum::ONLINE->value => '🟢',
+            SourceStatusEnum::ERROR->value => '🔴',
+            default => '⚪️',
+        };
+
+        $label = match ($status) {
+            SourceStatusEnum::ONLINE->value => 'is online',
+            SourceStatusEnum::ERROR->value => 'is in error',
+            default => 'went offline',
+        };
+
+        $line = $icon.' <b>'.$this->escape($source->name).'</b> '.$label;
+
+        if ($previous !== null && $previous !== $status) {
+            $line .= ' (was '.$this->escape($previous).')';
+        }
+
+        return $line."\n".now()->timezone(config('app.timezone'))->format('D d M, H:i:s');
     }
 
     /**
@@ -313,6 +494,14 @@ class TelegramNotifier
 
         if ($chat->notify_shows) {
             $parts[] = 'shows';
+        }
+
+        if ($chat->notify_sources) {
+            $parts[] = 'source alerts';
+        }
+
+        if ($chat->notify_recordings) {
+            $parts[] = 'recordings';
         }
 
         if ($chat->notify_feedback) {
