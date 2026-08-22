@@ -153,6 +153,16 @@ return [
                     'rules' => ['nullable', 'string', 'max:2048'],
                 ],
                 [
+                    'key' => 'favicon_path',
+                    'label' => 'Tab icon',
+                    'type' => 'image',
+                    'purpose' => 'branding_favicon',
+                    'accept' => 'image/png,image/svg+xml,image/webp,image/x-icon,image/vnd.microsoft.icon',
+                    'preview_fit' => 'contain',
+                    'helper' => 'Square PNG, SVG or ICO. Left empty the logo is used, and with no logo the bundled mark.',
+                    'rules' => ['nullable', 'string', 'max:2048'],
+                ],
+                [
                     'key' => 'login_background_image',
                     'label' => 'Login background image',
                     'type' => 'image',

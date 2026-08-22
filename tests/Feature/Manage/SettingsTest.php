@@ -7,6 +7,7 @@ use App\Services\BrandingService;
 use App\Support\ControlKey;
 use App\Support\Manage\Settings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\CreatesManageUsers;
@@ -154,6 +155,36 @@ class SettingsTest extends TestCase
         $this->assertSame('Testcon', BrandingSetting::getValue('convention_name'));
         $this->assertSame('#ff8800', BrandingSetting::getValue('primary_color'));
         $this->assertSame('Watch live', app(BrandingService::class)->get('login_headline'));
+    }
+
+    /**
+     * The tab icon falls back to the logo, and to nothing when neither is set - the
+     * layout then serves the bundled mark. An installation that uploads only a logo
+     * should not have to upload it twice to get it in the tab.
+     */
+    public function test_the_tab_icon_falls_back_to_the_logo(): void
+    {
+        Storage::fake('s3');
+
+        $branding = app(BrandingService::class);
+
+        $this->assertNull($branding->faviconUrl());
+
+        $this->save('look', ['logo_path' => 'branding/logo.png']);
+        $this->assertStringContainsString('branding/logo.png', $branding->faviconUrl());
+
+        $this->save('look', ['favicon_path' => 'branding/tab-icon.png']);
+        $this->assertStringContainsString('branding/tab-icon.png', $branding->faviconUrl());
+    }
+
+    public function test_the_tab_icon_is_offered_in_the_look_pane(): void
+    {
+        $field = collect(app(Settings::class)->group('look')['fields'])
+            ->firstWhere('key', 'favicon_path');
+
+        $this->assertNotNull($field, 'The look pane must offer a tab icon upload.');
+        $this->assertSame('branding_favicon', $field['purpose']);
+        $this->assertArrayHasKey('branding_favicon', config('manage.uploads'));
     }
 
     public function test_saving_one_pane_leaves_the_others_alone(): void

@@ -73,6 +73,14 @@ return [
     'logo_path' => null,
 
     /*
+     | Path on the public disk to the tab icon. Left empty the logo is used, and
+     | with neither the bundled neutral mark is: an installation that uploads a
+     | logo usually wants it in the tab too, and only one that wants a different
+     | mark at 16px has any reason to set this.
+     */
+    'favicon_path' => null,
+
+    /*
      | Background media for the login screen. The image is used as the video
      | poster, so it is what visitors see before the clip has buffered.
      */

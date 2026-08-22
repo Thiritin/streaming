@@ -4,10 +4,10 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        {{-- An installation that uploaded its own logo gets it as the tab icon
-             too; the bundled neutral mark is the fallback. --}}
-        @php($brandLogo = app(\App\Services\BrandingService::class)->forFrontend()['logoUrl'] ?? null)
-        <link rel="icon" href="{{ $brandLogo ?: '/favicon.svg' }}">
+        {{-- The uploaded tab icon, or the logo when only that is set; the bundled
+             neutral mark is the fallback for an installation with neither. --}}
+        @php($brandFavicon = app(\App\Services\BrandingService::class)->faviconUrl())
+        <link rel="icon" href="{{ $brandFavicon ?: '/favicon.svg' }}">
 
         <title inertia>{{ app(\App\Services\BrandingService::class)->get('site_name') }}</title>
 

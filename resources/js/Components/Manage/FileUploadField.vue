@@ -15,6 +15,8 @@ const props = defineProps({
   purpose: { type: String, required: true },
   previewUrl: { type: String, default: null },
   accept: { type: String, default: 'image/*' },
+  /** How the preview fills its box. A square mark reads wrong cropped to 16:9. */
+  fit: { type: String, default: 'cover' },
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -81,7 +83,13 @@ const button =
 <template>
   <div class="flex items-start gap-3">
     <div class="flex h-16 w-28 shrink-0 items-center justify-center overflow-hidden rounded border border-hairline bg-surface-2">
-      <img v-if="preview" :src="preview" alt="" class="h-full w-full object-cover" />
+      <img
+        v-if="preview"
+        :src="preview"
+        alt=""
+        class="h-full w-full"
+        :class="fit === 'contain' ? 'object-contain p-1' : 'object-cover'"
+      />
       <ManageIcon v-else name="image" :size="18" class="text-fg-3" />
     </div>
 

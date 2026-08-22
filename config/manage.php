@@ -67,6 +67,18 @@ return [
             'resize' => null,
         ],
 
+        'branding_favicon' => [
+            'disk' => 's3',
+            'directory' => 'branding',
+            'visibility' => 'public',
+            // .ico included because it is still what a hand-made favicon arrives as,
+            // and every browser reads one.
+            'mimes' => ['png', 'svg', 'ico', 'webp'],
+            'max' => 512,
+            'preserve_filename' => true,
+            'resize' => null,
+        ],
+
         'branding_login_image' => [
             'disk' => 's3',
             'directory' => 'branding',

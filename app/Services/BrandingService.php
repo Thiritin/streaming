@@ -41,6 +41,7 @@ class BrandingService
         'footer_links' => 'Title and address for each footer link, in the order they are shown.',
         'show_source_link' => 'Whether the footer credits the project and links to its source. 1 or 0.',
         'logo_path' => 'Logo image. Leave empty to show the site name as text instead.',
+        'favicon_path' => 'Tab icon. Left empty the logo is used, and with no logo the bundled mark.',
         'login_background_image' => 'Background image for the login screen.',
         'login_background_video' => 'Background video for the login screen. Left empty, the bundled clip is used.',
         'primary_color' => 'Pick a preset or a custom hex. A full 50-950 ramp is derived from it; empty keeps the palette in the stylesheet.',
@@ -80,6 +81,7 @@ class BrandingService
             'conventionName' => $values['convention_name'],
             'siteName' => $values['site_name'],
             'logoUrl' => $this->assetUrl($values['logo_path']),
+            'faviconUrl' => $this->faviconUrl(),
             'identity' => [
                 'name' => $values['identity_name'],
                 'registerUrl' => $values['identity_register_url'],
@@ -106,6 +108,19 @@ class BrandingService
                 'licenceUrl' => self::LICENCE_URL,
             ] : null,
         ];
+    }
+
+    /**
+     * The tab icon, falling back the way an installation would expect.
+     *
+     * A logo is usually the right mark at 16px too, so uploading one is enough; the
+     * separate key exists for the installation whose logo is a wordmark that turns to
+     * mush at that size. Neither set answers null, and the caller uses the bundled mark.
+     */
+    public function faviconUrl(): ?string
+    {
+        return $this->assetUrl($this->get('favicon_path'))
+            ?? $this->assetUrl($this->get('logo_path'));
     }
 
     public function showSourceLink(): bool

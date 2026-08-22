@@ -118,7 +118,8 @@ const resetAll = () => {
   router.post(route('manage.settings.reset'), {}, { preserveScroll: true });
 };
 
-const accept = (type) => (type === 'video' ? 'video/mp4,video/webm' : 'image/*');
+// A field may narrow what its picker offers; otherwise it is everything of that kind.
+const accept = (field) => field.accept ?? (field.type === 'video' ? 'video/mp4,video/webm' : 'image/*');
 
 // Partial reload of `pretalxEvents` only, so the values being tested survive the test.
 const testing = ref(false);
@@ -283,7 +284,8 @@ onBeforeUnmount(clearAccentPreview);
                     v-model="form.values[field.key]"
                     :purpose="field.purpose"
                     :preview-url="field.previewUrl"
-                    :accept="accept(field.type)"
+                    :accept="accept(field)"
+                    :fit="field.previewFit ?? 'cover'"
                   />
                   <button
                     v-if="!isDefault(field)"

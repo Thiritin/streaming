@@ -382,6 +382,8 @@ final class Settings
                 'type' => 'password',
                 'helper' => $field['helper'] ?? null,
                 'purpose' => null,
+                'accept' => null,
+                'previewFit' => 'cover',
                 'full' => $field['full'] ?? false,
                 'rows' => null,
                 'presets' => null,
@@ -401,6 +403,11 @@ final class Settings
             'type' => $field['type'],
             'helper' => $field['helper'] ?? null,
             'purpose' => $field['purpose'] ?? null,
+            // What the file picker offers. Field-driven for the few uploads whose
+            // types are narrower than the whole of image/*.
+            'accept' => $field['accept'] ?? null,
+            // 'contain' for a mark that must be seen whole; the default crops to fill.
+            'previewFit' => $field['preview_fit'] ?? 'cover',
             'full' => $field['full'] ?? false,
             // Height of a textarea, for the few fields that expect paragraphs.
             'rows' => $field['rows'] ?? null,

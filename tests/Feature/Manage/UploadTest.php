@@ -77,6 +77,21 @@ class UploadTest extends TestCase
         Storage::disk('s3')->assertExists('branding/logo.png');
     }
 
+    public function test_a_favicon_lands_beside_the_logo_on_the_bucket(): void
+    {
+        Storage::fake('s3');
+
+        $this->actingAs($this->admin)
+            ->from('/manage')
+            ->post(route('manage.uploads.store'), [
+                'purpose' => 'branding_favicon',
+                'file' => UploadedFile::fake()->image('Tab Icon.png', 64, 64),
+            ])
+            ->assertSessionHas(SessionKey::FlashData->value.'.upload.path', 'branding/tab-icon.png');
+
+        Storage::disk('s3')->assertExists('branding/tab-icon.png');
+    }
+
     /**
      * Public visibility is the point: the logo is on every page including the login
      * screen, so it has to be a plain cacheable URL. A signed one would expire and 403.
