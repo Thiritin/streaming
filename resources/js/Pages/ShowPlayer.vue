@@ -695,7 +695,7 @@ onUnmounted(() => {
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                                     </svg>
-                                    <span class="hidden md:inline">Report</span>
+                                    <span class="hidden md:inline">Report Issue</span>
                                 </button>
 
                                 <!-- Theater Mode Toggle -->
