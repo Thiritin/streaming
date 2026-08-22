@@ -25,6 +25,8 @@ const props = defineProps({
     padMinutes: { type: Number, default: 5 },
     /** Set while the parent is uploading a frame this editor handed it. */
     capturing: { type: Boolean, default: false },
+    /** Rungs the preview may be drawn from, cheapest first. */
+    renditions: { type: Array, default: () => ['sd', 'hd', 'fhd'] },
 });
 
 const emit = defineEmits(['update:startsAt', 'update:endsAt', 'capture']);
@@ -32,6 +34,23 @@ const emit = defineEmits(['update:startsAt', 'update:endsAt', 'capture']);
 const video = ref(null);
 const track = ref(null);
 const root = ref(null);
+
+/**
+ * Which rung the picture is drawn from, and whether it is audible.
+ *
+ * SD by default: the editor is used to find an instant, not to judge a picture, and a
+ * window of 480p segments arrives in a fraction of the bytes 720p costs - which is the
+ * difference between a seek that lands and one the operator waits out. The higher rungs
+ * stay one click away, because a thumbnail is captured at whatever is on screen.
+ *
+ * Muted by default for the same reason a scrub pauses playback: the editor loads a new
+ * window on every seek, and a burst of audio on each one is worse than silence. It is a
+ * button rather than nothing at all because finding where a show actually starts is often
+ * an audio question - applause, a mic opening, the room going quiet.
+ */
+const quality = ref(props.renditions.includes('sd') ? 'sd' : props.renditions[0]);
+const muted = ref(true);
+const volume = ref(1);
 
 let hls = null;
 
@@ -150,9 +169,17 @@ const TICK_STEPS = [
     3_600_000, 7_200_000, 21_600_000,
 ];
 
+/** Width of the scrubber, so the label count follows the space there is for labels. */
+const trackWidth = ref(0);
+
 const tickInterval = computed(() => {
     if (!window_.value) return null;
-    const target = window_.value.span / 10; // aim for about ten labels
+
+    // A clock label is around 70px wide. Counting labels rather than fixing the number at
+    // ten is what keeps a narrow window from printing 12:53 over 12:54.
+    const labels = Math.max(3, Math.floor((trackWidth.value || 900) / 78));
+    const target = window_.value.span / labels;
+
     return TICK_STEPS.find((step) => step >= target) ?? TICK_STEPS[TICK_STEPS.length - 1];
 });
 
@@ -542,6 +569,7 @@ const onKeydown = (event) => {
         case '{': nudge('out', -step); return handled();
         case '}': nudge('out', step); return handled();
         case 'c': captureFrame(); return handled();
+        case 'm': muted.value = !muted.value; return handled();
         case 'home': previewStart(); return handled();
         case 'end': previewEnd(); return handled();
     }
@@ -561,7 +589,7 @@ const loadPreview = async (centreMs = null) => {
     const url =
         route('manage.recordings.preview', props.recordingId) +
         `?from=${encodeURIComponent(toIso(range.from))}` +
-        `&to=${encodeURIComponent(toIso(range.to))}&rendition=hd`;
+        `&to=${encodeURIComponent(toIso(range.to))}&rendition=${encodeURIComponent(quality.value)}`;
 
     const token = ++loadToken;
     loading.value = true;
@@ -632,9 +660,40 @@ const loadPreview = async (centreMs = null) => {
     if (playheadMs.value === null && inMs.value !== null) playheadMs.value = inMs.value;
 };
 
+/*
+ * Changing the rung reloads the window the playhead is already in, so the instant on
+ * screen is kept and only its resolution changes. Playback resumes if it was running.
+ */
+watch(quality, () => {
+    const centre = playheadMs.value ?? inMs.value ?? archive.value?.from ?? null;
+    if (centre === null) return;
+
+    const wasPlaying = video.value ? !video.value.paused : false;
+
+    seekAfterLoad = clampToArchive(centre);
+    playAfterSeek = wasPlaying;
+    loadPreview(centre);
+});
+
+// The element is replaced by neither hls.js nor a reload, so this is set once and kept.
+watch([muted, volume], ([isMuted, level]) => {
+    if (!video.value) return;
+
+    video.value.muted = isMuted;
+    video.value.volume = level;
+});
+
+let trackObserver = null;
+
 onMounted(() => {
     loadPreview(inMs.value ?? archive.value?.from ?? null);
     window.addEventListener('keydown', onKeydown);
+
+    if (track.value) {
+        trackWidth.value = track.value.clientWidth;
+        trackObserver = new ResizeObserver(([entry]) => (trackWidth.value = entry.contentRect.width));
+        trackObserver.observe(track.value);
+    }
 });
 
 // The archive bounds arrive with the page, but guard against them landing late.
@@ -646,6 +705,7 @@ watch(archive, (value, previous) => {
 });
 
 onBeforeUnmount(() => {
+    trackObserver?.disconnect();
     window.removeEventListener('keydown', onKeydown);
     window.removeEventListener('pointermove', onPointerMove);
     hls?.destroy();
@@ -677,7 +737,7 @@ onBeforeUnmount(() => {
                     ref="video"
                     class="max-h-[46vh] w-full object-contain"
                     playsinline
-                    muted
+                    :muted="muted"
                     @timeupdate="onTimeUpdate"
                     @click="togglePlay"
                 ></video>
@@ -712,6 +772,40 @@ onBeforeUnmount(() => {
                 >
                     {{ busyCapturing ? 'Capturing…' : 'Capture thumbnail (C)' }}
                 </button>
+
+                <span class="mx-1 text-fg-3">|</span>
+                <button
+                    type="button"
+                    class="cut-btn"
+                    :class="muted ? '' : 'border-state-live/40 text-state-live'"
+                    :title="muted ? 'Play the preview with sound (M)' : 'Silence the preview (M)'"
+                    @click="muted = !muted"
+                >
+                    {{ muted ? 'Sound off' : 'Sound on' }}
+                </button>
+                <input
+                    v-if="!muted"
+                    v-model.number="volume"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    class="w-20 accent-state-live"
+                    aria-label="Preview volume"
+                />
+
+                <label class="flex items-center gap-1.5">
+                    <span class="text-fg-3">Quality</span>
+                    <select
+                        v-model="quality"
+                        class="cut-btn"
+                        title="Which rung the preview is drawn from. SD loads fastest; a thumbnail is captured at whatever is on screen."
+                    >
+                        <option v-for="rendition in renditions" :key="rendition" :value="rendition">
+                            {{ rendition.toUpperCase() }}
+                        </option>
+                    </select>
+                </label>
 
                 <span class="ml-auto font-mono text-fg-2">{{ formatClock(playheadMs) }}</span>
             </div>
@@ -843,6 +937,7 @@ onBeforeUnmount(() => {
                 space play &middot; J/L &plusmn;1s &middot; &larr;/&rarr; &plusmn;{{ segmentSeconds }}s
                 &middot; I/O set in/out &middot; [ ] in &middot; { } out &middot; Home/End preview
                 &middot; C thumbnail
+                &middot; M sound
             </p>
         </template>
     </div>
