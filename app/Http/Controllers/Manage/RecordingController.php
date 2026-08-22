@@ -663,6 +663,11 @@ class RecordingController extends Controller
             $options[] = [
                 'value' => $show->id,
                 'label' => $show->title.($show->source ? ' ('.$show->source->name.')' : ''),
+                // Grouped by year, because the list spans every event the installation has
+                // ever run and two of them will have a show called "Opening Ceremony".
+                // Ordering is by scheduled start descending, so the years come out newest
+                // first and a group is contiguous without sorting again here.
+                'group' => $show->scheduled_start->format('Y'),
             ];
         }
 

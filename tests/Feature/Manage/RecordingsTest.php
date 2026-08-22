@@ -4,6 +4,8 @@ namespace Tests\Feature\Manage;
 
 use App\Jobs\ProcessRecordingJob;
 use App\Models\Recording;
+use App\Models\Show;
+use App\Models\Source;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -49,6 +51,43 @@ class RecordingsTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Manage/Recordings/Index')
                 ->has('table.rows'));
+    }
+
+    /**
+     * The show list spans every event the installation has run, and two of them will have
+     * a show called "Opening Ceremony". Years are what tells them apart.
+     */
+    public function test_the_show_select_is_grouped_by_year(): void
+    {
+        $source = Source::factory()->create(['name' => 'Main Stage']);
+
+        Show::factory()->create([
+            'source_id' => $source->id,
+            'title' => 'Opening Ceremony',
+            'scheduled_start' => '2025-08-20 18:00:00',
+        ]);
+        Show::factory()->create([
+            'source_id' => $source->id,
+            'title' => 'Opening Ceremony',
+            'scheduled_start' => '2026-08-20 18:00:00',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.create'))
+            ->assertSuccessful()
+            ->assertInertia(function (Assert $page) {
+                $shows = collect($page->toArray()['props']['options']['shows']);
+
+                // The placeholder carries no group, so it stays above the headings rather
+                // than being filed under a year it has nothing to do with.
+                $this->assertSame('', $shows->first()['value']);
+                $this->assertArrayNotHasKey('group', $shows->first());
+
+                $groups = $shows->skip(1)->pluck('group');
+
+                $this->assertEquals(['2026', '2025'], $groups->unique()->values()->all());
+                $this->assertSame('Opening Ceremony (Main Stage)', $shows->skip(1)->first()['label']);
+            });
     }
 
     public function test_creating_queues_the_processing_job(): void

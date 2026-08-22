@@ -6,13 +6,17 @@
  * only when it owns the control; a slotted field is a <div>, because a label would
  * forward clicks to its first labelable descendant and fire a slotted button twice.
  */
-import { useSlots } from 'vue';
+import { computed, useSlots } from 'vue';
 
-defineProps({
+const props = defineProps({
   label: { type: String, required: true },
   modelValue: { type: [String, Number, Boolean, null], default: null },
   type: { type: String, default: 'text' },
-  /** [{ value, label }] for type="select" */
+  /**
+   * [{ value, label }] for type="select". An option may carry a `group`, which renders it
+   * under an <optgroup> heading; options without one stay at the top of the list, where
+   * a placeholder like "Not linked to a show" belongs.
+   */
   options: { type: Array, default: () => [] },
   helper: { type: String, default: null },
   error: { type: String, default: null },
@@ -37,6 +41,26 @@ const row = () => (slots.default ? 'div' : 'label');
 
 const control =
   'h-8 w-full rounded border border-hairline bg-surface-2 px-2 text-[13px] text-fg-1 outline-none transition-colors focus:border-state-live/50 disabled:cursor-not-allowed disabled:opacity-50';
+
+/*
+ * Options split into the plain ones and the grouped ones, keeping the order the server
+ * sent: a group appears where its first option did, so a list already ordered by date
+ * comes out newest year first without sorting again here.
+ */
+const ungrouped = computed(() => props.options.filter((option) => !option.group));
+
+const optionGroups = computed(() => {
+  const groups = new Map();
+
+  for (const option of props.options) {
+    if (!option.group) continue;
+
+    if (!groups.has(option.group)) groups.set(option.group, []);
+    groups.get(option.group).push(option);
+  }
+
+  return [...groups].map(([label, options]) => ({ label, options }));
+});
 </script>
 
 <template>
@@ -59,9 +83,15 @@ const control =
           :disabled="disabled"
           @change="$emit('update:modelValue', $event.target.value)"
         >
-          <option v-for="option in options" :key="option.value" :value="option.value">
+          <option v-for="option in ungrouped" :key="option.value" :value="option.value">
             {{ option.label }}
           </option>
+
+          <optgroup v-for="group in optionGroups" :key="group.label" :label="group.label">
+            <option v-for="option in group.options" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </optgroup>
         </select>
 
         <span v-else-if="type === 'checkbox'" class="flex h-8 items-center">
