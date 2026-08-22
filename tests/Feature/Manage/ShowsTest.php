@@ -525,6 +525,90 @@ class ShowsTest extends TestCase
         }
     }
 
+    public function test_a_cancelled_show_can_be_put_back_on_the_schedule(): void
+    {
+        $show = $this->show([
+            'status' => 'cancelled',
+            'cancellation_reason' => 'No stream, technical issue.',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->from(route('manage.shows.edit', $show))
+            ->post(route('manage.shows.status', $show), ['status' => 'scheduled'])
+            ->assertRedirect(route('manage.shows.edit', $show));
+
+        $show->refresh();
+
+        $this->assertSame('scheduled', $show->status);
+        // The reason is shown to viewers on the schedule, so it does not outlive the cancellation.
+        $this->assertNull($show->cancellation_reason);
+        $this->assertSame('Status updated', $this->toast()['title']);
+    }
+
+    public function test_putting_a_show_back_on_air_clears_the_out_point(): void
+    {
+        $show = $this->show([
+            'status' => 'ended',
+            'actual_start' => now()->subHour(),
+            'actual_end' => now()->subMinutes(5),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.shows.status', $show), ['status' => 'live'])
+            ->assertRedirect();
+
+        $show->refresh();
+
+        $this->assertSame('live', $show->status);
+        $this->assertNull($show->actual_end);
+        $this->assertNotNull($show->actual_start);
+    }
+
+    public function test_the_status_pen_is_offered_whatever_the_show_is(): void
+    {
+        $names = function (Show $show) {
+            $actions = [];
+
+            $this->actingAs($this->admin)
+                ->get(route('manage.shows.edit', $show))
+                ->assertInertia(function (Assert $page) use (&$actions) {
+                    $actions = collect($page->toArray()['props']['actions'])->pluck('name')->all();
+
+                    return $page;
+                });
+
+            return $actions;
+        };
+
+        foreach (['scheduled', 'live', 'ended', 'cancelled'] as $status) {
+            $show = $this->show(['status' => $status, 'slug' => "pen-{$status}"]);
+
+            $this->assertContains('set_status', $names($show), "set_status missing on a {$status} show");
+        }
+    }
+
+    public function test_the_status_pen_refuses_a_status_that_is_not_one_of_the_four(): void
+    {
+        $show = $this->show(['status' => 'cancelled']);
+
+        $this->actingAs($this->admin)
+            ->post(route('manage.shows.status', $show), ['status' => 'paused'])
+            ->assertSessionHasErrors('status');
+
+        $this->assertSame('cancelled', $show->fresh()->status);
+    }
+
+    public function test_a_moderator_cannot_set_a_status_by_hand(): void
+    {
+        $show = $this->show(['status' => 'cancelled']);
+
+        $this->actingAs($this->moderator)
+            ->post(route('manage.shows.status', $show), ['status' => 'scheduled'])
+            ->assertForbidden();
+
+        $this->assertSame('cancelled', $show->fresh()->status);
+    }
+
     public function test_a_moderator_cannot_create_or_update_a_show(): void
     {
         $show = $this->show();

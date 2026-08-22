@@ -44,7 +44,7 @@ watch([() => form.title, () => form.scheduled_start], ([title, start]) => {
 });
 
 // Status transitions belong beside the status; the header keeps navigation and delete.
-const TRANSITIONS = ['go_live', 'end_stream', 'cancel'];
+const TRANSITIONS = ['go_live', 'end_stream', 'cancel', 'set_status'];
 
 const statusActions = computed(() => props.actions.filter((action) => TRANSITIONS.includes(action.name)));
 const headerActions = computed(() => props.actions.filter((action) => !TRANSITIONS.includes(action.name)));
