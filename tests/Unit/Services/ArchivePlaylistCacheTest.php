@@ -81,6 +81,35 @@ class ArchivePlaylistCacheTest extends TestCase
         $this->assertSame(2, substr_count($playlist, '#EXTINF'));
     }
 
+    /**
+     * The app-side cache is keyed by the markers, but the URLs a player holds are not:
+     * every media playlist for a cut sat at the same address, so a browser obeying the
+     * response's max-age replayed the range a re-trim had just replaced.
+     */
+    public function test_a_rebuild_readdresses_the_media_playlists(): void
+    {
+        $this->writeIndex();
+        $recording = $this->recording();
+
+        app(ArchivePlaylistService::class)->build($recording);
+
+        $before = app(ArchivePlaylistService::class)->renderMaster($recording->fresh());
+        $beforeUrl = $recording->fresh()->m3u8_url;
+
+        $this->travel(2)->seconds();
+
+        $recording->update(['ends_at' => '2026-08-15 12:00:04']);
+        app(ArchivePlaylistService::class)->build($recording->fresh());
+
+        $fresh = $recording->fresh();
+        $after = app(ArchivePlaylistService::class)->renderMaster($fresh);
+
+        $this->assertNotSame($beforeUrl, $fresh->m3u8_url);
+        $this->assertNotSame($before, $after);
+        $this->assertStringContainsString('v='.$fresh->playlist_built_at->getTimestamp(), $after);
+        $this->assertStringContainsString('v='.$fresh->playlist_built_at->getTimestamp(), $fresh->m3u8_url);
+    }
+
     protected function recording(): Recording
     {
         $source = Source::factory()->create(['slug' => 'prime']);

@@ -115,9 +115,17 @@ class ArchivePlaylistService
             );
         }
 
+        // Stamped before the URL is built, because the URL carries it: a player that
+        // already holds the old playlist has to be handed a different address, or it
+        // keeps replaying the range this build just replaced.
+        $builtAt = now();
+
         $recording->forceFill([
             // The app renders the playlist, so this is a route rather than an S3 object.
-            'm3u8_url' => route('recordings.playlist.master', $recording->slug),
+            'm3u8_url' => route('recordings.playlist.master', [
+                $recording->slug,
+                'v' => $builtAt->getTimestamp(),
+            ]),
             'duration' => (int) round(array_sum(array_column($segments, 'duration'))),
             'segment_count' => count($segments),
             'archive_bytes' => $this->cutBytes(
@@ -128,7 +136,7 @@ class ArchivePlaylistService
             ),
             'status' => 'ready',
             'build_error' => null,
-            'playlist_built_at' => now(),
+            'playlist_built_at' => $builtAt,
         ])->save();
 
         // Moving the markers already renders under a different key, but rebuilding the
@@ -152,11 +160,32 @@ class ArchivePlaylistService
     }
 
     /**
+     * The build a set of playlist URLs belongs to.
+     *
+     * A media playlist's address is otherwise only the cut's slug and rendition, so
+     * re-trimming leaves every URL identical and a browser holding the previous body
+     * under a max-age keeps playing the range that was replaced. Stamping the build
+     * into the query makes a rebuild a different resource, which is what actually
+     * evicts it; the cache the app keeps is already keyed by the markers.
+     */
+    protected function playlistVersion(Recording $recording): int
+    {
+        if ($recording->playlist_built_at) {
+            return $recording->playlist_built_at->getTimestamp();
+        }
+
+        // A cut that has never been built has no stamp, so fall back to the markers:
+        // still distinct per range, which is the property that matters.
+        return (int) CarbonImmutable::parse($recording->starts_at ?? now())->getTimestamp();
+    }
+
+    /**
      * Master playlist, listing the renditions the archive actually holds for this cut.
      */
     public function renderMaster(Recording $recording): string
     {
         $lines = ['#EXTM3U', '#EXT-X-VERSION:6', '#EXT-X-INDEPENDENT-SEGMENTS'];
+        $version = $this->playlistVersion($recording);
 
         foreach (self::ladder() as $rendition => $meta) {
             $lines[] = sprintf(
@@ -164,7 +193,7 @@ class ArchivePlaylistService
                 $meta['bandwidth'],
                 $meta['resolution'],
             );
-            $lines[] = route('recordings.playlist.media', [$recording->slug, $rendition]);
+            $lines[] = route('recordings.playlist.media', [$recording->slug, $rendition, 'v' => $version]);
         }
 
         // Opt-in, and last, so a player that ignores BANDWIDTH ordering still starts
@@ -173,7 +202,7 @@ class ArchivePlaylistService
         // pick a rung.
         if ($this->sourceInMaster() && ($bandwidth = $this->sourceBandwidth($recording)) !== null) {
             $lines[] = sprintf('#EXT-X-STREAM-INF:BANDWIDTH=%d', $bandwidth);
-            $lines[] = route('recordings.playlist.media', [$recording->slug, self::SOURCE_RENDITION]);
+            $lines[] = route('recordings.playlist.media', [$recording->slug, self::SOURCE_RENDITION, 'v' => $version]);
         }
 
         return implode("\n", $lines)."\n";

@@ -30,7 +30,10 @@ class RecordingPlaylistController extends Controller
     {
         $recording = $this->authorized($slug);
 
-        return $this->playlist($this->playlists->renderMaster($recording));
+        // Never cached, unlike a media playlist: it is cheap to render, and it is what
+        // carries the current build's media URLs. A stale master would keep pointing a
+        // player at the previous cut's playlists for as long as it was held.
+        return $this->playlist($this->playlists->renderMaster($recording), 'private, no-store');
     }
 
     public function media(Request $request, string $slug, string $rendition)
@@ -83,16 +86,16 @@ class RecordingPlaylistController extends Controller
         return $recording;
     }
 
-    protected function playlist(string $body)
+    protected function playlist(string $body, string $cacheControl = 'private, max-age=300')
     {
         return response($body, 200, [
             'Content-Type' => 'application/vnd.apple.mpegurl',
             // Private, because the URLs inside are signed: a shared cache would hand out
             // credentials to whoever asked next. The viewer's own browser may keep it
             // briefly - a reload or a second player on the same page then skips several
-            // megabytes of playlist - but far short of the signatures' lifetime, so a
-            // re-trimmed recording is never played from a stale copy for long.
-            'Cache-Control' => 'private, max-age=300',
+            // megabytes of playlist - and a re-trim cannot be served from that copy,
+            // because every build addresses its media playlists under a new `v`.
+            'Cache-Control' => $cacheControl,
         ]);
     }
 }
