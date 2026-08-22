@@ -56,10 +56,26 @@ By default the tool takes whatever hardware the machine has: Apple's media engin
 (`h264_videotoolbox`) on a Mac, NVIDIA's (`h264_nvenc`) on a machine with a usable card -
 the normal case on Windows - and libx264 otherwise.
 
-Availability is settled with a 0.1 second test encode rather than by reading
+Availability is settled with a half-second test encode rather than by reading
 `ffmpeg -encoders`, because a Windows build lists `h264_nvenc` whether or not there is a
 card in the machine, and finding that out several thousand frames into an import is an
-expensive way to learn it. Naming an encoder explicitly fails up front, with what to check.
+expensive way to learn it. When hardware is passed over, the run says why:
+
+```
+Encoder   libx264 (sd:veryfast hd:veryfast fhd:veryfast)
+          h264_nvenc unavailable: Cannot load nvcuda.dll
+```
+
+To ask the same question without starting an import:
+
+```bash
+streaming-archiver encoders
+```
+
+which reports each encoder, whether it is usable, the tuning that worked, and what `auto`
+would pick. NVENC preset names differ between ffmpeg builds (`p4` since 4.4, `medium`
+before), so the probe tries them in turn and the encode uses whichever one the probe
+proved.
 
 Apple's engine and libx264 were measured on the same 1080p50 material at the ladder's 6000k
 top rung, VMAF against a lossless reference, 30s per slice:

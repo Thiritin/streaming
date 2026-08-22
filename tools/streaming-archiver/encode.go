@@ -72,7 +72,7 @@ func ffprobe(path string) (*Probe, error) {
 		return nil, fmt.Errorf("%s has no video stream", filepath.Base(path))
 	}
 
-	probe := &Probe{
+	source := &Probe{
 		Height:    parsed.Streams[0].Height,
 		VideoCode: parsed.Streams[0].CodecName,
 		FPSNum:    25,
@@ -80,12 +80,12 @@ func ffprobe(path string) (*Probe, error) {
 	}
 
 	if num, den, ok := strings.Cut(parsed.Streams[0].FrameRate, "/"); ok {
-		probe.FPSNum, _ = strconv.Atoi(num)
-		probe.FPSDen, _ = strconv.Atoi(den)
+		source.FPSNum, _ = strconv.Atoi(num)
+		source.FPSDen, _ = strconv.Atoi(den)
 	}
-	probe.Duration, _ = strconv.ParseFloat(parsed.Format.Duration, 64)
+	source.Duration, _ = strconv.ParseFloat(parsed.Format.Duration, 64)
 
-	return probe, nil
+	return source, nil
 }
 
 // ladderFor drops rungs the master cannot fill. Upscaling 720p to 1080p produces a bigger
@@ -117,10 +117,10 @@ func ladderFor(recipe Recipe, probe *Probe) []Rendition {
 // control is the bitrate and nothing else. The quality cost at these bitrates is real but
 // small, and it is the difference between an import finishing over lunch and finishing
 // overnight.
-func rungArgs(i int, rendition Rendition, recipe Recipe, encoder string, presetOverride string) []string {
+func rungArgs(i int, rendition Rendition, recipe Recipe, plan encoderPlan, presetOverride string) []string {
 	args := []string{"-map", fmt.Sprintf("[v%dout]", i)}
 
-	if encoder == encoderVideoToolbox {
+	if plan.Name == encoderVideoToolbox {
 		// No -maxrate/-bufsize, unlike the x264 rung. VideoToolbox's rate control reacts to
 		// a ceiling by spending far less than the target rather than by trimming peaks:
 		// measured on 30s of high-motion 1080p50 at a 6000k target, it delivered 3.7 Mbps
@@ -143,7 +143,7 @@ func rungArgs(i int, rendition Rendition, recipe Recipe, encoder string, presetO
 		)
 	}
 
-	if encoder == encoderNVENC {
+	if plan.Name == encoderNVENC {
 		// Unlike VideoToolbox, NVENC's VBR honours a ceiling properly, so the ladder's
 		// maxrate and bufsize are passed through and a rung stays inside the bandwidth its
 		// master playlist advertises.
@@ -163,9 +163,8 @@ func rungArgs(i int, rendition Rendition, recipe Recipe, encoder string, presetO
 			fmt.Sprintf("-profile:v:%d", i), profile,
 		)
 
-		for _, tuning := range encoderTuning(encoderNVENC) {
-			args = append(args, tuning)
-		}
+		// The tuning the probe proved, not one assumed here.
+		args = append(args, plan.Tuning...)
 
 		return append(args,
 			fmt.Sprintf("-force_key_frames:v:%d", i),
@@ -197,9 +196,9 @@ const (
 	encoderNVENC        = "nvenc"
 )
 
-// encoderAvailable is swapped out in tests: whether a machine can encode with NVIDIA
-// hardware is not something a test on any other machine can answer.
-var encoderAvailable = usable
+// probeEncoder is swapped out in tests: whether a machine can encode with NVIDIA hardware
+// is not a question a test on any other machine can answer.
+var probeEncoder = probe
 
 // resolveEncoder answers what to encode with, and says so out loud: which encoder ran is
 // the first thing anyone asks when comparing two imports.
@@ -207,43 +206,65 @@ var encoderAvailable = usable
 // auto follows the hardware: Apple's media engine on a Mac, NVIDIA's on a machine with a
 // usable GeForce or Quadro, software everywhere else. Both hardware paths are within a
 // point of VMAF of x264 at these bitrates and many times faster, so the default is speed.
-func resolveEncoder(choice string) (string, error) {
+func resolveEncoder(choice string) (encoderPlan, []string, error) {
+	software := encoderPlan{Name: encoderX264}
+
+	// Why a hardware encoder was not used, in the words of whatever refused it. Printed
+	// rather than swallowed: an import that quietly runs eight times slower than it should
+	// is a bad way to learn that a driver needs updating.
+	var notes []string
+
+	try := func(encoder string) (encoderPlan, bool) {
+		plan, err := probeEncoder(encoder)
+		if err == nil {
+			return plan, true
+		}
+		notes = append(notes, fmt.Sprintf("%s unavailable: %s", ffmpegEncoder(encoder), err))
+		return encoderPlan{}, false
+	}
+
 	switch choice {
 	case "", "auto":
-		if runtime.GOOS == "darwin" && encoderAvailable(encoderVideoToolbox) {
-			return encoderVideoToolbox, nil
+		if runtime.GOOS == "darwin" {
+			if plan, ok := try(encoderVideoToolbox); ok {
+				return plan, notes, nil
+			}
 		}
-		if encoderAvailable(encoderNVENC) {
-			return encoderNVENC, nil
+		if plan, ok := try(encoderNVENC); ok {
+			return plan, notes, nil
 		}
-		return encoderX264, nil
+		return software, notes, nil
 
 	case encoderX264, "libx264", "software":
-		return encoderX264, nil
+		return software, nil, nil
 
 	case encoderVideoToolbox, "apple":
-		if !encoderAvailable(encoderVideoToolbox) {
-			return "", errors.New("this machine cannot encode with h264_videotoolbox")
+		plan, err := probeEncoder(encoderVideoToolbox)
+		if err != nil {
+			return encoderPlan{}, nil, fmt.Errorf("h264_videotoolbox is not usable here: %w", err)
 		}
-		return encoderVideoToolbox, nil
+		return plan, nil, nil
 
 	case encoderNVENC, "nvidia", "cuda":
-		if !encoderAvailable(encoderNVENC) {
-			return "", errors.New("this machine cannot encode with h264_nvenc: check the NVIDIA driver, and that ffmpeg was built with nvenc")
+		plan, err := probeEncoder(encoderNVENC)
+		if err != nil {
+			return encoderPlan{}, nil, fmt.Errorf("h264_nvenc is not usable here: %w (check the NVIDIA driver, and that this ffmpeg was built with nvenc)", err)
 		}
-		return encoderNVENC, nil
+		return plan, nil, nil
 
 	case "hw", "hardware":
-		if runtime.GOOS == "darwin" && encoderAvailable(encoderVideoToolbox) {
-			return encoderVideoToolbox, nil
+		if runtime.GOOS == "darwin" {
+			if plan, ok := try(encoderVideoToolbox); ok {
+				return plan, notes, nil
+			}
 		}
-		if encoderAvailable(encoderNVENC) {
-			return encoderNVENC, nil
+		if plan, ok := try(encoderNVENC); ok {
+			return plan, notes, nil
 		}
-		return "", errors.New("no hardware encoder is usable on this machine")
+		return encoderPlan{}, notes, errors.New("no hardware encoder is usable on this machine")
 
 	default:
-		return "", fmt.Errorf("unknown encoder %q: use auto, x264, videotoolbox or nvenc", choice)
+		return encoderPlan{}, nil, fmt.Errorf("unknown encoder %q: use auto, x264, videotoolbox or nvenc", choice)
 	}
 }
 
@@ -259,41 +280,97 @@ func ffmpegEncoder(encoder string) string {
 	}
 }
 
-// usable answers whether this machine can really encode with something, which is not the
+// encoderPlan is a decided encoder: which ffmpeg encoder to use, and the tuning flags that
+// were proven to work on this machine. The flags travel with it because the probe and the
+// real encode have to agree - a preset that only the probe knew about would fail an hour
+// into an import.
+type encoderPlan struct {
+	Name   string
+	Tuning []string
+}
+
+// tunings are the flag sets to try for an encoder, best first.
+//
+// NVENC's preset naming changed: p1-p7 arrived in ffmpeg 4.4 and the old hq/medium names
+// still work in most builds but not all, and a build too old for p4 refuses it outright.
+// Rather than guess from a version string, each is tried against a real encode and the
+// first that works is the one used.
+func tunings(encoder string) [][]string {
+	switch encoder {
+	case encoderNVENC:
+		return [][]string{
+			{"-preset", "p4", "-rc", "vbr"},
+			{"-preset", "medium", "-rc", "vbr"},
+			{"-preset", "medium"},
+			{},
+		}
+	case encoderVideoToolbox:
+		return [][]string{{}}
+	default:
+		return [][]string{{}}
+	}
+}
+
+// probe answers whether this machine can really encode with something, which is not the
 // same question as whether ffmpeg was built with it.
 //
-// A Windows ffmpeg almost always lists h264_nvenc whether or not there is an NVIDIA card
-// in the machine or a driver new enough to drive it, and the failure without this check
-// lands after the ladder has been set up, several thousand frames into an import. Two
-// tenths of a second of nullsrc up front is a much better way to find out.
-func usable(encoder string) bool {
+// A Windows ffmpeg lists h264_nvenc whether or not there is an NVIDIA card in the machine
+// or a driver new enough to drive it, and without this the failure lands several thousand
+// frames into an import. Half a second of colour bars up front is a much better way to
+// find out - and when it fails, the reason is worth keeping: "no NVIDIA capable devices"
+// and "driver does not support the required nvenc API version" send an operator to
+// completely different places.
+func probe(encoder string) (encoderPlan, error) {
 	name := ffmpegEncoder(encoder)
 
 	listed, err := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
-	if err != nil || !strings.Contains(string(listed), name) {
-		return false
+	if err != nil {
+		return encoderPlan{}, fmt.Errorf("could not ask ffmpeg what it supports: %w", err)
+	}
+	if !strings.Contains(string(listed), name) {
+		return encoderPlan{}, fmt.Errorf("this ffmpeg has no %s encoder", name)
 	}
 
-	args := []string{"-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "nullsrc=s=256x256:d=0.1", "-c:v", name}
-	args = append(args, encoderTuning(encoder)...)
-	args = append(args, "-f", "null", "-")
+	var last error
 
-	return exec.Command("ffmpeg", args...).Run() == nil
-}
+	for _, tuning := range tunings(encoder) {
+		// Colour bars rather than nullsrc: nullsrc hands the encoder frames whose contents
+		// are undefined, which some hardware encoders reject outright, and a probe that
+		// fails for its own reasons is worse than no probe.
+		args := []string{
+			"-hide_banner", "-loglevel", "error",
+			"-f", "lavfi", "-i", "color=c=black:s=320x240:r=25:d=0.5",
+			"-c:v", name,
+		}
+		args = append(args, tuning...)
+		args = append(args, "-f", "null", "-")
 
-// encoderTuning is the quality/speed knob each hardware encoder takes, kept in one place
-// because the capability probe has to use the same flags the real encode will: a preset an
-// older NVENC build does not know is exactly the kind of failure the probe exists to catch.
-func encoderTuning(encoder string) []string {
-	if encoder == encoderNVENC {
-		// p4 is NVENC's balanced preset in the modern naming (p1 fastest, p7 slowest), and
-		// vbr is what actually honours a bitrate target rather than a quality one.
-		return []string{"-preset", "p4", "-rc", "vbr"}
+		command := exec.Command("ffmpeg", args...)
+		var complaint bytes.Buffer
+		command.Stderr = &complaint
+
+		if err := command.Run(); err == nil {
+			return encoderPlan{Name: encoder, Tuning: tuning}, nil
+		}
+
+		detail := strings.TrimSpace(complaint.String())
+		if detail == "" {
+			detail = "the test encode failed"
+		}
+		last = errors.New(firstLine(detail))
 	}
-	return nil
+
+	return encoderPlan{}, last
 }
 
-func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, probe *Probe, encoder string, presetOverride string, onProgress func(done, speed float64)) error {
+func firstLine(text string) string {
+	if index := strings.IndexAny(text, "\r\n"); index != -1 {
+		return strings.TrimSpace(text[:index])
+	}
+	return text
+}
+
+func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, source *Probe, plan encoderPlan, presetOverride string, onProgress func(done, speed float64)) error {
 	var (
 		filters   []string
 		splits    strings.Builder
@@ -309,8 +386,8 @@ func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, pr
 		// A high frame rate master gets the bottom rung halved: 50p inside 1500 kbps
 		// spends the budget on temporal resolution nobody watching 480p is short of.
 		// Segment boundaries are unaffected, because keyframes are forced on time.
-		if rendition.HalveFrameRate && probe.FPS() > float64(recipe.SDFPSCeiling) {
-			rate = fmt.Sprintf(",fps=%d/%d", probe.FPSNum, probe.FPSDen*2)
+		if rendition.HalveFrameRate && source.FPS() > float64(recipe.SDFPSCeiling) {
+			rate = fmt.Sprintf(",fps=%d/%d", source.FPSNum, source.FPSDen*2)
 		}
 
 		// format=yuv420p is not cosmetic. A 10-bit master (HEVC Main 10 out of Resolve)
@@ -321,7 +398,7 @@ func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, pr
 			i, rendition.Width, rendition.Height, rate, i,
 		))
 
-		maps = append(maps, rungArgs(i, rendition, recipe, encoder, presetOverride)...)
+		maps = append(maps, rungArgs(i, rendition, recipe, plan, presetOverride)...)
 
 		audio = append(audio,
 			"-map", "0:a:0",
@@ -340,7 +417,7 @@ func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, pr
 	// Decoding is its own cost: a 10-bit HEVC master at 50p is heavy in software, and the
 	// same media engine that encodes can decode. Frames come back to system memory for the
 	// scale filters either way, so this is a straight saving.
-	switch encoder {
+	switch plan.Name {
 	case encoderVideoToolbox:
 		args = append(args, "-hwaccel", "videotoolbox")
 	case encoderNVENC:
@@ -388,7 +465,7 @@ func encode(input, dir string, imp Import, recipe Recipe, ladder []Rendition, pr
 		return err
 	}
 
-	watchProgress(pipe, probe.Duration, onProgress)
+	watchProgress(pipe, source.Duration, onProgress)
 
 	return cmd.Wait()
 }

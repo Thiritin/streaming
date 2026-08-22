@@ -21,7 +21,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -43,6 +45,8 @@ func main() {
 			fmt.Fprintf(os.Stderr, "\nstreaming-archiver: %v\n", err)
 			os.Exit(1)
 		}
+	case "encoders", "doctor":
+		reportEncoders()
 	case "-v", "--version", "version":
 		fmt.Printf("streaming-archiver %s\n", version)
 	case "-h", "--help", "help":
@@ -59,6 +63,7 @@ func usage() {
 
 usage:
   streaming-archiver import <file> --title "Opening Ceremony" [flags]
+  streaming-archiver encoders
   streaming-archiver --version
 
 flags:
@@ -76,6 +81,10 @@ flags:
   --parallel    concurrent uploads (default 8)
   --work        working directory for the encode (default: a temp dir, removed after)
   --keep        keep the encoded segments instead of removing them
+
+commands:
+  import        encode a file and put it in the archive
+  encoders      report which encoders this machine can actually use, and why not
 
 environment:
   ARCHIVER_API, ARCHIVER_KEY
@@ -129,7 +138,7 @@ func runImport(argv []string) error {
 		return fmt.Errorf("%s is a directory", input)
 	}
 
-	encoder, err := resolveEncoder(*encoderChoice)
+	plan, notes, err := resolveEncoder(*encoderChoice)
 	if err != nil {
 		return err
 	}
@@ -201,7 +210,11 @@ func runImport(argv []string) error {
 	}
 	fmt.Printf("Archive   %s, starting %s\n", imp.Prefix, imp.StartsAt)
 	fmt.Printf("Ladder    %s\n", strings.Join(names, ", "))
-	fmt.Printf("Encoder   %s\n\n", encoderLabel(encoder, ladder, *preset))
+	fmt.Printf("Encoder   %s\n", encoderLabel(plan, ladder, *preset))
+	for _, note := range notes {
+		fmt.Printf("          %s\n", note)
+	}
+	fmt.Println()
 
 	// The encode is only thrown away when the import as a whole succeeded. Anything else -
 	// a rejected key, an S3 that stopped answering, a closed lid - keeps it, because
@@ -233,7 +246,7 @@ func runImport(argv []string) error {
 	// The ladder is encoded in one pass, so the timeline position ffmpeg reports is the
 	// progress of the whole job - three rungs included.
 	encoding := NewProgress("  encode ", probe.Duration, "s")
-	err = encode(input, dir, imp, started.Recipe, ladder, probe, encoder, *preset, func(done, speed float64) {
+	err = encode(input, dir, imp, started.Recipe, ladder, probe, plan, *preset, func(done, speed float64) {
 		encoding.Set(done, speed)
 	})
 	if err != nil {
@@ -471,12 +484,62 @@ func permute(flags *flag.FlagSet, argv []string) []string {
 // encoderLabel names the encoder and, for x264, the presets in play - "slow on the top
 // rung" is the difference between a twenty minute import and an overnight one, so it
 // belongs on screen before the encode starts rather than in a process listing.
-func encoderLabel(encoder string, ladder []Rendition, presetOverride string) string {
-	switch encoder {
+// reportEncoders says what this machine can do, in the words of whatever refused.
+//
+// "It did not use the GPU" is not a diagnosis, and the reasons differ completely: no card,
+// a driver too old for the nvenc API, an ffmpeg built without it, a preset name that build
+// does not know. All of them are visible here in a couple of seconds.
+func reportEncoders() {
+	if err := haveTool("ffmpeg"); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Printf("platform  %s/%s\n", runtime.GOOS, runtime.GOARCH)
+
+	if out, err := exec.Command("ffmpeg", "-hide_banner", "-version").Output(); err == nil {
+		fmt.Printf("ffmpeg    %s\n", firstLine(strings.TrimSpace(string(out))))
+	}
+
+	fmt.Println()
+
+	for _, encoder := range []string{encoderVideoToolbox, encoderNVENC} {
+		plan, err := probe(encoder)
+		if err != nil {
+			fmt.Printf("  %-20s unusable: %s\n", ffmpegEncoder(encoder), err)
+			continue
+		}
+
+		tuning := strings.Join(plan.Tuning, " ")
+		if tuning == "" {
+			tuning = "default tuning"
+		}
+		fmt.Printf("  %-20s usable (%s)\n", ffmpegEncoder(encoder), tuning)
+	}
+
+	fmt.Printf("  %-20s usable (always)\n\n", "libx264")
+
+	chosen, notes, err := resolveEncoder("auto")
+	if err != nil {
+		fmt.Printf("auto would fail: %s\n", err)
+		return
+	}
+	for _, note := range notes {
+		fmt.Printf("  %s\n", note)
+	}
+	fmt.Printf("auto would use %s\n", ffmpegEncoder(chosen.Name))
+}
+
+func encoderLabel(plan encoderPlan, ladder []Rendition, presetOverride string) string {
+	switch plan.Name {
 	case encoderVideoToolbox:
 		return "h264_videotoolbox (Apple media engine)"
 	case encoderNVENC:
-		return "h264_nvenc (NVIDIA, preset p4)"
+		tuning := strings.Join(plan.Tuning, " ")
+		if tuning == "" {
+			tuning = "default tuning"
+		}
+		return "h264_nvenc (NVIDIA, " + tuning + ")"
 	}
 
 	presets := make([]string, 0, len(ladder))
