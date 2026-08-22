@@ -4,15 +4,19 @@
  *
  * Everything domain-specific (labels, tones, formatting, which actions exist) arrives
  * from the server. This component only knows the cell types documented on
- * App\Support\Manage\Column.
+ * App\Support\Manage\Column, and it draws them two ways from the same data: a row per
+ * record from md up, a card per record below it.
+ *
+ * A table narrower than its columns is a sideways scroll with the identifying column
+ * scrolled off, so a phone gets cards instead: the leading column is the card's heading,
+ * a badge sits beside it, and every other column becomes a labelled line.
  */
 import { computed, reactive, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import ActionButton from './ActionButton.vue';
 import InlineCell from './InlineCell.vue';
 import ManageIcon from './ManageIcon.vue';
-import StatusBadge from './StatusBadge.vue';
-import { resolve, toneText } from './tones.js';
+import TableCell from './TableCell.vue';
 import { useInlineEdit } from './useInlineEdit.js';
 import { useTableQuery } from './useTableQuery.js';
 
@@ -89,6 +93,8 @@ const visibleColumns = computed(() => {
   return props.table.columns.filter((column) => !hidden.includes(column.key));
 });
 
+const hasActions = computed(() => props.table.rows.some((row) => row.actions.length));
+
 const allSelected = computed(
   () => props.table.rows.length > 0 && selected.value.length === props.table.rows.length,
 );
@@ -96,6 +102,34 @@ const allSelected = computed(
 const toggleAll = () => {
   selected.value = allSelected.value ? [] : props.table.rows.map((row) => row.id);
 };
+
+/*
+ * The card layout, derived rather than declared: a table already puts what identifies a
+ * record first, so the leading text column is the heading, a leading thumbnail is the
+ * card's image, and the first badge is the state chip beside the heading. Whatever is
+ * left is a labelled line under it.
+ */
+const cardImage = computed(() => visibleColumns.value.find((column) => column.type === 'image') ?? null);
+
+const cardTitle = computed(
+  () =>
+    visibleColumns.value.find((column) => ['text', 'copyable'].includes(column.type))
+      ?? visibleColumns.value.find((column) => !['image', 'badge'].includes(column.type))
+      ?? null,
+);
+
+// State first when the table has one, since that is what a card is scanned for.
+const cardBadge = computed(() => {
+  const badges = visibleColumns.value.filter((column) => column.type === 'badge');
+
+  return badges.find((column) => column.key === 'status') ?? badges[0] ?? null;
+});
+
+const cardFields = computed(() =>
+  visibleColumns.value.filter(
+    (column) => ![cardImage.value?.key, cardTitle.value?.key, cardBadge.value?.key].includes(column.key),
+  ),
+);
 
 const align = {
   left: 'text-left',
@@ -107,31 +141,11 @@ const cell = (row, key) => row.cells?.[key] ?? null;
 
 const isEmpty = (value) => value === null || value === undefined || value === '';
 
-const numberDisplay = (value) => {
-  if (isEmpty(value)) {
-    return null;
-  }
-
-  if (typeof value === 'object') {
-    return value.display ?? null;
-  }
-
-  // A non-numeric value would format as the literal "NaN", which reads as broken
-  // data rather than an empty cell, so it falls through to the placeholder.
-  if (Number.isNaN(Number(value))) {
-    return null;
-  }
-
-  return new Intl.NumberFormat('en-GB').format(value).replace(/,/g, ' ');
-};
-
-const copy = async (value) => {
-  try {
-    await navigator.clipboard.writeText(String(value));
-  } catch {
-    // Clipboard is unavailable outside a secure context; nothing to recover from.
-  }
-};
+/** An empty line is dropped from a card; on a phone the height costs more than the symmetry buys. */
+const showsOnCard = (row, column) =>
+  Boolean(inlineField(row, column.key))
+  || ['bool', 'toggle', 'badge', 'icon', 'number'].includes(column.type)
+  || !isEmpty(cell(row, column.key));
 
 const open = (row, event) => {
   if (!row.url || event.target.closest('a, button, input, select, label')) {
@@ -165,7 +179,92 @@ const open = (row, event) => {
       </button>
     </div>
 
-    <div class="overflow-x-auto">
+    <!-- Cards, below md. -->
+    <div class="flex flex-col gap-2 p-2 md:hidden">
+      <article
+        v-for="row in table.rows"
+        :key="`card-${row.id}`"
+        class="rounded-lg border border-hairline bg-surface-1 transition-colors active:bg-surface-2"
+        :class="row.url ? 'cursor-pointer' : ''"
+        @click="open(row, $event)"
+      >
+        <div class="flex items-start gap-2.5 p-3">
+          <input
+            v-if="table.bulkActions.length"
+            v-model="selected"
+            type="checkbox"
+            :value="row.id"
+            class="mt-0.5 size-4 shrink-0 accent-state-live"
+            :aria-label="`Select row ${row.id}`"
+          />
+
+          <TableCell
+            v-if="cardImage && !isEmpty(cell(row, cardImage.key))"
+            :column="cardImage"
+            :value="cell(row, cardImage.key)"
+            image-class="h-10 w-16 shrink-0"
+          />
+
+          <div class="min-w-0 flex-1">
+            <div v-if="cardTitle" class="text-[15px] font-medium text-fg-1">
+              <InlineCell
+                v-if="inlineField(row, cardTitle.key)"
+                :field="inlineField(row, cardTitle.key)"
+                :value="draftValue(row, inlineField(row, cardTitle.key))"
+                :state="states[fieldKey(row, inlineField(row, cardTitle.key))]"
+                @save="save(row, inlineField(row, cardTitle.key), $event)"
+              />
+              <TableCell v-else :column="cardTitle" :value="cell(row, cardTitle.key)" />
+            </div>
+          </div>
+
+          <TableCell
+            v-if="cardBadge"
+            :column="cardBadge"
+            :value="cell(row, cardBadge.key)"
+            class="shrink-0"
+          />
+        </div>
+
+        <dl
+          v-if="cardFields.some((column) => showsOnCard(row, column))"
+          class="flex flex-col gap-1 border-t border-hairline/60 px-3 py-2 text-[13px]"
+        >
+          <div
+            v-for="column in cardFields"
+            :key="column.key"
+            v-show="showsOnCard(row, column)"
+            class="flex items-center gap-3"
+          >
+            <dt class="shrink-0 text-[11px] uppercase tracking-wide text-fg-3">{{ column.label }}</dt>
+            <dd class="ml-auto min-w-0 truncate text-right text-fg-1" :class="column.type === 'number' ? 'tabular-nums' : ''">
+              <InlineCell
+                v-if="inlineField(row, column.key)"
+                :field="inlineField(row, column.key)"
+                :value="draftValue(row, inlineField(row, column.key))"
+                :state="states[fieldKey(row, inlineField(row, column.key))]"
+                @save="save(row, inlineField(row, column.key), $event)"
+              />
+              <TableCell v-else :column="column" :value="cell(row, column.key)" />
+            </dd>
+          </div>
+        </dl>
+
+        <div
+          v-if="row.actions.length"
+          class="flex flex-wrap items-center gap-1.5 border-t border-hairline/60 px-3 py-2"
+        >
+          <ActionButton v-for="action in row.actions" :key="action.name" :action="action" />
+        </div>
+      </article>
+
+      <p v-if="!table.rows.length" class="py-10 text-center text-[13px] text-fg-3">
+        Nothing matches the current filters.
+      </p>
+    </div>
+
+    <!-- Rows, from md up. -->
+    <div class="hidden overflow-x-auto md:block">
       <table class="w-full border-collapse text-[13px]">
         <thead>
           <tr class="border-y border-hairline bg-surface-2">
@@ -200,7 +299,7 @@ const open = (row, event) => {
               </button>
               <span v-else>{{ column.label }}</span>
             </th>
-            <th v-if="table.rows.some((row) => row.actions.length)" class="px-3" />
+            <th v-if="hasActions" class="px-3" />
           </tr>
         </thead>
 
@@ -228,109 +327,17 @@ const open = (row, event) => {
               class="h-8 px-3 whitespace-nowrap text-fg-1"
               :class="[align[column.align] ?? align.left, column.type === 'number' ? 'tabular-nums' : '']"
             >
-              <template v-if="inlineField(row, column.key)">
-                <InlineCell
-                  :field="inlineField(row, column.key)"
-                  :value="draftValue(row, inlineField(row, column.key))"
-                  :state="states[fieldKey(row, inlineField(row, column.key))]"
-                  @save="save(row, inlineField(row, column.key), $event)"
-                />
-              </template>
-
-              <template v-else-if="column.type === 'badge'">
-                <StatusBadge :status="cell(row, column.key)" />
-              </template>
-
-              <template v-else-if="column.type === 'number'">
-                <span v-if="numberDisplay(cell(row, column.key)) !== null">
-                  {{ numberDisplay(cell(row, column.key)) }}
-                  <span
-                    v-if="cell(row, column.key)?.description"
-                    class="block text-[11px] text-fg-3"
-                  >{{ cell(row, column.key).description }}</span>
-                </span>
-                <span v-else class="text-fg-3">{{ column.fallback ?? '—' }}</span>
-              </template>
-
-              <template v-else-if="column.type === 'image'">
-                <img
-                  v-if="!isEmpty(cell(row, column.key))"
-                  :src="cell(row, column.key)"
-                  alt=""
-                  class="h-6 w-10 rounded-sm border border-hairline object-cover"
-                />
-                <span v-else class="text-fg-3">—</span>
-              </template>
-
-              <template v-else-if="column.type === 'bool'">
-                <ManageIcon
-                  :name="cell(row, column.key) ? 'circle-check' : 'circle-x'"
-                  :size="15"
-                  :class="cell(row, column.key) ? 'inline text-state-ok' : 'inline text-fg-3'"
-                />
-              </template>
-
-              <template v-else-if="column.type === 'icon'">
-                <ManageIcon
-                  :name="cell(row, column.key)?.icon"
-                  :size="15"
-                  class="inline"
-                  :class="resolve(toneText, cell(row, column.key)?.tone)"
-                  :title="cell(row, column.key)?.title"
-                />
-              </template>
-
-              <template v-else-if="column.type === 'color'">
-                <span class="inline-flex items-center gap-1.5">
-                  <span
-                    class="inline-block size-3.5 rounded-sm border border-hairline"
-                    :style="{ backgroundColor: cell(row, column.key) }"
-                  />
-                  <span class="font-mono text-[12px] text-fg-2">{{ cell(row, column.key) }}</span>
-                </span>
-              </template>
-
-              <template v-else-if="column.type === 'copyable'">
-                <button
-                  v-if="!isEmpty(cell(row, column.key))"
-                  type="button"
-                  class="group inline-flex items-center gap-1 font-mono text-[12px] text-fg-1"
-                  :title="`Copy ${cell(row, column.key)}`"
-                  @click.stop="copy(cell(row, column.key))"
-                >
-                  {{ cell(row, column.key) }}
-                  <ManageIcon name="copy" :size="12" class="opacity-0 transition-opacity group-hover:opacity-60" />
-                </button>
-                <span v-else class="text-fg-3">{{ column.fallback ?? '—' }}</span>
-              </template>
-
-              <template v-else-if="column.type === 'toggle'">
-                <input
-                  type="checkbox"
-                  class="accent-state-live"
-                  :checked="cell(row, column.key)?.value"
-                  :aria-label="column.label"
-                  @click.stop
-                  @change="router.post(cell(row, column.key).url, {}, { preserveScroll: true })"
-                />
-              </template>
-
-              <template v-else-if="column.type === 'datetime'">
-                <span
-                  v-if="!isEmpty(cell(row, column.key))"
-                  class="tabular-nums"
-                  :title="cell(row, column.key)?.title"
-                >{{ cell(row, column.key)?.display ?? cell(row, column.key) }}</span>
-                <span v-else class="text-fg-3">{{ column.fallback ?? '—' }}</span>
-              </template>
-
-              <template v-else>
-                <span v-if="!isEmpty(cell(row, column.key))">{{ cell(row, column.key) }}</span>
-                <span v-else class="text-fg-3">{{ column.fallback ?? '—' }}</span>
-              </template>
+              <InlineCell
+                v-if="inlineField(row, column.key)"
+                :field="inlineField(row, column.key)"
+                :value="draftValue(row, inlineField(row, column.key))"
+                :state="states[fieldKey(row, inlineField(row, column.key))]"
+                @save="save(row, inlineField(row, column.key), $event)"
+              />
+              <TableCell v-else :column="column" :value="cell(row, column.key)" />
             </td>
 
-            <td v-if="table.rows.some((r) => r.actions.length)" class="px-3">
+            <td v-if="hasActions" class="px-3">
               <div class="flex justify-end gap-1">
                 <ActionButton
                   v-for="action in row.actions"

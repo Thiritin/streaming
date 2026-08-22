@@ -111,7 +111,7 @@ const button =
     />
 
     <!-- Controls: which window, and how wide to draw it. -->
-    <div class="flex h-11 flex-wrap items-center gap-2 border-b border-hairline bg-surface-1 px-3">
+    <div class="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-hairline bg-surface-1 px-3 py-1.5 md:py-0">
       <button type="button" :class="[button, chip(false)]" @click="shift(-range.days)">
         <ManageIcon name="chevron-left" :size="13" />
         Back
@@ -126,7 +126,7 @@ const button =
         {{ range.dayLabels[0]?.label }} – {{ range.dayLabels[range.dayLabels.length - 1]?.label }}
       </span>
 
-      <label class="ml-auto flex items-center gap-1.5">
+      <label class="flex items-center gap-1.5 md:ml-auto">
         <span class="text-[11px] uppercase tracking-wide text-fg-3">Days</span>
         <select
           :value="range.days"

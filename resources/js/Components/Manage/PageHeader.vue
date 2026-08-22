@@ -10,13 +10,13 @@ defineProps({
 </script>
 
 <template>
-  <header class="flex h-14 shrink-0 items-center gap-3 border-b border-hairline px-4">
-    <div class="min-w-0">
+  <header class="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline px-3 py-2 md:flex-nowrap md:px-4 md:py-0">
+    <div class="w-full min-w-0 md:w-auto md:flex-1">
       <h1 class="truncate text-[17px] font-semibold text-fg-1">{{ title }}</h1>
-      <p v-if="subtitle" class="truncate text-[12px] text-fg-3">{{ subtitle }}</p>
+      <p v-if="subtitle" class="text-[12px] text-fg-3 md:truncate">{{ subtitle }}</p>
     </div>
 
-    <div class="ml-auto flex items-center gap-1.5">
+    <div class="flex w-full flex-wrap items-center gap-1.5 md:ml-auto md:w-auto">
       <slot name="actions" />
       <ActionButton v-for="action in actions" :key="action.name" :action="action" />
     </div>

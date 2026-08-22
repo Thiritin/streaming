@@ -20,7 +20,7 @@ const pages = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-10 items-center gap-3 border-t border-hairline px-3 text-[12px] text-fg-2">
+  <div class="flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-hairline px-3 py-1.5 text-[12px] text-fg-2 md:flex-nowrap md:py-0">
     <span class="tabular-nums">
       <template v-if="meta.total">{{ meta.from }}–{{ meta.to }} of {{ meta.total }}</template>
       <template v-else>0 results</template>
@@ -30,17 +30,17 @@ const pages = computed(() => {
       <span class="text-fg-3">per page</span>
       <select
         :value="meta.perPage"
-        class="h-6 rounded border border-hairline bg-surface-2 px-1 text-[12px] text-fg-1"
+        class="h-8 rounded border border-hairline bg-surface-2 px-1 text-[12px] text-fg-1 md:h-6"
         @change="setPerPage(Number($event.target.value))"
       >
         <option v-for="option in meta.perPageOptions" :key="option" :value="option">{{ option }}</option>
       </select>
     </label>
 
-    <div v-if="meta.lastPage > 1" class="ml-auto flex items-center gap-1">
+    <div v-if="meta.lastPage > 1" class="flex w-full items-center gap-1 md:ml-auto md:w-auto">
       <button
         type="button"
-        class="inline-flex size-6 items-center justify-center rounded border border-hairline disabled:opacity-30"
+        class="inline-flex size-8 items-center justify-center rounded border border-hairline disabled:opacity-30 md:size-6"
         :disabled="meta.page <= 1"
         aria-label="Previous page"
         @click="setPage(meta.page - 1)"
@@ -52,7 +52,7 @@ const pages = computed(() => {
         v-for="page in pages"
         :key="page"
         type="button"
-        class="inline-flex h-6 min-w-6 items-center justify-center rounded border px-1 tabular-nums transition-colors"
+        class="inline-flex h-8 min-w-8 flex-1 items-center justify-center rounded border px-1 tabular-nums transition-colors md:h-6 md:min-w-6 md:flex-none"
         :class="page === meta.page ? 'border-state-live/40 bg-state-live/10 text-state-live' : 'border-hairline hover:bg-surface-3'"
         @click="setPage(page)"
       >
@@ -61,7 +61,7 @@ const pages = computed(() => {
 
       <button
         type="button"
-        class="inline-flex size-6 items-center justify-center rounded border border-hairline disabled:opacity-30"
+        class="inline-flex size-8 items-center justify-center rounded border border-hairline disabled:opacity-30 md:size-6"
         :disabled="meta.page >= meta.lastPage"
         aria-label="Next page"
         @click="setPage(meta.page + 1)"

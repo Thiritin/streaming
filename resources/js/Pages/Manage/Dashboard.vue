@@ -107,7 +107,36 @@ const head = 'h-7 px-3 text-left text-[11px] font-medium uppercase tracking-wide
             <h2 class="text-[12px] font-semibold uppercase tracking-wide text-fg-1">Servers</h2>
           </header>
 
-          <div class="overflow-x-auto">
+          <!-- Below md the same rows stack: six columns on a phone is a sideways scroll
+               with the hostname off the left edge. -->
+          <ul class="divide-y divide-hairline/60 md:hidden">
+            <li v-for="server in servers" :key="`m-${server.id}`" class="flex flex-col gap-1 px-3 py-2">
+              <div class="flex items-center gap-2">
+                <Link v-if="server.url" :href="server.url" class="min-w-0 flex-1 truncate text-[14px] text-fg-1">
+                  {{ server.hostname }}
+                </Link>
+                <span v-else class="min-w-0 flex-1 truncate text-[14px] text-fg-1">{{ server.hostname }}</span>
+                <StatusBadge :status="server.status" />
+                <StatusBadge v-if="server.health" :status="server.health" />
+              </div>
+
+              <div class="flex items-center gap-2 text-[11px] text-fg-3">
+                <span class="uppercase tracking-wide">{{ server.type }}</span>
+                <span v-if="server.load !== null" class="tabular-nums" :class="resolve(toneText, loadTone(server.load))">
+                  {{ server.load }}%
+                </span>
+                <span class="tabular-nums">
+                  {{ number(server.viewers) }}<template v-if="server.maxClients">/{{ number(server.maxClients) }}</template>
+                </span>
+                <span class="ml-auto" :class="server.heartbeatStale ? 'text-state-warn' : 'text-fg-3'">
+                  {{ server.heartbeat ?? 'never' }}
+                </span>
+              </div>
+            </li>
+            <li v-if="!servers.length" class="px-3 py-2 text-[13px] text-fg-3">No servers are provisioned.</li>
+          </ul>
+
+          <div class="hidden overflow-x-auto md:block">
             <table class="w-full">
               <thead>
                 <tr class="border-b border-hairline">

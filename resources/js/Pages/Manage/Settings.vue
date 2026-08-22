@@ -220,20 +220,25 @@ onBeforeUnmount(clearAccentPreview);
 
     <PageHeader title="Settings" :subtitle="group.description" />
 
-    <div class="flex min-h-0 flex-1 items-stretch">
-      <nav class="w-64 shrink-0 border-r border-hairline" aria-label="Settings sections">
-        <div class="sticky top-0 space-y-1 p-2">
+    <div class="flex min-h-0 flex-1 flex-col items-stretch lg:flex-row">
+      <!-- Below lg the pane list is a strip of chips that scrolls sideways: a 256px column
+           beside the form leaves nothing for the form. -->
+      <nav
+        class="shrink-0 border-b border-hairline lg:w-64 lg:border-r lg:border-b-0"
+        aria-label="Settings sections"
+      >
+        <div class="sticky top-0 flex gap-1 overflow-x-auto p-2 [scrollbar-width:none] lg:block lg:space-y-1 lg:overflow-visible [&::-webkit-scrollbar]:hidden">
           <Link
             v-for="item in navigation"
             :key="item.key"
             :href="paneUrl(item)"
-            class="relative flex gap-2.5 overflow-hidden rounded px-3 py-2.5 transition-colors"
+            class="relative flex shrink-0 items-center gap-2.5 overflow-hidden rounded border border-hairline px-3 py-2 transition-colors lg:items-start lg:border-0 lg:py-2.5"
             :class="isActive(item) ? 'bg-state-live/10' : 'hover:bg-surface-2'"
             :aria-current="isActive(item) ? 'page' : null"
           >
             <span
               v-if="isActive(item)"
-              class="absolute top-1 bottom-1 left-0 w-0.5 rounded-r bg-state-live"
+              class="absolute top-1 bottom-1 left-0 hidden w-0.5 rounded-r bg-state-live lg:block"
               aria-hidden="true"
             />
 
@@ -246,12 +251,12 @@ onBeforeUnmount(clearAccentPreview);
 
             <span class="min-w-0 flex-1">
               <span
-                class="block truncate text-[13px] font-medium"
+                class="block whitespace-nowrap text-[13px] font-medium lg:truncate"
                 :class="isActive(item) ? 'text-state-live' : 'text-fg-1'"
               >
                 {{ item.label }}
               </span>
-              <span class="mt-0.5 block text-[11px] leading-[15px] text-fg-3">
+              <span class="mt-0.5 hidden text-[11px] leading-[15px] text-fg-3 lg:block">
                 {{ item.blurb }}
               </span>
             </span>

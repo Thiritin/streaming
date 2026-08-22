@@ -23,7 +23,18 @@ const toggleableColumns = computed(() => props.table.columns.filter((column) => 
 
 const term = ref(props.table.search ?? '');
 const open = ref(null);
+// Below md the filter set folds away behind a button: on a phone the toolbar would
+// otherwise be four rows of controls above the first record.
+const filtersOpen = ref(false);
 let debounce = null;
+
+const activeFilters = computed(
+  () => filters.value.filter((filter) => {
+    const value = filter.value;
+
+    return Array.isArray(value) ? value.length > 0 : value !== null && value !== undefined && value !== '' && value !== false;
+  }).length,
+);
 
 /** Which multi-select popover is open, and what its button reads when closed. */
 const summary = (filter) => {
@@ -75,98 +86,135 @@ const toggleColumn = (key) => {
   );
 };
 
+// Taller below md: 28px is a comfortable click and an uncomfortable tap.
 const control =
-  'h-7 rounded border border-hairline bg-surface-2 px-2 text-[12px] text-fg-1 outline-none focus:border-state-live/50';
+  'h-9 rounded border border-hairline bg-surface-2 px-2 text-[13px] text-fg-1 outline-none focus:border-state-live/50 md:h-7 md:text-[12px]';
 </script>
 
 <template>
-  <div class="relative flex min-h-11 flex-wrap items-center gap-2 border-b border-hairline bg-surface-1 px-3 py-2">
+  <div class="relative flex min-h-11 shrink-0 flex-col gap-2 border-b border-hairline bg-surface-1 px-3 py-2 md:flex-row md:flex-wrap md:items-center">
     <div v-if="open" class="fixed inset-0 z-20" aria-hidden="true" @click="open = null" />
 
-    <template v-for="filter in filters" :key="filter.key">
-      <select
-        v-if="filter.type === 'select' && !filter.multiple"
-        :value="filter.value"
-        :class="control"
-        @change="setFilter(filter.key, $event.target.value)"
+    <!-- Search and the switches lead on a phone; the filters sit behind the button beside them. -->
+    <div class="flex items-center gap-2 md:contents">
+      <label v-if="searchable" class="flex min-w-0 flex-1 items-center gap-1.5 md:hidden">
+        <ManageIcon name="search" :size="15" class="shrink-0 text-fg-3" />
+        <input
+          v-model="term"
+          type="search"
+          placeholder="Search"
+          :class="[control, 'h-9 w-full min-w-0 text-[14px]']"
+          @input="onSearch"
+        />
+      </label>
+
+      <button
+        v-if="filters.length"
+        type="button"
+        :class="[
+          control,
+          'inline-flex h-9 shrink-0 items-center gap-1.5 md:hidden',
+          activeFilters ? 'border-state-live/40 bg-state-live/10 text-state-live' : 'text-fg-2',
+        ]"
+        :aria-expanded="filtersOpen"
+        @click="filtersOpen = !filtersOpen"
       >
-        <option value="">{{ filter.placeholder ?? `All ${filter.label.toLowerCase()}` }}</option>
-        <option v-for="option in filter.options" :key="option.value" :value="option.value">
-          {{ option.label }}
-        </option>
-      </select>
+        <ManageIcon name="sliders-horizontal" :size="15" />
+        Filters
+        <span v-if="activeFilters" class="tabular-nums">{{ activeFilters }}</span>
+      </button>
+    </div>
 
-      <!-- Multi-select is a checkbox popover, not a native `select multiple`: the native
-           one renders in the OS light palette, cannot be restyled, and clips its rows to
-           the control height. -->
-      <div v-else-if="filter.type === 'select'" class="relative">
-        <button
-          type="button"
-          :class="[control, 'inline-flex items-center gap-1.5']"
-          :aria-expanded="open === filter.key"
-          @click="open = open === filter.key ? null : filter.key"
+    <div
+      :class="filtersOpen
+        ? 'flex flex-wrap items-center gap-2 md:contents'
+        : 'hidden md:contents'"
+    >
+      <template v-for="filter in filters" :key="filter.key">
+        <select
+          v-if="filter.type === 'select' && !filter.multiple"
+          :value="filter.value"
+          :class="control"
+          @change="setFilter(filter.key, $event.target.value)"
         >
-          <span class="text-[11px] uppercase tracking-wide text-fg-3">{{ filter.label }}</span>
-          <span :class="summary(filter) ? 'text-fg-1' : 'text-fg-3'">{{ summary(filter) || 'any' }}</span>
-          <ManageIcon name="chevron-down" :size="12" class="text-fg-3" />
-        </button>
-
-        <div
-          v-if="open === filter.key"
-          class="absolute top-8 left-0 z-30 w-48 rounded border border-hairline bg-surface-2 p-1.5 shadow-lg"
-        >
-          <label
-            v-for="option in filter.options"
-            :key="option.value"
-            class="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[12px] text-fg-1 hover:bg-surface-3"
-          >
-            <input
-              type="checkbox"
-              class="accent-state-live"
-              :checked="(filter.value ?? []).includes(option.value)"
-              @change="toggleValue(filter, option.value)"
-            />
+          <option value="">{{ filter.placeholder ?? `All ${filter.label.toLowerCase()}` }}</option>
+          <option v-for="option in filter.options" :key="option.value" :value="option.value">
             {{ option.label }}
-          </label>
+          </option>
+        </select>
 
+        <!-- Multi-select is a checkbox popover, not a native `select multiple`: the native
+             one renders in the OS light palette, cannot be restyled, and clips its rows to
+             the control height. -->
+        <div v-else-if="filter.type === 'select'" class="relative">
           <button
             type="button"
-            class="mt-1 w-full rounded px-1.5 py-1 text-left text-[11px] text-fg-3 transition-colors hover:bg-surface-3 hover:text-fg-1"
-            @click="setFilter(filter.key, [])"
+            :class="[control, 'inline-flex items-center gap-1.5']"
+            :aria-expanded="open === filter.key"
+            @click="open = open === filter.key ? null : filter.key"
           >
-            Clear
+            <span class="text-[11px] uppercase tracking-wide text-fg-3">{{ filter.label }}</span>
+            <span :class="summary(filter) ? 'text-fg-1' : 'text-fg-3'">{{ summary(filter) || 'any' }}</span>
+            <ManageIcon name="chevron-down" :size="12" class="text-fg-3" />
           </button>
+
+          <div
+            v-if="open === filter.key"
+            class="absolute top-8 left-0 z-30 w-48 rounded border border-hairline bg-surface-2 p-1.5 shadow-lg"
+          >
+            <label
+              v-for="option in filter.options"
+              :key="option.value"
+              class="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[12px] text-fg-1 hover:bg-surface-3"
+            >
+              <input
+                type="checkbox"
+                class="accent-state-live"
+                :checked="(filter.value ?? []).includes(option.value)"
+                @change="toggleValue(filter, option.value)"
+              />
+              {{ option.label }}
+            </label>
+
+            <button
+              type="button"
+              class="mt-1 w-full rounded px-1.5 py-1 text-left text-[11px] text-fg-3 transition-colors hover:bg-surface-3 hover:text-fg-1"
+              @click="setFilter(filter.key, [])"
+            >
+              Clear
+            </button>
+          </div>
         </div>
-      </div>
 
-      <select
-        v-else-if="filter.type === 'ternary'"
-        :value="filter.value"
-        :class="control"
-        @change="setFilter(filter.key, $event.target.value)"
-      >
-        <option value="">{{ filter.placeholder ?? `All ${filter.label.toLowerCase()}` }}</option>
-        <option value="1">{{ filter.trueLabel ?? 'Yes' }}</option>
-        <option value="0">{{ filter.falseLabel ?? 'No' }}</option>
-      </select>
+        <select
+          v-else-if="filter.type === 'ternary'"
+          :value="filter.value"
+          :class="control"
+          @change="setFilter(filter.key, $event.target.value)"
+        >
+          <option value="">{{ filter.placeholder ?? `All ${filter.label.toLowerCase()}` }}</option>
+          <option value="1">{{ filter.trueLabel ?? 'Yes' }}</option>
+          <option value="0">{{ filter.falseLabel ?? 'No' }}</option>
+        </select>
 
-      <label
-        v-else
-        class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded border border-hairline px-2 text-[12px] transition-colors"
-        :class="filter.value ? 'border-state-live/40 bg-state-live/10 text-state-live' : 'text-fg-2 hover:bg-surface-3'"
-      >
-        <input
-          type="checkbox"
-          class="accent-state-live"
-          :checked="filter.value"
-          @change="setFilter(filter.key, $event.target.checked)"
-        />
-        {{ filter.label }}
-      </label>
-    </template>
+        <label
+          v-else
+          class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded border border-hairline px-2 text-[13px] transition-colors md:h-7 md:text-[12px]"
+          :class="filter.value ? 'border-state-live/40 bg-state-live/10 text-state-live' : 'text-fg-2 hover:bg-surface-3'"
+        >
+          <input
+            type="checkbox"
+            class="accent-state-live"
+            :checked="filter.value"
+            @change="setFilter(filter.key, $event.target.checked)"
+          />
+          {{ filter.label }}
+        </label>
+      </template>
+    </div>
 
-    <div class="ml-auto flex items-center gap-2">
-      <label v-if="searchable" class="flex items-center gap-1.5">
+    <div class="flex flex-wrap items-center gap-2 md:ml-auto">
+      <label v-if="searchable" class="hidden items-center gap-1.5 md:flex">
         <ManageIcon name="search" :size="13" class="text-fg-3" />
         <input
           v-model="term"
