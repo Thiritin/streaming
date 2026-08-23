@@ -112,6 +112,20 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      `Recording::effectiveEvent()` and filter with `inEvent` / `notInEvent`, never
      `where('event_id', ...)` - that misses everything that has its event through
      its show. Both tables offer a Set Event bulk action.
+   - Every list read one run at a time - Shows, Recordings and the recording plan -
+     is narrowed by event and never by calendar year, and opens on the latest run:
+     `Event::mostRecent()`, which is the one that is on, else the one that just
+     finished, else the one that is next. A run already in the calendar has no
+     programme yet, so newest-by-date is the wrong answer. The options come from
+     `App\Support\EventFilter`: every run, plus `all` to switch the filter off and
+     `none` for the rows filed under no run at all, which is the only way to find a
+     programme imported before the calendar existed. The rail's outstanding badge is
+     scoped to the same run. With no calendar the default is `all`, so nothing
+     changes shape.
+   - A filter with a default is cleared by sending it back empty, not by dropping it
+     from the URL: `Table::resolveFilterValues()` reads presence rather than value,
+     since ConvertEmptyStringsToNull would otherwise make an emptied filter
+     indistinguishable from an absent one and the default would come straight back.
    - `Event::configured()` gates every behaviour change, so an installation that has
      never set the calendar up keeps exactly the shape it had before events existed.
 

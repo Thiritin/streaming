@@ -124,20 +124,25 @@ migration dropped, was a gate; this is not a revival of it.
 
 ## Filters
 
-Search, year, day, source, publish plan, owner, recording status, Mine and grouping, all in
+Search, event, day, source, publish plan, owner, recording status, Mine and grouping, all in
 the query string, so any view of the work is a link. Anything sitting at its default is left
 out of the URL, so a shared link carries only what was actually chosen.
 
-**The year defaults to the current one.** An installation accumulates a run of shows per
-event, and the plan is worked during and just after one of them, so opening the page on
-every show that ever ran would bury this year's under the last five. Pick another year from
-the list, or **All years** to switch the filter off. A day chosen explicitly wins over the
-year, so a link to a date in a past year still resolves.
+**The event defaults to the latest run.** That is the one that is on, or - since most of this
+accounting happens after the doors close - the one that just finished. An installation
+accumulates a run of shows per event, so opening the page on every show that ever ran would
+bury this run's under the last five. Pick another run from the list, **All events** to switch
+the filter off, or **No event** for the shows filed under no run at all, which is what a
+programme imported before the calendar existed looks like. A day chosen explicitly wins over
+the event, so a link to a date in a past run still resolves.
+
+An installation that has never set the calendar up gets **All events** and sees everything,
+exactly as it did before events existed.
 
 The rail badge is scoped the same way: a count of shows from three events ago is a number
 nobody will ever act on.
 
-One thing to know: a past year is usually filed away in its entirety, so picking one without
+One thing to know: a past run is usually filed away in its entirety, so picking one without
 turning **Archived** on comes back empty. The empty state says so.
 
 - **Any owner > Nobody** - unassigned work

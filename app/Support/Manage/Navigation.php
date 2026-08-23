@@ -5,6 +5,7 @@ namespace App\Support\Manage;
 use App\Enum\ServerStatusEnum;
 use App\Enum\SourceStatusEnum;
 use App\Models\Emote;
+use App\Models\Event;
 use App\Models\FeedbackReport;
 use App\Models\Role;
 use App\Models\Server;
@@ -126,9 +127,10 @@ final class Navigation
              * chased is very much in, because someone has to go and find it.
              */
             $gaps = Show::whereNot('publish_plan', 'no')
-                // This year only, matching what the plan page opens on. A badge counting
-                // shows from three events ago is a number nobody will ever act on.
-                ->whereYear('scheduled_start', now()->year)
+                // The run the plan page opens on and nothing else. A badge counting shows
+                // from three events ago is a number nobody will ever act on. An
+                // installation with no calendar counts the lot, as it did before events.
+                ->when(Event::mostRecent(), fn ($query, Event $event) => $query->where('event_id', $event->id))
                 ->whereIn('status', ['ended', 'live'])
                 ->whereDoesntHave('recordings')
                 // Spelled out rather than whereNot: `null != 'received'` is null in SQL,
