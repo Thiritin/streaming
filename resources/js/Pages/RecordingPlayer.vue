@@ -32,6 +32,7 @@
                         :start-time="resumeAt"
                         @can-play="handleCanPlay"
                         @time-update="handleTimeUpdate"
+                        @duration-change="mediaDuration = $event"
                         @pause="saveProgress"
                         @ended="handleEnded"
                         @error="handleError"
@@ -199,6 +200,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import VideoPlayer from '@/Components/Player/VideoPlayer.vue';
 import RecordingRow from '@/Components/Recordings/RecordingRow.vue';
+import { rememberProgress } from '@/composables/useRecentProgress';
 import TilePlaceholder from '@/Components/TilePlaceholder.vue';
 import FaVideoSlashIcon from '@/Components/Icons/FaVideoSlashIcon.vue';
 import FaArrowLeftIcon from '@/Components/Icons/FaArrowLeftIcon.vue';
@@ -354,16 +356,43 @@ const currentTime = ref(props.resumeAt);
 const watched = ref(false);
 let lastSaved = props.resumeAt;
 
+/*
+ * What actually played, which is not always what the record says.
+ *
+ * `recordings.duration` is metadata and can be stale or wrong; the media element
+ * knows its own length exactly. Progress is reported against this one, so the bar on
+ * a tile and the bar under the player are measuring the same thing. Without it the
+ * two disagree by whatever the record is wrong by - a recording watched to its end
+ * shows a fifth of a bar on the archive page.
+ */
+const mediaDuration = ref(null);
+
 const saveProgress = () => {
-    if (!canSaveProgress.value || currentTime.value <= 0) return;
+    if (!canSaveProgress.value) return;
+
+    /*
+     * The first time-updates of a fresh load report 0, before the resume seek has
+     * landed. Writing one of those - which is what leaving straight after opening a
+     * recording used to do - wipes the position and drops it off Continue watching.
+     */
+    if (currentTime.value < 1) return;
+
     if (Math.abs(currentTime.value - lastSaved) < 1) return;
 
     lastSaved = currentTime.value;
 
+    // Remembered for the archive page as well as posted, so coming straight back
+    // to a grid Inertia has cached does not redraw a bar from before this visit.
+    rememberProgress(props.recording.id, {
+        position: currentTime.value,
+        duration: mediaDuration.value,
+        completed: mediaDuration.value ? currentTime.value / mediaDuration.value >= 0.97 : false,
+    });
+
     window.axios
         .put(route('recordings.progress', props.recording.id), {
             position: Math.floor(currentTime.value),
-            duration: props.recording.duration ?? null,
+            duration: mediaDuration.value ? Math.round(mediaDuration.value) : null,
         })
         .catch(() => {});
 };
@@ -395,7 +424,7 @@ const handleCanPlay = () => {
 
 const handleEnded = () => {
     lastSaved = 0;
-    currentTime.value = props.recording.duration ?? currentTime.value;
+    currentTime.value = mediaDuration.value ?? props.recording.duration ?? currentTime.value;
     saveProgress();
 
     // Only roll on if this visit actually played something. A stored position past

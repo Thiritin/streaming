@@ -373,6 +373,15 @@ class RecordingController extends Controller
                     'position' => $row->position,
                     'fraction' => round($row->fraction(), 4),
                     'completed' => $row->completed,
+                    // The length the position was measured against, which is what a
+                    // tile has to count "left" from. Reading that off the recording
+                    // instead is how "23 min left" appeared on something already
+                    // watched to the end.
+                    'duration' => $row->duration ?: $row->recording?->duration,
+                    // When this was last written, so a page restored from the
+                    // client's history cache can tell whether what it remembers
+                    // from the player is newer than what the server just sent.
+                    'updated_at' => $row->updated_at?->getTimestamp(),
                 ],
             ])
             ->all();

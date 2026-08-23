@@ -72,6 +72,7 @@ import { Link } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import TilePlaceholder from '../TilePlaceholder.vue';
 import { useHoverPreview } from '@/composables/useHoverPreview';
+import { effectiveProgress } from '@/composables/useRecentProgress';
 
 const props = defineProps({
   recording: { type: Object, required: true },
@@ -109,7 +110,9 @@ const onScrub = (event) => {
   scrubTo((event.clientX - rect.left) / rect.width);
 };
 
-const fraction = computed(() => props.recording.progress?.fraction ?? 0);
+const fraction = computed(
+  () => effectiveProgress(props.recording.id, props.recording.progress)?.fraction ?? 0
+);
 
 const formatDuration = (seconds) => {
   const hours = Math.floor(seconds / 3600);

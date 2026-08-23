@@ -72,6 +72,7 @@ const emit = defineEmits([
     'quality-change',
     'can-play',
     'time-update',
+    'duration-change',
     'toggle-stats',
 ]);
 
@@ -163,6 +164,17 @@ const onTimeUpdate = (event) => {
     emit('time-update', event.detail?.currentTime ?? player.value?.currentTime ?? 0);
 };
 
+/**
+ * The media's own length, which is not always what the record says it is. Anything
+ * measuring a viewer against the recording - how far through they are, whether they
+ * finished it - has to use what actually played.
+ */
+const onDurationChange = (event) => {
+    const seconds = event.detail ?? player.value?.duration ?? 0;
+
+    if (Number.isFinite(seconds) && seconds > 0) emit('duration-change', seconds);
+};
+
 const onAutoplayFail = () => {
     const el = player.value;
     if (!el) return;
@@ -247,6 +259,7 @@ defineExpose({
             @ended="emit('ended')"
             @can-play="onCanPlay"
             @time-update="onTimeUpdate"
+            @duration-change="onDurationChange"
         >
             <media-provider>
                 <media-poster v-if="poster" class="vds-poster" :src="poster" :alt="title" />

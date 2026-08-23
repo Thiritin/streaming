@@ -162,6 +162,7 @@ import FaPlayIcon from '../Icons/FaPlayIcon.vue';
 import FaEyeIcon from '../Icons/FaEyeIcon.vue';
 import { claimMediaHero } from '@/composables/useMediaHero';
 import { useHoverPreview } from '@/composables/useHoverPreview';
+import { effectiveProgress } from '@/composables/useRecentProgress';
 
 // Props
 const props = defineProps({
@@ -223,16 +224,22 @@ const onScrub = (event) => {
   scrubTo((event.clientX - rect.left) / rect.width);
 };
 
-const progressFraction = computed(() => props.recording.progress?.fraction ?? 0);
+// What the player last reported wins over an older row redrawn from Inertia's
+// history cache, which is what made a tile disagree with the player just left.
+const progress = computed(() => effectiveProgress(props.recording.id, props.recording.progress));
+
+const progressFraction = computed(() => progress.value?.fraction ?? 0);
 
 const resumeLabel = computed(() => {
-  const progress = props.recording.progress;
+  const progress = effectiveProgress(props.recording.id, props.recording.progress);
 
   if (!progress || progress.completed || !progress.position || progressFraction.value <= 0) {
     return null;
   }
 
-  const left = (props.recording.duration ?? 0) - progress.position;
+  // Against the length the position was measured on, not the record's own: they
+  // are not always the same number.
+  const left = (progress.duration ?? props.recording.duration ?? 0) - progress.position;
 
   if (left <= 60) return 'Almost finished';
 

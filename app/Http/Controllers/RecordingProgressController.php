@@ -29,9 +29,24 @@ class RecordingProgressController extends Controller
             'duration' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        // The recording's own duration wins where it has one: a client-reported
-        // length is whatever the player happened to have buffered.
-        $duration = (int) ($recording->duration ?: round($data['duration'] ?? 0));
+        /*
+         * The length the player measured wins over the one on the record.
+         *
+         * `recordings.duration` is metadata: read off a playlist once, typed in by
+         * hand for an import, and wrong whenever a recording is re-cut without it
+         * being refreshed. The media element knows what it is playing. Storing the
+         * record's number here is what put a tile's progress bar and the bar under
+         * the player on different scales - a recording watched to the end reading
+         * as a fifth watched on the archive page.
+         *
+         * Bounded, because it arrives from a client: anything outside a plausible
+         * range for a recording falls back to what the record says.
+         */
+        $reported = (int) round($data['duration'] ?? 0);
+        $duration = $reported >= 1 && $reported <= 24 * 3600
+            ? $reported
+            : (int) $recording->duration;
+
         $position = (int) round($data['position']);
 
         if ($duration > 0) {

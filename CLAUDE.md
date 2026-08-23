@@ -88,14 +88,60 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      archive uploader) and an operator preview from `/manage` (`?preview=1`, past
      `access-manage`), which exists precisely to check a feed before the show is put live.
 
-6. **The archive page**
+6. **The event calendar**
+   - An event is one run of the convention: a name and the days it covers, in
+     `events` (`starts_on`, `ends_on`, both `date`). The window is inclusive of the
+     closing day - `Event::endsAt()` is its end of day - because a run billed as
+     going "to Sunday" is not over on Sunday morning. Managed at `/manage` >
+     Settings > Events, another settings area whose contents are rows, joined to the
+     menu by hand in `Settings::navigation()` alongside Categories.
+   - It gates nothing. Two things read it and nothing else may: whether the site is
+     in its live state, and what a show or a recording is filed under. A window
+     being shut never stops a stream and never hides one - see the front page below.
+   - Read it through `Event::current()`, `::next()`, `::latestFinished()`,
+     `::isLive()` and `::configured()`, which come out of one cached table read
+     (`Event::forgetWindow()` drops it, and every write does). `Event::forDate()` is
+     what `Show::creating` and `Recording::creating` file a new row by. Auto-assign
+     is on create only: an edit that clears the event means it was cleared on
+     purpose, so guessing it back on every save would make the field impossible to
+     empty. `/manage` > Settings > Events > an event > "File them under this event"
+     is the backfill for an archive that predates the calendar, and it only touches
+     rows filed nowhere, so an overlapping run cannot steal another's programme.
+   - A show carries the event; its recordings inherit it, with `recordings.event_id`
+     as the override for an edit imported without a show. Read it through
+     `Recording::effectiveEvent()` and filter with `inEvent` / `notInEvent`, never
+     `where('event_id', ...)` - that misses everything that has its event through
+     its show. Both tables offer a Set Event bulk action.
+   - `Event::configured()` gates every behaviour change, so an installation that has
+     never set the calendar up keeps exactly the shape it had before events existed.
+
+7. **The front page's two modes**
+   - `StreamController@index` answers `archiveMode`. Inside a window the page is a
+     programme: hero, what is on, what is next. Between runs there is nothing to be
+     next, so it becomes the archive - a header saying which run ended and when the
+     next one opens, Most watched, then the grid.
+   - Anything on air wins, always. `archiveMode` is false whenever a show is live or
+     starting soon, on the server and again in `ShowsGrid.vue` (Echo can put a show
+     on air without a page load). A stream outside a window - a test, a one-off -
+     must never be buried because the calendar says the convention is over.
+   - The archive slice below the grid is split by run, not by the six-month cutoff it
+     replaces: the run that is on, or the last one to finish, leads it and everything
+     else goes in the section underneath. The cutoff survives only as the fallback
+     for an installation with no calendar.
+
+8. **The archive page**
    - `/archive` is one grid, newest first until asked otherwise, paged in through
      `Inertia::merge` and `WhenVisible` as it is scrolled. Chips (categories, then
-     years, then sources) and a sort narrow it in place. The archive runs to around
+     events, then sources) and a sort narrow it in place. The archive runs to around
      twenty recordings a year, so a wall of shelves would show the same recordings
      three times over; the one shelf left is Continue watching, on the unfiltered
      page only. `/archive/year/{year}` is now a redirect into `?year=`, kept for
      links already handed out.
+   - The collection chips are events, not years: a run is what people mean when they
+     say which year a recording is from. A recording filed under no run keeps a year
+     chip after the events, which is the only place a year chip survives and it
+     disappears once everything is filed. `?event=` and `?year=` are both honoured;
+     the two are one axis, so picking either clears the other.
    - Categories are what a show is - a dance, a theatre piece, a musical performance -
      and they gate nothing. The set is managed at `/manage` > Settings > Categories
      (a settings area whose contents are rows, so it joins the settings menu by hand in
@@ -127,7 +173,13 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
    - Playback position lives in `recording_progress`, one row per viewer per recording,
      written by the player every 15s and on the way out. Signed-in only: there is
      nothing to key a guest's row on, and Continue watching is assembled server-side
-     with the rest of the shelves.
+     with the rest of the shelves. The row's `duration` is the length the player
+     measured and `fraction()` reads it before `recordings.duration`: the record's
+     number goes stale, and measuring a tile's bar against a different length than
+     the player's bar is what made the two disagree. The player also remembers its
+     last report in session storage (`useRecentProgress`), because a grid restored
+     from Inertia's history cache redraws from props fetched before the visit; the
+     server's row wins as soon as it is the newer of the two.
    - Search suggestions (`/archive/suggest`) are the one place the front end talks to
      the server outside Inertia, because they answer per keystroke.
 
@@ -304,7 +356,8 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   `access-manage`; triaging and deleting needs `stream.manage`
 - Settings: one pane per group in `config/settings.php`, each with its own URL and its
   own entry in the menu down the left. Branding, login copy, accent colour, footer links,
-  the announcement, the feature switches and the control key
+  the announcement, the feature switches and the control key. Events and Categories join
+  the same menu by hand, being sets of rows rather than sets of knobs
 
 Tables, filters, row/bulk actions and toasts are declared server-side with the
 `App\Support\Manage` toolkit (`Table`, `Column`, `Filter`, `Action`, `Status`, `Toast`,

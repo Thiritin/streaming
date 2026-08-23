@@ -7,7 +7,7 @@
     <!-- Between runs of the convention there is nothing to be on next, so the page
          stops offering a programme and becomes the archive. Anything on air keeps
          the programme regardless; the server decides, and it never hides a stream. -->
-    <div v-if="archiveMode" class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-16 pb-10">
+    <div v-if="inArchiveMode" class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-16 pb-10">
       <div class="max-w-2xl space-y-3">
         <p class="text-xs font-semibold uppercase tracking-[0.14em] text-primary-300">Archive</p>
         <h1 class="text-3xl sm:text-4xl font-bold text-white tracking-tight">
@@ -56,7 +56,7 @@
 
     <!-- Filters: these replace the old stacked section headings, so a quiet day
          still reads as one deliberate grid instead of three empty sections. -->
-    <div v-if="!archiveMode" class="sticky top-14 z-30 bg-primary-900 border-b border-primary-800/50">
+    <div v-if="!inArchiveMode" class="sticky top-14 z-30 bg-primary-900 border-b border-primary-800/50">
       <div
         role="tablist"
         aria-label="Filter shows"
@@ -85,7 +85,7 @@
     <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 py-6 space-y-10">
       <!-- Archive mode only: with no programme to lead with, what people watched
            most is the most useful thing to put first. -->
-      <section v-if="archiveMode && popularRecordings.length">
+      <section v-if="inArchiveMode && popularRecordings.length">
         <div class="flex items-center gap-3 pb-4">
           <h2 class="text-sm font-semibold uppercase tracking-[0.12em] text-primary-300">Most watched</h2>
           <span class="h-px flex-1 bg-primary-800/60" aria-hidden="true" />
@@ -230,7 +230,7 @@ const activeFilter = ref('all');
  * and an archive page that ignores a stream starting is the one failure this must
  * not have. Same rule as the server's: anything on air wins.
  */
-const archiveMode = computed(() =>
+const inArchiveMode = computed(() =>
   props.archiveMode && !liveShows.value.length && !startingSoonShows.value.length
 );
 
