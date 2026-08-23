@@ -112,6 +112,7 @@ class ShowsTest extends TestCase
                     'thumbnail',
                     'title',
                     'source',
+                    'category',
                     'status',
                     'scheduled_start',
                     'scheduled_end',
@@ -136,6 +137,7 @@ class ShowsTest extends TestCase
                     'show_archived',
                     'status',
                     'source',
+                    'category',
                     'today',
                     'upcoming',
                 ],
@@ -944,7 +946,9 @@ class ShowsTest extends TestCase
             ->assertInertia(function (Assert $page) {
                 $table = $page->toArray()['props']['table'];
 
-                $this->assertSame([], collect($table['pageActions'])->pluck('name')->all());
+                // The planner is the one thing offered, and it opens read-only for
+                // them; nothing here creates, imports or edits.
+                $this->assertSame(['planner'], collect($table['pageActions'])->pluck('name')->all());
                 $this->assertSame(
                     ['edit', 'statistics'],
                     collect($table['rows'][0]['actions'])->pluck('name')->all(),
@@ -967,7 +971,7 @@ class ShowsTest extends TestCase
                 $this->assertTrue($table['inlineEditable']);
                 $this->assertSame(route('manage.shows.inline', $show), $inline['url']);
                 $this->assertSame(
-                    ['source', 'scheduled_start', 'scheduled_end'],
+                    ['source', 'category', 'scheduled_start', 'scheduled_end'],
                     collect($inline['fields'])->pluck('key')->all(),
                 );
             });

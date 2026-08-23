@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Manage;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Manage\ShowRequest;
+use App\Models\Category;
 use App\Models\Recording;
 use App\Models\Show;
 use App\Models\Source;
@@ -30,7 +31,7 @@ class ShowController extends Controller
 
         // Archiving widens the result set rather than narrowing it, so the exclusion sits
         // on the base query and the filter's job is to leave it off.
-        $query = Show::query()->with('source');
+        $query = Show::query()->with(['source', 'category']);
 
         if (! $request->boolean('filter.show_archived')) {
             $query->notArchived();
@@ -42,6 +43,7 @@ class ShowController extends Controller
                 Column::image('thumbnail', 'Thumbnail')->width('72px'),
                 Column::text('title', 'Title')->searchable()->sortable(),
                 Column::badge('source', 'Source')->searchable('source.name'),
+                Column::badge('category', 'Category')->toggleable(),
                 Column::badge('status', 'Status'),
                 Column::datetime('scheduled_start', 'Scheduled')->sortable(),
                 Column::datetime('scheduled_end', 'Ends')->sortable()->toggleable(),
@@ -76,6 +78,9 @@ class ShowController extends Controller
                 Filter::select('source', 'Source')
                     ->options(Source::ordered()->pluck('name', 'id')->all())
                     ->apply(fn (Builder $query, string $value) => $query->where('source_id', $value)),
+                Filter::select('category', 'Category')
+                    ->options(Category::ordered()->pluck('name', 'id')->all())
+                    ->apply(fn (Builder $query, string $value) => $query->where('category_id', $value)),
                 Filter::boolean('today', 'Today')
                     ->apply(fn (Builder $query) => $query->today()),
                 Filter::boolean('upcoming', 'Upcoming')
@@ -105,6 +110,7 @@ class ShowController extends Controller
                 'title' => '',
                 'slug' => '',
                 'source_id' => Source::ordered()->value('id'),
+                'category_id' => null,
                 'description' => '',
                 'scheduled_start' => now()->format('Y-m-d\TH:i'),
                 'scheduled_end' => now()->addHour()->format('Y-m-d\TH:i'),
@@ -140,6 +146,7 @@ class ShowController extends Controller
                 'title' => $show->title,
                 'slug' => $show->slug,
                 'source_id' => $show->source_id,
+                'category_id' => $show->category_id,
                 'description' => $show->description,
                 // datetime-local wants minutes and no timezone suffix.
                 'scheduled_start' => $show->scheduled_start?->format('Y-m-d\TH:i'),
@@ -405,6 +412,14 @@ class ShowController extends Controller
                 'disabled' => $live ? 'The show is on air; end it before moving it.' : null,
             ],
             [
+                'key' => 'category',
+                'field' => 'category_id',
+                'type' => 'select',
+                'label' => 'Category',
+                'value' => $show->category_id,
+                'options' => $this->categoryOptions(),
+            ],
+            [
                 'key' => 'scheduled_start',
                 'field' => 'scheduled_start',
                 'type' => 'datetime',
@@ -435,6 +450,7 @@ class ShowController extends Controller
 
         $validated = $request->validate([
             'source_id' => ['sometimes', 'integer', 'exists:sources,id'],
+            'category_id' => ['sometimes', 'nullable', 'integer', 'exists:categories,id'],
             'scheduled_start' => ['sometimes', 'required', 'date'],
             'scheduled_end' => ['sometimes', 'required', 'date'],
         ]);
@@ -491,6 +507,22 @@ class ShowController extends Controller
             ->all();
     }
 
+    /**
+     * Category options for the inline select. An empty first entry, because
+     * "no category" is a valid answer and clearing one has to be possible from
+     * the list.
+     */
+    private function categoryOptions(): array
+    {
+        return array_merge(
+            [['value' => '', 'label' => 'No category']],
+            Category::ordered()
+                ->get(['id', 'name'])
+                ->map(fn (Category $category) => ['value' => $category->id, 'label' => $category->name])
+                ->all(),
+        );
+    }
+
     private function row(Show $show): array
     {
         return [
@@ -498,6 +530,9 @@ class ShowController extends Controller
             'title' => $show->title,
             'source' => $show->source
                 ? Status::make($show->source->name, Status::INFO)
+                : null,
+            'category' => $show->category
+                ? Status::make($show->category->name, Status::IDLE)
                 : null,
             'status' => Status::show($show->status),
             'scheduled_start' => $show->scheduled_start?->format('M j, Y H:i'),
@@ -651,6 +686,35 @@ class ShowController extends Controller
     }
 
     /**
+     * Label a batch of shows at once. This is what makes an existing archive
+     * categorisable without opening a hundred forms.
+     */
+    public function bulkCategory(Request $request): RedirectResponse
+    {
+        $this->authorize('create', Show::class);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['integer'],
+            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+        ]);
+
+        $categoryId = $validated['category_id'] ?? null;
+        $count = Show::whereIn('id', $validated['ids'])->update(['category_id' => $categoryId]);
+
+        $label = $categoryId ? Category::find($categoryId)?->name : null;
+
+        Toast::flashSuccess(
+            'Category set',
+            $label
+                ? "{$count} show(s) are now {$label}."
+                : "{$count} show(s) no longer have a category.",
+        );
+
+        return back();
+    }
+
+    /**
      * @return array<int, Action>
      */
     private function bulkActions(): array
@@ -660,6 +724,25 @@ class ShowController extends Controller
         }
 
         return [
+            Action::post('bulk_category', 'Set Category', route('manage.shows.bulk.category'))
+                ->icon('tags')
+                ->tone(Status::IDLE)
+                ->confirm(
+                    'Set category on selected shows',
+                    'Their recordings follow, unless a recording carries a category of its own.',
+                    'Set category',
+                )
+                ->fields([[
+                    'key' => 'category_id',
+                    'label' => 'Category',
+                    'type' => 'select',
+                    'required' => false,
+                    'helper' => 'Leave empty to clear the category.',
+                    'options' => Category::ordered()
+                        ->get()
+                        ->map(fn (Category $category) => ['value' => (string) $category->id, 'label' => $category->name])
+                        ->all(),
+                ]]),
             Action::post('bulk_cancel', 'Cancel Shows', route('manage.shows.bulk.cancel'))
                 ->icon('circle-x')
                 ->tone(Status::IDLE)
@@ -684,7 +767,12 @@ class ShowController extends Controller
      */
     private function pageActions(): array
     {
-        $actions = [];
+        // The planner opens over the whole window and closes back here: it is a mode of
+        // this list rather than a section of its own, so it is a button and not a rail
+        // entry. Read-only viewers get it too; it is the clearest view of a day.
+        $actions = [
+            Action::link('planner', 'Open planner', route('manage.shows.planner'))->icon('calendar'),
+        ];
 
         if (request()->user()->can('create', Show::class)) {
             // Only offered once there is an instance and an event to import from;
@@ -710,6 +798,7 @@ class ShowController extends Controller
                 ->get(['id', 'name'])
                 ->map(fn (Source $source) => ['value' => $source->id, 'label' => $source->name])
                 ->all(),
+            'categories' => $this->categoryOptions(),
             'statuses' => array_map(
                 fn (string $status) => ['value' => $status, 'label' => ucfirst($status)],
                 ShowRequest::STATUSES,

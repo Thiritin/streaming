@@ -88,6 +88,48 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      archive uploader) and an operator preview from `/manage` (`?preview=1`, past
      `access-manage`), which exists precisely to check a feed before the show is put live.
 
+6. **The archive page**
+   - `/archive` is one grid, newest first until asked otherwise, paged in through
+     `Inertia::merge` and `WhenVisible` as it is scrolled. Chips (categories, then
+     years, then sources) and a sort narrow it in place. The archive runs to around
+     twenty recordings a year, so a wall of shelves would show the same recordings
+     three times over; the one shelf left is Continue watching, on the unfiltered
+     page only. `/archive/year/{year}` is now a redirect into `?year=`, kept for
+     links already handed out.
+   - Categories are what a show is - a dance, a theatre piece, a musical performance -
+     and they gate nothing. The set is managed at `/manage` > Settings > Categories
+     (a settings area whose contents are rows, so it joins the settings menu by hand in
+     `Settings::navigation()` and renders the same shell through `SettingsNav`); a show
+     carries one and its recordings inherit it, with `recordings.category_id` as the
+     override for an edit imported without a show. Read it through
+     `Recording::effectiveCategory()` and filter with the `inCategory` scope, never
+     `where('category_id', ...)` - that misses everything that has its category
+     through its show. Both tables offer a Set Category bulk action, which is what
+     makes an existing archive categorisable.
+   - A tile hovers against the recording's own playlist - muted, lowest rendition, a
+     little way in - because there is one still per recording and no storyboard sprite.
+     `useHoverPreview` allows exactly one preview on the page at a time and refuses on
+     touch, reduced motion and save-data. Never let a grid open more than one. Once a
+     preview is up the tile scrubs: the cursor's x position picks one of six chunks
+     and the bar under it shows them. Chunks and not a free seek, because every
+     distinct position is a segment fetched off the edge.
+   - Skip points are what a viewer is offered a way past - an intermission, a wait
+     before the doors. Ranges in `recordings.skip_segments`, seconds from the start,
+     read through `Recording::skips()` and normalised by `App\Support\SkipSegments`
+     (sorted, merged, clamped to the duration), never off the column. They gate and
+     cut nothing: the player shows a button while the playhead is inside one and only
+     a press moves it, so somebody who wants to watch the intermission still can.
+     Marked with `SkipEditor`, which is on the watch page for anyone who may update
+     the recording (the moment worth marking is while it is on screen) and in the
+     recording form in `/manage`. The watch page posts the whole set to
+     `PUT /manage/recordings/{recording}/skips`.
+   - Playback position lives in `recording_progress`, one row per viewer per recording,
+     written by the player every 15s and on the way out. Signed-in only: there is
+     nothing to key a guest's row on, and Continue watching is assembled server-side
+     with the rest of the shelves.
+   - Search suggestions (`/archive/suggest`) are the one place the front end talks to
+     the server outside Inertia, because they answer per keystroke.
+
 ## Development Commands
 
 ### Local Development
@@ -203,7 +245,11 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
 
 `/manage` covers:
 - Dashboard: capacity, server health, alerts, live viewers, the next few hours of programme
-- Sources, Shows, the Show planner and Stream Control
+- Sources, Shows and Stream Control. The planner is a mode of the Shows list rather
+  than a section: "Open planner" on that page opens `/manage/shows/planner`, which
+  renders without the rail - one day, sources as columns, hours down the side, blocks
+  dragged to move and the bottom edge to resize - and closes back to Shows. It opens on
+  the hours that day's programme actually occupies, with a switch for all twenty-four
 - Preview (`/manage/sources/preview`): the operator's view of what an encoder is actually
   pushing, before a show exists to open the channel. The player asks for the playlist with
   `?preview=1`, which `HlsController::isPreview()` honours for anyone past `access-manage`:
@@ -224,6 +270,17 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   themselves - what each is playing and where to send it. A screen reports itself on its
   poll and picks up a directed source the same way; see docs/admin/displays.md
 - Servers, including the generated install script
+- Recording Plan (`/manage/recordings/plan`): the grid the programme is divided up on and
+  accounted for, worked as a board by several people. Three axes on `shows`, deliberately
+  kept apart because they fail independently: `publish_plan` (undecided/yes/no); the two
+  captures, `stream_condition` (what the uploader mirrored) and `onsite_status` (the
+  room's copy, a fallback that is only chased when the stream one failed); and the archive
+  FTP deposit, `archive_pgm_at` / `archive_iso_at`. Plus `recording_owner_id` and
+  `recording_note`. None of them gate anything - the uploader still mirrors everything and
+  `is_published` still decides what a viewer sees. The Recording column is derived by
+  `Show::recordingState()`, so it cannot go stale, and nothing is written off until both
+  captures are gone: an outstanding list that never shrinks stops being read. See
+  docs/admin/recording-plan.md
 - Users, Roles, Emotes and Recordings. An edit that never went out live is imported into
   the archive with `tools/streaming-archiver` rather than uploaded; see docs/admin/archive-import.md.
   It authenticates with the import key from Settings > Imports, read through

@@ -129,13 +129,47 @@ final class Settings
      */
     public function navigation(): array
     {
-        return array_map(fn (array $group) => [
+        $groups = config('settings.groups', []);
+        $first = $groups[0]['key'] ?? null;
+
+        $panes = array_map(fn (array $group) => [
             'key' => $group['key'],
             'label' => $group['label'],
             'blurb' => $group['blurb'] ?? $group['description'] ?? null,
             'action' => $group['action'] ?? null,
             'icon' => $group['icon'] ?? 'cog',
-        ], config('settings.groups', []));
+            // The bare /manage/settings is the first pane rather than a redirect.
+            'url' => $group['key'] === $first
+                ? route('manage.settings')
+                : route('manage.settings.group', $group['key']),
+        ], $groups);
+
+        /*
+         * Categories are a settings area too, but a set of rows rather than a set of
+         * knobs, so the registry cannot generate them. They join the menu by hand and
+         * render their own page inside the same shell.
+         */
+        $categories = [
+            'key' => 'categories',
+            'label' => 'Categories',
+            'blurb' => 'Programme labels',
+            'action' => null,
+            'icon' => 'tags',
+            'url' => route('manage.categories.index'),
+        ];
+
+        // Ahead of the reset pane, which throws every saved value away and stays last.
+        $reset = array_search('reset', array_column($panes, 'action'), true);
+
+        if ($reset === false) {
+            $panes[] = $categories;
+
+            return $panes;
+        }
+
+        array_splice($panes, $reset, 0, [$categories]);
+
+        return $panes;
     }
 
     /**

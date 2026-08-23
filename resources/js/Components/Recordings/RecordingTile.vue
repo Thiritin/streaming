@@ -8,11 +8,16 @@
     :prefetch="isPending ? undefined : true"
     @pointerdown="claimHero"
     @keydown.enter="claimHero"
+    @pointerenter="onPointerEnter"
+    @pointerleave="leave"
+    @focusin="onPointerEnter"
+    @focusout="leave"
   >
     <!-- Thumbnail Container. Also the origin of the shared-element morph into the
          recording player, which is why it carries the ref. -->
     <div
       ref="thumbnail"
+      @pointermove="onScrub"
       class="aspect-video relative bg-primary-900 rounded-xl overflow-hidden ring-1 ring-white/5 transition-all duration-(--dur-base)"
       :class="isPending
         ? 'ring-white/10'
@@ -29,7 +34,10 @@
         :fetchpriority="priority ? 'high' : 'auto'"
         decoding="async"
         class="w-full h-full object-cover absolute inset-0 transition-[opacity,filter,transform] duration-(--dur-slow) ease-(--ease-out-expo) group-hover:scale-105"
-        :class="thumbnailLoaded ? 'opacity-100 blur-0' : 'opacity-0 blur-md'"
+        :class="[
+          thumbnailLoaded ? 'opacity-100 blur-0' : 'opacity-0 blur-md',
+          previewPlaying ? '!opacity-0' : '',
+        ]"
         @load="thumbnailLoaded = true"
         @error="handleImageError"
       />
@@ -42,6 +50,19 @@
       <div
         v-else-if="!thumbnailLoaded"
         class="media-skeleton"
+        aria-hidden="true"
+      />
+
+      <!-- Hover preview: the recording's own playlist, muted, lowest rendition,
+           a little way in. Only ever one of these playing on the page. -->
+      <video
+        v-if="previewMounted"
+        ref="previewVideo"
+        class="absolute inset-0 h-full w-full object-cover transition-opacity duration-(--dur-base)"
+        :class="previewPlaying ? 'opacity-100' : 'opacity-0'"
+        muted
+        playsinline
+        disablepictureinpicture
         aria-hidden="true"
       />
 
@@ -58,24 +79,45 @@
       </template>
 
       <template v-else>
-        <!-- Bottom left: View Count -->
-        <div v-if="recording.views > 0" class="absolute bottom-2 left-2 z-20">
+        <!-- Bottom left: View Count. Hidden while previewing, same as YouTube
+             clears its badges once the preview takes the frame. -->
+        <div
+          v-if="recording.views > 0"
+          class="absolute bottom-2 left-2 z-20 transition-opacity"
+          :class="previewPlaying ? 'opacity-0' : 'opacity-100'"
+        >
           <span class="bg-black/70 text-white px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1">
             <FaEyeIcon class="w-3 h-3" />
             {{ formatViews(recording.views) }}
           </span>
         </div>
 
-        <!-- Bottom right: Duration -->
+        <!-- Bottom right: Duration, and where the preview has got to while one is
+             playing - the badge is the only place a scrub can report itself. -->
         <div v-if="recording.duration" class="absolute bottom-2 right-2 z-20">
           <span class="bg-black/80 text-white px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums">
-            {{ formatDuration(recording.duration) }}
+            {{ previewPlaying ? formatDuration(Math.floor(previewTime)) : formatDuration(recording.duration) }}
           </span>
+        </div>
+
+        <!-- Scrub bar for the preview: one chunk per position the cursor can pick,
+             so what the bar shows and what a sweep across the tile does are the
+             same thing. Replaces the watched bar while it is up. -->
+        <div v-if="previewPlaying" class="scrub-track" aria-hidden="true">
+          <span v-for="index in previewChunks" :key="index" class="scrub-chunk">
+            <span class="scrub-chunk-fill" :style="{ transform: `scaleX(${previewChunkFill(index - 1)})` }" />
+          </span>
+        </div>
+
+        <!-- How far this viewer got. Sits on the very bottom edge, under the
+             badges, so it reads as part of the thumbnail rather than as content. -->
+        <div v-else-if="progressFraction > 0" class="progress-track" aria-hidden="true">
+          <div class="progress-fill" :style="{ width: `${Math.min(100, progressFraction * 100)}%` }" />
         </div>
 
         <!-- Hover Overlay -->
         <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-(--dur-base) z-10" />
-        <div class="absolute inset-0 flex items-center justify-center z-10">
+        <div v-if="!previewPlaying" class="absolute inset-0 flex items-center justify-center z-10">
           <div class="w-14 h-14 rounded-full bg-primary-500/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-(--dur-base) ease-(--ease-spring) shadow-lg shadow-primary-500/30">
             <FaPlayIcon class="w-6 h-6 text-white ml-0.5" />
           </div>
@@ -93,13 +135,20 @@
         {{ recording.title }}
       </h3>
 
-      <!-- Date and views inline -->
+      <!-- One metadata line: views, then how long ago, the way a video card reads. -->
       <p class="text-primary-500 text-sm mt-1">
+        <template v-if="!isPending && recording.views > 0">
+          {{ formatViews(recording.views) }} {{ recording.views === 1 ? 'view' : 'views' }}
+          <span aria-hidden="true"> · </span>
+        </template>
         {{ formatDate(recording.date) }}
       </p>
 
       <p v-if="isPending" class="text-primary-400 text-xs mt-1">
         Still processing, check back later.
+      </p>
+      <p v-else-if="resumeLabel" class="text-primary-400 text-xs mt-1">
+        {{ resumeLabel }}
       </p>
     </div>
   </component>
@@ -112,6 +161,7 @@ import TilePlaceholder from '../TilePlaceholder.vue';
 import FaPlayIcon from '../Icons/FaPlayIcon.vue';
 import FaEyeIcon from '../Icons/FaEyeIcon.vue';
 import { claimMediaHero } from '@/composables/useMediaHero';
+import { useHoverPreview } from '@/composables/useHoverPreview';
 
 // Props
 const props = defineProps({
@@ -124,7 +174,13 @@ const props = defineProps({
   priority: {
     type: Boolean,
     default: false,
-  }
+  },
+  // Off inside a shelf while it is being dragged sideways, so a scroll does not
+  // start a video under the cursor.
+  preview: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 // State
@@ -136,6 +192,56 @@ const thumbnail = ref(null);
 // as everything else, dimmed and unclickable, so the year does not look like it is
 // missing shows without explanation.
 const isPending = computed(() => Boolean(props.recording.is_pending));
+
+const {
+  mounted: previewMounted,
+  playing: previewPlaying,
+  video: previewVideo,
+  chunks: previewChunks,
+  chunkFill: previewChunkFill,
+  time: previewTime,
+  scrubTo,
+  enter,
+  leave,
+} = useHoverPreview(() => (isPending.value || !props.preview ? null : props.recording.preview_url));
+
+const onPointerEnter = (event) => {
+  // Touch reports a pointerenter on tap; previewing there would fight the tap.
+  if (event?.pointerType === 'touch') return;
+
+  enter();
+};
+
+// Cursor position across the tile is the position in the recording, once a
+// preview is up. Before that the tile is a still and there is nothing to scrub.
+const onScrub = (event) => {
+  if (!previewPlaying.value || event.pointerType === 'touch') return;
+
+  const rect = thumbnail.value?.getBoundingClientRect();
+  if (!rect?.width) return;
+
+  scrubTo((event.clientX - rect.left) / rect.width);
+};
+
+const progressFraction = computed(() => props.recording.progress?.fraction ?? 0);
+
+const resumeLabel = computed(() => {
+  const progress = props.recording.progress;
+
+  if (!progress || progress.completed || !progress.position || progressFraction.value <= 0) {
+    return null;
+  }
+
+  const left = (props.recording.duration ?? 0) - progress.position;
+
+  if (left <= 60) return 'Almost finished';
+
+  const minutes = Math.round(left / 60);
+
+  return minutes >= 60
+    ? `${Math.round(minutes / 60)}h left`
+    : `${minutes} min left`;
+});
 
 // Placeholder art gets the year as its label, which is the useful thing to know
 // about an archive tile with no still.
@@ -190,11 +296,8 @@ const formatDate = (dateString) => {
     const months = Math.floor(diffDays / 30);
     return `${months} month${months > 1 ? 's' : ''} ago`;
   } else {
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    const years = Math.floor(diffDays / 365);
+    return `${years} year${years > 1 ? 's' : ''} ago`;
   }
 };
 
@@ -222,6 +325,28 @@ const formatViews = (views) => {
 
 .is-pending {
   @apply cursor-default opacity-60;
+}
+
+.progress-track {
+  @apply absolute inset-x-0 bottom-0 z-20 h-1 bg-black/55;
+}
+
+.progress-fill {
+  @apply h-full bg-primary-400;
+}
+
+.scrub-track {
+  @apply absolute inset-x-1 bottom-1 z-20 flex h-[3px] gap-[2px];
+}
+
+.scrub-chunk {
+  @apply relative block h-full flex-1 overflow-hidden rounded-full bg-white/30;
+}
+
+.scrub-chunk-fill {
+  @apply absolute inset-0 block rounded-full bg-primary-300;
+  transform-origin: left center;
+  transition: transform 120ms linear;
 }
 
 /* Light sweeping across the placeholder art: motion that says "working" without

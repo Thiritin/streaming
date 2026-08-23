@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Manage\CategoryController;
 use App\Http\Controllers\Manage\DashboardController;
 use App\Http\Controllers\Manage\DisplayScreenController;
 use App\Http\Controllers\Manage\EmbedKeyController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\Manage\FeedbackController;
 use App\Http\Controllers\Manage\PretalxConnectionController;
 use App\Http\Controllers\Manage\PretalxImportController;
 use App\Http\Controllers\Manage\RecordingController;
+use App\Http\Controllers\Manage\RecordingPlanController;
 use App\Http\Controllers\Manage\RoleController;
 use App\Http\Controllers\Manage\ServerController;
 use App\Http\Controllers\Manage\ServerInstallScriptController;
@@ -125,6 +127,16 @@ Route::get('shows/planner', [ShowPlannerController::class, 'index'])->name('show
 Route::post('shows/planner', [ShowPlannerController::class, 'store'])->name('shows.planner.store');
 Route::patch('shows/{show}/schedule', [ShowPlannerController::class, 'reschedule'])->name('shows.reschedule');
 
+/*
+ * The recording plan's write endpoints. Declared with the other bulk routes so
+ * 'shows/recording-plan' is not read as a show id.
+ */
+Route::post('shows/recording-plan/bulk', [RecordingPlanController::class, 'bulkUpdate'])
+    ->name('shows.recording-plan.bulk');
+Route::patch('shows/{show}/recording-plan', [RecordingPlanController::class, 'update'])
+    ->name('shows.recording-plan');
+
+Route::post('shows/bulk/category', [ShowController::class, 'bulkCategory'])->name('shows.bulk.category');
 Route::post('shows/bulk/cancel', [ShowController::class, 'bulkCancel'])->name('shows.bulk.cancel');
 Route::post('shows/bulk/archive', [ShowController::class, 'bulkArchive'])->name('shows.bulk.archive');
 Route::post('shows/bulk/unarchive', [ShowController::class, 'bulkUnarchive'])->name('shows.bulk.unarchive');
@@ -214,11 +226,20 @@ Route::get('emotes/{emote}', [EmoteController::class, 'edit'])->name('emotes.edi
 Route::put('emotes/{emote}', [EmoteController::class, 'update'])->name('emotes.update');
 Route::delete('emotes/{emote}', [EmoteController::class, 'destroy'])->name('emotes.destroy');
 
+/*
+ * Who is recording what, and what nobody has recorded. Sits before 'recordings/{recording}'
+ * so 'plan' is not read as a recording id.
+ */
+Route::get('recordings/plan', [RecordingPlanController::class, 'index'])->name('recordings.plan');
+
 Route::post('recordings/storage/rescan', [RecordingController::class, 'rescanStorage'])
     ->name('recordings.storage.rescan');
+Route::post('recordings/bulk/category', [RecordingController::class, 'bulkCategory'])->name('recordings.bulk.category');
 Route::post('recordings/bulk/thumbnail', [RecordingController::class, 'bulkRegenerateThumbnails'])
     ->name('recordings.bulk.thumbnail');
 Route::delete('recordings/bulk', [RecordingController::class, 'bulkDestroy'])->name('recordings.bulk.destroy');
+Route::put('recordings/{recording}/skips', [RecordingController::class, 'updateSkips'])
+    ->name('recordings.skips');
 Route::post('recordings/{recording}/thumbnail', [RecordingController::class, 'regenerateThumbnail'])
     ->name('recordings.thumbnail');
 
@@ -246,6 +267,19 @@ Route::delete('recordings/{recording}', [RecordingController::class, 'destroy'])
  * Generated from config/settings.php, so a new knob needs no route change and a new
  * pane needs no route of its own.
  */
+/*
+ * Categories: what kind of thing a show is. A label, gating nothing.
+ *
+ * Under settings and declared before the generated panes, or `settings/categories`
+ * would be read as a registry group and 404.
+ */
+Route::get('settings/categories', [CategoryController::class, 'index'])->name('categories.index');
+Route::get('settings/categories/create', [CategoryController::class, 'create'])->name('categories.create');
+Route::post('settings/categories', [CategoryController::class, 'store'])->name('categories.store');
+Route::get('settings/categories/{category}', [CategoryController::class, 'edit'])->name('categories.edit');
+Route::put('settings/categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
+Route::delete('settings/categories/{category}', [CategoryController::class, 'destroy'])->name('categories.destroy');
+
 Route::post('settings/pretalx/test', PretalxConnectionController::class)->name('settings.pretalx.test');
 Route::get('settings', [SettingsController::class, 'edit'])->name('settings');
 // One pane per registry group; the bare /manage/settings above is the first of them.

@@ -47,10 +47,10 @@ final class Navigation
                 $this->item('Sources', 'video', 'manage.sources.index', $badges['sources'] ?? null),
                 $this->item('Preview', 'eye', 'manage.sources.preview'),
                 $this->item('Shows', 'play-circle', 'manage.shows.index', $badges['shows'] ?? null),
-                $this->item('Planner', 'calendar', 'manage.shows.planner'),
                 // Import has no rail entry on purpose: it is reached from the Shows
                 // table, next to the programme it adds to.
                 $this->item('Recordings', 'film', 'manage.recordings.index'),
+                $this->item('Recording Plan', 'clapperboard', 'manage.recordings.plan', $badges['recording_gaps'] ?? null),
             ]],
             ['label' => 'Infrastructure', 'items' => [
                 $this->item('Servers', 'server', 'manage.servers.index'),
@@ -118,6 +118,32 @@ final class Navigation
             $online = Source::where('status', SourceStatusEnum::ONLINE)->count();
             $pending = Emote::pending()->count();
             $unread = FeedbackReport::unread()->count();
+
+            /*
+             * What is outstanding: shows meant to be published that have been on air and
+             * have nothing cut from them yet. A write-off is left out - both captures are
+             * gone and nobody can act on it - but a show whose onsite copy is still being
+             * chased is very much in, because someone has to go and find it.
+             */
+            $gaps = Show::whereNot('publish_plan', 'no')
+                // This year only, matching what the plan page opens on. A badge counting
+                // shows from three events ago is a number nobody will ever act on.
+                ->whereYear('scheduled_start', now()->year)
+                ->whereIn('status', ['ended', 'live'])
+                ->whereDoesntHave('recordings')
+                // Spelled out rather than whereNot: `null != 'received'` is null in SQL,
+                // so a plain negation silently drops every row nobody has looked at yet.
+                ->where(fn ($inner) => $inner
+                    ->whereNull('onsite_status')
+                    ->orWhere('onsite_status', '!=', 'received'))
+                // Spelled out for the same reason as the line above: `NOT (a AND b)` is
+                // null when either side is, and both are null for an untouched row.
+                ->where(fn ($inner) => $inner
+                    ->whereNull('stream_condition')
+                    ->orWhere('stream_condition', '!=', 'lost')
+                    ->orWhereNull('onsite_status')
+                    ->orWhereNotIn('onsite_status', ['none', 'unusable']))
+                ->count();
             $roles = Role::count();
 
             /*
@@ -139,6 +165,7 @@ final class Navigation
                     default => null,
                 },
                 'sources' => $online > 0 ? ['label' => (string) $online, 'tone' => Status::OK] : null,
+                'recording_gaps' => $gaps > 0 ? ['label' => (string) $gaps, 'tone' => Status::DANGER] : null,
                 'emotes' => $pending > 0 ? ['label' => (string) $pending, 'tone' => Status::WARN] : null,
                 'feedback' => $unread > 0 ? ['label' => (string) $unread, 'tone' => Status::WARN] : null,
                 'roles' => $roles > 0 ? ['label' => (string) $roles, 'tone' => Status::IDLE] : null,

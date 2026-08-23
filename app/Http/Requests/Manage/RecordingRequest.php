@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Manage;
 
+use App\Support\SkipSegments;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -24,6 +25,7 @@ class RecordingRequest extends FormRequest
 
         return [
             'show_id' => ['nullable', 'integer', 'exists:shows,id'],
+            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'title' => ['required', 'string', 'max:255'],
             'slug' => [
                 'required',
@@ -51,6 +53,14 @@ class RecordingRequest extends FormRequest
                 Rule::requiredIf(fn () => ! $this->filled('starts_at')),
                 'nullable', 'url', 'max:2048',
             ],
+            // Offers, not edits: ranges the player may show a Skip button over. Kept
+            // to seconds from the start of the recording, which is what the player
+            // knows; overlaps are merged rather than refused.
+            'skip_segments' => ['nullable', 'array', 'max:'.SkipSegments::MAX],
+            'skip_segments.*.start' => ['required', 'numeric', 'min:0'],
+            'skip_segments.*.end' => ['required', 'numeric', 'min:0', 'gt:skip_segments.*.start'],
+            'skip_segments.*.label' => ['nullable', 'string', 'max:'.SkipSegments::LABEL_MAX],
+
             'thumbnail_path' => ['nullable', 'string', 'max:2048'],
             'is_published' => ['boolean'],
             'required_roles' => ['array'],
@@ -72,12 +82,22 @@ class RecordingRequest extends FormRequest
     {
         // An empty select posts "", which would fail the integer rule rather than
         // reading as "no show".
+        if ($this->input('category_id') === '') {
+            $this->merge(['category_id' => null]);
+        }
+
         if ($this->input('show_id') === '') {
             $this->merge(['show_id' => null]);
         }
 
         if ($this->input('duration') === '') {
             $this->merge(['duration' => null]);
+        }
+
+        if ($this->has('skip_segments')) {
+            $this->merge([
+                'skip_segments' => SkipSegments::normalise($this->input('skip_segments')),
+            ]);
         }
     }
 }

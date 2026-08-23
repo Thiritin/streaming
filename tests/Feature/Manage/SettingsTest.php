@@ -76,14 +76,33 @@ class SettingsTest extends TestCase
             ->assertInertia(function (Assert $page) {
                 $page->component('Manage/Settings');
 
-                $this->assertSame(
-                    collect(config('settings.groups'))->pluck('key')->all(),
-                    collect($page->toArray()['props']['navigation'])->pluck('key')->all(),
-                );
+                $keys = collect($page->toArray()['props']['navigation'])->pluck('key')->all();
+
+                /*
+                 * Every registry group, plus Categories, which is a settings area whose
+                 * contents are rows rather than fields and so joins the menu by hand.
+                 * It sits ahead of the reset pane, which stays last.
+                 */
+                $expected = collect(config('settings.groups'))->pluck('key')->all();
+                array_splice($expected, array_search('reset', $expected, true), 0, ['categories']);
+
+                $this->assertSame($expected, $keys);
 
                 // The bare URL is the first pane rather than a redirect.
                 $this->assertSame(config('settings.groups.0.key'), $page->toArray()['props']['group']['key']);
             });
+    }
+
+    public function test_the_categories_pane_renders_inside_the_settings_menu(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('manage.categories.index'))
+            ->assertSuccessful()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Manage/Categories/Index')
+                ->where('navigation', fn ($navigation) => collect($navigation)
+                    ->firstWhere('key', 'categories')['url'] === route('manage.categories.index'))
+            );
     }
 
     public function test_every_editable_key_lives_on_a_pane(): void

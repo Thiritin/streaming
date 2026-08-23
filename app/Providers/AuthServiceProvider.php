@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\Category;
 use App\Models\DisplayScreen;
 use App\Models\EmbedKey;
 use App\Models\Emote;
@@ -13,6 +14,7 @@ use App\Models\Show;
 use App\Models\Source;
 use App\Models\TelegramChat;
 use App\Models\User;
+use App\Policies\CategoryPolicy;
 use App\Policies\DisplayScreenPolicy;
 use App\Policies\EmbedKeyPolicy;
 use App\Policies\EmotePolicy;
@@ -39,6 +41,7 @@ class AuthServiceProvider extends ServiceProvider
     protected $policies = [
         DisplayScreen::class => DisplayScreenPolicy::class,
         EmbedKey::class => EmbedKeyPolicy::class,
+        Category::class => CategoryPolicy::class,
         Emote::class => EmotePolicy::class,
         FeedbackReport::class => FeedbackReportPolicy::class,
         Recording::class => RecordingPolicy::class,

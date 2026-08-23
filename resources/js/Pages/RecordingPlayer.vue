@@ -2,9 +2,9 @@
     <div>
         <Head :title="recording.title" />
 
-        <!-- Video Player Container - Full width on mobile -->
-        <div class="sm:px-4 lg:px-8 sm:pt-8">
-            <div class="max-w-6xl mx-auto">
+        <div class="watch-page">
+            <!-- Left column: player, then everything about this recording -->
+            <div class="min-w-0">
                 <div class="relative bg-black sm:rounded-lg overflow-hidden sm:shadow-2xl">
                     <!-- Error State -->
                     <div v-if="error" class="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-10">
@@ -21,6 +21,7 @@
                     <!-- Landing half of the shared-element morph from the archive
                          tile. See composables/useMediaHero.js. -->
                     <VideoPlayer
+                        ref="playerRef"
                         :key="playerKey"
                         v-media-hero
                         :src="recording.m3u8_url"
@@ -28,81 +29,229 @@
                         :poster="recording.thumbnail_url"
                         :is-live="false"
                         :autoplay="true"
+                        :start-time="resumeAt"
                         @can-play="handleCanPlay"
+                        @time-update="handleTimeUpdate"
+                        @pause="saveProgress"
+                        @ended="handleEnded"
                         @error="handleError"
                     />
-                </div>
-            </div>
-        </div>
 
-        <!-- Video Information - No card on mobile -->
-        <div class="px-4 lg:px-8 py-6">
-            <div class="max-w-6xl mx-auto">
-                <div class="sm:bg-primary-800 sm:rounded-lg sm:shadow-lg sm:p-6 mb-6">
-                    <h1 class="text-2xl font-bold text-white mb-4">
+                    <!-- An offer, never an edit: the intermission still plays, and only a
+                         press moves past it. Sits above the control bar, and leaves on its
+                         own a few seconds before the segment ends so it never covers the
+                         first frames of what comes back. -->
+                    <transition name="skip-fade">
+                        <button
+                            v-if="activeSkip"
+                            type="button"
+                            class="skip-offer"
+                            @click="skipCurrent"
+                        >
+                            Skip {{ activeSkip.label || 'intermission' }}
+                            <FaPlayIcon class="h-3 w-3" />
+                        </button>
+                    </transition>
+
+                    <!-- Up next, once this one has finished. Counts down rather than
+                         cutting straight over, so leaving is one click and not a race.
+                         The next recording's own still is behind it: what plays next
+                         should be recognisable before it starts, not just named. -->
+                    <div v-if="countdown !== null && nextUp" class="autoplay-card">
+                        <img
+                            v-if="nextUp.thumbnail_url"
+                            :src="nextUp.thumbnail_url"
+                            alt=""
+                            aria-hidden="true"
+                            class="autoplay-backdrop"
+                        />
+
+                        <div class="autoplay-inner">
+                            <p class="autoplay-kicker">Up next</p>
+
+                            <div class="autoplay-body">
+                                <div class="autoplay-thumb">
+                                    <img v-if="nextUp.thumbnail_url" :src="nextUp.thumbnail_url" alt="" />
+                                    <TilePlaceholder v-else />
+                                </div>
+
+                                <div class="min-w-0">
+                                    <p class="autoplay-title">{{ nextUp.title }}</p>
+                                    <p v-if="nextUpMeta" class="autoplay-meta">{{ nextUpMeta }}</p>
+                                </div>
+                            </div>
+
+                            <div class="autoplay-actions">
+                                <button
+                                    type="button"
+                                    class="autoplay-ring"
+                                    :aria-label="`Play ${nextUp.title} now`"
+                                    @click="playNext"
+                                >
+                                    <svg class="autoplay-ring-svg" viewBox="0 0 48 48" aria-hidden="true">
+                                        <circle class="autoplay-ring-track" cx="24" cy="24" r="21" />
+                                        <circle
+                                            class="autoplay-ring-sweep"
+                                            cx="24"
+                                            cy="24"
+                                            r="21"
+                                            :style="{ animationDuration: `${AUTOPLAY_SECONDS}s` }"
+                                        />
+                                    </svg>
+                                    <FaPlayIcon class="ml-0.5 h-5 w-5 text-white" />
+                                </button>
+
+                                <div class="autoplay-side">
+                                    <p class="autoplay-count tabular-nums">Playing in {{ countdown }}s</p>
+                                    <button type="button" class="autoplay-secondary" @click="cancelAutoplay">Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="px-4 sm:px-0 pt-5">
+                    <h1 class="text-xl sm:text-2xl font-bold text-white">
                         {{ recording.title }}
                     </h1>
 
-                    <div class="flex flex-wrap items-center gap-4 text-sm mb-4">
-                        <span class="flex items-center text-primary-400">
-                            <FaCalendarIcon class="w-4 h-4 mr-1" />
-                            {{ formatDate(recording.date) }}
-                        </span>
-                        <span v-if="recording.views" class="flex items-center text-primary-400">
-                            <FaEyeIcon class="w-4 h-4 mr-1" />
-                            {{ formatViews(recording.views) }} views
-                        </span>
-                        <span v-if="recording.duration" class="flex items-center text-primary-400">
-                            <FaClockIcon class="w-4 h-4 mr-1" />
-                            {{ formatDuration(recording.duration) }}
-                        </span>
+                    <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+                        <p v-if="sourceName" class="text-sm font-semibold text-white">{{ sourceName }}</p>
                     </div>
 
-                    <p v-if="recording.description" class="text-primary-300 whitespace-pre-wrap leading-relaxed">
-                        {{ recording.description }}
-                    </p>
-                </div>
+                    <!-- Description box: views, date and the text in one grey block,
+                         clamped until it is asked to open. -->
+                    <div class="description" :class="{ 'is-open': descriptionOpen }">
+                        <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-semibold text-primary-100">
+                            <span v-if="recording.views">{{ formatViews(recording.views) }} views</span>
+                            <span>{{ formatDate(recording.date) }}</span>
+                            <span v-if="recording.duration" class="font-normal text-primary-300">
+                                {{ formatDuration(recording.duration) }}
+                            </span>
+                        </p>
 
-                <!-- Navigation -->
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <Link
-                        :href="route('recordings.index')"
-                        class="inline-flex items-center text-primary-400 hover:text-primary-200 transition-colors"
-                    >
-                        <FaArrowLeftIcon class="w-5 h-5 mr-2" />
-                        Back to Archive
-                    </Link>
+                        <p v-if="recording.description" ref="descriptionText" class="description-text">
+                            {{ recording.description }}
+                        </p>
 
-                    <!-- Hosting Sponsor -->
-                    <a
-                        href="https://pawhost.de"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="flex items-center gap-4 px-6 py-3 bg-primary-800/50 hover:bg-primary-800 border border-primary-700/50 rounded-xl transition-all group"
-                    >
-                        <span class="text-sm text-primary-400 uppercase tracking-wide font-medium">Hosting sponsored by</span>
-                        <img
-                            :src="pawHostLogo"
-                            alt="PawHost"
-                            class="h-10 opacity-80 group-hover:opacity-100 transition-opacity"
-                        />
-                    </a>
+                        <button
+                            v-if="descriptionClamped"
+                            type="button"
+                            class="description-toggle"
+                            @click="descriptionOpen = !descriptionOpen"
+                        >
+                            {{ descriptionOpen ? 'Show less' : '...more' }}
+                        </button>
+                    </div>
+
+                    <!-- Skip points, for whoever may set them. Here rather than only in
+                         /manage because the moment an intermission is worth marking is
+                         while it is on screen: the playhead is already in it. -->
+                    <div v-if="canEditSkips" class="skip-panel">
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-sm font-semibold text-white">Skip points</p>
+                                <p class="text-xs text-primary-400">
+                                    {{ skips.length ? `${skips.length} marked` : 'None marked' }} · viewers are offered
+                                    a button, never skipped for.
+                                </p>
+                            </div>
+
+                            <button type="button" class="skip-panel-toggle" @click="toggleSkipEditor">
+                                {{ editingSkips ? 'Close' : 'Edit' }}
+                            </button>
+                        </div>
+
+                        <template v-if="editingSkips">
+                            <SkipEditor
+                                v-model="skipDraft"
+                                :duration="recording.duration ?? 0"
+                                :current-time="currentTime"
+                                @seek="seekTo"
+                            />
+
+                            <div class="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    class="skip-save"
+                                    :disabled="savingSkips || !skipsDirty"
+                                    @click="saveSkips"
+                                >
+                                    {{ savingSkips ? 'Saving...' : 'Save skip points' }}
+                                </button>
+                                <button
+                                    v-if="skipsDirty"
+                                    type="button"
+                                    class="skip-panel-toggle"
+                                    @click="resetSkips"
+                                >
+                                    Discard
+                                </button>
+                                <p v-else-if="skipsSaved" class="text-xs text-primary-300">Saved.</p>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Navigation -->
+                    <div class="mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <Link
+                            :href="route('recordings.index')"
+                            class="inline-flex items-center text-primary-400 hover:text-primary-200 transition-colors"
+                        >
+                            <FaArrowLeftIcon class="w-5 h-5 mr-2" />
+                            Back to Archive
+                        </Link>
+
+                        <!-- Hosting Sponsor -->
+                        <a
+                            href="https://pawhost.de"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="flex items-center gap-4 px-6 py-3 bg-primary-800/50 hover:bg-primary-800 border border-primary-700/50 rounded-xl transition-all group"
+                        >
+                            <span class="text-sm text-primary-400 uppercase tracking-wide font-medium">Hosting sponsored by</span>
+                            <img
+                                :src="pawHostLogo"
+                                alt="PawHost"
+                                class="h-10 opacity-80 group-hover:opacity-100 transition-opacity"
+                            />
+                        </a>
+                    </div>
                 </div>
             </div>
+
+            <!-- Right column: what else there is to watch. Below the player on
+                 anything narrower than a desktop, which is where it belongs on a
+                 phone. Not a queue and not a playlist - it is the rest of the
+                 stage's programme - so it is named after where it comes from. -->
+            <aside v-if="upNext.length" class="watch-rail">
+                <div class="flex items-center justify-between gap-3 px-2 pb-2">
+                    <h2 class="min-w-0 truncate text-sm font-semibold text-white">{{ railTitle }}</h2>
+
+                    <label class="autoplay-toggle">
+                        <input v-model="autoplayNext" type="checkbox" class="sr-only peer" />
+                        <span class="toggle-track" aria-hidden="true"><span class="toggle-knob" /></span>
+                        Autoplay
+                    </label>
+                </div>
+
+                <RecordingRow v-for="item in upNext" :key="item.id" :recording="item" />
+            </aside>
         </div>
     </div>
 </template>
 
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import VideoPlayer from '@/Components/Player/VideoPlayer.vue';
+import RecordingRow from '@/Components/Recordings/RecordingRow.vue';
+import SkipEditor from '@/Components/Recordings/SkipEditor.vue';
+import TilePlaceholder from '@/Components/TilePlaceholder.vue';
 import FaVideoSlashIcon from '@/Components/Icons/FaVideoSlashIcon.vue';
-import FaEyeIcon from '@/Components/Icons/FaEyeIcon.vue';
-import FaCalendarIcon from '@/Components/Icons/FaCalendarIcon.vue';
-import FaClockIcon from '@/Components/Icons/FaClockIcon.vue';
 import FaArrowLeftIcon from '@/Components/Icons/FaArrowLeftIcon.vue';
+import FaPlayIcon from '@/Components/Icons/FaPlayIcon.vue';
 import pawHostLogo from '../../images/pawhost_white.svg';
 
 defineOptions({
@@ -113,18 +262,232 @@ const props = defineProps({
     recording: {
         type: Object,
         required: true
+    },
+    sourceName: {
+        type: String,
+        default: null
+    },
+    upNext: {
+        type: Array,
+        default: () => []
+    },
+    // Where this viewer left off, or 0. Guests always get 0: nothing is stored.
+    resumeAt: {
+        type: Number,
+        default: 0
+    },
+    // Stretches this recording offers a way past, sorted and non-overlapping.
+    skips: {
+        type: Array,
+        default: () => []
+    },
+    canEditSkips: {
+        type: Boolean,
+        default: false
     }
 });
 
 const error = ref(false);
 const errorMessage = ref('');
+const descriptionOpen = ref(false);
+
+// A description that already fits gets no "...more": the toggle would open onto
+// exactly what is already on screen.
+const descriptionText = ref(null);
+const descriptionClamped = ref(false);
+
+const measureDescription = () => {
+    const element = descriptionText.value;
+
+    descriptionClamped.value = Boolean(element) && element.scrollHeight > element.clientHeight + 1;
+};
 
 // Bumping this remounts VideoPlayer, which is the cleanest way to rebuild the
 // provider and start the load from scratch.
 const playerKey = ref(0);
 
+const AUTOPLAY_KEY = 'archive:autoplay-next';
+const AUTOPLAY_SECONDS = 8;
+
+const autoplayNext = ref(true);
+const countdown = ref(null);
+let countdownTimer = null;
+
+const nextUp = computed(() => props.upNext[0] ?? null);
+
+const nextUpMeta = computed(() =>
+    nextUp.value
+        ? [nextUp.value.source_name, formatDuration(nextUp.value.duration)].filter(Boolean).join(' · ')
+        : ''
+);
+
+// The rail is the rest of the same stage first, so name it that. "Up next" read as
+// a queue somebody had put together, which is not what this is.
+const railTitle = computed(() => (props.sourceName ? `More from ${props.sourceName}` : 'More in the archive'));
+
+const playNext = () => {
+    if (!nextUp.value) return;
+
+    cancelAutoplay();
+    router.visit(route('recordings.show', nextUp.value.id));
+};
+
+onMounted(() => {
+    // Off is the only thing worth remembering; a missing key means the default.
+    autoplayNext.value = window.localStorage.getItem(AUTOPLAY_KEY) !== 'off';
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('resize', measureDescription);
+    measureDescription();
+});
+
+watch(autoplayNext, (value) => {
+    window.localStorage.setItem(AUTOPLAY_KEY, value ? 'on' : 'off');
+
+    if (!value) cancelAutoplay();
+});
+
+const cancelAutoplay = () => {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+    countdown.value = null;
+};
+
+const startAutoplay = () => {
+    if (!autoplayNext.value || !nextUp.value) return;
+
+    countdown.value = AUTOPLAY_SECONDS;
+
+    countdownTimer = setInterval(() => {
+        countdown.value -= 1;
+
+        if (countdown.value <= 0) {
+            cancelAutoplay();
+            router.visit(route('recordings.show', nextUp.value.id));
+        }
+    }, 1000);
+};
+
+/*
+ * Skip points.
+ *
+ * The offer stops a few seconds before the segment ends, so pressing it can never
+ * land the viewer past the first frames of what they were waiting for, and a button
+ * does not flash away as the picture comes back.
+ */
+const SKIP_TAIL = 3;
+
+const playerRef = ref(null);
+
+const seekTo = (seconds) => playerRef.value?.seek(seconds);
+
+const activeSkip = computed(() =>
+    props.skips.find(
+        (segment) => currentTime.value >= segment.start && currentTime.value < segment.end - SKIP_TAIL
+    ) ?? null
+);
+
+const skipCurrent = () => {
+    if (!activeSkip.value) return;
+
+    seekTo(activeSkip.value.end);
+};
+
+const editingSkips = ref(false);
+const savingSkips = ref(false);
+const skipsSaved = ref(false);
+const skipDraft = ref(props.skips.map((segment) => ({ ...segment })));
+
+const skipsDirty = computed(() => JSON.stringify(skipDraft.value) !== JSON.stringify(props.skips));
+
+const resetSkips = () => {
+    skipDraft.value = props.skips.map((segment) => ({ ...segment }));
+};
+
+const toggleSkipEditor = () => {
+    editingSkips.value = !editingSkips.value;
+
+    if (editingSkips.value) resetSkips();
+};
+
+// The server sorts and merges, so the saved set is read back rather than assumed.
+watch(() => props.skips, resetSkips);
+
+const saveSkips = () => {
+    savingSkips.value = true;
+    skipsSaved.value = false;
+
+    router.put(
+        route('manage.recordings.skips', props.recording.id),
+        { skip_segments: skipDraft.value },
+        {
+            preserveScroll: true,
+            preserveState: true,
+            only: ['skips'],
+            onSuccess: () => {
+                skipsSaved.value = true;
+            },
+            onFinish: () => {
+                savingSkips.value = false;
+            },
+        }
+    );
+};
+
+/*
+ * Playback position. Signed-in viewers only, and written no more than once every
+ * POST_EVERY seconds: the player fires time-update several times a second, and
+ * this is a row that only has to be roughly right.
+ */
+const POST_EVERY = 15;
+
+const page = usePage();
+const canSaveProgress = computed(() => Boolean(page.props.auth?.user));
+
+const currentTime = ref(props.resumeAt);
+let lastSaved = props.resumeAt;
+
+const saveProgress = () => {
+    if (!canSaveProgress.value || currentTime.value <= 0) return;
+    if (Math.abs(currentTime.value - lastSaved) < 1) return;
+
+    lastSaved = currentTime.value;
+
+    window.axios
+        .put(route('recordings.progress', props.recording.id), {
+            position: Math.floor(currentTime.value),
+            duration: props.recording.duration ?? null,
+        })
+        .catch(() => {});
+};
+
+const handleTimeUpdate = (time) => {
+    currentTime.value = time;
+
+    if (canSaveProgress.value && Math.abs(time - lastSaved) >= POST_EVERY) {
+        saveProgress();
+    }
+};
+
+// The tab going away is the last chance to record where the viewer got to, and
+// pagehide is the only one of these events that fires reliably on mobile Safari.
+const onPageHide = () => saveProgress();
+
+onBeforeUnmount(() => {
+    window.removeEventListener('pagehide', onPageHide);
+    window.removeEventListener('resize', measureDescription);
+    cancelAutoplay();
+    saveProgress();
+});
+
 const handleCanPlay = () => {
     error.value = false;
+};
+
+const handleEnded = () => {
+    lastSaved = 0;
+    currentTime.value = props.recording.duration ?? currentTime.value;
+    saveProgress();
+    startAutoplay();
 };
 
 const handleError = (detail) => {
@@ -171,3 +534,222 @@ const formatViews = (views) => {
     }
 };
 </script>
+
+<style scoped>
+@reference "../../css/app.css";
+
+/*
+ * One column until there is room for the rail beside the player. The player keeps
+ * a max width of its own so it does not stretch to a cinema on an ultrawide.
+ */
+.watch-page {
+    @apply mx-auto grid max-w-[1600px] gap-6 px-0 pt-0 sm:px-4 sm:pt-8 lg:px-8;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1280px) {
+    .watch-page {
+        grid-template-columns: minmax(0, 1fr) 400px;
+    }
+}
+
+.watch-rail {
+    @apply flex flex-col gap-1 px-2 pb-10 sm:px-0;
+}
+
+.description {
+    @apply mt-4 rounded-xl bg-primary-800/60 p-4;
+}
+
+.description-text {
+    @apply mt-2 whitespace-pre-wrap text-sm leading-relaxed text-primary-200;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.description.is-open .description-text {
+    -webkit-line-clamp: unset;
+    overflow: visible;
+}
+
+.description-toggle {
+    @apply mt-2 text-sm font-semibold text-primary-300 transition-colors hover:text-white;
+}
+
+.autoplay-toggle {
+    @apply inline-flex cursor-pointer items-center gap-2 text-sm text-primary-200;
+}
+
+.toggle-track {
+    @apply relative block h-5 w-9 rounded-full bg-white/15 transition-colors;
+}
+
+.autoplay-toggle:has(:checked) .toggle-track {
+    @apply bg-primary-500;
+}
+
+.toggle-knob {
+    @apply absolute left-0.5 top-0.5 block h-4 w-4 rounded-full bg-white transition-transform;
+}
+
+.autoplay-toggle:has(:checked) .toggle-knob {
+    transform: translateX(1rem);
+}
+
+.autoplay-toggle:has(:focus-visible) .toggle-track {
+    @apply ring-2 ring-primary-300;
+}
+
+/* Above the control bar rather than beside it: vidstack owns the bottom strip, and
+   an offer that overlaps the scrubber is one a viewer presses by accident. */
+.skip-offer {
+    @apply absolute bottom-20 right-4 z-20 inline-flex items-center gap-2 rounded-md border border-white/25 bg-black/70 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-colors;
+}
+
+.skip-offer:hover {
+    @apply border-white/60 bg-black/85;
+}
+
+.skip-fade-enter-active,
+.skip-fade-leave-active {
+    transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.skip-fade-enter-from,
+.skip-fade-leave-to {
+    opacity: 0;
+    transform: translateY(6px);
+}
+
+.skip-panel {
+    @apply mt-4 flex flex-col gap-3 rounded-xl border border-white/10 bg-primary-800/40 p-4;
+}
+
+.skip-panel-toggle {
+    @apply rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold text-primary-100 transition-colors hover:bg-white/20 hover:text-white;
+}
+
+.skip-save {
+    @apply rounded-lg bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition-colors;
+}
+
+.skip-save:hover:not(:disabled) {
+    @apply bg-primary-400;
+}
+
+.skip-save:disabled {
+    @apply cursor-not-allowed opacity-50;
+}
+
+.autoplay-card {
+    @apply absolute inset-0 z-20 flex items-center justify-center overflow-hidden bg-black/80 px-6 backdrop-blur-sm;
+}
+
+/* The next recording's own still, blown up and pushed back behind the card, so the
+   overlay is coloured by what is about to play rather than being a black sheet. */
+.autoplay-backdrop {
+    @apply absolute inset-0 h-full w-full scale-110 object-cover opacity-25;
+    filter: blur(18px) saturate(1.1);
+}
+
+.autoplay-inner {
+    @apply relative z-10 flex w-full max-w-md flex-col gap-4;
+}
+
+.autoplay-kicker {
+    @apply text-xs font-semibold uppercase tracking-[0.14em] text-primary-300;
+}
+
+.autoplay-body {
+    @apply flex items-center gap-4;
+}
+
+.autoplay-thumb {
+    @apply relative aspect-video w-32 shrink-0 overflow-hidden rounded-lg bg-primary-900 ring-1 ring-white/10 sm:w-40;
+}
+
+.autoplay-thumb img {
+    @apply h-full w-full object-cover;
+}
+
+.autoplay-title {
+    @apply line-clamp-2 text-base font-semibold text-white sm:text-lg;
+}
+
+.autoplay-meta {
+    @apply mt-1 truncate text-sm text-primary-300;
+}
+
+.autoplay-actions {
+    @apply flex items-center gap-4;
+}
+
+.autoplay-side {
+    @apply flex flex-col items-start gap-2;
+}
+
+.autoplay-count {
+    @apply text-sm text-primary-200;
+}
+
+/* The countdown is the ring, not the number: a sweep reads at a glance from across
+   a room, and the button it is drawn around is the thing to press to skip it. */
+.autoplay-ring {
+    @apply relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white/10 transition-colors;
+}
+
+.autoplay-ring:hover {
+    @apply bg-white/20;
+}
+
+.autoplay-ring:focus-visible {
+    @apply outline-none ring-2 ring-primary-300;
+}
+
+.autoplay-ring-svg {
+    @apply absolute inset-0 h-full w-full -rotate-90;
+}
+
+.autoplay-ring-track {
+    fill: none;
+    stroke: color-mix(in oklch, white 20%, transparent);
+    stroke-width: 3;
+}
+
+.autoplay-ring-sweep {
+    fill: none;
+    stroke: var(--color-primary-400);
+    stroke-width: 3;
+    stroke-linecap: round;
+    /* 2 * pi * 21 */
+    stroke-dasharray: 131.95;
+    stroke-dashoffset: 131.95;
+    animation: autoplay-sweep linear forwards;
+}
+
+@keyframes autoplay-sweep {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .autoplay-ring-sweep {
+        animation: none;
+        stroke-dashoffset: 0;
+    }
+}
+
+.autoplay-secondary {
+    @apply rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-primary-100 transition-colors hover:bg-white/20;
+}
+
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+</style>

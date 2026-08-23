@@ -6,6 +6,7 @@ use App\Enum\SourceStatusEnum;
 use App\Enum\StreamStatusEnum;
 use App\Models\Message;
 use App\Models\Recording;
+use App\Models\RecordingProgress;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\User;
@@ -219,28 +220,14 @@ class StreamController extends Controller
             ?->date
             ?->year;
 
-        $popularRecordings = collect();
+        $popular = collect();
         if ($latestYear) {
-            $popularRecordings = Recording::accessibleBy($user)
+            $popular = Recording::accessibleBy($user)
                 ->where('is_published', true)
                 ->whereYear('date', $latestYear)
                 ->orderBy('views', 'desc')
                 ->limit(8)
-                ->get()
-                ->map(function ($recording) {
-                    return [
-                        'id' => $recording->id,
-                        'title' => $recording->title,
-                        'slug' => $recording->slug,
-                        'description' => $recording->description,
-                        'date' => $recording->date,
-                        'duration' => $recording->duration,
-                        'formatted_duration' => $recording->formatted_duration,
-                        'thumbnail_url' => $recording->thumbnail_url,
-                        'views' => $recording->views,
-                        'is_restricted' => $recording->hasAccessRestriction(),
-                    ];
-                });
+                ->get();
         }
 
         // Archive: everything that already happened, newest first. The browse page
@@ -252,21 +239,26 @@ class StreamController extends Controller
         // section, the same separation the archive page makes with year collections.
         $archiveCutoff = now()->subMonths(6);
 
-        $archiveRecordings = Recording::accessibleBy($user)
+        $recent = Recording::accessibleBy($user)
             ->where('is_published', true)
             ->where('date', '>=', $archiveCutoff)
             ->orderBy('date', 'desc')
             ->limit(12)
-            ->get()
-            ->map(fn ($recording) => $this->mapRecording($recording));
+            ->get();
 
-        $olderRecordings = Recording::accessibleBy($user)
+        $older = Recording::accessibleBy($user)
             ->where('is_published', true)
             ->where('date', '<', $archiveCutoff)
             ->orderBy('date', 'desc')
             ->limit(8)
-            ->get()
-            ->map(fn ($recording) => $this->mapRecording($recording));
+            ->get();
+
+        // One read for every tile on the page, before any of them are shaped.
+        $this->loadRecordingProgress($user, [$popular, $recent, $older]);
+
+        $popularRecordings = $popular->map(fn ($recording) => $this->mapRecording($recording));
+        $archiveRecordings = $recent->map(fn ($recording) => $this->mapRecording($recording));
+        $olderRecordings = $older->map(fn ($recording) => $this->mapRecording($recording));
 
         $archiveTotal = Recording::accessibleBy($user)
             ->where('is_published', true)
@@ -480,7 +472,45 @@ class StreamController extends Controller
             'thumbnail_url' => $recording->thumbnail_url,
             'views' => $recording->views,
             'is_restricted' => $recording->hasAccessRestriction(),
+            // The tile hovers against the recording's own playlist, and draws a bar
+            // for where this viewer got to. Same shape the archive hands it.
+            'preview_url' => route('recordings.playlist.master', $recording->slug),
+            'progress' => $this->recordingProgress[$recording->id] ?? null,
         ];
+    }
+
+    /**
+     * Playback positions for the viewer this render is for, keyed by recording id.
+     * Loaded once per request rather than per tile.
+     */
+    private array $recordingProgress = [];
+
+    private function loadRecordingProgress(?User $user, iterable $recordings): void
+    {
+        if (! $user) {
+            return;
+        }
+
+        $ids = collect($recordings)->flatten(1)->pluck('id')->filter()->unique();
+
+        if ($ids->isEmpty()) {
+            return;
+        }
+
+        $this->recordingProgress = RecordingProgress::where('user_id', $user->id)
+            ->whereIn('recording_id', $ids)
+            ->get()
+            // Barely started or already finished draws no bar, same as the archive.
+            ->filter(fn (RecordingProgress $row) => $row->fraction() >= RecordingProgress::STARTED_AT
+                && $row->fraction() < RecordingProgress::COMPLETE_AT)
+            ->mapWithKeys(fn (RecordingProgress $row) => [
+                $row->recording_id => [
+                    'position' => $row->position,
+                    'fraction' => round($row->fraction(), 4),
+                    'completed' => $row->completed,
+                ],
+            ])
+            ->all();
     }
 
     /**

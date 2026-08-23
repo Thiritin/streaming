@@ -1,69 +1,42 @@
 /**
  * Time <-> pixels for the planner, and the snapping that keeps dragged times tidy.
  *
- * One place for the arithmetic so the ruler, the lanes and the drag handlers cannot
- * disagree about where 14:00 is.
+ * One place for the arithmetic so the hour ruler, the source columns and the drag
+ * handlers cannot disagree about where 14:00 is. The axis is vertical - hours run
+ * down the page - but nothing here cares which way it points.
  */
-
-/**
- * Zoom levels. `pxPerHour` sets the track width; `snapMinutes` is how coarse a drag lands,
- * matched to the zoom so a one-pixel wobble never produces 14:03.
- */
-export const ZOOM = {
-  hours: {
-    key: 'hours',
-    label: 'Hours',
-    pxPerHour: 64,
-    snapMinutes: 15,
-    tickHours: 1,
-    // The visible cell an operator aims at. Snapping matches it, so a block always lands
-    // on a line rather than a pixel near one.
-    cellMinutes: 15,
-  },
-  halfDays: {
-    key: 'halfDays',
-    label: 'Half-days',
-    pxPerHour: 16,
-    snapMinutes: 15,
-    tickHours: 6,
-    cellMinutes: 60,
-  },
-  days: {
-    key: 'days',
-    label: 'Days',
-    pxPerHour: 5,
-    snapMinutes: 30,
-    tickHours: 24,
-    cellMinutes: 360,
-  },
-};
-
-export const ZOOM_ORDER = ['hours', 'halfDays', 'days'];
 
 export const MS_PER_MINUTE = 60_000;
 export const MS_PER_HOUR = 3_600_000;
 
+/**
+ * How coarse a drag lands. Fifteen minutes is the grid an operator aims at, and it
+ * matches the quarter-hour lines the column draws.
+ */
+export const SNAP_MINUTES = 15;
+
 export const toDate = (value) => (value instanceof Date ? value : new Date(value));
 
-/** Pixels from the start of the window. */
-export const xOf = (value, from, pxPerHour) =>
+/** Pixels from the top of the window. */
+export const offsetOf = (value, from, pxPerHour) =>
   ((toDate(value) - toDate(from)) / MS_PER_HOUR) * pxPerHour;
 
-/** Width in pixels of a span. */
-export const widthOf = (start, end, pxPerHour) =>
+/** Length in pixels of a span. */
+export const lengthOf = (start, end, pxPerHour) =>
   ((toDate(end) - toDate(start)) / MS_PER_HOUR) * pxPerHour;
 
 /** The instant at a given pixel offset, snapped. */
-export const timeAt = (x, from, pxPerHour, snapMinutes) => {
-  const minutes = (x / pxPerHour) * 60;
+export const timeAt = (offset, from, pxPerHour, snapMinutes = SNAP_MINUTES) => {
+  const minutes = (offset / pxPerHour) * 60;
 
   return new Date(toDate(from).getTime() + snap(minutes, snapMinutes) * MS_PER_MINUTE);
 };
 
-export const snap = (minutes, snapMinutes) => Math.round(minutes / snapMinutes) * snapMinutes;
+export const snap = (minutes, snapMinutes = SNAP_MINUTES) =>
+  Math.round(minutes / snapMinutes) * snapMinutes;
 
 /** Shift an instant by a snapped number of minutes. */
-export const shift = (value, minutes, snapMinutes) =>
+export const shift = (value, minutes, snapMinutes = SNAP_MINUTES) =>
   new Date(toDate(value).getTime() + snap(minutes, snapMinutes) * MS_PER_MINUTE);
 
 /**
@@ -88,52 +61,71 @@ export const clockOf = (value) => {
 };
 
 /**
- * Two blocks on the same lane cannot share time. Used to flag clashes, not to prevent
- * them: sometimes an overlap is real and the operator needs to see it to fix it.
+ * Two blocks in the same column cannot share time. Used to flag clashes, not to
+ * prevent them: sometimes an overlap is real and the operator needs to see it to fix
+ * it.
  */
 export const overlaps = (a, b) =>
   toDate(a.start) < toDate(b.end) && toDate(b.start) < toDate(a.end);
 
 /**
- * Ruler ticks across the window, one per `tickHours`.
+ * Overlapping blocks laid out side by side inside their column, the way a calendar
+ * does it: a group of blocks that touch each other share the width between them.
+ *
+ * Returns the same blocks with `lane` and `lanes`, which are the column-within-the-
+ * column and how many there are.
  */
-export const cellsFor = (days, zoom) => {
-  const step = (zoom.cellMinutes / 60) * zoom.pxPerHour;
-  const total = days * 24 * zoom.pxPerHour;
-  const cells = [];
+export const packColumns = (blocks) => {
+  const sorted = [...blocks].sort((a, b) => toDate(a.start) - toDate(b.start));
+  const packed = [];
 
-  for (let x = 0; x <= total + 0.5; x += step) {
-    const minutes = (x / zoom.pxPerHour) * 60;
+  let group = [];
+  let groupEnd = null;
 
-    cells.push({
-      x,
-      // Three weights: day boundary, hour, and everything finer. Without the hierarchy a
-      // dense grid reads as noise.
-      isDay: minutes % 1440 === 0,
-      isHour: minutes % 60 === 0,
-    });
-  }
+  const flush = () => {
+    if (!group.length) return;
 
-  return cells;
+    // Every block in the group gets the same denominator, so their edges line up.
+    const lanes = Math.max(...group.map((entry) => entry.lane)) + 1;
+    group.forEach((entry) => packed.push({ ...entry, lanes }));
+    group = [];
+    groupEnd = null;
+  };
+
+  sorted.forEach((block) => {
+    if (groupEnd !== null && toDate(block.start) >= groupEnd) {
+      flush();
+    }
+
+    // The first free lane in the current group, so two blocks only share one when
+    // they genuinely overlap.
+    const taken = new Set(
+      group.filter((entry) => overlaps(entry, block)).map((entry) => entry.lane),
+    );
+
+    let lane = 0;
+    while (taken.has(lane)) lane += 1;
+
+    group.push({ ...block, lane });
+    groupEnd = groupEnd === null
+      ? toDate(block.end)
+      : new Date(Math.max(groupEnd, toDate(block.end)));
+  });
+
+  flush();
+
+  return packed;
 };
 
-export const ticksFor = (from, days, zoom) => {
-  const start = toDate(from);
-  const total = days * 24;
-  const ticks = [];
+/**
+ * The hour labels down the side, from `from` up to but not including `to`.
+ */
+export const hoursBetween = (from, to) => {
+  const hours = [];
 
-  for (let hour = 0; hour <= total; hour += zoom.tickHours) {
-    const at = new Date(start.getTime() + hour * MS_PER_HOUR);
-
-    ticks.push({
-      hour,
-      x: hour * zoom.pxPerHour,
-      // Midnight gets the date, everything else the clock; at day zoom only midnight
-      // exists, which is what makes the day boundaries readable.
-      label: at.getHours() === 0 ? at.toLocaleDateString([], { weekday: 'short', day: 'numeric' }) : clockOf(at),
-      isMidnight: at.getHours() === 0,
-    });
+  for (let hour = from; hour < to; hour += 1) {
+    hours.push({ hour, label: `${String(hour).padStart(2, '0')}:00` });
   }
 
-  return ticks;
+  return hours;
 };

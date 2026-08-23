@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Recording;
+use App\Models\RecordingProgress;
 use App\Models\Show;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -12,97 +13,329 @@ use Inertia\Inertia;
 class RecordingController extends Controller
 {
     /**
-     * Archive landing page: one collection per convention year.
+     * How many recordings Continue watching carries.
+     */
+    private const SHELF_SIZE = 12;
+
+    /**
+     * Page size for the filtered grid. Deliberately a multiple of the widest
+     * column count so a full page never ends on a ragged row.
+     */
+    private const PAGE_SIZE = 24;
+
+    /**
+     * Archive landing page.
      *
-     * Searching switches the page from collections to flat results, because when you
-     * are hunting for one show, year boundaries only get in the way.
+     * One grid, always, newest first until asked otherwise, paged in as it is
+     * scrolled. The archive is around twenty recordings a year, so a wall of
+     * shelves would show most of the same recordings three times over; chips and
+     * a sort narrow it in place instead.
+     *
+     * The one shelf left is Continue watching, and only on the unfiltered page:
+     * once a viewer has said what they are after, the grid is the answer.
      */
     public function index(Request $request)
     {
         $user = Auth::user();
-        $search = $request->get('search');
 
-        $recordings = $this->publishedRecordings($user, $search)
-            ->orderBy('date', 'desc')
-            ->get();
-
-        $collections = $recordings
-            ->groupBy(fn (Recording $recording) => $recording->date?->year ?? 0)
-            ->map(fn ($yearRecordings, $year) => [
-                'year' => (int) $year,
-                'count' => $yearRecordings->count(),
-                'total_views' => (int) $yearRecordings->sum('views'),
-                // Runtime in hours reads better than a raw second count on a card.
-                'hours' => (int) round($yearRecordings->sum('duration') / 3600),
-                'first_date' => $yearRecordings->min('date'),
-                'last_date' => $yearRecordings->max('date'),
-                // Poster art: the most watched recording of the year that actually has a still.
-                'thumbnail_url' => $yearRecordings
-                    ->sortByDesc('views')
-                    ->first(fn (Recording $recording) => (bool) $recording->thumbnail_url)
-                    ?->thumbnail_url,
-                'highlights' => $yearRecordings
-                    ->sortByDesc('views')
-                    ->take(3)
-                    ->pluck('title')
-                    ->values(),
-            ])
-            ->sortByDesc('year')
-            ->values();
-
-        // Shows still processing sit in the same grid as everything else, newest first,
-        // as dimmed tiles. They are not their own section: a viewer looking for a show
-        // should find it where they expect it, told it is not ready yet.
-        $withPending = $this->withPendingTiles($recordings, $this->pendingTiles($search));
+        $filters = $this->filters($request);
 
         return Inertia::render('Archive/Index', [
-            'collections' => $collections,
-            'recentRecordings' => $withPending->take(8)->values(),
-            'searchResults' => $search ? $withPending->values() : null,
-            'totalRecordings' => $recordings->count(),
-            'search' => $search,
+            'filters' => $filters,
+            'chips' => $this->chips($user),
+            'totalRecordings' => Recording::where('is_published', true)->accessibleBy($user)->count(),
+            'continueWatching' => $this->isFiltered($filters)
+                ? []
+                : $this->continueWatching($user),
+        ] + $this->gridProps($request, $user, $filters));
+    }
+
+    /**
+     * One year's collection.
+     *
+     * The year chips on the index filter in place, so this route exists for links
+     * that were already handed out. It answers the same grid, pinned to the year.
+     */
+    public function year(Request $request, int $year)
+    {
+        return redirect()->route('recordings.index', array_filter([
+            'year' => $year,
+            'search' => $request->get('search'),
+            'sort' => $request->get('sort'),
+        ]));
+    }
+
+    /**
+     * Titles matching what has been typed so far, for the search dropdown.
+     *
+     * Deliberately not an Inertia page: it answers while the viewer is still
+     * typing, and re-rendering the archive on every keystroke would be absurd.
+     */
+    public function suggest(Request $request)
+    {
+        $term = trim((string) $request->get('q', ''));
+
+        if (mb_strlen($term) < 2) {
+            return response()->json(['suggestions' => []]);
+        }
+
+        $user = Auth::user();
+
+        $recordings = Recording::where('is_published', true)
+            ->accessibleBy($user)
+            ->where('title', 'like', '%'.$term.'%')
+            ->with('source:id,name')
+            ->orderByDesc('views')
+            ->limit(8)
+            ->get();
+
+        return response()->json([
+            'suggestions' => $recordings->map(fn (Recording $recording) => [
+                'id' => $recording->id,
+                'title' => $recording->title,
+                'year' => $recording->date?->year,
+                'source_name' => $recording->source?->name,
+                'thumbnail_url' => $recording->thumbnail_url,
+                'url' => route('recordings.show', $recording->id),
+            ])->values(),
         ]);
     }
 
     /**
-     * One year's collection, laid out like the browse grid.
+     * The filter set, normalised. Anything unrecognised is dropped rather than
+     * passed through, so a hand-typed sort cannot reach the query builder.
      */
-    public function year(Request $request, int $year)
+    private function filters(Request $request): array
     {
-        $user = Auth::user();
-        $search = $request->get('search');
+        $sort = $request->get('sort');
 
-        $recordings = $this->publishedRecordings($user, $search)
-            ->whereYear('date', $year)
-            ->orderBy('date', 'desc')
-            ->get();
+        return [
+            'search' => $request->filled('search') ? trim((string) $request->get('search')) : null,
+            'year' => $request->filled('year') ? (int) $request->get('year') : null,
+            'source' => $request->filled('source') ? (string) $request->get('source') : null,
+            'category' => $request->filled('category') ? (string) $request->get('category') : null,
+            'sort' => in_array($sort, ['newest', 'oldest', 'views', 'longest'], true) ? $sort : 'newest',
+        ];
+    }
 
-        // Shows that ended but whose recording has not been published yet, so the
-        // year does not look like it is missing something without explanation.
-        $pending = $this->pendingTiles($search, $year);
+    private function isFiltered(array $filters): bool
+    {
+        return $filters['search'] !== null
+            || $filters['year'] !== null
+            || $filters['source'] !== null
+            || $filters['category'] !== null
+            || $filters['sort'] !== 'newest';
+    }
 
-        if ($recordings->isEmpty() && $pending->isEmpty() && ! $search) {
-            abort(404);
-        }
-
-        $years = Recording::where('is_published', true)
+    /**
+     * The chip bar: every year and every source that actually has something behind
+     * it, so a chip never leads to an empty grid.
+     */
+    private function chips($user): array
+    {
+        $recordings = Recording::where('is_published', true)
             ->accessibleBy($user)
-            ->orderBy('date', 'desc')
-            ->get()
+            ->with(['source:id,name,slug', 'category:id,name,slug,sort_order', 'show:id,category_id', 'show.category:id,name,slug,sort_order'])
+            ->get(['id', 'date', 'source_id', 'category_id', 'show_id']);
+
+        $years = $recordings
             ->map(fn (Recording $recording) => $recording->date?->year)
             ->filter()
-            ->unique()
-            ->sortDesc()
+            ->countBy()
+            ->map(fn ($count, $year) => ['year' => (int) $year, 'count' => $count])
+            ->sortByDesc('year')
             ->values();
 
-        return Inertia::render('Archive/Year', [
-            'year' => $year,
+        $sources = $recordings
+            ->filter(fn (Recording $recording) => $recording->source !== null)
+            ->groupBy(fn (Recording $recording) => $recording->source->slug)
+            ->map(fn ($group, $slug) => [
+                'slug' => $slug,
+                'name' => $group->first()->source->name,
+                'count' => $group->count(),
+            ])
+            ->sortByDesc('count')
+            ->values();
+
+        // A category chip counts the recordings that have it through their show as
+        // well as the ones labelled directly, because that is what the chip filters.
+        $categories = $recordings
+            ->map(fn (Recording $recording) => $recording->effectiveCategory())
+            ->filter()
+            ->groupBy('slug')
+            ->map(fn ($group, $slug) => [
+                'slug' => $slug,
+                'name' => $group->first()->name,
+                'sort_order' => $group->first()->sort_order,
+                'count' => $group->count(),
+            ])
+            ->sortBy([['sort_order', 'asc'], ['name', 'asc']])
+            ->values();
+
+        return [
             'years' => $years,
-            'recordings' => $this->withPendingTiles($recordings, $pending)->values(),
-            'totalViews' => (int) $recordings->sum('views'),
-            'hours' => (int) round($recordings->sum('duration') / 3600),
-            'search' => $search,
-        ]);
+            'sources' => $sources,
+            'categories' => $categories,
+        ];
+    }
+
+    /**
+     * The filtered grid, paginated so the page does not load the whole archive to
+     * show the first two rows. Later pages arrive as merged Inertia props.
+     */
+    private function gridProps(Request $request, $user, array $filters): array
+    {
+        $query = $this->publishedRecordings($user, $filters['search'])
+            ->with(['source:id,name,slug', 'category:id,name,slug', 'show:id,category_id', 'show.category:id,name,slug']);
+
+        if ($filters['year']) {
+            $query->whereYear('date', $filters['year']);
+        }
+
+        if ($filters['source']) {
+            $query->whereHas('source', fn ($q) => $q->where('slug', $filters['source']));
+        }
+
+        if ($filters['category']) {
+            $query->inCategory($filters['category']);
+        }
+
+        match ($filters['sort']) {
+            'oldest' => $query->orderBy('date'),
+            'views' => $query->orderByDesc('views')->orderByDesc('date'),
+            'longest' => $query->orderByDesc('duration')->orderByDesc('date'),
+            default => $query->orderByDesc('date'),
+        };
+
+        $page = $query->paginate(self::PAGE_SIZE)->withQueryString();
+        $progress = $this->progressFor($user, collect($page->items())->pluck('id'));
+
+        return [
+            'recordings' => Inertia::merge(
+                collect($page->items())
+                    ->map(fn (Recording $recording) => $this->tile($recording, $progress))
+                    ->values()
+                    ->all()
+            ),
+            'pagination' => [
+                'page' => $page->currentPage(),
+                'lastPage' => $page->lastPage(),
+                'total' => $page->total(),
+            ],
+            /*
+             * Page one only, and only while the grid is newest-first: prepending
+             * them to every page would repeat the same processing tiles all the
+             * way down, and prepending them to a most-viewed grid would put four
+             * tiles with no views at the top of it.
+             */
+            'pending' => $page->currentPage() === 1 && $filters['sort'] === 'newest'
+                ? $this->pendingTiles($filters['search'], $filters['year'], $filters['source'], $filters['category'])
+                : [],
+        ];
+    }
+
+    /**
+     * Started but not finished, most recently touched first. Signed-in only:
+     * there is no row to read for a guest.
+     */
+    private function continueWatching($user): Collection
+    {
+        if (! $user) {
+            return collect();
+        }
+
+        $rows = RecordingProgress::where('user_id', $user->id)
+            ->where('completed', false)
+            ->with(['recording.source:id,name,slug', 'recording.category:id,name,slug', 'recording.show:id,category_id', 'recording.show.category:id,name,slug'])
+            ->orderByDesc('updated_at')
+            ->limit(self::SHELF_SIZE * 2)
+            ->get()
+            ->filter(function (RecordingProgress $row) use ($user) {
+                $recording = $row->recording;
+
+                if (! $recording || ! $recording->is_published || ! $recording->canBeAccessedBy($user)) {
+                    return false;
+                }
+
+                $fraction = $row->fraction();
+
+                return $fraction >= RecordingProgress::STARTED_AT
+                    && $fraction < RecordingProgress::COMPLETE_AT;
+            })
+            ->take(self::SHELF_SIZE);
+
+        if ($rows->isEmpty()) {
+            return collect();
+        }
+
+        $progress = $this->progressFor($user, $rows->pluck('recording_id'));
+
+        return $rows
+            ->map(fn (RecordingProgress $row) => $this->tile($row->recording, $progress))
+            ->values();
+    }
+
+    /**
+     * Playback positions keyed by recording id, for the bar across the tile.
+     */
+    private function progressFor($user, Collection $recordingIds): array
+    {
+        if (! $user || $recordingIds->isEmpty()) {
+            return [];
+        }
+
+        return RecordingProgress::where('user_id', $user->id)
+            ->whereIn('recording_id', $recordingIds)
+            ->get()
+            /*
+             * The same window Continue watching uses. Thirty seconds into a
+             * two-hour recording is not a resume point, and a tile that says
+             * "1h left" for it while the shelf above has nothing on it is the
+             * page disagreeing with itself.
+             */
+            ->filter(function (RecordingProgress $row) {
+                $fraction = $row->fraction();
+
+                return $fraction >= RecordingProgress::STARTED_AT
+                    && $fraction < RecordingProgress::COMPLETE_AT;
+            })
+            ->mapWithKeys(fn (RecordingProgress $row) => [
+                $row->recording_id => [
+                    'position' => $row->position,
+                    'fraction' => round($row->fraction(), 4),
+                    'completed' => $row->completed,
+                ],
+            ])
+            ->all();
+    }
+
+    /**
+     * What a tile needs and nothing else. Shaped here rather than serialised off
+     * the model, so a grid of 24 does not carry cut markers and archive prefixes.
+     */
+    private function tile(Recording $recording, array $progress = []): array
+    {
+        return [
+            'id' => $recording->id,
+            'title' => $recording->title,
+            'date' => $recording->date?->toJSON(),
+            'duration' => $recording->duration,
+            'views' => (int) $recording->views,
+            'thumbnail_url' => $recording->thumbnail_url,
+            'source_name' => $recording->source?->name,
+            'source_slug' => $recording->source?->slug,
+            'category_name' => $recording->effectiveCategory()?->name,
+            // The same playlist the player uses. The hover preview attaches to it
+            // at the lowest rendition; nothing else is stored per recording to
+            // preview from. A recording registered from outside has no archive to
+            // render a playlist from - that route answers 410 for one - so it
+            // previews against the URL it carries, which is what its player loads.
+            'preview_url' => $recording->hasCut()
+                ? route('recordings.playlist.master', $recording->slug)
+                : $recording->m3u8_url,
+            'progress' => $progress[$recording->id] ?? null,
+            'is_pending' => false,
+        ];
     }
 
     private function publishedRecordings($user, ?string $search)
@@ -126,6 +359,7 @@ class RecordingController extends Controller
         // about capture, which happens for every source unconditionally.
         $query = Show::where('announce_recording', true)
             ->where('status', 'ended')
+            ->with(['source:id,name,slug', 'category:id,name,slug'])
             ->whereDoesntHave('recordings', fn ($q) => $q->where('is_published', true));
 
         if ($search) {
@@ -142,39 +376,32 @@ class RecordingController extends Controller
     }
 
     /**
-     * Pending shows shaped like recordings, so the same tile renders both. `is_pending`
-     * is what the tile keys off to dim itself and drop its link.
+     * Pending shows shaped like recordings, so the same tile renders both.
+     * `is_pending` is what the tile keys off to dim itself and drop its link.
      */
-    private function pendingTiles(?string $search, ?int $year = null): Collection
+    private function pendingTiles(?string $search, ?int $year = null, ?string $source = null, ?string $category = null): Collection
     {
         return $this->pendingShows($search)
             ->filter(fn (Show $show) => $year === null
                 || ($show->actual_end ?? $show->scheduled_end)?->year === $year)
+            ->filter(fn (Show $show) => $source === null || $show->source?->slug === $source)
+            ->filter(fn (Show $show) => $category === null || $show->category?->slug === $category)
             // Dates go out as ISO strings, matching how the models serialise theirs, so
             // the merged list sorts on one comparable type.
             ->map(fn (Show $show) => [
                 'id' => 'pending-'.$show->id,
                 'title' => $show->title,
-                'description' => $show->description,
-                'description_html' => $show->description_html,
                 'date' => ($show->actual_end ?? $show->scheduled_end)?->toJSON(),
                 'thumbnail_url' => null,
                 'duration' => null,
                 'views' => 0,
+                'source_name' => $show->source?->name,
+                'source_slug' => $show->source?->slug,
+                'category_name' => $show->category?->name,
+                'preview_url' => null,
+                'progress' => null,
                 'is_pending' => true,
             ])
-            ->values();
-    }
-
-    /**
-     * One date-ordered list of published recordings and pending tiles.
-     */
-    private function withPendingTiles(Collection $recordings, Collection $pending): Collection
-    {
-        return $recordings
-            ->map(fn (Recording $recording) => $recording->toArray() + ['is_pending' => false])
-            ->concat($pending)
-            ->sortByDesc('date')
             ->values();
     }
 
@@ -195,8 +422,85 @@ class RecordingController extends Controller
         // Increment views
         $recording->increment('views');
 
+        $recording->load(['source:id,name,slug', 'category:id,name,slug', 'show:id,category_id', 'show.category:id,name,slug']);
+
+        $upNext = $this->upNext($recording, $user);
+
         return Inertia::render('RecordingPlayer', [
             'recording' => $recording,
+            'sourceName' => $recording->source?->name,
+            // Stretches the player may offer a way past. Sorted and non-overlapping,
+            // so the player can walk them without deciding anything.
+            'skips' => $recording->skips(),
+            // Whether this viewer may mark them, which is what puts the editor on the
+            // page. Marking an intermission happens while watching one.
+            'canEditSkips' => $user ? $user->can('update', $recording) : false,
+            'category' => $recording->effectiveCategory()?->only(['name', 'slug']),
+            'upNext' => $upNext,
+            // Where this viewer left off, so the player can offer to resume. Zero
+            // for a guest, and zero once they have watched it to the end.
+            'resumeAt' => $this->resumeAt($recording, $user),
         ]);
+    }
+
+    /**
+     * What plays after this one: the rest of the same source first, newest first,
+     * then the same year to fill the rail. Same source before same year, because
+     * a stage's own programme is the closest thing the archive has to a channel.
+     */
+    private function upNext(Recording $recording, $user): Collection
+    {
+        $take = 15;
+
+        $sameSource = $recording->source_id
+            ? $this->publishedRecordings($user, null)
+                ->with(['source:id,name,slug', 'category:id,name,slug', 'show:id,category_id', 'show.category:id,name,slug'])
+                ->where('id', '!=', $recording->id)
+                ->where('source_id', $recording->source_id)
+                ->orderByDesc('date')
+                ->limit($take)
+                ->get()
+            : collect();
+
+        $fill = collect();
+
+        if ($sameSource->count() < $take && $recording->date) {
+            $fill = $this->publishedRecordings($user, null)
+                ->with(['source:id,name,slug', 'category:id,name,slug', 'show:id,category_id', 'show.category:id,name,slug'])
+                ->where('id', '!=', $recording->id)
+                ->whereNotIn('id', $sameSource->pluck('id'))
+                ->whereYear('date', $recording->date->year)
+                ->orderByDesc('views')
+                ->limit($take - $sameSource->count())
+                ->get();
+        }
+
+        $all = $sameSource->concat($fill);
+        $progress = $this->progressFor($user, $all->pluck('id'));
+
+        return $all->map(fn (Recording $item) => $this->tile($item, $progress))->values();
+    }
+
+    private function resumeAt(Recording $recording, $user): int
+    {
+        if (! $user) {
+            return 0;
+        }
+
+        $row = RecordingProgress::where('user_id', $user->id)
+            ->where('recording_id', $recording->id)
+            ->first();
+
+        if (! $row || $row->completed) {
+            return 0;
+        }
+
+        $fraction = $row->fraction();
+
+        if ($fraction < RecordingProgress::STARTED_AT || $fraction >= RecordingProgress::COMPLETE_AT) {
+            return 0;
+        }
+
+        return $row->position;
     }
 }

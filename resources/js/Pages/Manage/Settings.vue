@@ -13,6 +13,7 @@ import FormField from '@/Components/Manage/FormField.vue';
 import FormSection from '@/Components/Manage/FormSection.vue';
 import ManageIcon from '@/Components/Manage/ManageIcon.vue';
 import PageHeader from '@/Components/Manage/PageHeader.vue';
+import SettingsNav from '@/Components/Manage/SettingsNav.vue';
 
 const props = defineProps({
   group: { type: Object, required: true },
@@ -21,13 +22,6 @@ const props = defineProps({
 });
 
 const fields = computed(() => props.group.fields);
-
-const paneUrl = (item) =>
-  item.key === props.navigation[0]?.key
-    ? route('manage.settings')
-    : route('manage.settings.group', item.key);
-
-const isActive = (item) => item.key === props.group.key;
 
 // Matches Settings::CLEAR_SECRET: a blank secret keeps the stored one, this removes it.
 const CLEAR_SECRET = '__clear__';
@@ -222,48 +216,7 @@ onBeforeUnmount(clearAccentPreview);
     <PageHeader title="Settings" :subtitle="group.description" />
 
     <div class="flex min-h-0 flex-1 flex-col items-stretch lg:flex-row">
-      <!-- Below lg the pane list is a strip of chips that scrolls sideways: a 256px column
-           beside the form leaves nothing for the form. -->
-      <nav
-        class="shrink-0 border-b border-hairline lg:w-64 lg:border-r lg:border-b-0"
-        aria-label="Settings sections"
-      >
-        <div class="sticky top-0 flex gap-1 overflow-x-auto p-2 [scrollbar-width:none] lg:block lg:space-y-1 lg:overflow-visible [&::-webkit-scrollbar]:hidden">
-          <Link
-            v-for="item in navigation"
-            :key="item.key"
-            :href="paneUrl(item)"
-            class="relative flex shrink-0 items-center gap-2.5 overflow-hidden rounded border border-hairline px-3 py-2 transition-colors lg:items-start lg:border-0 lg:py-2.5"
-            :class="isActive(item) ? 'bg-state-live/10' : 'hover:bg-surface-2'"
-            :aria-current="isActive(item) ? 'page' : null"
-          >
-            <span
-              v-if="isActive(item)"
-              class="absolute top-1 bottom-1 left-0 hidden w-0.5 rounded-r bg-state-live lg:block"
-              aria-hidden="true"
-            />
-
-            <ManageIcon
-              :name="item.icon"
-              :size="16"
-              class="mt-px shrink-0"
-              :class="isActive(item) ? 'text-state-live' : 'text-fg-3'"
-            />
-
-            <span class="min-w-0 flex-1">
-              <span
-                class="block whitespace-nowrap text-[13px] font-medium lg:truncate"
-                :class="isActive(item) ? 'text-state-live' : 'text-fg-1'"
-              >
-                {{ item.label }}
-              </span>
-              <span class="mt-0.5 hidden text-[11px] leading-[15px] text-fg-3 lg:block">
-                {{ item.blurb }}
-              </span>
-            </span>
-          </Link>
-        </div>
-      </nav>
+      <SettingsNav :navigation="navigation" :active="group.key" />
 
       <form
         v-if="group.action !== 'reset'"

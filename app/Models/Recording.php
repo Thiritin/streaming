@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\SkipSegments;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,6 +17,7 @@ class Recording extends Model
     protected $fillable = [
         'show_id',
         'source_id',
+        'category_id',
         'title',
         'slug',
         'description',
@@ -26,6 +28,7 @@ class Recording extends Model
         'status',
         'duration',
         'm3u8_url',
+        'skip_segments',
         'thumbnail_path',
         'thumbnail_updated_at',
         'thumbnail_capture_error',
@@ -44,6 +47,7 @@ class Recording extends Model
         'archive_bytes' => 'integer',
         'views' => 'integer',
         'is_published' => 'boolean',
+        'skip_segments' => 'array',
         'thumbnail_updated_at' => 'datetime',
         'required_roles' => 'array',
     ];
@@ -120,6 +124,40 @@ class Recording extends Model
     }
 
     /**
+     * The category set on this recording directly. Usually null: the show's is
+     * what applies, and this column only exists to override it or to categorise
+     * an edit that was imported without a show.
+     */
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
+
+    /**
+     * The category that applies: this recording's own, else its show's.
+     */
+    public function effectiveCategory(): ?Category
+    {
+        return $this->category ?? $this->show?->category;
+    }
+
+    /**
+     * Recordings in a category, counting the ones that only have it through their
+     * show. Written as one query rather than a filter in PHP, because the archive
+     * grid pages over the result.
+     */
+    public function scopeInCategory($query, string $slug)
+    {
+        return $query->where(function ($query) use ($slug) {
+            $query->whereHas('category', fn ($q) => $q->where('slug', $slug))
+                ->orWhere(function ($query) use ($slug) {
+                    $query->whereNull('category_id')
+                        ->whereHas('show.category', fn ($q) => $q->where('slug', $slug));
+                });
+        });
+    }
+
+    /**
      * Slug of the archive this cut reads from.
      *
      * Prefers the stored prefix so an existing recording keeps resolving if its source is
@@ -145,6 +183,18 @@ class Recording extends Model
     public function hasCut(): bool
     {
         return $this->starts_at !== null && $this->ends_at !== null;
+    }
+
+    /**
+     * The skippable stretches, sorted and non-overlapping. Read through here rather
+     * than off the column: rows written before the column existed hold null, and a
+     * re-cut can leave a range hanging past the new end.
+     *
+     * @return array<int, array{start: int, end: int, label: string|null}>
+     */
+    public function skips(): array
+    {
+        return SkipSegments::normalise($this->skip_segments, $this->duration);
     }
 
     /**

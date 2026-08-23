@@ -13,6 +13,7 @@ use App\Http\Controllers\FeedbackController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\RecordingPlaylistController;
+use App\Http\Controllers\RecordingProgressController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\StreamController;
 use App\Http\Controllers\UserSettingsController;
@@ -115,7 +116,15 @@ Route::middleware(['auth.optional:web'])->group(function () {
 
     // Archive (formerly "recordings"; route names kept so existing links still resolve)
     Route::get('/archive', [RecordingController::class, 'index'])->name('recordings.index');
+    /*
+     * Search suggestions for the archive's own search box. Not an Inertia page: it
+     * answers while the viewer is still typing.
+     */
+    Route::get('/archive/suggest', [RecordingController::class, 'suggest'])
+        ->middleware('throttle:60,1')
+        ->name('recordings.suggest');
     // Declared before /archive/{recording} so the year collection wins the match.
+    // The index filters by year in place now; this stays for links already handed out.
     Route::get('/archive/year/{year}', [RecordingController::class, 'year'])
         ->whereNumber('year')
         ->name('recordings.year');
@@ -133,6 +142,14 @@ Route::middleware(['auth.optional:web'])->group(function () {
         ->name('recordings.playlist.media');
 
     Route::get('/archive/{recording}', [RecordingController::class, 'show'])->name('recordings.show');
+
+    /*
+     * Where a signed-in viewer got to. Posted by the player every few seconds and
+     * on the way out; guests keep no progress, so the route is behind auth.
+     */
+    Route::put('/archive/{recording}/progress', [RecordingProgressController::class, 'update'])
+        ->middleware('auth:web')
+        ->name('recordings.progress');
     Route::redirect('/recordings', '/archive');
     Route::get('/recordings/{recording}', fn ($recording) => redirect("/archive/{$recording}"));
 });

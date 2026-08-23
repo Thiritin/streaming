@@ -39,6 +39,85 @@ final class Status
     }
 
     /**
+     * Whether a show is meant to end up published. Planning, not a gate: see the
+     * migration that added `shows.publish_plan`.
+     *
+     * @return array{label: string, tone: string, icon: string|null}
+     */
+    public static function publishPlan(?string $plan): array
+    {
+        return match ($plan) {
+            'yes' => self::make('Yes', self::OK, 'circle-dot'),
+            'no' => self::make('No', self::IDLE, 'circle-slash'),
+            default => self::make('Undecided', self::WARN, 'circle-help'),
+        };
+    }
+
+    /**
+     * The onsite capture: the fallback copy made in the room. Only worth chasing once the
+     * stream capture has failed, which is why the unset value reads as a question rather
+     * than as a problem.
+     *
+     * @return array{label: string, tone: string, icon: string|null}
+     */
+    public static function onsiteStatus(?string $status): array
+    {
+        return match ($status) {
+            'none' => self::make('None made', self::IDLE, 'minus'),
+            'expected' => self::make('Expected', self::WARN, 'clock'),
+            'received' => self::make('Received', self::OK, 'inbox'),
+            'unusable' => self::make('Unusable', self::DANGER, 'circle-x'),
+            default => self::make('Not checked', self::IDLE, 'circle-help'),
+        };
+    }
+
+    /**
+     * How the stream capture came back - what the uploader mirrored off the source.
+     *
+     * @return array{label: string, tone: string, icon: string|null}
+     */
+    public static function streamCondition(?string $condition): array
+    {
+        return match ($condition) {
+            'ok' => self::make('OK', self::OK, 'circle-check'),
+            'no_audio' => self::make('No audio', self::WARN, 'volume-x'),
+            'no_video' => self::make('No video', self::WARN, 'video-off'),
+            'incomplete' => self::make('Incomplete', self::WARN, 'triangle-alert'),
+            'lost' => self::make('Lost', self::DANGER, 'circle-slash'),
+            default => self::make('Unchecked', self::IDLE, 'circle-help'),
+        };
+    }
+
+    /**
+     * Where a show stands on actually having a recording, from Show::recordingState().
+     *
+     * The two captures are a fallback chain, so the states between "nothing" and "gone"
+     * matter: a show whose onsite master is in hand is not missing, and one whose card is
+     * still being chased is not lost.
+     *
+     * @return array{label: string, tone: string, icon: string|null}
+     */
+    public static function recordingState(string $state): array
+    {
+        return match ($state) {
+            'published' => self::make('Published', self::OK, 'circle-check'),
+            'ready' => self::make('Ready', self::INFO, 'film'),
+            'draft' => self::make('Draft', self::WARN, 'scissors'),
+            'failed' => self::make('Failed', self::DANGER, 'triangle-alert'),
+            // The master is in hand; somebody has to import it.
+            'onsite' => self::make('Onsite master', self::INFO, 'inbox'),
+            // The stream capture failed and the room's copy has not turned up yet.
+            'needs_onsite' => self::make('Needs onsite', self::WARN, 'search'),
+            'missing' => self::make('Missing', self::DANGER, 'circle-x'),
+            // Terminal: both captures are gone. Not a to-do, which is why it is not the
+            // same red as Missing.
+            'lost' => self::make('Lost', self::DANGER, 'circle-slash'),
+            'skipped' => self::make('Not published', self::IDLE, 'minus'),
+            default => self::make('Pending', self::IDLE, 'clock'),
+        };
+    }
+
+    /**
      * @return array{label: string, tone: string, icon: string|null}
      */
     public static function show(?string $status): array

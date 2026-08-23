@@ -53,6 +53,14 @@ const props = defineProps({
         type: String,
         default: 'video-player',
     },
+    /**
+     * Seconds to start at. Applied once, when the media is first ready: the
+     * archive uses it to resume a recording where the viewer left it.
+     */
+    startTime: {
+        type: Number,
+        default: 0,
+    },
 });
 
 const emit = defineEmits([
@@ -63,6 +71,7 @@ const emit = defineEmits([
     'autoplay-blocked',
     'quality-change',
     'can-play',
+    'time-update',
     'toggle-stats',
 ]);
 
@@ -134,6 +143,26 @@ const onProviderChange = (event) => {
  * Browsers block unmuted autoplay without a prior user gesture. Retry muted and
  * tell the parent so it can offer an unmute affordance.
  */
+/**
+ * Resume, once. Vidstack can fire can-play again after a quality change or a
+ * recovered error, and seeking back on each of those would drag the viewer
+ * backwards mid-watch.
+ */
+let seeked = false;
+
+const onCanPlay = () => {
+    if (!seeked && props.startTime > 0 && player.value) {
+        seeked = true;
+        player.value.currentTime = props.startTime;
+    }
+
+    emit('can-play');
+};
+
+const onTimeUpdate = (event) => {
+    emit('time-update', event.detail?.currentTime ?? player.value?.currentTime ?? 0);
+};
+
 const onAutoplayFail = () => {
     const el = player.value;
     if (!el) return;
@@ -187,6 +216,9 @@ onBeforeUnmount(() => {
 defineExpose({
     play: () => player.value?.play(),
     pause: () => player.value?.pause(),
+    seek: (seconds) => {
+        if (player.value) player.value.currentTime = Math.max(0, seconds);
+    },
     seekToLive: () => player.value?.seekToLiveEdge(),
     requestGoogleCast: () => player.value?.requestGoogleCast(),
     requestAirPlay: () => player.value?.requestAirPlay(),
@@ -213,7 +245,8 @@ defineExpose({
             @playing="emit('playing')"
             @pause="emit('pause')"
             @ended="emit('ended')"
-            @can-play="emit('can-play')"
+            @can-play="onCanPlay"
+            @time-update="onTimeUpdate"
         >
             <media-provider>
                 <media-poster v-if="poster" class="vds-poster" :src="poster" :alt="title" />

@@ -11,7 +11,7 @@ use Tests\Concerns\CreatesManageUsers;
 use Tests\TestCase;
 
 /**
- * The planner: the running order as one track per source across the event.
+ * The planner: one day's running order, sources as columns and hours down the side.
  */
 class ShowPlannerTest extends TestCase
 {
@@ -68,16 +68,16 @@ class ShowPlannerTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('can.edit', false));
     }
 
-    // ---------------------------------------------------------------- lanes and window
+    // ---------------------------------------------------------------- columns and day
 
-    public function test_every_source_gets_a_lane_in_priority_order(): void
+    public function test_every_source_gets_a_column_in_priority_order(): void
     {
         $this->actingAs($this->admin)
             ->get(route('manage.shows.planner'))
             ->assertSuccessful()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Manage/Shows/Planner')
-                ->where('lanes', fn ($lanes) => collect($lanes)->pluck('name')->all() === [
+                ->where('columns', fn ($columns) => collect($columns)->pluck('name')->all() === [
                     'Main Stage',
                     'Stage B',
                 ])
@@ -85,7 +85,7 @@ class ShowPlannerTest extends TestCase
             );
     }
 
-    public function test_a_lane_carries_only_its_own_shows(): void
+    public function test_a_column_carries_only_its_own_shows(): void
     {
         $this->show(['title' => 'On main', 'scheduled_start' => now()->addHour(), 'scheduled_end' => now()->addHours(2)]);
         $this->show([
@@ -98,74 +98,103 @@ class ShowPlannerTest extends TestCase
         $this->actingAs($this->admin)
             ->get(route('manage.shows.planner'))
             ->assertInertia(function (Assert $page) {
-                $lanes = collect($page->toArray()['props']['lanes'])->keyBy('name');
+                $columns = collect($page->toArray()['props']['columns'])->keyBy('name');
 
-                $this->assertSame(['On main'], collect($lanes['Main Stage']['shows'])->pluck('title')->all());
-                $this->assertSame(['On B'], collect($lanes['Stage B']['shows'])->pluck('title')->all());
+                $this->assertSame(['On main'], collect($columns['Main Stage']['shows'])->pluck('title')->all());
+                $this->assertSame(['On B'], collect($columns['Stage B']['shows'])->pluck('title')->all());
             });
     }
 
-    public function test_the_window_defaults_to_four_days_from_today(): void
+    public function test_the_planner_opens_on_today(): void
     {
         $this->actingAs($this->admin)
             ->get(route('manage.shows.planner'))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('range.days', 4)
-                ->count('range.dayLabels', 4)
-                ->where('range.dayLabels.0.isToday', true)
+                ->where('day.iso', now()->toDateString())
+                ->where('day.isToday', true)
+                ->where('day.previous', now()->subDay()->toDateString())
+                ->where('day.next', now()->addDay()->toDateString())
+                ->where('closeUrl', route('manage.shows.index'))
             );
     }
 
-    public function test_the_window_can_be_moved_and_widened(): void
+    public function test_another_day_can_be_asked_for(): void
     {
         $this->actingAs($this->admin)
-            ->get(route('manage.shows.planner', ['from' => '2026-08-01', 'days' => 7]))
+            ->get(route('manage.shows.planner', ['date' => '2026-08-01']))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('range.days', 7)
-                ->count('range.dayLabels', 7)
-                ->where('range.dayLabels.0.label', 'Sat 1 Aug')
+                ->where('day.iso', '2026-08-01')
+                ->where('day.isToday', false)
             );
     }
 
-    public function test_an_absurd_window_is_clamped_rather_than_served(): void
+    public function test_a_broken_date_parameter_falls_back_to_today(): void
     {
         $this->actingAs($this->admin)
-            ->get(route('manage.shows.planner', ['days' => 3650]))
-            ->assertInertia(fn (Assert $page) => $page->where('range.days', 31));
-    }
-
-    public function test_a_broken_from_parameter_falls_back_to_today(): void
-    {
-        $this->actingAs($this->admin)
-            ->get(route('manage.shows.planner', ['from' => 'last thursday-ish']))
+            ->get(route('manage.shows.planner', ['date' => 'last thursday-ish']))
             ->assertSuccessful()
-            ->assertInertia(fn (Assert $page) => $page->where('range.dayLabels.0.isToday', true));
+            ->assertInertia(fn (Assert $page) => $page->where('day.isToday', true));
     }
 
-    public function test_a_show_running_past_the_window_edge_still_appears(): void
+    /**
+     * A day with nothing on it still has to be usable, so the grid opens on the hours
+     * a show is most likely to be placed in rather than on midnight.
+     */
+    public function test_an_empty_day_opens_on_working_hours(): void
     {
-        // The dance case: starts inside the window, ends after it. Containment would drop it.
+        $this->actingAs($this->admin)
+            ->get(route('manage.shows.planner', ['date' => '2026-08-01']))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('hours.from', 8)
+                ->where('hours.to', 24)
+            );
+    }
+
+    public function test_the_hour_window_opens_around_the_day_that_is_programmed(): void
+    {
+        $this->show([
+            'scheduled_start' => '2026-08-01 14:00:00',
+            'scheduled_end' => '2026-08-01 16:00:00',
+        ]);
+
+        // An hour of air either side of the programme, so a block can be dragged out
+        // of the window's edge without switching to the full day first.
+        $this->actingAs($this->admin)
+            ->get(route('manage.shows.planner', ['date' => '2026-08-01']))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('hours.from', 13)
+                ->where('hours.to', 17)
+            );
+    }
+
+    public function test_a_show_running_past_midnight_still_appears_on_the_day_it_starts(): void
+    {
+        // The dance case: starts inside the day, ends after it. Containment would drop it.
         $this->show([
             'title' => 'Overnight dance',
-            'scheduled_start' => now()->addDays(3)->setTime(22, 0),
-            'scheduled_end' => now()->addDays(5)->setTime(2, 0),
+            'scheduled_start' => '2026-08-01 22:00:00',
+            'scheduled_end' => '2026-08-02 02:00:00',
         ]);
 
         $this->actingAs($this->admin)
-            ->get(route('manage.shows.planner', ['days' => 4]))
+            ->get(route('manage.shows.planner', ['date' => '2026-08-01']))
             ->assertInertia(fn (Assert $page) => $page->where(
-                'lanes.0.shows',
+                'columns.0.shows',
                 fn ($shows) => collect($shows)->pluck('title')->all() === ['Overnight dance'],
             ));
     }
 
-    public function test_shows_outside_the_window_are_left_out(): void
+    public function test_shows_on_another_day_are_left_out(): void
     {
-        $this->show(['title' => 'Next month', 'scheduled_start' => now()->addDays(40), 'scheduled_end' => now()->addDays(40)->addHour()]);
+        $this->show([
+            'title' => 'Next month',
+            'scheduled_start' => now()->addDays(40),
+            'scheduled_end' => now()->addDays(40)->addHour(),
+        ]);
 
         $this->actingAs($this->admin)
             ->get(route('manage.shows.planner'))
-            ->assertInertia(fn (Assert $page) => $page->count('lanes.0.shows', 0));
+            ->assertInertia(fn (Assert $page) => $page->count('columns.0.shows', 0));
     }
 
     public function test_a_live_block_is_locked(): void
@@ -175,9 +204,20 @@ class ShowPlannerTest extends TestCase
         $this->actingAs($this->admin)
             ->get(route('manage.shows.planner'))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('lanes.0.shows.0.locked', true)
-                ->where('lanes.0.shows.0.status.label', 'Live')
+                ->where('columns.0.shows.0.locked', true)
+                ->where('columns.0.shows.0.status.label', 'Live')
             );
+    }
+
+    public function test_the_shows_list_is_what_offers_the_planner(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('manage.shows.index'))
+            ->assertInertia(fn (Assert $page) => $page->where(
+                'table.pageActions',
+                fn ($actions) => collect($actions)->firstWhere('name', 'planner')['url']
+                    === route('manage.shows.planner'),
+            ));
     }
 
     // ---------------------------------------------------------------- rescheduling

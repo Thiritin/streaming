@@ -128,13 +128,21 @@ const showWholeArchive = () => {
 // render, which happens before mounted hooks run.
 fitToCut();
 
-/** Zoom about the playhead, so the frame being examined stays put. */
+/**
+ * Zoom about the playhead, which ends up in the middle of the new view.
+ *
+ * Holding the playhead's position within the view instead - the usual thing for a
+ * zoom under a cursor - is what made zooming out feel like it happened somewhere
+ * else: with the playhead near an edge, nearly all of the span gained appears on
+ * the far side of it, and the frame being worked on stays pinned to the edge it was
+ * already at. There is no cursor here to anchor to, so centre it.
+ */
 const zoom = (factor) => {
     if (!view.value || !archive.value) return;
     const span = view.value.to - view.value.from;
     const centre = playheadMs.value ?? view.value.from + span / 2;
     const next = Math.max(60_000, Math.min(archive.value.to - archive.value.from, span * factor));
-    let from = centre - (centre - view.value.from) * (next / span);
+    let from = centre - next / 2;
     let to = from + next;
 
     if (from < archive.value.from) { from = archive.value.from; to = from + next; }

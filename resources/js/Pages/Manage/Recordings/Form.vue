@@ -10,6 +10,7 @@ import FormField from '@/Components/Manage/FormField.vue';
 import FormSection from '@/Components/Manage/FormSection.vue';
 import PageHeader from '@/Components/Manage/PageHeader.vue';
 import CutEditor from '@/Components/Manage/CutEditor.vue';
+import SkipEditor from '@/Components/Recordings/SkipEditor.vue';
 
 const props = defineProps({
   /** null when creating */
@@ -30,10 +31,19 @@ const isCut = computed(() => Boolean(props.recording?.starts_at));
 
 const isEdit = computed(() => Boolean(props.recording));
 
+// Left empty, a recording is whatever its show is; say which that is rather than
+// leaving the field looking unset.
+const categoryHelper = computed(() =>
+  props.recording?.inherited_category
+    ? `Left empty, this follows its show: ${props.recording.inherited_category}.`
+    : 'Left empty, this follows its show. Set it to override, or for a recording with no show.',
+);
+
 const form = useForm(
   props.recording
     ? {
         show_id: props.recording.show_id ?? '',
+        category_id: props.recording.category_id ?? '',
         title: props.recording.title,
         slug: props.recording.slug,
         description: props.recording.description ?? '',
@@ -45,9 +55,11 @@ const form = useForm(
         required_roles: [...props.recording.required_roles],
         starts_at: props.recording.starts_at ?? null,
         ends_at: props.recording.ends_at ?? null,
+        skip_segments: props.recording.skip_segments ?? [],
       }
     : {
         show_id: '',
+        category_id: '',
         title: '',
         slug: '',
         description: '',
@@ -128,6 +140,14 @@ const submit = () => {
             :options="options.shows"
             :error="form.errors.show_id"
             helper="Optional. Links the recording back to what was broadcast."
+          />
+          <FormField
+            v-model="form.category_id"
+            label="Category"
+            type="select"
+            :options="options.categories"
+            :error="form.errors.category_id"
+            :helper="categoryHelper"
           />
           <FormField v-model="form.title" label="Title" required :error="form.errors.title" />
           <FormField
@@ -214,6 +234,25 @@ const submit = () => {
               accept="image/*"
             />
           </FormField>
+        </FormSection>
+
+        <!-- Same editor the watch page carries, so a skip marked from either side is
+             the same thing. Only on an existing recording: a timeline needs a length,
+             and one is not known until the playlist has been read. -->
+        <FormSection v-if="isEdit" title="Skip points" :columns="1">
+          <div class="md:col-span-full space-y-2">
+            <SkipEditor
+              v-model="form.skip_segments"
+              :duration="Number(form.duration) || 0"
+            />
+            <p class="text-xs text-fg-3">
+              Viewers inside one of these are offered a button. Nothing is cut, and nobody
+              is moved without pressing it.
+            </p>
+            <p v-if="form.errors.skip_segments" class="text-xs text-danger-500">
+              {{ form.errors.skip_segments }}
+            </p>
+          </div>
         </FormSection>
 
         <FormSection title="Access" :columns="1">

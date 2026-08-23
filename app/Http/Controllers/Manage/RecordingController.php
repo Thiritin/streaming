@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Manage\RecordingRequest;
 use App\Jobs\ProcessRecordingJob;
 use App\Jobs\ScanArchiveStorageJob;
+use App\Models\Category;
 use App\Models\Recording;
 use App\Models\Role;
 use App\Models\Show;
@@ -17,6 +18,7 @@ use App\Support\Manage\Filter;
 use App\Support\Manage\Status;
 use App\Support\Manage\Table;
 use App\Support\Manage\Toast;
+use App\Support\SkipSegments;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -38,13 +40,14 @@ class RecordingController extends Controller
     {
         $this->authorize('viewAny', Recording::class);
 
-        $table = Table::make(Recording::query()->with('show'))
+        $table = Table::make(Recording::query()->with(['show.category', 'category']))
             ->name('recordings')
             ->columns([
                 Column::image('thumbnail', 'Thumbnail'),
                 Column::text('title', 'Title')->searchable()->sortable(),
                 Column::copyable('slug', 'Slug')->searchable()->toggleable(hiddenByDefault: true),
                 Column::text('show', 'Show')->toggleable(),
+                Column::badge('category', 'Category')->toggleable(),
                 Column::datetime('date', 'Date')->sortable(),
                 Column::duration('duration', 'Duration'),
                 Column::number('size', 'Size')->sortable('archive_bytes'),
@@ -57,6 +60,9 @@ class RecordingController extends Controller
                     ->trueLabel('Published only')
                     ->falseLabel('Unpublished only')
                     ->placeholder('All recordings'),
+                Filter::select('category', 'Category')
+                    ->options(Category::ordered()->pluck('name', 'slug')->all())
+                    ->apply(fn ($query, string $value) => $query->inCategory($value)),
             ])
             ->defaultSort('date', 'desc')
             ->rows(fn (Recording $recording) => $this->row($recording))
@@ -82,10 +88,12 @@ class RecordingController extends Controller
             'recording' => null,
             'options' => [
                 'shows' => $this->showOptions(),
+                'categories' => $this->categoryOptions(),
                 'roles' => $this->roleOptions(),
             ],
             'defaults' => [
                 'show_id' => '',
+                'category_id' => '',
                 'title' => '',
                 'slug' => '',
                 'description' => '',
@@ -122,6 +130,10 @@ class RecordingController extends Controller
             'recording' => [
                 'id' => $recording->id,
                 'show_id' => $recording->show_id,
+                'category_id' => $recording->category_id,
+                // What applies when the override above is empty, so the form can say
+                // what the recording is currently filed as without pretending it is set.
+                'inherited_category' => $recording->show?->category?->name,
                 'title' => $recording->title,
                 'slug' => $recording->slug,
                 'description' => $recording->description,
@@ -132,6 +144,7 @@ class RecordingController extends Controller
                 'thumbnail_url' => $recording->thumbnail_url,
                 'thumbnail_error' => $recording->thumbnail_capture_error,
                 'is_published' => (bool) $recording->is_published,
+                'skip_segments' => $recording->skips(),
                 'required_roles' => $recording->required_roles ?? [],
                 'views' => $recording->views,
                 // A cut carries these; a recording registered from outside does not, and
@@ -149,6 +162,7 @@ class RecordingController extends Controller
             'available' => $this->archiveBounds($recording),
             'options' => [
                 'shows' => $this->showOptions(),
+                'categories' => $this->categoryOptions(),
                 'roles' => $this->roleOptions(),
             ],
             'actions' => array_map(
@@ -176,6 +190,32 @@ class RecordingController extends Controller
         }
 
         Toast::flashSuccess('Recording updated');
+
+        return back();
+    }
+
+    /**
+     * Save the skip points on their own, from the player page.
+     *
+     * Marking an intermission is done while watching one, not from a form: the
+     * operator is on the watch page with the playhead already sitting in it. The
+     * whole set is posted every time, which is what makes deleting one a save
+     * rather than an endpoint of its own.
+     */
+    public function updateSkips(Request $request, Recording $recording): RedirectResponse
+    {
+        $this->authorize('update', $recording);
+
+        $validated = $request->validate([
+            'skip_segments' => ['present', 'array', 'max:'.SkipSegments::MAX],
+            'skip_segments.*.start' => ['required', 'numeric', 'min:0'],
+            'skip_segments.*.end' => ['required', 'numeric', 'min:0'],
+            'skip_segments.*.label' => ['nullable', 'string', 'max:'.SkipSegments::LABEL_MAX],
+        ]);
+
+        $recording->update([
+            'skip_segments' => SkipSegments::normalise($validated['skip_segments'], $recording->duration),
+        ]);
 
         return back();
     }
@@ -536,6 +576,7 @@ class RecordingController extends Controller
             'title' => $recording->title,
             'slug' => $recording->slug,
             'show' => $recording->show?->title ?? '-',
+            'category' => $this->categoryCell($recording),
             'date' => $recording->date?->format('M j, Y H:i'),
             'duration' => $recording->duration,
             'size' => $this->sizeCell($recording),
@@ -603,6 +644,64 @@ class RecordingController extends Controller
     }
 
     /**
+     * Category options for the form and the bulk modal. The empty entry means
+     * "follow the show", which is the normal state for a recording.
+     */
+    private function categoryOptions(): array
+    {
+        return array_merge(
+            [['value' => '', 'label' => 'Follow the show']],
+            Category::ordered()
+                ->get(['id', 'name'])
+                ->map(fn (Category $category) => ['value' => $category->id, 'label' => $category->name])
+                ->all(),
+        );
+    }
+
+    /**
+     * The category as it reads on the row: its own, or the show's, said so.
+     *
+     * @return array{label: string, tone: string, icon: string|null}|null
+     */
+    private function categoryCell(Recording $recording): ?array
+    {
+        if ($recording->category) {
+            return Status::make($recording->category->name, Status::INFO);
+        }
+
+        return $recording->show?->category
+            ? Status::make($recording->show->category->name.' (show)', Status::IDLE)
+            : null;
+    }
+
+    /**
+     * Override the category on a batch of recordings, or clear the override so
+     * they follow their shows again.
+     */
+    public function bulkCategory(Request $request): RedirectResponse
+    {
+        $this->authorize('create', Recording::class);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['integer'],
+            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+        ]);
+
+        $categoryId = $validated['category_id'] ?? null;
+        $count = Recording::whereIn('id', $validated['ids'])->update(['category_id' => $categoryId]);
+
+        Toast::flashSuccess(
+            'Category set',
+            $categoryId
+                ? $count.' recording(s) are now '.Category::find($categoryId)?->name.'.'
+                : $count.' recording(s) follow their show again.',
+        );
+
+        return back();
+    }
+
+    /**
      * @return array<int, Action>
      */
     private function bulkActions(): array
@@ -612,6 +711,25 @@ class RecordingController extends Controller
         }
 
         return [
+            Action::post('bulk_category', 'Set Category', route('manage.recordings.bulk.category'))
+                ->icon('tags')
+                ->tone(Status::IDLE)
+                ->confirm(
+                    'Set category on selected recordings',
+                    'This overrides whatever their shows say. Clearing it hands them back to their show.',
+                    'Set category',
+                )
+                ->fields([[
+                    'key' => 'category_id',
+                    'label' => 'Category',
+                    'type' => 'select',
+                    'required' => false,
+                    'helper' => 'Leave empty to clear the override and follow the show again.',
+                    'options' => Category::ordered()
+                        ->get()
+                        ->map(fn (Category $category) => ['value' => (string) $category->id, 'label' => $category->name])
+                        ->all(),
+                ]]),
             Action::post('bulk_thumbnails', 'Regenerate Thumbnails', route('manage.recordings.bulk.thumbnail'))
                 ->icon('image')
                 ->tone(Status::WARN)

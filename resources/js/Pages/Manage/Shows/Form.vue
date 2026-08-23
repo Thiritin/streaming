@@ -110,6 +110,14 @@ const submit = () => {
             helper="Which channel this show streams on"
           />
           <FormField
+            v-model="form.category_id"
+            label="Category"
+            type="select"
+            :options="options.categories"
+            :error="form.errors.category_id"
+            helper="What kind of thing this is. Its recordings inherit it, and the archive filters on it."
+          />
+          <FormField
             v-model="form.description"
             label="Description"
             type="textarea"
