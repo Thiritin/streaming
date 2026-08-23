@@ -250,6 +250,31 @@ class ArchiveBrowsingTest extends TestCase
             );
     }
 
+    public function test_suggestions_lead_with_the_newest_run(): void
+    {
+        // The older cut has had a year longer to collect views, so views-first put it
+        // above the one somebody typing the name is actually looking for.
+        $this->recording([
+            'title' => 'Paw Pet Show',
+            'slug' => 'paw-pet-show-2025',
+            'date' => now()->subYear(),
+            'views' => 900,
+        ]);
+        $this->recording([
+            'title' => 'Paw Pet Show',
+            'slug' => 'paw-pet-show-2026',
+            'date' => now()->subDay(),
+            'views' => 12,
+        ]);
+
+        $response = $this->getJson(route('recordings.suggest', ['q' => 'paw pet']))->assertOk();
+
+        $this->assertSame(
+            [now()->subDay()->year, now()->subYear()->year],
+            array_column($response->json('suggestions'), 'year'),
+        );
+    }
+
     public function test_a_run_and_a_category_narrow_together(): void
     {
         $competitions = Category::factory()->create(['name' => 'Competitions', 'slug' => 'competitions']);

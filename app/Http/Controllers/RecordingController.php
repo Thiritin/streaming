@@ -86,6 +86,13 @@ class RecordingController extends Controller
             ->accessibleBy($user)
             ->where('title', 'like', '%'.$term.'%')
             ->with('source:id,name')
+            /*
+             * Newest first, views only to break a tie. A show that runs every year is
+             * the ordinary case here, and the one somebody typing its name wants is
+             * this year's - which is never the most watched, because the older cuts
+             * have had a year longer to collect views.
+             */
+            ->orderByDesc('date')
             ->orderByDesc('views')
             ->limit(8)
             ->get();
