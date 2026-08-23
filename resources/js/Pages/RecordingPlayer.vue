@@ -397,6 +397,24 @@ const saveProgress = () => {
         .catch(() => {});
 };
 
+/*
+ * One recording rolling into the next is an Inertia visit to the same page component, so
+ * nothing here is unmounted and nothing resets on its own. Everything that describes the
+ * recording being watched has to be put back by hand, or the next one is measured against
+ * the last one's length, saved against its position, and treated as already watched -
+ * which is what let it end on arrival and roll straight on again.
+ */
+watch(
+    () => props.recording.id,
+    () => {
+        currentTime.value = props.resumeAt;
+        lastSaved = props.resumeAt;
+        watched.value = false;
+        mediaDuration.value = null;
+        cancelAutoplay();
+    },
+);
+
 const handleTimeUpdate = (time) => {
     if (time > props.resumeAt + 2) watched.value = true;
 

@@ -221,6 +221,13 @@ const applyFilters = (changes) => {
     preserveState: true,
     preserveScroll: true,
     replace: true,
+    /*
+     * The grid is a merge prop, so pages two and three can be appended to it as they
+     * are scrolled in. A filter is not another page: without this its results are
+     * appended to whatever was already on screen, and the run you just switched away
+     * from stays in the grid underneath the one you asked for.
+     */
+    reset: ['recordings'],
   });
 };
 

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\Event;
 use App\Models\Recording;
 use App\Models\RecordingProgress;
 use App\Models\Show;
@@ -247,6 +248,52 @@ class ArchiveBrowsingTest extends TestCase
                 ->has('recordings', 1)
                 ->where('recordings.0.title', 'Actually a play')
             );
+    }
+
+    public function test_a_run_and_a_category_narrow_together(): void
+    {
+        $competitions = Category::factory()->create(['name' => 'Competitions', 'slug' => 'competitions']);
+        $source = Source::factory()->create();
+
+        $thisRun = Event::create([
+            'name' => 'EF30',
+            'starts_on' => now()->subDays(3)->toDateString(),
+            'ends_on' => now()->addDays(3)->toDateString(),
+        ]);
+        $lastRun = Event::create([
+            'name' => 'EF29',
+            'starts_on' => now()->subYear()->toDateString(),
+            'ends_on' => now()->subYear()->addDays(6)->toDateString(),
+        ]);
+        Event::forgetWindow();
+
+        // Both carry their run through their show, which is the case the archive is
+        // actually made of and the one a plain where('event_id') would miss.
+        $now = Show::factory()->create(['source_id' => $source->id, 'event_id' => $thisRun->id]);
+        $then = Show::factory()->create(['source_id' => $source->id, 'event_id' => $lastRun->id]);
+
+        $this->recording([
+            'title' => 'Paws on Fire',
+            'show_id' => $now->id,
+            'category_id' => $competitions->id,
+        ]);
+        $this->recording([
+            'title' => 'Last year competition',
+            'show_id' => $then->id,
+            'category_id' => $competitions->id,
+        ]);
+
+        $this->get(route('recordings.index', ['event' => $thisRun->slug, 'category' => 'competitions']))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('recordings', 1)
+                ->where('recordings.0.title', 'Paws on Fire')
+            );
+
+        // The id is as good an address as the slug, which is what the panel's own lists
+        // carry.
+        $this->get(route('recordings.index', ['event' => (string) $thisRun->id, 'category' => 'competitions']))
+            ->assertInertia(fn (AssertableInertia $page) => $page->has('recordings', 1));
     }
 
     public function test_a_category_chip_counts_inherited_recordings_too(): void

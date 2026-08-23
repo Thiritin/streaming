@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 
 import 'vidstack/player';
 import 'vidstack/player/ui';
@@ -7,7 +7,27 @@ import 'vidstack/player/layouts/default';
 import 'vidstack/player/styles/default/theme.css';
 import 'vidstack/player/styles/default/layouts/video.css';
 
-import { isHLSProvider } from 'vidstack';
+import { isHLSProvider, LocalMediaStorage } from 'vidstack';
+
+/**
+ * Volume, mute and quality are worth remembering between visits. The playhead is not,
+ * and letting the player remember it is what made a recording play the same few seconds
+ * over and over.
+ *
+ * Vidstack seeks to its stored time every time the media reports it is ready, not once
+ * per source: a stall, a level switch or a discontinuity fires that again, and the stored
+ * time is whatever was last recorded while the media could play - a moment before the
+ * stall. So playback jumps back, plays up to the stall, fires ready again and jumps back
+ * again. Resuming is ours to do anyway, from a position the server holds, and it is
+ * applied once per source - see `seeked` below.
+ */
+class PlaybackAgnosticStorage extends LocalMediaStorage {
+    async getTime() {
+        return null;
+    }
+
+    async setTime() {}
+}
 
 const props = defineProps({
     src: {
@@ -46,8 +66,10 @@ const props = defineProps({
         default: null,
     },
     /**
-     * Key prefix for persisted volume/muted/quality. Shared across pages on
-     * purpose so a viewer's volume carries between live and recordings.
+     * Where persisted volume, mute and quality are kept. Set as the player element's id,
+     * which is the key vidstack stores them under. Shared across pages on purpose so a
+     * viewer's volume carries between live and recordings. The playhead is deliberately
+     * not part of it - see PlaybackAgnosticStorage.
      */
     storageKey: {
         type: String,
@@ -145,11 +167,22 @@ const onProviderChange = (event) => {
  * tell the parent so it can offer an unmute affordance.
  */
 /**
- * Resume, once. Vidstack can fire can-play again after a quality change or a
- * recovered error, and seeking back on each of those would drag the viewer
- * backwards mid-watch.
+ * Resume, once per source. Vidstack can fire can-play again after a quality change or a
+ * recovered error, and seeking back on each of those would drag the viewer backwards
+ * mid-watch.
+ *
+ * Per source rather than per mount, because the page this player sits on is reused when
+ * one recording rolls into the next: the component is never unmounted, so a guard that
+ * only reset on mount left every recording after the first starting from the top.
  */
 let seeked = false;
+
+watch(
+    () => props.src,
+    () => {
+        seeked = false;
+    },
+);
 
 const onCanPlay = () => {
     if (!seeked && props.startTime > 0 && player.value) {
@@ -204,6 +237,10 @@ onMounted(() => {
      */
     el.preferNativeHLS = false;
 
+    // A property rather than the `storage` attribute: the attribute takes a key and gives
+    // the player its own storage, playhead included. See PlaybackAgnosticStorage.
+    el.storage = new PlaybackAgnosticStorage();
+
     // Object-valued config has to be assigned as a property. Binding it in the
     // template would stringify it onto the attribute.
     el.googleCast = {
@@ -242,11 +279,11 @@ defineExpose({
     <div class="video-player">
         <media-player
             ref="player"
+            :id="storageKey"
             :src="src"
             :title="title"
             :stream-type="streamType"
             :autoplay="autoplay"
-            :storage="storageKey"
             view-type="video"
             load="eager"
             playsinline

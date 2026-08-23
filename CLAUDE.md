@@ -194,8 +194,20 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      last report in session storage (`useRecentProgress`), because a grid restored
      from Inertia's history cache redraws from props fetched before the visit; the
      server's row wins as soon as it is the newer of the two.
+   - The grid arrives as a merge prop so scrolling can append pages to it. A filter is
+     not another page: every filter visit passes `reset: ['recordings']`, or the run
+     just switched away from stays in the grid under the one that was asked for.
    - Search suggestions (`/archive/suggest`) are the one place the front end talks to
      the server outside Inertia, because they answer per keystroke.
+   - The player never lets vidstack remember a playhead (`PlaybackAgnosticStorage` in
+     `VideoPlayer.vue`); volume, mute and quality only. Vidstack seeks to its stored
+     time on every can-play, not once per source, so a stall or a level switch put the
+     playhead back where it was a moment before and the same seconds played round and
+     round. Resuming is ours, from `recording_progress`, applied once per `src` - which
+     is also why the guard resets on a source change: one recording rolling into the
+     next is an Inertia visit to the same component, so nothing unmounts and nothing
+     resets by itself. Anything on `RecordingPlayer.vue` that describes the recording
+     being watched has to be put back by hand for the same reason.
 
 ## Development Commands
 
@@ -346,8 +358,12 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   `recording_note`. None of them gate anything - the uploader still mirrors everything and
   `is_published` still decides what a viewer sees. The Recording column is derived by
   `Show::recordingState()`, so it cannot go stale, and nothing is written off until both
-  captures are gone: an outstanding list that never shrinks stops being read. See
-  docs/admin/recording-plan.md
+  captures are gone: an outstanding list that never shrinks stops being read. Cells save
+  one at a time and concurrently, so a cell holds its draft until the rows read the saved
+  value back rather than dropping it when its own reply lands - several replies are in
+  flight and each carries a whole page of rows, so the last one to arrive is not the
+  newest. Hide done drops only what is finished on both axes (published or `no`, and the
+  PGM deposit made); a write-off stays. See docs/admin/recording-plan.md
 - Users, Roles, Emotes and Recordings. An edit that never went out live is imported into
   the archive with `tools/streaming-archiver` rather than uploaded; see docs/admin/archive-import.md.
   It authenticates with the import key from Settings > Imports, read through
