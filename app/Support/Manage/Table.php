@@ -249,6 +249,11 @@ final class Table
      * A filter absent from the request falls back to its declared default, which is how
      * "hide ended shows" stays on until the operator explicitly turns it off.
      *
+     * Absent means the key is not in the request at all, not that its value is empty:
+     * clearing a filter sends it back as `filter[key]=`, which ConvertEmptyStringsToNull
+     * turns into a null. Reading that as "nobody chose" would put the default straight
+     * back, and a filter with one - Event - could never be cleared.
+     *
      * @return array<string, mixed>
      */
     private function resolveFilterValues(Request $request): array
@@ -256,11 +261,11 @@ final class Table
         $values = [];
 
         foreach ($this->filters as $filter) {
-            $raw = $request->input("filter.{$filter->key}");
+            $key = "filter.{$filter->key}";
 
-            $values[$filter->key] = $raw === null
-                ? $filter->defaultValue()
-                : $filter->normalize($raw);
+            $values[$filter->key] = $request->has($key)
+                ? $filter->normalize($request->input($key))
+                : $filter->defaultValue();
         }
 
         return $values;

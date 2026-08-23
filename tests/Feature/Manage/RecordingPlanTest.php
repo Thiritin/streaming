@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Manage;
 
+use App\Models\Event;
 use App\Models\Recording;
 use App\Models\Show;
 use App\Models\Source;
@@ -42,6 +43,15 @@ class RecordingPlanTest extends TestCase
         return Show::factory()->create($attributes + [
             'source_id' => $this->source->id,
             'status' => 'scheduled',
+        ]);
+    }
+
+    private function event(string $name, $startsOn, $endsOn): Event
+    {
+        return Event::create([
+            'name' => $name,
+            'starts_on' => $startsOn->format('Y-m-d'),
+            'ends_on' => $endsOn->format('Y-m-d'),
         ]);
     }
 
@@ -582,15 +592,14 @@ class RecordingPlanTest extends TestCase
         });
     }
 
-    public function test_the_plan_opens_on_this_year_only(): void
+    public function test_the_plan_opens_on_the_latest_event(): void
     {
-        $thisYear = $this->show([
-            'title' => 'This year',
-            'scheduled_start' => now()->startOfYear()->addMonth(),
-            'scheduled_end' => now()->startOfYear()->addMonth()->addHour(),
-        ]);
+        $current = $this->event('This Run', now()->subDay(), now()->addWeeks(3));
+        $this->event('Last Run', now()->subYear(), now()->subYear()->addDays(4));
+
+        $onNow = $this->show(['title' => 'On now']);
         $this->show([
-            'title' => 'Last year',
+            'title' => 'Last run',
             'scheduled_start' => now()->subYear(),
             'scheduled_end' => now()->subYear()->addHour(),
         ]);
@@ -599,29 +608,49 @@ class RecordingPlanTest extends TestCase
             ->get(route('manage.recordings.plan'))
             ->assertInertia(fn (Assert $page) => $page
                 ->has('rows', 1)
-                ->where('rows.0.id', $thisYear->id)
-                ->where('filters.year', (string) now()->year)
-                ->where('defaults.year', (string) now()->year));
+                ->where('rows.0.id', $onNow->id)
+                ->where('filters.event', (string) $current->id)
+                ->where('defaults.event', (string) $current->id));
     }
 
-    public function test_an_earlier_year_can_be_asked_for(): void
+    public function test_the_plan_opens_on_the_run_that_just_finished(): void
     {
-        $last = $this->show([
-            'title' => 'Last year',
+        $finished = $this->event('Last Run', now()->subMonth(), now()->subMonth()->addDays(4));
+        // A run already in the calendar has no programme yet, so it is the wrong thing
+        // to open on even though it is the newest by date.
+        $this->event('Next Run', now()->addMonths(6), now()->addMonths(6)->addDays(4));
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.event', (string) $finished->id)
+                ->where('defaults.event', (string) $finished->id));
+    }
+
+    public function test_an_earlier_event_can_be_asked_for(): void
+    {
+        $this->event('This Run', now()->subDay(), now()->addWeeks(3));
+        $last = $this->event('Last Run', now()->subYear(), now()->subYear()->addDays(4));
+
+        $earlier = $this->show([
+            'title' => 'Last run',
             'scheduled_start' => now()->subYear(),
             'scheduled_end' => now()->subYear()->addHour(),
         ]);
-        $this->show(['title' => 'This year']);
+        $this->show(['title' => 'On now']);
 
         $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan', ['year' => now()->subYear()->year]))
+            ->get(route('manage.recordings.plan', ['event' => $last->id]))
             ->assertInertia(fn (Assert $page) => $page
                 ->has('rows', 1)
-                ->where('rows.0.id', $last->id));
+                ->where('rows.0.id', $earlier->id));
     }
 
-    public function test_all_years_switches_the_default_off(): void
+    public function test_all_events_switches_the_default_off(): void
     {
+        $this->event('This Run', now()->subDay(), now()->addWeeks(3));
+        $this->event('Last Run', now()->subYear(), now()->subYear()->addDays(4));
+
         $this->show([
             'scheduled_start' => now()->subYear(),
             'scheduled_end' => now()->subYear()->addHour(),
@@ -629,59 +658,97 @@ class RecordingPlanTest extends TestCase
         $this->show();
 
         $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan', ['year' => 'all']))
+            ->get(route('manage.recordings.plan', ['event' => 'all']))
             ->assertInertia(fn (Assert $page) => $page->has('rows', 2));
     }
 
-    public function test_a_chosen_day_outranks_the_year_default(): void
+    public function test_shows_filed_under_no_event_can_be_asked_for(): void
     {
+        $this->event('This Run', now()->subDay(), now()->addWeeks(3));
+
+        $this->show(['title' => 'On now']);
+        $unfiled = $this->show([
+            'title' => 'Filed nowhere',
+            'scheduled_start' => now()->subYears(3),
+            'scheduled_end' => now()->subYears(3)->addHour(),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan', ['event' => 'none']))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('rows', 1)
+                ->where('rows.0.id', $unfiled->id));
+    }
+
+    public function test_a_chosen_day_outranks_the_event_default(): void
+    {
+        $this->event('This Run', now()->subDay(), now()->addWeeks(3));
+        $this->event('Last Run', now()->subYear(), now()->subYear()->addDays(4));
+
         $last = $this->show([
-            'title' => 'Last year',
+            'title' => 'Last run',
             'scheduled_start' => now()->subYear(),
             'scheduled_end' => now()->subYear()->addHour(),
         ]);
 
-        // A link to a day in a past year must not come back empty against a default the
+        // A link to a day in a past run must not come back empty against a default the
         // sender never saw.
         $this->actingAs($this->admin)
             ->get(route('manage.recordings.plan', ['day' => $last->scheduled_start->format('Y-m-d')]))
             ->assertInertia(fn (Assert $page) => $page->has('rows', 1)->where('rows.0.id', $last->id));
     }
 
-    public function test_a_nonsense_year_falls_back_to_the_default(): void
+    public function test_a_nonsense_event_falls_back_to_the_default(): void
     {
+        $current = $this->event('This Run', now()->subDay(), now()->addWeeks(3));
         $this->show();
 
         $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan', ['year' => 'not-a-year']))
+            ->get(route('manage.recordings.plan', ['event' => 'not-an-event']))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('filters.year', (string) now()->year)
+                ->where('filters.event', (string) $current->id)
                 ->has('rows', 1));
     }
 
-    public function test_the_year_list_offers_every_year_that_has_shows(): void
+    public function test_an_installation_with_no_calendar_sees_everything(): void
     {
         $this->show([
-            'scheduled_start' => now()->subYears(2),
-            'scheduled_end' => now()->subYears(2)->addHour(),
+            'scheduled_start' => now()->subYear(),
+            'scheduled_end' => now()->subYear()->addHour(),
         ]);
+        $this->show();
 
         $this->actingAs($this->admin)
             ->get(route('manage.recordings.plan'))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('options.years', function ($years) {
-                    $values = collect($years)->pluck('value');
+                ->where('filters.event', 'all')
+                ->has('rows', 2));
+    }
 
-                    // Newest first, the current year always present even with nothing in
-                    // it, and a way to switch the filter off at the end.
-                    return $values->first() === (string) now()->year
-                        && $values->contains((string) now()->subYears(2)->year)
-                        && $values->last() === 'all';
+    public function test_the_event_list_offers_every_run_plus_all_and_none(): void
+    {
+        $this->event('This Run', now()->subDay(), now()->addWeeks(3));
+        $this->event('Last Run', now()->subYear(), now()->subYear()->addDays(4));
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('options.events', function ($events) {
+                    $values = collect($events)->pluck('value');
+
+                    // Newest run first, behind the way to switch the filter off, and the
+                    // pile of shows filed nowhere at the end.
+                    return $values->first() === 'all'
+                        && $values->last() === 'none'
+                        && $values->count() === 4;
                 }));
     }
 
-    public function test_the_day_list_is_scoped_to_the_year_on_screen(): void
+    public function test_the_day_list_is_scoped_to_the_event_on_screen(): void
     {
+        $this->event('This Run', now()->subDay(), now()->addWeeks(3));
+        $this->event('Last Run', now()->subYear(), now()->subYear()->addDays(4));
+
         $this->show([
             'scheduled_start' => now()->subYear(),
             'scheduled_end' => now()->subYear()->addHour(),

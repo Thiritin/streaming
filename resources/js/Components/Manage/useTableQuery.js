@@ -16,7 +16,19 @@ export function useTableQuery(only = ['table']) {
     }
 
     for (const [key, value] of Object.entries(query)) {
-      if (value === '' || value === null || value === undefined) {
+      if (value !== '' && value !== null && value !== undefined) {
+        continue;
+      }
+
+      /*
+       * An emptied filter stays in the URL as an empty value rather than being
+       * dropped. A filter the server declares a default for - Event, say - reads an
+       * absent param as "nobody has chosen", so dropping the key would put the
+       * default straight back and the filter could never be cleared.
+       */
+      if (key.startsWith('filter[')) {
+        query[key] = '';
+      } else {
         delete query[key];
       }
     }

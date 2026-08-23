@@ -190,15 +190,17 @@ class Recording extends Model
     /**
      * Recordings filed under a run, counting the ones that only have it through
      * their show. One query, for the same reason as inCategory: the archive grid
-     * pages over the result.
+     * pages over the result. Takes an id or a slug, whichever the caller carries.
      */
-    public function scopeInEvent($query, string $slug)
+    public function scopeInEvent($query, string $event)
     {
-        return $query->where(function ($query) use ($slug) {
-            $query->whereHas('event', fn ($q) => $q->where('slug', $slug))
-                ->orWhere(function ($query) use ($slug) {
+        $column = Event::keyColumn($event);
+
+        return $query->where(function ($query) use ($event, $column) {
+            $query->whereHas('event', fn ($q) => $q->where($column, $event))
+                ->orWhere(function ($query) use ($event, $column) {
                     $query->whereNull('event_id')
-                        ->whereHas('show.event', fn ($q) => $q->where('slug', $slug));
+                        ->whereHas('show.event', fn ($q) => $q->where($column, $event));
                 });
         });
     }
@@ -208,15 +210,17 @@ class Recording extends Model
      * rather than negated, because a NOT around a whereHas does not answer for the
      * rows that have no related row at all.
      */
-    public function scopeNotInEvent($query, string $slug)
+    public function scopeNotInEvent($query, string $event)
     {
+        $column = Event::keyColumn($event);
+
         return $query
-            ->whereDoesntHave('event', fn ($q) => $q->where('slug', $slug))
-            ->where(function ($query) use ($slug) {
+            ->whereDoesntHave('event', fn ($q) => $q->where($column, $event))
+            ->where(function ($query) use ($event, $column) {
                 // A recording with its own event has already been cleared above; only
                 // one without inherits, so only one without can be excluded by its show.
                 $query->whereNotNull('event_id')
-                    ->orWhereDoesntHave('show.event', fn ($q) => $q->where('slug', $slug));
+                    ->orWhereDoesntHave('show.event', fn ($q) => $q->where($column, $event));
             });
     }
 

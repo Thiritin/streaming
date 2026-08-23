@@ -13,6 +13,7 @@ use App\Models\Role;
 use App\Models\Show;
 use App\Services\ArchivePlaylistService;
 use App\Services\ArchiveStorageService;
+use App\Support\EventFilter;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
 use App\Support\Manage\Filter;
@@ -64,9 +65,18 @@ class RecordingController extends Controller
                 Filter::select('category', 'Category')
                     ->options(Category::ordered()->pluck('name', 'slug')->all())
                     ->apply(fn ($query, string $value) => $query->inCategory($value)),
+                /*
+                 * Same default as the Shows list: the run that is on, or the one that
+                 * just finished. `none` is the archive that predates the calendar -
+                 * cuts filed under no run at all, which nothing else surfaces.
+                 */
                 Filter::select('event', 'Event')
-                    ->options(Event::ordered()->pluck('name', 'slug')->all())
-                    ->apply(fn ($query, string $value) => $query->inEvent($value)),
+                    ->options(EventFilter::options())
+                    ->default(EventFilter::default())
+                    ->placeholder('All events')
+                    ->apply(fn ($query, string $value) => $value === EventFilter::NONE
+                        ? $query->withoutEvent()
+                        : $query->inEvent($value)),
             ])
             ->defaultSort('date', 'desc')
             ->rows(fn (Recording $recording) => $this->row($recording))

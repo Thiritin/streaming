@@ -199,6 +199,88 @@ class EventsTest extends TestCase
         $this->assertDatabaseMissing('events', ['id' => $event->id]);
     }
 
+    public function test_the_shows_list_opens_on_the_latest_run(): void
+    {
+        $current = Event::create([
+            'name' => 'This year',
+            'starts_on' => now()->subDay(),
+            'ends_on' => now()->addWeeks(3),
+        ]);
+        $last = Event::create([
+            'name' => 'Last year',
+            'starts_on' => now()->subYear(),
+            'ends_on' => now()->subYear()->addDays(4),
+        ]);
+        Event::forgetWindow();
+
+        $source = Source::factory()->create();
+        $onNow = Show::factory()->create(['source_id' => $source->id, 'event_id' => $current->id]);
+        Show::factory()->create(['source_id' => $source->id, 'event_id' => $last->id]);
+        // Before the calendar covered anything, so nothing files it on create.
+        $unfiled = Show::factory()->create([
+            'source_id' => $source->id,
+            'event_id' => null,
+            'scheduled_start' => now()->subYears(3),
+            'scheduled_end' => now()->subYears(3)->addHour(),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.shows.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('table.rows', 1)
+                ->where('table.rows.0.id', $onNow->id));
+
+        // Cleared back to everything, which is what an empty value in the query string
+        // means: an absent one would only put the default back.
+        $this->actingAs($this->admin)
+            ->get(route('manage.shows.index', ['filter' => ['event' => '']]))
+            ->assertInertia(fn (Assert $page) => $page->has('table.rows', 3));
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.shows.index', ['filter' => ['event' => 'none']]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('table.rows', 1)
+                ->where('table.rows.0.id', $unfiled->id));
+    }
+
+    public function test_the_recordings_list_opens_on_the_latest_run(): void
+    {
+        $current = Event::create([
+            'name' => 'This year',
+            'starts_on' => now()->subDay(),
+            'ends_on' => now()->addWeeks(3),
+        ]);
+        Event::create([
+            'name' => 'Last year',
+            'starts_on' => now()->subYear(),
+            'ends_on' => now()->subYear()->addDays(4),
+        ]);
+        Event::forgetWindow();
+
+        $source = Source::factory()->create();
+        // Through its show rather than its own column, which is the case a plain
+        // where('event_id') would miss.
+        $show = Show::factory()->create(['source_id' => $source->id, 'event_id' => $current->id]);
+        $inherited = $this->recording(['slug' => 'inherited', 'show_id' => $show->id]);
+        $unfiled = $this->recording(['slug' => 'unfiled', 'date' => now()->subYears(3)]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('table.rows', 1)
+                ->where('table.rows.0.id', $inherited->id));
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.index', ['filter' => ['event' => 'none']]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('table.rows', 1)
+                ->where('table.rows.0.id', $unfiled->id));
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.index', ['filter' => ['event' => '']]))
+            ->assertInertia(fn (Assert $page) => $page->has('table.rows', 2));
+    }
+
     public function test_a_read_only_operator_cannot_change_the_calendar(): void
     {
         $event = Event::create([

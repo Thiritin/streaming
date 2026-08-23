@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\User;
+use App\Support\EventFilter;
 use App\Support\Manage\Status;
 use App\Support\Manage\Toast;
 use Illuminate\Database\Eloquent\Builder;
@@ -42,14 +43,6 @@ class RecordingPlanController extends Controller
      * whole point. A run of a few hundred slots is comfortably inside this.
      */
     private const ROW_LIMIT = 600;
-
-    /**
-     * What the year filter is set to when it is switched off. The filter defaults to the
-     * current year rather than to everything: an installation accumulates a run of shows
-     * per event, and the plan is worked during and just after one of them, so opening the
-     * page on every show that ever ran would bury this year's under the last five.
-     */
-    private const ALL_YEARS = 'all';
 
     public function index(Request $request): Response
     {
@@ -87,7 +80,7 @@ class RecordingPlanController extends Controller
                 'streams' => $this->streamOptions(),
                 'onsites' => $this->onsiteOptions(),
                 'states' => $this->stateOptions(),
-                'years' => $this->yearOptions(),
+                'events' => $this->eventOptions(),
                 'days' => $this->dayOptions($filters),
                 'groups' => [
                     ['value' => 'day', 'label' => 'Group by day'],
@@ -99,7 +92,7 @@ class RecordingPlanController extends Controller
             'defaults' => [
                 // The client needs these to tell a filter that is set from one that is
                 // merely at its default, which is what decides whether Clear appears.
-                'year' => $this->currentYear(),
+                'event' => $this->defaultEvent(),
                 'group' => 'day',
             ],
             'urls' => [
@@ -379,7 +372,7 @@ class RecordingPlanController extends Controller
         $group = (string) $request->query('group', 'day');
 
         return [
-            'year' => $this->yearFilter($request),
+            'event' => $this->eventFilter($request),
             'search' => trim((string) $request->query('search', '')) ?: null,
             'source' => $request->query('source') ?: null,
             'day' => $request->query('day') ?: null,
@@ -399,12 +392,14 @@ class RecordingPlanController extends Controller
     private function applyFilters(Builder $query, array $filters, User $user): void
     {
         /*
-         * A chosen day carries its own year and is the more specific answer, so it wins
-         * outright - otherwise a link to a day in a past year would come back empty
+         * A chosen day carries its own run and is the more specific answer, so it wins
+         * outright - otherwise a link to a day in a past run would come back empty
          * against the default.
          */
-        if ($filters['year'] !== self::ALL_YEARS && ! $filters['day']) {
-            $query->whereYear('scheduled_start', $filters['year']);
+        if ($filters['event'] !== EventFilter::ALL && ! $filters['day']) {
+            $filters['event'] === EventFilter::NONE
+                ? $query->whereNull('event_id')
+                : $query->where('event_id', $filters['event']);
         }
 
         if ($filters['search']) {
@@ -621,52 +616,48 @@ class RecordingPlanController extends Controller
         ];
     }
 
-    private function currentYear(): string
-    {
-        return (string) now()->year;
-    }
-
     /**
-     * The year asked for, the current one if nothing was asked, and `all` to switch the
-     * filter off. Anything else is ignored rather than refused: this arrives from a query
-     * string, and a mistyped link should land on the sensible default, not a 422.
+     * The run the page opens on.
+     *
+     * The plan is filed by run, not by calendar year: a run is what anybody means when
+     * they say which year a show is from, and it is the unit this work is done in. It
+     * opens on the run that is on - or the one that just finished, which is when most of
+     * this accounting actually happens - rather than on every show that ever ran. `all`
+     * switches the filter off and `none` is the pile of shows filed under no run, which
+     * is what a programme imported before the calendar existed looks like.
+     *
+     * An installation that has never set the calendar up gets `all`, so it keeps the
+     * shape it had before events existed.
      */
-    private function yearFilter(Request $request): string
+    private function defaultEvent(): string
     {
-        $year = (string) $request->query('year', $this->currentYear());
-
-        if ($year === self::ALL_YEARS) {
-            return self::ALL_YEARS;
-        }
-
-        return preg_match('/^\d{4}$/', $year) === 1 ? $year : $this->currentYear();
+        return EventFilter::default(EventFilter::ALL);
     }
 
     /**
-     * The years the installation has actually run shows in, newest first. The current one
-     * is always offered even when nothing is scheduled in it yet, because it is the
-     * default and a filter cannot default to something the list does not contain.
-     *
-     * Archived shows are counted here whatever the archive toggle says: a past year is
-     * usually entirely archived, and leaving it out of the list would make it
-     * unreachable.
-     *
+     * The run asked for, the default one if nothing was asked. Anything the list does
+     * not offer is ignored rather than refused: this arrives from a query string, and a
+     * mistyped link should land on the sensible default, not a 422.
+     */
+    private function eventFilter(Request $request): string
+    {
+        $event = (string) $request->query('event', $this->defaultEvent());
+
+        return array_key_exists($event, EventFilter::options(withAll: true))
+            ? $event
+            : $this->defaultEvent();
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
-    private function yearOptions(): array
+    private function eventOptions(): array
     {
-        $years = Show::query()
-            ->whereNotNull('scheduled_start')
-            ->get(['scheduled_start'])
-            ->map(fn (Show $show) => $show->scheduled_start->format('Y'))
-            ->push($this->currentYear())
-            ->unique()
-            ->sortDesc()
-            ->values()
-            ->map(fn (string $year) => ['value' => $year, 'label' => $year])
-            ->all();
-
-        return array_merge($years, [['value' => self::ALL_YEARS, 'label' => 'All years']]);
+        return array_map(
+            fn (string $value, string $label) => ['value' => $value, 'label' => $label],
+            array_keys(EventFilter::options(withAll: true)),
+            array_values(EventFilter::options(withAll: true)),
+        );
     }
 
     /**
@@ -684,10 +675,12 @@ class RecordingPlanController extends Controller
             $query->notArchived();
         }
 
-        // Scoped to the year on screen, so the day list is this event's dates rather than
+        // Scoped to the run on screen, so the day list is that event's dates rather than
         // every date the installation has ever run.
-        if ($filters['year'] !== self::ALL_YEARS) {
-            $query->whereYear('scheduled_start', $filters['year']);
+        if ($filters['event'] !== EventFilter::ALL) {
+            $filters['event'] === EventFilter::NONE
+                ? $query->whereNull('event_id')
+                : $query->where('event_id', $filters['event']);
         }
 
         return $query->get(['scheduled_start'])

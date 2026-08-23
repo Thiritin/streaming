@@ -87,6 +87,15 @@ const select = (collection) =>
   display: none;
 }
 
+/* On a phone the row scrolls out of the page gutter, so the first chip sits on
+   the same line as the heading above it but a scrolled chip runs off the edge. */
+@media (max-width: 640px) {
+  .chip-bar {
+    padding-left: 1rem;
+    margin-left: -1rem;
+  }
+}
+
 .chip {
   @apply inline-flex shrink-0 items-center whitespace-nowrap rounded-lg bg-white/8 px-3 py-1.5 text-sm font-medium text-primary-100 transition-colors;
 }

@@ -2,11 +2,11 @@
   <div class="min-h-screen">
     <Head title="Archive" />
 
-    <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-8 pb-6">
-      <div class="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div class="space-y-2">
+    <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-6 pb-4 sm:pt-8 sm:pb-6">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-5">
+        <div class="space-y-1.5 sm:space-y-2">
           <p class="text-xs font-semibold uppercase tracking-[0.14em] text-primary-300">Archive</p>
-          <h1 class="text-3xl font-bold text-white tracking-tight">Past streams</h1>
+          <h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">Past streams</h1>
           <p class="text-primary-300 text-sm">
             {{ totalRecordings }} {{ totalRecordings === 1 ? 'recording' : 'recordings' }} across
             {{ chips.collections.length }} {{ chips.collections.length === 1 ? 'event' : 'events' }}.
@@ -20,8 +20,8 @@
     <!-- The chip bar rides the top of the viewport: on a long grid it is the only
          way back out of a filter without scrolling to the top. -->
     <div class="chip-dock">
-      <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 py-3">
-        <div class="flex items-center gap-3">
+      <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 py-2 sm:py-3">
+        <div class="flex items-center gap-2 sm:gap-3">
           <ArchiveChips class="min-w-0 flex-1" :chips="chips" :filters="filters" @select="applyFilters" />
 
           <!-- Clear sits with the controls it undoes rather than above the grid: the
@@ -31,18 +31,31 @@
             v-if="isFiltered"
             :href="route('recordings.index')"
             class="clear-filters"
+            aria-label="Clear filters"
           >
-            Clear
+            <svg class="size-4 sm:hidden" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" />
+            </svg>
+            <span class="hidden sm:inline">Clear</span>
           </Link>
 
-          <div class="relative shrink-0">
+          <!-- The select is the control; the face is what is drawn. On a phone the
+               face is the icon alone, because a chip row that has to share the
+               width with a spelled-out sort has no room left to be a chip row. -->
+          <div class="sort-control">
             <label class="sr-only" for="archive-sort">Sort</label>
-            <select id="archive-sort" v-model="sort" class="sort-select" @change="applyFilters({ sort })">
+            <select id="archive-sort" v-model="sort" @change="applyFilters({ sort })">
               <option value="newest">Newest</option>
               <option value="oldest">Oldest</option>
               <option value="views">Most viewed</option>
               <option value="longest">Longest</option>
             </select>
+            <span class="sort-face" aria-hidden="true">
+              <svg class="size-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 4v12M6 16l-2.5-2.5M6 16l2.5-2.5M11 5.5h6M11 10h4.5M11 14.5h3" />
+              </svg>
+              <span class="sort-face-label">{{ sortLabel }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -134,6 +147,15 @@ watch(
     sort.value = value.sort ?? 'newest';
   }
 );
+
+const SORT_LABELS = {
+  newest: 'Newest',
+  oldest: 'Oldest',
+  views: 'Most viewed',
+  longest: 'Longest',
+};
+
+const sortLabel = computed(() => SORT_LABELS[sort.value] ?? SORT_LABELS.newest);
 
 const isFiltered = computed(
   () =>
@@ -229,22 +251,35 @@ const applySearch = (term) => {
 }
 
 .clear-filters {
-  @apply inline-flex shrink-0 items-center whitespace-nowrap rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-primary-200 transition-colors;
+  @apply inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-lg border border-white/10 px-2 py-1.5 text-sm font-medium text-primary-200 transition-colors sm:px-3;
 }
 
 .clear-filters:hover {
   @apply border-white/25 text-white;
 }
 
-.sort-select {
-  @apply rounded-lg border border-white/10 bg-primary-950/70 px-3 py-1.5 text-sm text-primary-100 transition-colors;
+.sort-control {
+  @apply relative shrink-0;
 }
 
-.sort-select:hover {
+.sort-control select {
+  @apply absolute inset-0 h-full w-full cursor-pointer opacity-0;
+  appearance: none;
+}
+
+.sort-face {
+  @apply inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-primary-950/70 px-2 py-1.5 text-sm text-primary-100 transition-colors sm:px-3;
+}
+
+.sort-face-label {
+  @apply hidden sm:inline;
+}
+
+.sort-control:hover .sort-face {
   @apply border-white/25 text-white;
 }
 
-.sort-select:focus {
-  @apply border-primary-400 outline-none ring-2 ring-primary-500/30;
+.sort-control:focus-within .sort-face {
+  @apply border-primary-400 ring-2 ring-primary-500/30;
 }
 </style>

@@ -156,9 +156,17 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateEdges));
   scroll-snap-align: start;
 }
 
+/* On a phone the rail bleeds into the page gutter, so a tile scrolls off the
+   screen edge rather than off an inset box, and the fade sits flush with it. */
 @media (max-width: 640px) {
   .shelf-item {
     width: 210px;
+  }
+
+  .shelf-rail {
+    scroll-padding-inline: 1rem;
+    padding-inline: 1rem;
+    margin-inline: -1rem;
   }
 }
 
@@ -182,5 +190,17 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateEdges));
 .shelf-viewport:has(.shelf-rail:not(.is-start))::before,
 .shelf-viewport:has(.shelf-rail:not(.is-end))::after {
   opacity: 1;
+}
+
+/* The fades follow the rail out to the screen edge. After the base rules, since
+   they are the same selector. */
+@media (max-width: 640px) {
+  .shelf-viewport::before {
+    left: -1rem;
+  }
+
+  .shelf-viewport::after {
+    right: -1rem;
+  }
 }
 </style>

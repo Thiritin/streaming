@@ -398,17 +398,18 @@ const filterControl =
       </div>
 
       <!--
-        Defaults to the current year rather than to everything: an installation
-        accumulates a run of shows per event, and this year's is the one being worked.
+        Defaults to the run that is on, or the one that just finished, rather than to
+        everything: an installation accumulates a run of shows per event, and the one
+        being worked is the one this page is opened for.
       -->
       <select
-        :value="filters.year"
+        :value="filters.event"
         :class="filterControl"
-        aria-label="Year"
-        @change="setFilter('year', $event.target.value)"
+        aria-label="Event"
+        @change="setFilter('event', $event.target.value)"
       >
-        <option v-for="year in options.years" :key="year.value" :value="year.value">
-          {{ year.label }}
+        <option v-for="option in options.events" :key="option.value" :value="option.value">
+          {{ option.label }}
         </option>
       </select>
 
@@ -879,12 +880,12 @@ const filterControl =
             <td colspan="11" class="px-3 py-10 text-center text-fg-3">
               No shows match these filters.
               <!--
-                Worth saying: a past year is usually filed away in its entirety, so
+                Worth saying: a past run is usually filed away in its entirety, so
                 picking one without turning the archive on comes back empty and looks
-                like the year has no shows in it.
+                like the run has no shows in it.
               -->
-              <span v-if="!filters.show_archived && filters.year !== defaults.year" class="block text-[12px]">
-                {{ filters.year === 'all' ? 'Earlier years are' : filters.year + ' is' }}
+              <span v-if="!filters.show_archived && filters.event !== defaults.event" class="block text-[12px]">
+                {{ filters.event === 'all' ? 'Earlier events are' : 'That event is' }}
                 probably archived. Turn on Archived to see it.
               </span>
             </td>

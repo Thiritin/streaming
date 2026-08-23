@@ -170,6 +170,29 @@ class Event extends Model
     }
 
     /**
+     * The run every list of shows and recordings opens on: the one that is on, else
+     * the one that just finished, else the one that is coming. Null only when the
+     * calendar has never been set up.
+     *
+     * A plan or an archive is worked during a run and for a while after it, so the
+     * newest run by date is the wrong answer whenever the next one is already in the
+     * calendar - that one has no programme yet.
+     */
+    public static function mostRecent(): ?self
+    {
+        return self::current() ?? self::latestFinished() ?? self::next();
+    }
+
+    /**
+     * Which column a run is being addressed by. The manage pages carry the id, the
+     * public archive carries the slug, and both arrive here as a string.
+     */
+    public static function keyColumn(string $key): string
+    {
+        return ctype_digit($key) ? 'id' : 'slug';
+    }
+
+    /**
      * Whether anybody has set the calendar up at all.
      *
      * Everything that changes behaviour is gated on this, so an installation with no

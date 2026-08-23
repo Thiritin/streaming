@@ -10,6 +10,7 @@ use App\Models\Recording;
 use App\Models\Show;
 use App\Models\Source;
 use App\Services\PretalxService;
+use App\Support\EventFilter;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
 use App\Support\Manage\Filter;
@@ -83,9 +84,19 @@ class ShowController extends Controller
                 Filter::select('category', 'Category')
                     ->options(Category::ordered()->pluck('name', 'id')->all())
                     ->apply(fn (Builder $query, string $value) => $query->where('category_id', $value)),
+                /*
+                 * Defaults to the run that is on, or the one that just finished: an
+                 * installation accumulates a run of shows per event, and opening the
+                 * list on every show that ever ran buries this one's under the rest.
+                 * The empty row clears it back to all of them.
+                 */
                 Filter::select('event', 'Event')
-                    ->options(Event::ordered()->pluck('name', 'id')->all())
-                    ->apply(fn (Builder $query, string $value) => $query->where('event_id', $value)),
+                    ->options(EventFilter::options())
+                    ->default(EventFilter::default())
+                    ->placeholder('All events')
+                    ->apply(fn (Builder $query, string $value) => $value === EventFilter::NONE
+                        ? $query->whereNull('event_id')
+                        : $query->where('event_id', $value)),
                 Filter::boolean('today', 'Today')
                     ->apply(fn (Builder $query) => $query->today()),
                 Filter::boolean('upcoming', 'Upcoming')
