@@ -165,4 +165,17 @@ class CategoriesTest extends TestCase
                 fn ($rows) => collect($rows)->pluck('cells.title')->all() === ['Inherited'],
             ));
     }
+
+    public function test_the_edit_page_does_not_offer_a_button_back_to_itself(): void
+    {
+        $category = Category::factory()->create();
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.categories.edit', $category))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where(
+                'actions',
+                fn ($actions) => collect($actions)->pluck('name')->all() === ['delete'],
+            ));
+    }
 }

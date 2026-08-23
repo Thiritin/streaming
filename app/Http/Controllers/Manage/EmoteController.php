@@ -220,7 +220,7 @@ class EmoteController extends Controller
     /**
      * @return array<int, Action>
      */
-    private function rowActions(Emote $emote): array
+    private function rowActions(Emote $emote, bool $includeEdit = true): array
     {
         $user = request()->user();
         $actions = [];
@@ -231,7 +231,9 @@ class EmoteController extends Controller
                 ->tone(Status::OK);
         }
 
-        $actions[] = Action::link('edit', 'Edit', route('manage.emotes.edit', $emote))->icon('pencil');
+        if ($includeEdit) {
+            $actions[] = Action::link('edit', 'Edit', route('manage.emotes.edit', $emote))->icon('pencil');
+        }
 
         if ($user->can('delete', $emote)) {
             $actions[] = $this->deleteAction($emote);
@@ -245,7 +247,8 @@ class EmoteController extends Controller
      */
     private function recordActions(Emote $emote): array
     {
-        return $this->rowActions($emote);
+        // The edit page is already the edit page; a button back to it is noise.
+        return $this->rowActions($emote, includeEdit: false);
     }
 
     private function deleteAction(Emote $emote): Action

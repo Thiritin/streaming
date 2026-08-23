@@ -113,7 +113,7 @@ class EventController extends Controller
             ],
             'actions' => array_map(
                 fn (Action $action) => $action->toArray(),
-                $this->rowActions($event),
+                $this->rowActions($event, includeEdit: false),
             ),
         ]);
     }
@@ -260,11 +260,12 @@ class EventController extends Controller
     /**
      * @return array<int, Action>
      */
-    private function rowActions(Event $event): array
+    private function rowActions(Event $event, bool $includeEdit = true): array
     {
-        $actions = [
-            Action::link('edit', 'Edit', route('manage.events.edit', $event))->icon('pencil'),
-        ];
+        // The edit page is already the edit page; a button back to it is noise.
+        $actions = $includeEdit
+            ? [Action::link('edit', 'Edit', route('manage.events.edit', $event))->icon('pencil')]
+            : [];
 
         if (request()->user()->can('delete', $event)) {
             $actions[] = Action::delete('delete', 'Delete', route('manage.events.destroy', $event))

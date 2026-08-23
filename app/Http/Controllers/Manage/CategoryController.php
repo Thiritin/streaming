@@ -97,7 +97,7 @@ class CategoryController extends Controller
             ],
             'actions' => array_map(
                 fn (Action $action) => $action->toArray(),
-                $this->rowActions($category),
+                $this->rowActions($category, includeEdit: false),
             ),
         ]);
     }
@@ -150,11 +150,12 @@ class CategoryController extends Controller
     /**
      * @return array<int, Action>
      */
-    private function rowActions(Category $category): array
+    private function rowActions(Category $category, bool $includeEdit = true): array
     {
-        $actions = [
-            Action::link('edit', 'Edit', route('manage.categories.edit', $category))->icon('pencil'),
-        ];
+        // The edit page is already the edit page; a button back to it is noise.
+        $actions = $includeEdit
+            ? [Action::link('edit', 'Edit', route('manage.categories.edit', $category))->icon('pencil')]
+            : [];
 
         if (request()->user()->can('delete', $category)) {
             $actions[] = Action::delete('delete', 'Delete', route('manage.categories.destroy', $category))
