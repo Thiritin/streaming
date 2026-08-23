@@ -114,6 +114,11 @@ half-filled row cannot sit unsaved next to a finished one. The cell's border rep
 the save got to: amber saving, green saved, red refused. A refusal leaves what you typed on
 screen.
 
+Several cells can be saving at once, and each reply carries a whole page of rows with it. A
+cell keeps what you put in it until the rows read that value back, so a reply describing the
+row as it was a moment ago cannot put the old value back under your cursor - which is what
+used to make a note look like it reset itself.
+
 Arrow up and arrow down move between the same cell of neighbouring rows, which is how a
 column gets filled in quickly. Enter does the same from a note, Escape drops it.
 
@@ -124,8 +129,8 @@ migration dropped, was a gate; this is not a revival of it.
 
 ## Filters
 
-Search, event, day, source, publish plan, owner, recording status, Mine and grouping, all in
-the query string, so any view of the work is a link. Anything sitting at its default is left
+Search, event, day, source, publish plan, owner, recording status, Mine, Hide done and
+grouping, all in the query string, so any view of the work is a link. Anything sitting at its default is left
 out of the URL, so a shared link carries only what was actually chosen.
 
 **The event defaults to the latest run.** That is the one that is on, or - since most of this
@@ -138,6 +143,14 @@ the event, so a link to a date in a past run still resolves.
 
 An installation that has never set the calendar up gets **All events** and sees everything,
 exactly as it did before events existed.
+
+**Hide done** drops the rows with nothing left on them: a cut that is out - or a show
+marked **no**, which nobody is publishing - *and* the programme mix deposited on the archive
+FTP. A published show whose deposit is still owed stays, because the deposit is still
+somebody's job; that is the whole reason the two are tracked apart. A write-off stays too:
+nothing can be done about it, but a show that lost both captures is the one row here worth
+looking at twice. Off by default - the plan is an account of everything, and hiding rows is
+something you ask for.
 
 The rail badge is scoped the same way: a count of shows from three events ago is a number
 nobody will ever act on.

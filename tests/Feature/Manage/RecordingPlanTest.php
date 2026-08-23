@@ -592,6 +592,54 @@ class RecordingPlanTest extends TestCase
         });
     }
 
+    public function test_hide_done_drops_what_is_finished_with(): void
+    {
+        $published = $this->show(['title' => 'Out and deposited', 'status' => 'ended', 'archive_pgm_at' => now()]);
+        $this->recordingFor($published, ['is_published' => true]);
+
+        // Published, but the programme mix is still owed: that is somebody's job, so the
+        // row stays.
+        $owing = $this->show(['title' => 'Out, not deposited', 'status' => 'ended']);
+        $this->recordingFor($owing, ['is_published' => true]);
+
+        $skipped = $this->show([
+            'title' => 'Nobody is publishing this',
+            'status' => 'ended',
+            'publish_plan' => 'no',
+            'archive_pgm_at' => now(),
+        ]);
+
+        $gap = $this->show(['title' => 'Nothing cut', 'status' => 'ended', 'publish_plan' => 'yes']);
+
+        // A write-off stays on screen: nothing can be done about it, but it is the row
+        // worth looking at twice.
+        $lost = $this->show([
+            'title' => 'Lost for good',
+            'status' => 'ended',
+            'publish_plan' => 'yes',
+            'stream_condition' => 'lost',
+            'onsite_status' => 'none',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan', ['hide_done' => 1]))
+            ->assertInertia(function (Assert $page) use ($published, $skipped, $owing, $gap, $lost) {
+                $ids = collect($page->toArray()['props']['rows'])->pluck('id');
+
+                $this->assertFalse($ids->contains($published->id));
+                $this->assertFalse($ids->contains($skipped->id));
+                $this->assertTrue($ids->contains($owing->id));
+                $this->assertTrue($ids->contains($gap->id));
+                $this->assertTrue($ids->contains($lost->id));
+            });
+
+        // Off by default: the plan is an account of everything, and hiding rows is a
+        // thing you ask for.
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan'))
+            ->assertInertia(fn (Assert $page) => $page->has('rows', 5));
+    }
+
     public function test_the_plan_opens_on_the_latest_event(): void
     {
         $current = $this->event('This Run', now()->subDay(), now()->addWeeks(3));

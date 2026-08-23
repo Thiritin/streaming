@@ -111,6 +111,12 @@ const FIELDS = {
   recording_note: 'note',
 };
 
+/** The same, for the two archive chips, which are their own control. */
+const ARCHIVE_FIELDS = {
+  archive_pgm: 'archive_pgm',
+  archive_iso: 'archive_iso',
+};
+
 /** Unsaved value per cell, so a refusal leaves what was typed on screen. */
 const drafts = reactive({});
 /** null, 'saving', 'saved' or 'error'. Drives the cell's border only. */
@@ -153,7 +159,6 @@ const save = (row, field, value) => {
       preserveScroll: true,
       preserveState: true,
       onSuccess: () => {
-        delete drafts[key];
         states[key] = 'saved';
         window.setTimeout(() => {
           if (states[key] === 'saved') delete states[key];
@@ -163,6 +168,32 @@ const save = (row, field, value) => {
     },
   );
 };
+
+/**
+ * A draft is dropped when the server's own rows agree with it, not when its own save
+ * comes back.
+ *
+ * Every cell saves on its own and several can be in flight at once, and each reply
+ * carries a whole page of rows - so a reply to an edit made a moment earlier lands after
+ * this one and describes the row as it was before this cell was written. Clearing the
+ * draft on success handed the screen to whichever reply came last, which is what made a
+ * note appear to reset itself for no reason. Holding the draft until the row actually
+ * reads back the saved value means a stale reply changes nothing on screen.
+ */
+watch(
+  () => props.rows,
+  (rows) => {
+    rows.forEach((row) => {
+      Object.entries({ ...FIELDS, ...ARCHIVE_FIELDS }).forEach(([field, prop]) => {
+        const key = cellKey(row, field);
+
+        if (key in drafts && String(drafts[key] ?? '') === String(row[prop] ?? '')) {
+          delete drafts[key];
+        }
+      });
+    });
+  },
+);
 
 /* --------------------------------------------------------------- keyboard */
 
@@ -302,16 +333,27 @@ const planLabel = (row) => props.options.plans.find((plan) => plan.value === row
 
 /**
  * The archive chips are booleans on the wire and timestamps in the database, so they do
- * not go through `save()`: there is no draft to hold and nothing to compare against.
+ * not go through `save()`: there is nothing to type and nothing to compare against. They
+ * do hold a draft, for the same reason every other cell does - a reply describing the row
+ * as it was a moment ago must not flip the chip back under the cursor.
  */
-const toggleArchive = (row, which) => {
+const archiveOn = (row, which) => {
   const key = cellKey(row, `archive_${which}`);
 
+  return key in drafts ? drafts[key] : row[`archive_${which}`];
+};
+
+const toggleArchive = (row, which) => {
+  const field = `archive_${which}`;
+  const key = cellKey(row, field);
+  const next = !archiveOn(row, which);
+
+  drafts[key] = next;
   states[key] = 'saving';
 
   router.patch(
     row.update_url,
-    { [`archive_${which}`]: !row[`archive_${which}`] },
+    { [field]: next },
     {
       preserveScroll: true,
       preserveState: true,
@@ -500,6 +542,21 @@ const filterControl =
         <ManageIcon name="hand" :size="13" />
         Mine
       </button>
+
+      <!--
+        Done is a cut that is out - or a show nobody is publishing - with the programme
+        mix on the archive FTP. A published show whose deposit is still outstanding is not
+        done and stays; so does a write-off, which is the one row worth looking at twice.
+      -->
+      <label class="flex h-7 items-center gap-1.5 rounded border border-hairline px-2 text-[12px] text-fg-2">
+        <input
+          type="checkbox"
+          class="accent-state-live"
+          :checked="filters.hide_done"
+          @change="setFilter('hide_done', $event.target.checked ? 1 : null)"
+        />
+        Hide done
+      </label>
 
       <label class="flex h-7 items-center gap-1.5 rounded border border-hairline px-2 text-[12px] text-fg-2">
         <input
@@ -711,7 +768,7 @@ const filterControl =
                     :disabled="!can_edit"
                     class="rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors disabled:cursor-default"
                     :class="[
-                      row[`archive_${which}`]
+                      archiveOn(row, which)
                         ? 'border-state-ok/40 bg-state-ok/12 text-state-ok'
                         : which === 'pgm' && row.needs_archive
                           ? 'border-state-warn/40 text-state-warn hover:bg-state-warn/12'
@@ -723,7 +780,7 @@ const filterControl =
                         ? `Uploaded ${row[`archive_${which}_at`]}`
                         : `Not on the archive FTP yet`
                     "
-                    :aria-pressed="row[`archive_${which}`]"
+                    :aria-pressed="archiveOn(row, which)"
                     :aria-label="`${which.toUpperCase()} of ${row.title} on the archive FTP`"
                     @click="can_edit && toggleArchive(row, which)"
                   >

@@ -380,6 +380,7 @@ class RecordingPlanController extends Controller
             'owner' => $request->query('owner') ?: null,
             'state' => $request->query('state') ?: null,
             'mine' => $request->boolean('mine'),
+            'hide_done' => $request->boolean('hide_done'),
             'show_archived' => $request->boolean('show_archived'),
             'group' => in_array($group, ['day', 'owner', 'source', 'none'], true) ? $group : 'day',
         ];
@@ -434,7 +435,39 @@ class RecordingPlanController extends Controller
                 : $query->where('recording_owner_id', $filters['owner']);
         }
 
+        if ($filters['hide_done']) {
+            $this->hideDone($query);
+        }
+
         $this->applyStateFilter($query, $filters['state']);
+    }
+
+    /**
+     * Drops the rows nobody has anything left to do about, so what is left on screen is
+     * the work.
+     *
+     * Done is both axes at once: a cut is out - published, or never going to be published
+     * because the show is marked `no` - and the programme mix is on the archive FTP. A
+     * published show whose deposit is still outstanding stays, because the deposit is
+     * still somebody's job; that is the whole reason the two are tracked apart.
+     *
+     * A write-off is left on screen on purpose. Nothing can be done about it, but a row
+     * that lost both captures is the one thing on this page worth looking at twice.
+     *
+     * @param  Builder<Show>  $query
+     */
+    private function hideDone(Builder $query): void
+    {
+        $query->where(fn (Builder $inner) => $inner
+            ->whereNull('archive_pgm_at')
+            ->orWhere(fn (Builder $outstanding) => $outstanding
+                // Spelled out rather than a plain `!=`: `null != 'no'` is null in SQL, so
+                // a negation on its own drops every row nobody has decided about.
+                ->where(fn (Builder $plan) => $plan
+                    ->whereNull('publish_plan')
+                    ->orWhere('publish_plan', '!=', 'no'))
+                ->whereDoesntHave('recordings', fn (Builder $recording) => $recording
+                    ->where('is_published', true))));
     }
 
     /**
