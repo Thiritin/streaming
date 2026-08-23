@@ -115,6 +115,48 @@ class ArchiveImportTest extends TestCase
         );
     }
 
+    public function test_imports_opened_at_the_same_time_do_not_share_a_window(): void
+    {
+        // What running four copies of the CLI at once looks like: every import opens before
+        // any of them has uploaded a segment, so nothing about the bucket tells them apart.
+        $imports = collect(range(1, 4))
+            ->map(fn (int $n) => $this->imports->start(['title' => "Import {$n}", 'prefix' => 'vod'])['import']);
+
+        $starts = $imports->map(fn (array $import) => CarbonImmutable::parse($import['starts_at'])->utc());
+
+        $this->assertCount(4, $starts->unique(fn (CarbonImmutable $at) => $at->toIso8601String()));
+
+        // Disjoint by more than an import can ever write, so no two of them can reach the
+        // same hour index however long each one turns out to be.
+        $ordered = $starts->sort()->values();
+
+        for ($i = 1; $i < $ordered->count(); $i++) {
+            $this->assertTrue(
+                $ordered[$i]->greaterThan($ordered[$i - 1]->addHours(24)),
+                'Concurrent imports must be given windows that cannot overlap.'
+            );
+        }
+    }
+
+    public function test_concurrent_imports_each_commit_their_own_recording(): void
+    {
+        $renditions = array_keys(ArchiveLadder::renditions());
+
+        $first = $this->imports->start(['title' => 'First', 'prefix' => 'vod'])['import'];
+        $second = $this->imports->start(['title' => 'Second', 'prefix' => 'vod'])['import'];
+
+        $firstSegments = $this->uploadSegments($first, 3, $renditions);
+        $secondSegments = $this->uploadSegments($second, 5, $renditions);
+
+        // Committed out of order, which is what two encodes of different lengths do.
+        $secondRecording = $this->imports->commit($second, $secondSegments, $renditions);
+        $firstRecording = $this->imports->commit($first, $firstSegments, $renditions);
+
+        $this->assertSame(3, $firstRecording->segment_count);
+        $this->assertSame(5, $secondRecording->segment_count);
+        $this->assertNotEquals($firstRecording->starts_at, $secondRecording->starts_at);
+    }
+
     public function test_the_api_refuses_an_unknown_import(): void
     {
         BrandingSetting::setValue(ImportKey::KEY, 'an-import-key-long-enough');

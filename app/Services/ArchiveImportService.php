@@ -43,6 +43,13 @@ class ArchiveImportService
      */
     protected const MAX_IMPORT_HOURS = 24;
 
+    /**
+     * Clear hours left between one import's window and the next. Adjacent imports sharing
+     * an hour bucket would still resolve, but a cut whose end marker slipped would silently
+     * pick up the next import's opening segments.
+     */
+    protected const WINDOW_GAP_HOURS = 2;
+
     /** Default prefix for imports, kept away from the sources that actually stream. */
     public const DEFAULT_PREFIX = 'vod';
 
@@ -60,8 +67,9 @@ class ArchiveImportService
      *
      * The window is allocated server side rather than asked for, because two people
      * importing on the same afternoon would otherwise interleave their segments into one
-     * hour index and each other's cuts. Allocation is sequential: start after whatever the
-     * prefix already holds, on the next hour boundary.
+     * hour index and each other's cuts. It is reserved at this moment, not derived from
+     * what the bucket holds, so imports running at the same time still get windows that
+     * do not touch; see allocateWindow.
      *
      * @return array<string, mixed>
      */
@@ -107,12 +115,59 @@ class ArchiveImportService
     /**
      * Where this import's segments start.
      *
-     * A prefix nothing has ever been imported under starts at the top of the current hour;
-     * otherwise one clear hour after the last segment the archive holds for it. The gap is
-     * deliberate: adjacent imports sharing an hour bucket would still resolve, but a cut
-     * whose end marker slipped would silently pick up the next import's opening segments.
+     * What the bucket already holds cannot be the whole answer, because an import that has
+     * started has uploaded nothing yet. Four people importing at once - or one person
+     * running four copies of the CLI, which is the usual way it happens - would all read
+     * the same archive end, all be handed the same window, and all write their segments
+     * into the same hour buckets. The objects themselves survive that (the session id keeps
+     * the names apart), but every commit rewrites the same `{hour}/index.m3u8`, so the last
+     * one to finish is the only import the archive still describes and all four recordings
+     * are cuts over that one timeline. Four imports, one video, four times.
+     *
+     * So the window is reserved, not observed: a cursor per prefix is advanced under a lock
+     * at the moment an import opens, by the widest window an import is ever allowed to write
+     * (MAX_IMPORT_HOURS, which segmentKey enforces) plus the usual gap. Concurrent imports
+     * therefore get disjoint hour ranges before any of them has uploaded a byte. The bucket
+     * is still consulted, and still wins when it is further along - a cursor lost with the
+     * cache falls back to what is actually archived, which is correct once those imports
+     * have committed.
      */
     protected function allocateWindow(string $prefix): CarbonImmutable
+    {
+        $lock = Cache::lock(self::CACHE_PREFIX."allocate:{$prefix}", 30);
+
+        return $lock->block(20, function () use ($prefix) {
+            $key = self::CACHE_PREFIX."cursor:{$prefix}";
+
+            $start = $this->archivedWindowEnd($prefix);
+            $reserved = Cache::get($key);
+
+            if (is_string($reserved)) {
+                $reserved = CarbonImmutable::parse($reserved)->utc()->startOfHour();
+
+                if ($reserved > $start) {
+                    $start = $reserved;
+                }
+            }
+
+            // Held past an import's own lifetime: only once the last import that took a
+            // window has committed does the bucket describe it, and a cursor that expired
+            // before then would hand the same hours out twice.
+            Cache::put(
+                $key,
+                $start->addHours(self::MAX_IMPORT_HOURS + self::WINDOW_GAP_HOURS)->toIso8601String(),
+                now()->addHours(self::TTL_HOURS + self::MAX_IMPORT_HOURS),
+            );
+
+            return $start;
+        });
+    }
+
+    /**
+     * The first hour past everything the prefix already holds. A prefix nothing has ever
+     * been imported under starts at the top of the current hour.
+     */
+    protected function archivedWindowEnd(string $prefix): CarbonImmutable
     {
         $range = $this->playlists->availableRange($prefix);
 
@@ -120,7 +175,7 @@ class ArchiveImportService
             return CarbonImmutable::now('UTC')->startOfHour();
         }
 
-        return CarbonImmutable::parse($range['to'])->utc()->startOfHour()->addHours(2);
+        return CarbonImmutable::parse($range['to'])->utc()->startOfHour()->addHours(self::WINDOW_GAP_HOURS);
     }
 
     /**
