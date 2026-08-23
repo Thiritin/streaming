@@ -26,6 +26,7 @@ class RecordingRequest extends FormRequest
         return [
             'show_id' => ['nullable', 'integer', 'exists:shows,id'],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'event_id' => ['nullable', 'integer', 'exists:events,id'],
             'title' => ['required', 'string', 'max:255'],
             'slug' => [
                 'required',
@@ -84,6 +85,10 @@ class RecordingRequest extends FormRequest
         // reading as "no show".
         if ($this->input('category_id') === '') {
             $this->merge(['category_id' => null]);
+        }
+
+        if ($this->input('event_id') === '') {
+            $this->merge(['event_id' => null]);
         }
 
         if ($this->input('show_id') === '') {

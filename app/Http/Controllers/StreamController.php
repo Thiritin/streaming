@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enum\SourceStatusEnum;
 use App\Enum\StreamStatusEnum;
+use App\Models\Event;
 use App\Models\Message;
 use App\Models\Recording;
 use App\Models\RecordingProgress;
@@ -209,46 +210,69 @@ class StreamController extends Controller
                 ];
             });
 
-        // Get popular recordings (prefer latest year, then by views)
-        // First, find the most recent year with recordings
-        // Ordering by `date` and reading the year off the model keeps this working on
-        // both MySQL and Postgres; YEAR() is MySQL-only.
-        $latestYear = Recording::accessibleBy($user)
-            ->where('is_published', true)
-            ->orderBy('date', 'desc')
-            ->first()
-            ?->date
-            ?->year;
+        /*
+         * Archive: everything that already happened. The browse page shows a slice of
+         * it inline so the grid never looks empty between shows; the full list lives
+         * on the archive page.
+         *
+         * Split by run of the convention. The run that is on - or, between runs, the
+         * one that finished last - leads the grid, and everything else gets its own
+         * section underneath. Before anybody has set the calendar up there is no run
+         * to lead with, so the six-month split this replaces stands in.
+         */
+        $currentEvent = Event::current();
+        $leadEvent = $currentEvent ?? Event::latestFinished();
+        $archiveCutoff = now()->subMonths(6);
 
+        $inLead = fn ($query) => $leadEvent
+            ? $query->inEvent($leadEvent->slug)
+            : $query->where('date', '>=', $archiveCutoff);
+
+        $outsideLead = fn ($query) => $leadEvent
+            ? $query->notInEvent($leadEvent->slug)
+            : $query->where('date', '<', $archiveCutoff);
+
+        /*
+         * Most watched, from the run the page is leading with. Without a calendar it
+         * falls back to the most recent year with anything in it. Ordering by `date`
+         * and reading the year off the model keeps that working on both MySQL and
+         * Postgres; YEAR() is MySQL-only.
+         */
         $popular = collect();
-        if ($latestYear) {
-            $popular = Recording::accessibleBy($user)
-                ->where('is_published', true)
-                ->whereYear('date', $latestYear)
+
+        if ($leadEvent) {
+            $popular = $inLead(Recording::accessibleBy($user)->where('is_published', true))
                 ->orderBy('views', 'desc')
                 ->limit(8)
                 ->get();
+        } else {
+            $latestYear = Recording::accessibleBy($user)
+                ->where('is_published', true)
+                ->orderBy('date', 'desc')
+                ->first()
+                ?->date
+                ?->year;
+
+            if ($latestYear) {
+                $popular = Recording::accessibleBy($user)
+                    ->where('is_published', true)
+                    ->whereYear('date', $latestYear)
+                    ->orderBy('views', 'desc')
+                    ->limit(8)
+                    ->get();
+            }
         }
 
-        // Archive: everything that already happened, newest first. The browse page
-        // shows a slice of it inline so the grid never looks empty between shows;
-        // the full list lives on the archive page.
-        //
-        // Split at six months. Recent recordings still read as part of this event and
-        // sit in the main grid; anything older belongs to a past event and gets its own
-        // section, the same separation the archive page makes with year collections.
-        $archiveCutoff = now()->subMonths(6);
-
-        $recent = Recording::accessibleBy($user)
-            ->where('is_published', true)
-            ->where('date', '>=', $archiveCutoff)
+        $recent = $inLead(
+            Recording::accessibleBy($user)->where('is_published', true)
+        )
             ->orderBy('date', 'desc')
             ->limit(12)
             ->get();
 
-        $older = Recording::accessibleBy($user)
-            ->where('is_published', true)
-            ->where('date', '<', $archiveCutoff)
+        $older = $outsideLead(
+            Recording::accessibleBy($user)->where('is_published', true)
+        )
             ->orderBy('date', 'desc')
             ->limit(8)
             ->get();
@@ -260,15 +284,13 @@ class StreamController extends Controller
         $archiveRecordings = $recent->map(fn ($recording) => $this->mapRecording($recording));
         $olderRecordings = $older->map(fn ($recording) => $this->mapRecording($recording));
 
-        $archiveTotal = Recording::accessibleBy($user)
-            ->where('is_published', true)
-            ->where('date', '>=', $archiveCutoff)
-            ->count();
+        $archiveTotal = $inLead(
+            Recording::accessibleBy($user)->where('is_published', true)
+        )->count();
 
-        $olderTotal = Recording::accessibleBy($user)
-            ->where('is_published', true)
-            ->where('date', '<', $archiveCutoff)
-            ->count();
+        $olderTotal = $outsideLead(
+            Recording::accessibleBy($user)->where('is_published', true)
+        )->count();
 
         $primarySource = Source::featured();
         $featured = $this->resolveFeaturedShow($user, $primarySource);
@@ -280,9 +302,29 @@ class StreamController extends Controller
             ->unique()
             ->values();
 
+        /*
+         * Whether the page is a programme or the archive.
+         *
+         * Between runs there is nothing to be on next, so the front page stops
+         * pretending there is a schedule and becomes what people actually came for.
+         * Anything on air wins regardless: a stream outside a window - a test, a
+         * one-off - must never be buried under an archive because the calendar says
+         * the convention is over. And with no calendar set up at all the page keeps
+         * the shape it had before events existed.
+         */
+        $archiveMode = Event::configured()
+            && $currentEvent === null
+            && $liveShows->isEmpty()
+            && $startingSoonShows->isEmpty();
+
         return Inertia::render('ShowsGrid', [
             // The banner is the front page's, not the layout's: it is for arrivals.
             'announcement' => Announcement::current(),
+            'archiveMode' => $archiveMode,
+            'event' => $this->eventProps($currentEvent),
+            // What the archive slice is a slice of, so the section can be named.
+            'leadEvent' => $this->eventProps($leadEvent),
+            'nextEvent' => $this->eventProps(Event::next()),
             'liveShows' => $liveShows,
             'startingSoonShows' => $startingSoonShows,
             'upcomingShows' => $upcomingShows,
@@ -296,6 +338,29 @@ class StreamController extends Controller
             'channels' => $channels,
             'currentTime' => now()->toIso8601String(),
         ]);
+    }
+
+    /**
+     * A run as the front page needs it: what it is called, when it runs, and how far
+     * off it is. `days_away` is what a page between runs counts down with; it is 0
+     * for a run that is on and for one that has finished.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function eventProps(?Event $event): ?array
+    {
+        if (! $event) {
+            return null;
+        }
+
+        return [
+            'name' => $event->name,
+            'slug' => $event->slug,
+            'dates' => $event->dateRange(),
+            'starts_at' => $event->startsAt()->toIso8601String(),
+            'ends_at' => $event->endsAt()->toIso8601String(),
+            'days_away' => max(0, (int) now()->startOfDay()->diffInDays($event->startsAt(), false)),
+        ];
     }
 
     /**

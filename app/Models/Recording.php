@@ -17,6 +17,7 @@ class Recording extends Model
     protected $fillable = [
         'show_id',
         'source_id',
+        'event_id',
         'category_id',
         'title',
         'slug',
@@ -73,6 +74,17 @@ class Recording extends Model
                     $count++;
                 }
             }
+
+            /*
+             * A cut inherits its show's run. Without a show - an edit imported straight
+             * into the archive - the date decides. Create only, so clearing the field
+             * later sticks; see Show::boot for the same reasoning.
+             */
+            if ($recording->event_id === null && $recording->show_id === null) {
+                $recording->event_id = Event::forDate(
+                    $recording->date ? Carbon::parse($recording->date) : null,
+                )?->id;
+            }
         });
     }
 
@@ -124,6 +136,24 @@ class Recording extends Model
     }
 
     /**
+     * The run this cut is filed under directly. Usually null: the show's is what
+     * applies, and this column only exists to override it or to file an edit that
+     * was imported without a show.
+     */
+    public function event()
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    /**
+     * The run that applies: this recording's own, else its show's.
+     */
+    public function effectiveEvent(): ?Event
+    {
+        return $this->event ?? $this->show?->event;
+    }
+
+    /**
      * The category set on this recording directly. Usually null: the show's is
      * what applies, and this column only exists to override it or to categorise
      * an edit that was imported without a show.
@@ -155,6 +185,53 @@ class Recording extends Model
                         ->whereHas('show.category', fn ($q) => $q->where('slug', $slug));
                 });
         });
+    }
+
+    /**
+     * Recordings filed under a run, counting the ones that only have it through
+     * their show. One query, for the same reason as inCategory: the archive grid
+     * pages over the result.
+     */
+    public function scopeInEvent($query, string $slug)
+    {
+        return $query->where(function ($query) use ($slug) {
+            $query->whereHas('event', fn ($q) => $q->where('slug', $slug))
+                ->orWhere(function ($query) use ($slug) {
+                    $query->whereNull('event_id')
+                        ->whereHas('show.event', fn ($q) => $q->where('slug', $slug));
+                });
+        });
+    }
+
+    /**
+     * Everything not filed under a run - the complement of inEvent, written out
+     * rather than negated, because a NOT around a whereHas does not answer for the
+     * rows that have no related row at all.
+     */
+    public function scopeNotInEvent($query, string $slug)
+    {
+        return $query
+            ->whereDoesntHave('event', fn ($q) => $q->where('slug', $slug))
+            ->where(function ($query) use ($slug) {
+                // A recording with its own event has already been cleared above; only
+                // one without inherits, so only one without can be excluded by its show.
+                $query->whereNotNull('event_id')
+                    ->orWhereDoesntHave('show.event', fn ($q) => $q->where('slug', $slug));
+            });
+    }
+
+    /**
+     * Recordings filed under no run at all - neither their own nor their show's.
+     * These are what the year chips still cover, so nothing falls off the archive
+     * because the calendar was set up after it was published.
+     */
+    public function scopeWithoutEvent($query)
+    {
+        return $query->whereNull('event_id')
+            ->where(function ($query) {
+                $query->whereNull('show_id')
+                    ->orWhereHas('show', fn ($q) => $q->whereNull('event_id'));
+            });
     }
 
     /**

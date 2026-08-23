@@ -2,11 +2,13 @@
 /**
  * Marks the stretches of a recording a viewer may be offered a way past.
  *
- * One component for both places it is done: the recording form in /manage, and the
- * watch page itself, where an operator who has just sat through an intermission can
- * mark it without leaving the player. The timeline is the primary control - an
- * intermission is a shape in a recording, not two numbers - and the rows underneath
- * are what makes it exact, and reachable without a pointer.
+ * Lives in the recording form in /manage and nowhere else: a viewer is offered the
+ * button, never the marking of it.
+ *
+ * Worked the way a cut is worked - park the playhead and press in, park it again and
+ * press out (I and O, or the buttons). The timeline is the picture of the result and
+ * can be dragged directly, and the rows underneath are what makes it exact and
+ * reachable without a pointer.
  *
  * Everything is seconds from the start of the recording. Overlaps are left alone
  * while dragging and merged by the server on save, so a drag never rearranges the
@@ -23,12 +25,23 @@ const props = defineProps({
   /** Shorter than this and the button would be gone before it was read. */
   minSeconds: { type: Number, default: 5 },
   max: { type: Number, default: 20 },
+  /** Off where the page has its own use for the keys. */
+  keyboard: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(['update:modelValue', 'seek']);
 
 const track = ref(null);
 const dragging = ref(null);
+
+/*
+ * Which segment in and out apply to.
+ *
+ * Held as an index and re-derived after every write, because a write sorts: an
+ * out marker dragged past its neighbour would otherwise leave the selection on
+ * whatever moved into its place.
+ */
+const selected = ref(null);
 
 const segments = computed(() => props.modelValue ?? []);
 const usable = computed(() => props.duration > 0);
@@ -50,23 +63,93 @@ const timeAt = (clientX) => {
 };
 
 // Sorted on every write, so the rows underneath read in the order they play and a
-// segment dragged past its neighbour does not stay behind it in the list.
-const commit = (next) => emit('update:modelValue', [...next].sort((a, b) => a.start - b.start));
+// segment dragged past its neighbour does not stay behind it in the list. `keep` is
+// the segment the selection should follow through the sort.
+const commit = (next, keep = null) => {
+  const sorted = [...next].sort((a, b) => a.start - b.start);
 
-const update = (index, changes) =>
-  commit(segments.value.map((segment, at) => (at === index ? { ...segment, ...changes } : segment)));
+  if (keep) {
+    const at = sorted.indexOf(keep);
+    selected.value = at === -1 ? null : at;
+  } else if (selected.value !== null && selected.value >= sorted.length) {
+    selected.value = sorted.length ? sorted.length - 1 : null;
+  }
 
-const remove = (index) => commit(segments.value.filter((_, at) => at !== index));
+  emit('update:modelValue', sorted);
+};
 
-const addAt = (start) => {
-  if (full.value || !usable.value) return;
+const update = (index, changes) => {
+  const next = segments.value.map((segment, at) =>
+    (at === index ? { ...segment, ...changes } : segment));
+
+  commit(next, next[index]);
+};
+
+const remove = (index) => {
+  if (selected.value === index) selected.value = null;
+
+  commit(segments.value.filter((_, at) => at !== index));
+};
+
+const addAt = (start, end = null) => {
+  if (full.value || !usable.value) return null;
 
   const from = clamp(start);
-  const to = clamp(Math.max(from + props.minSeconds, from + 60));
+  const to = clamp(end ?? Math.max(from + props.minSeconds, from + 60));
 
-  if (to <= from) return;
+  if (to <= from) return null;
 
-  commit([...segments.value, { start: from, end: to, label: null }]);
+  const segment = { start: from, end: to, label: null };
+
+  commit([...segments.value, segment], segment);
+
+  return segment;
+};
+
+/*
+ * In and out, against the playhead.
+ *
+ * With nothing selected, in starts a new segment - which is what makes marking an
+ * intermission two keypresses rather than a drag followed by two corrections. Out
+ * before in is not an error worth refusing; the other marker moves to keep the
+ * segment the minimum length, the same way a trim behaves.
+ */
+const markIn = () => {
+  const at = props.currentTime;
+
+  if (at === null || !usable.value) return;
+
+  if (selected.value === null) {
+    addAt(at, clamp(at) + props.minSeconds);
+
+    return;
+  }
+
+  const segment = segments.value[selected.value];
+  const start = clamp(at);
+
+  update(selected.value, {
+    start,
+    end: Math.max(segment.end, start + props.minSeconds),
+  });
+};
+
+const markOut = () => {
+  const at = props.currentTime;
+
+  if (at === null || !usable.value || selected.value === null) return;
+
+  const segment = segments.value[selected.value];
+  const end = clamp(at);
+
+  update(selected.value, {
+    start: Math.max(0, Math.min(segment.start, end - props.minSeconds)),
+    end: Math.max(end, props.minSeconds),
+  });
+};
+
+const select = (index) => {
+  selected.value = selected.value === index ? null : index;
 };
 
 /*
@@ -77,12 +160,16 @@ const addAt = (start) => {
 const onTrackDown = (event) => {
   if (!usable.value || full.value || event.button !== 0) return;
 
+  // A drag across a timeline otherwise selects the labels and the rows under it.
+  event.preventDefault();
+
   const start = timeAt(event.clientX);
   const end = clamp(start + props.minSeconds);
 
   if (end <= start) return;
 
   const next = [...segments.value, { start, end, label: null }];
+  selected.value = next.length - 1;
   emit('update:modelValue', next);
 
   beginDrag(event, next.length - 1, 'end', 0, next);
@@ -92,6 +179,9 @@ const onSegmentDown = (event, index, mode) => {
   if (event.button !== 0) return;
 
   event.stopPropagation();
+  event.preventDefault();
+
+  selected.value = index;
 
   const segment = segments.value[index];
   const grab = timeAt(event.clientX) - segment.start;
@@ -151,7 +241,55 @@ const endDrag = () => {
   if (drag) commit(drag.list);
 };
 
-onBeforeUnmount(endDrag);
+/*
+ * Keys, against the playhead: I in, O out, N a fresh segment, Delete removes the
+ * selected one, and , / . nudge the marker nearest the playhead by a second.
+ *
+ * Bound to the window rather than to the component, because the operator's hands are
+ * on the player above it, not on this editor - requiring a click in here first is
+ * what would make the shortcuts useless. Anything typed into a field is left alone.
+ */
+const onKey = (event) => {
+  if (!props.keyboard || !usable.value) return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+  const tag = event.target?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || event.target?.isContentEditable) return;
+
+  const nudge = (by) => {
+    if (selected.value === null) return;
+
+    const segment = segments.value[selected.value];
+    const at = props.currentTime ?? segment.start;
+    const nearest = Math.abs(at - segment.start) <= Math.abs(at - segment.end) ? 'start' : 'end';
+
+    update(selected.value, nearest === 'start'
+      ? { start: Math.min(clamp(segment.start + by), segment.end - props.minSeconds) }
+      : { end: Math.max(clamp(segment.end + by), segment.start + props.minSeconds) });
+  };
+
+  switch (event.key.toLowerCase()) {
+    case 'i': markIn(); break;
+    case 'o': markOut(); break;
+    case 'n': addAt(props.currentTime ?? 0); break;
+    case 'delete':
+    case 'backspace':
+      if (selected.value !== null) remove(selected.value);
+      break;
+    case ',': nudge(-1); break;
+    case '.': nudge(1); break;
+    default: return;
+  }
+
+  event.preventDefault();
+};
+
+window.addEventListener('keydown', onKey);
+
+onBeforeUnmount(() => {
+  endDrag();
+  window.removeEventListener('keydown', onKey);
+});
 
 const formatClock = (seconds) => {
   const value = Math.max(0, Math.floor(seconds ?? 0));
@@ -208,6 +346,7 @@ const onClockInput = (index, field, event) => {
           v-for="(segment, index) in segments"
           :key="index"
           class="skip-block"
+          :class="{ 'is-selected': selected === index }"
           :style="{ left: `${pct(segment.start)}%`, width: `${Math.max(0.6, pct(segment.end) - pct(segment.start))}%` }"
           @pointerdown="onSegmentDown($event, index, 'move')"
         >
@@ -220,16 +359,65 @@ const onClockInput = (index, field, event) => {
       </div>
 
       <div class="skip-actions">
+        <button
+          type="button"
+          class="skip-btn skip-btn-primary"
+          :disabled="currentTime === null || (selected === null && full)"
+          :title="selected === null ? 'Start a skip here (I)' : 'Move this skip\'s start here (I)'"
+          @click="markIn"
+        >
+          Set in <kbd>I</kbd>
+        </button>
+
+        <button
+          type="button"
+          class="skip-btn"
+          :disabled="currentTime === null || selected === null"
+          title="Move the selected skip's end here (O)"
+          @click="markOut"
+        >
+          Set out <kbd>O</kbd>
+        </button>
+
+        <span class="skip-divider" aria-hidden="true" />
+
         <button type="button" class="skip-btn" :disabled="full" @click="addAt(currentTime ?? 0)">
           {{ currentTime !== null ? `Add at ${formatClock(currentTime)}` : 'Add skip point' }}
+          <kbd>N</kbd>
         </button>
+
+        <button
+          type="button"
+          class="skip-btn"
+          :disabled="selected === null"
+          @click="remove(selected)"
+        >
+          Remove <kbd>Del</kbd>
+        </button>
+
         <p class="skip-hint">
-          Drag on the bar to draw one, drag its edges to trim. {{ segments.length }}/{{ max }}.
+          <template v-if="selected !== null">
+            Editing {{ formatClock(segments[selected].start) }}-{{ formatClock(segments[selected].end) }}.
+            <kbd>,</kbd> <kbd>.</kbd> nudge by a second.
+          </template>
+          <template v-else-if="currentTime !== null">
+            Park the playhead and press in. Or drag on the bar to draw one.
+          </template>
+          <template v-else>
+            Drag on the bar to draw one, drag its edges to trim.
+          </template>
+          {{ segments.length }}/{{ max }}.
         </p>
       </div>
 
       <ul v-if="segments.length" class="skip-rows">
-        <li v-for="(segment, index) in segments" :key="index" class="skip-row">
+        <li
+          v-for="(segment, index) in segments"
+          :key="index"
+          class="skip-row"
+          :class="{ 'is-selected': selected === index }"
+          @click="selected = index"
+        >
           <input
             class="skip-time"
             :value="formatClock(segment.start)"
@@ -263,7 +451,16 @@ const onClockInput = (index, field, event) => {
             Play
           </button>
 
-          <button type="button" class="skip-mini skip-mini-danger" @click="remove(index)">Remove</button>
+          <button
+            type="button"
+            class="skip-mini"
+            :class="{ 'is-selected': selected === index }"
+            @click.stop="select(index)"
+          >
+            {{ selected === index ? 'Editing' : 'Edit' }}
+          </button>
+
+          <button type="button" class="skip-mini skip-mini-danger" @click.stop="remove(index)">Remove</button>
         </li>
       </ul>
 
@@ -280,7 +477,12 @@ const onClockInput = (index, field, event) => {
 @reference "../../../css/app.css";
 
 .skip-editor {
-  @apply flex flex-col gap-3;
+  @apply flex flex-col gap-3 select-none;
+}
+
+/* The rows are still typed into; only the dragging surfaces refuse selection. */
+.skip-editor input {
+  @apply select-text;
 }
 
 .skip-track {
@@ -298,6 +500,32 @@ const onClockInput = (index, field, event) => {
 
 .skip-block:active {
   @apply cursor-grabbing;
+}
+
+/* The selected one is what in and out land on, so it has to be obvious which. */
+.skip-block.is-selected {
+  @apply ring-2 ring-primary-200;
+}
+
+.skip-row.is-selected {
+  @apply rounded-md;
+  box-shadow: inset 0 0 0 1px var(--color-primary-500);
+}
+
+.skip-mini.is-selected {
+  @apply border-primary-400 text-fg-1;
+}
+
+.skip-divider {
+  @apply h-5 w-px bg-hairline;
+}
+
+.skip-btn-primary {
+  @apply border-primary-500 text-fg-1;
+}
+
+.skip-editor kbd {
+  @apply ml-1 rounded border border-hairline px-1 text-[10px] font-semibold uppercase text-fg-3;
 }
 
 .skip-block-label {
@@ -341,7 +569,7 @@ const onClockInput = (index, field, event) => {
 }
 
 .skip-row {
-  @apply flex flex-wrap items-center gap-2;
+  @apply flex flex-wrap items-center gap-2 p-1;
 }
 
 .skip-time {

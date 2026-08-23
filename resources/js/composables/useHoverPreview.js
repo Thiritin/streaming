@@ -172,13 +172,17 @@ export function useHoverPreview(getUrl) {
         element.addEventListener('loadedmetadata', sync);
         element.addEventListener('timeupdate', sync);
 
+        // A few percent in, past the title card and the empty stage before anyone
+        // walks on. Hung off loadedmetadata rather than done on the way in: with
+        // hls.js the element has no duration yet when the manifest is parsed, and a
+        // preview that starts at zero opens on a title card every time.
         const seekIn = () => {
-            // A few percent in, past the title card and the empty stage before
-            // anyone walks on.
             if (element.duration && Number.isFinite(element.duration)) {
                 element.currentTime = element.duration * 0.08;
             }
         };
+
+        element.addEventListener('loadedmetadata', seekIn, { once: true });
 
         const play = () => {
             element
@@ -189,18 +193,32 @@ export function useHoverPreview(getUrl) {
                 .catch(() => teardown());
         };
 
-        if (element.canPlayType('application/vnd.apple.mpegurl')) {
-            element.src = url;
-            element.addEventListener('loadedmetadata', seekIn, { once: true });
-            element.addEventListener('canplay', play, { once: true });
-        } else {
-            const { default: Hls } = await import('hls.js');
+        /*
+         * hls.js first, native HLS only where hls.js cannot run - which in practice
+         * means Safari. Asking canPlayType first is the trap the player already
+         * documents: Chromium answers "maybe" to an HLS playlist while being unable
+         * to play one, so the preview would attach the playlist as a plain src. What
+         * that produced here was a picture that ran but could not be scrubbed - the
+         * element takes the seek and then snaps back to where it was.
+         */
+        const { default: Hls } = await import('hls.js');
 
-            if (!Hls.isSupported() || !mounted.value) {
+        if (!mounted.value) {
+            teardown();
+
+            return;
+        }
+
+        if (!Hls.isSupported()) {
+            if (!element.canPlayType('application/vnd.apple.mpegurl')) {
                 teardown();
+
                 return;
             }
 
+            element.src = url;
+            element.addEventListener('canplay', play, { once: true });
+        } else {
             hls = new Hls({
                 // Lowest rendition, and keep it there: a preview is a thumbnail
                 // that moves, not a viewing.
@@ -213,7 +231,6 @@ export function useHoverPreview(getUrl) {
 
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 hls.autoLevelCapping = 0;
-                seekIn();
                 play();
             });
 
@@ -229,6 +246,10 @@ export function useHoverPreview(getUrl) {
     };
 
     const enter = () => {
+        // Already up. Removing and re-adding the picture under a still cursor sends
+        // a fresh pointerenter, and without this that lands as a restart.
+        if (mounted.value) return;
+
         if (!previewAllowed() || !getUrl()) return;
 
         clearTimeout(hoverTimer);

@@ -6,6 +6,7 @@ use App\Models\Recording;
 use App\Models\RecordingProgress;
 use App\Models\Show;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -111,6 +112,13 @@ class RecordingController extends Controller
 
         return [
             'search' => $request->filled('search') ? trim((string) $request->get('search')) : null,
+            /*
+             * The archive is filed by run of the convention, not by calendar year. The
+             * year filter is still honoured for links handed out before the calendar
+             * existed and for the /archive/year/{year} redirect; it just no longer has
+             * a chip of its own unless something is filed under no run at all.
+             */
+            'event' => $request->filled('event') ? (string) $request->get('event') : null,
             'year' => $request->filled('year') ? (int) $request->get('year') : null,
             'source' => $request->filled('source') ? (string) $request->get('source') : null,
             'category' => $request->filled('category') ? (string) $request->get('category') : null,
@@ -121,6 +129,7 @@ class RecordingController extends Controller
     private function isFiltered(array $filters): bool
     {
         return $filters['search'] !== null
+            || $filters['event'] !== null
             || $filters['year'] !== null
             || $filters['source'] !== null
             || $filters['category'] !== null
@@ -135,16 +144,17 @@ class RecordingController extends Controller
     {
         $recordings = Recording::where('is_published', true)
             ->accessibleBy($user)
-            ->with(['source:id,name,slug', 'category:id,name,slug,sort_order', 'show:id,category_id', 'show.category:id,name,slug,sort_order'])
-            ->get(['id', 'date', 'source_id', 'category_id', 'show_id']);
+            ->with([
+                'source:id,name,slug',
+                'category:id,name,slug,sort_order',
+                'event:id,name,slug,starts_on',
+                'show:id,category_id,event_id',
+                'show.category:id,name,slug,sort_order',
+                'show.event:id,name,slug,starts_on',
+            ])
+            ->get(['id', 'date', 'source_id', 'category_id', 'event_id', 'show_id']);
 
-        $years = $recordings
-            ->map(fn (Recording $recording) => $recording->date?->year)
-            ->filter()
-            ->countBy()
-            ->map(fn ($count, $year) => ['year' => (int) $year, 'count' => $count])
-            ->sortByDesc('year')
-            ->values();
+        $collections = $this->collectionChips($recordings);
 
         $sources = $recordings
             ->filter(fn (Recording $recording) => $recording->source !== null)
@@ -173,10 +183,65 @@ class RecordingController extends Controller
             ->values();
 
         return [
-            'years' => $years,
+            'collections' => $collections,
             'sources' => $sources,
             'categories' => $categories,
         ];
+    }
+
+    /**
+     * The first chip row: one chip per run of the convention, newest first.
+     *
+     * A recording filed under no run - published before the calendar was set up, or
+     * a one-off that belongs to no run - still needs somewhere to be, so its year
+     * gets a chip of its own after the events. That is the only place a year chip
+     * survives, and it disappears the moment everything is filed.
+     *
+     * @param  Collection<int, Recording>  $recordings
+     * @return array<int, array<string, mixed>>
+     */
+    private function collectionChips(Collection $recordings): array
+    {
+        [$filed, $unfiled] = $recordings->partition(
+            fn (Recording $recording) => $recording->effectiveEvent() !== null,
+        );
+
+        $events = $filed
+            ->groupBy(fn (Recording $recording) => $recording->effectiveEvent()->slug)
+            ->map(function (Collection $group) {
+                $event = $group->first()->effectiveEvent();
+
+                return [
+                    'key' => 'event:'.$event->slug,
+                    'label' => $event->name,
+                    'count' => $group->count(),
+                    'event' => $event->slug,
+                    'year' => null,
+                    'sort' => $event->starts_on?->timestamp ?? 0,
+                ];
+            })
+            ->sortByDesc('sort')
+            ->values();
+
+        $years = $unfiled
+            ->map(fn (Recording $recording) => $recording->date?->year)
+            ->filter()
+            ->countBy()
+            ->map(fn (int $count, $year) => [
+                'key' => 'year:'.$year,
+                'label' => (string) $year,
+                'count' => $count,
+                'event' => null,
+                'year' => (int) $year,
+                'sort' => (int) $year,
+            ])
+            ->sortByDesc('sort')
+            ->values();
+
+        return $events->concat($years)
+            ->map(fn (array $chip) => Arr::except($chip, 'sort'))
+            ->values()
+            ->all();
     }
 
     /**
@@ -186,7 +251,11 @@ class RecordingController extends Controller
     private function gridProps(Request $request, $user, array $filters): array
     {
         $query = $this->publishedRecordings($user, $filters['search'])
-            ->with(['source:id,name,slug', 'category:id,name,slug', 'show:id,category_id', 'show.category:id,name,slug']);
+            ->with(['source:id,name,slug', 'category:id,name,slug', 'event:id,name,slug', 'show:id,category_id,event_id', 'show.category:id,name,slug', 'show.event:id,name,slug']);
+
+        if ($filters['event']) {
+            $query->inEvent($filters['event']);
+        }
 
         if ($filters['year']) {
             $query->whereYear('date', $filters['year']);
@@ -229,7 +298,7 @@ class RecordingController extends Controller
              * tiles with no views at the top of it.
              */
             'pending' => $page->currentPage() === 1 && $filters['sort'] === 'newest'
-                ? $this->pendingTiles($filters['search'], $filters['year'], $filters['source'], $filters['category'])
+                ? $this->pendingTiles($filters)
                 : [],
         ];
     }
@@ -359,7 +428,7 @@ class RecordingController extends Controller
         // about capture, which happens for every source unconditionally.
         $query = Show::where('announce_recording', true)
             ->where('status', 'ended')
-            ->with(['source:id,name,slug', 'category:id,name,slug'])
+            ->with(['source:id,name,slug', 'category:id,name,slug', 'event:id,name,slug'])
             ->whereDoesntHave('recordings', fn ($q) => $q->where('is_published', true));
 
         if ($search) {
@@ -379,13 +448,15 @@ class RecordingController extends Controller
      * Pending shows shaped like recordings, so the same tile renders both.
      * `is_pending` is what the tile keys off to dim itself and drop its link.
      */
-    private function pendingTiles(?string $search, ?int $year = null, ?string $source = null, ?string $category = null): Collection
+    private function pendingTiles(array $filters): Collection
     {
-        return $this->pendingShows($search)
-            ->filter(fn (Show $show) => $year === null
-                || ($show->actual_end ?? $show->scheduled_end)?->year === $year)
-            ->filter(fn (Show $show) => $source === null || $show->source?->slug === $source)
-            ->filter(fn (Show $show) => $category === null || $show->category?->slug === $category)
+        return $this->pendingShows($filters['search'])
+            ->filter(fn (Show $show) => $filters['event'] === null
+                || $show->event?->slug === $filters['event'])
+            ->filter(fn (Show $show) => $filters['year'] === null
+                || ($show->actual_end ?? $show->scheduled_end)?->year === $filters['year'])
+            ->filter(fn (Show $show) => $filters['source'] === null || $show->source?->slug === $filters['source'])
+            ->filter(fn (Show $show) => $filters['category'] === null || $show->category?->slug === $filters['category'])
             // Dates go out as ISO strings, matching how the models serialise theirs, so
             // the merged list sorts on one comparable type.
             ->map(fn (Show $show) => [
@@ -432,9 +503,6 @@ class RecordingController extends Controller
             // Stretches the player may offer a way past. Sorted and non-overlapping,
             // so the player can walk them without deciding anything.
             'skips' => $recording->skips(),
-            // Whether this viewer may mark them, which is what puts the editor on the
-            // page. Marking an intermission happens while watching one.
-            'canEditSkips' => $user ? $user->can('update', $recording) : false,
             'category' => $recording->effectiveCategory()?->only(['name', 'slug']),
             'upNext' => $upNext,
             // Where this viewer left off, so the player can offer to resume. Zero

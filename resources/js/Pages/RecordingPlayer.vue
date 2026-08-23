@@ -144,54 +144,6 @@
                         </button>
                     </div>
 
-                    <!-- Skip points, for whoever may set them. Here rather than only in
-                         /manage because the moment an intermission is worth marking is
-                         while it is on screen: the playhead is already in it. -->
-                    <div v-if="canEditSkips" class="skip-panel">
-                        <div class="flex items-center justify-between gap-3">
-                            <div>
-                                <p class="text-sm font-semibold text-white">Skip points</p>
-                                <p class="text-xs text-primary-400">
-                                    {{ skips.length ? `${skips.length} marked` : 'None marked' }} · viewers are offered
-                                    a button, never skipped for.
-                                </p>
-                            </div>
-
-                            <button type="button" class="skip-panel-toggle" @click="toggleSkipEditor">
-                                {{ editingSkips ? 'Close' : 'Edit' }}
-                            </button>
-                        </div>
-
-                        <template v-if="editingSkips">
-                            <SkipEditor
-                                v-model="skipDraft"
-                                :duration="recording.duration ?? 0"
-                                :current-time="currentTime"
-                                @seek="seekTo"
-                            />
-
-                            <div class="flex items-center gap-3">
-                                <button
-                                    type="button"
-                                    class="skip-save"
-                                    :disabled="savingSkips || !skipsDirty"
-                                    @click="saveSkips"
-                                >
-                                    {{ savingSkips ? 'Saving...' : 'Save skip points' }}
-                                </button>
-                                <button
-                                    v-if="skipsDirty"
-                                    type="button"
-                                    class="skip-panel-toggle"
-                                    @click="resetSkips"
-                                >
-                                    Discard
-                                </button>
-                                <p v-else-if="skipsSaved" class="text-xs text-primary-300">Saved.</p>
-                            </div>
-                        </template>
-                    </div>
-
                     <!-- Navigation -->
                     <div class="mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                         <Link
@@ -247,7 +199,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import VideoPlayer from '@/Components/Player/VideoPlayer.vue';
 import RecordingRow from '@/Components/Recordings/RecordingRow.vue';
-import SkipEditor from '@/Components/Recordings/SkipEditor.vue';
 import TilePlaceholder from '@/Components/TilePlaceholder.vue';
 import FaVideoSlashIcon from '@/Components/Icons/FaVideoSlashIcon.vue';
 import FaArrowLeftIcon from '@/Components/Icons/FaArrowLeftIcon.vue';
@@ -280,10 +231,6 @@ const props = defineProps({
     skips: {
         type: Array,
         default: () => []
-    },
-    canEditSkips: {
-        type: Boolean,
-        default: false
     }
 });
 
@@ -392,47 +339,6 @@ const skipCurrent = () => {
     seekTo(activeSkip.value.end);
 };
 
-const editingSkips = ref(false);
-const savingSkips = ref(false);
-const skipsSaved = ref(false);
-const skipDraft = ref(props.skips.map((segment) => ({ ...segment })));
-
-const skipsDirty = computed(() => JSON.stringify(skipDraft.value) !== JSON.stringify(props.skips));
-
-const resetSkips = () => {
-    skipDraft.value = props.skips.map((segment) => ({ ...segment }));
-};
-
-const toggleSkipEditor = () => {
-    editingSkips.value = !editingSkips.value;
-
-    if (editingSkips.value) resetSkips();
-};
-
-// The server sorts and merges, so the saved set is read back rather than assumed.
-watch(() => props.skips, resetSkips);
-
-const saveSkips = () => {
-    savingSkips.value = true;
-    skipsSaved.value = false;
-
-    router.put(
-        route('manage.recordings.skips', props.recording.id),
-        { skip_segments: skipDraft.value },
-        {
-            preserveScroll: true,
-            preserveState: true,
-            only: ['skips'],
-            onSuccess: () => {
-                skipsSaved.value = true;
-            },
-            onFinish: () => {
-                savingSkips.value = false;
-            },
-        }
-    );
-};
-
 /*
  * Playback position. Signed-in viewers only, and written no more than once every
  * POST_EVERY seconds: the player fires time-update several times a second, and
@@ -444,6 +350,8 @@ const page = usePage();
 const canSaveProgress = computed(() => Boolean(page.props.auth?.user));
 
 const currentTime = ref(props.resumeAt);
+// Whether this visit has played past where it resumed. See handleEnded.
+const watched = ref(false);
 let lastSaved = props.resumeAt;
 
 const saveProgress = () => {
@@ -461,6 +369,8 @@ const saveProgress = () => {
 };
 
 const handleTimeUpdate = (time) => {
+    if (time > props.resumeAt + 2) watched.value = true;
+
     currentTime.value = time;
 
     if (canSaveProgress.value && Math.abs(time - lastSaved) >= POST_EVERY) {
@@ -487,6 +397,13 @@ const handleEnded = () => {
     lastSaved = 0;
     currentTime.value = props.recording.duration ?? currentTime.value;
     saveProgress();
+
+    // Only roll on if this visit actually played something. A stored position past
+    // the end of the media - which is what a stale `duration` on the recording
+    // produces - otherwise resumes at the end, ends on arrival and takes the viewer
+    // to the next recording before they have seen a frame of this one.
+    if (!watched.value) return;
+
     startAutoplay();
 };
 
@@ -623,25 +540,10 @@ const formatViews = (views) => {
     transform: translateY(6px);
 }
 
-.skip-panel {
-    @apply mt-4 flex flex-col gap-3 rounded-xl border border-white/10 bg-primary-800/40 p-4;
-}
 
-.skip-panel-toggle {
-    @apply rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold text-primary-100 transition-colors hover:bg-white/20 hover:text-white;
-}
 
-.skip-save {
-    @apply rounded-lg bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition-colors;
-}
 
-.skip-save:hover:not(:disabled) {
-    @apply bg-primary-400;
-}
 
-.skip-save:disabled {
-    @apply cursor-not-allowed opacity-50;
-}
 
 .autoplay-card {
     @apply absolute inset-0 z-20 flex items-center justify-center overflow-hidden bg-black/80 px-6 backdrop-blur-sm;

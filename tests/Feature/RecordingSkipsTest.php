@@ -82,35 +82,37 @@ class RecordingSkipsTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('RecordingPlayer')
                 ->where('skips.0.start', 120)
-                ->where('skips.0.label', 'Intermission')
-                // An ordinary viewer cannot mark them, so the editor never renders.
-                ->where('canEditSkips', false));
+                ->where('skips.0.label', 'Intermission'));
     }
 
+    /**
+     * Marking them is an operator's job and lives in /manage, so the form is the
+     * only way in and the recording policy is the only thing that opens it.
+     */
     public function test_marking_them_needs_stream_manage(): void
     {
         $recording = $this->recording();
 
         $this->actingAs($this->viewer)
-            ->put(route('manage.recordings.skips', $recording), [
+            ->put(route('manage.recordings.update', $recording), $this->payload($recording, [
                 'skip_segments' => [['start' => 10, 'end' => 20, 'label' => null]],
-            ])
+            ]))
             ->assertForbidden();
 
         $this->assertNull($recording->fresh()->skip_segments);
     }
 
-    public function test_an_operator_marks_them_from_the_player_page(): void
+    public function test_an_operator_marks_them_on_the_recording_form(): void
     {
         $recording = $this->recording();
 
         $this->actingAs($this->admin)
-            ->put(route('manage.recordings.skips', $recording), [
+            ->put(route('manage.recordings.update', $recording), $this->payload($recording, [
                 'skip_segments' => [
                     ['start' => 400, 'end' => 500, 'label' => 'Changeover'],
                     ['start' => 60, 'end' => 90, 'label' => null],
                 ],
-            ])
+            ]))
             ->assertRedirect();
 
         $this->assertSame([
@@ -126,9 +128,45 @@ class RecordingSkipsTest extends TestCase
         ]);
 
         $this->actingAs($this->admin)
-            ->put(route('manage.recordings.skips', $recording), ['skip_segments' => []])
+            ->put(route('manage.recordings.update', $recording), $this->payload($recording, [
+                'skip_segments' => [],
+            ]))
             ->assertRedirect();
 
         $this->assertSame([], $recording->fresh()->skips());
+    }
+
+    public function test_the_form_carries_the_skips(): void
+    {
+        $recording = $this->recording([
+            'skip_segments' => [['start' => 60, 'end' => 90, 'label' => 'Wait']],
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.edit', $recording))
+            ->assertSuccessful()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Manage/Recordings/Form')
+                ->where('recording.skip_segments.0.label', 'Wait'));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function payload(Recording $recording, array $overrides = []): array
+    {
+        return array_merge([
+            'show_id' => '',
+            'category_id' => '',
+            'title' => $recording->title,
+            'slug' => $recording->slug,
+            'description' => '',
+            'date' => $recording->date->format('Y-m-d\TH:i'),
+            'duration' => $recording->duration,
+            'm3u8_url' => $recording->m3u8_url,
+            'thumbnail_path' => '',
+            'is_published' => true,
+            'required_roles' => [],
+        ], $overrides);
     }
 }

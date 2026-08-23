@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Manage;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Manage\ShowRequest;
 use App\Models\Category;
+use App\Models\Event;
 use App\Models\Recording;
 use App\Models\Show;
 use App\Models\Source;
@@ -31,7 +32,7 @@ class ShowController extends Controller
 
         // Archiving widens the result set rather than narrowing it, so the exclusion sits
         // on the base query and the filter's job is to leave it off.
-        $query = Show::query()->with(['source', 'category']);
+        $query = Show::query()->with(['source', 'event', 'category']);
 
         if (! $request->boolean('filter.show_archived')) {
             $query->notArchived();
@@ -44,6 +45,7 @@ class ShowController extends Controller
                 Column::text('title', 'Title')->searchable()->sortable(),
                 Column::badge('source', 'Source')->searchable('source.name'),
                 Column::badge('category', 'Category')->toggleable(),
+                Column::badge('event', 'Event')->toggleable(),
                 Column::badge('status', 'Status'),
                 Column::datetime('scheduled_start', 'Scheduled')->sortable(),
                 Column::datetime('scheduled_end', 'Ends')->sortable()->toggleable(),
@@ -81,6 +83,9 @@ class ShowController extends Controller
                 Filter::select('category', 'Category')
                     ->options(Category::ordered()->pluck('name', 'id')->all())
                     ->apply(fn (Builder $query, string $value) => $query->where('category_id', $value)),
+                Filter::select('event', 'Event')
+                    ->options(Event::ordered()->pluck('name', 'id')->all())
+                    ->apply(fn (Builder $query, string $value) => $query->where('event_id', $value)),
                 Filter::boolean('today', 'Today')
                     ->apply(fn (Builder $query) => $query->today()),
                 Filter::boolean('upcoming', 'Upcoming')
@@ -110,6 +115,7 @@ class ShowController extends Controller
                 'title' => '',
                 'slug' => '',
                 'source_id' => Source::ordered()->value('id'),
+                'event_id' => Event::current()?->id,
                 'category_id' => null,
                 'description' => '',
                 'scheduled_start' => now()->format('Y-m-d\TH:i'),
@@ -146,6 +152,7 @@ class ShowController extends Controller
                 'title' => $show->title,
                 'slug' => $show->slug,
                 'source_id' => $show->source_id,
+                'event_id' => $show->event_id,
                 'category_id' => $show->category_id,
                 'description' => $show->description,
                 // datetime-local wants minutes and no timezone suffix.
@@ -420,6 +427,14 @@ class ShowController extends Controller
                 'options' => $this->categoryOptions(),
             ],
             [
+                'key' => 'event',
+                'field' => 'event_id',
+                'type' => 'select',
+                'label' => 'Event',
+                'value' => $show->event_id,
+                'options' => $this->eventOptions(),
+            ],
+            [
                 'key' => 'scheduled_start',
                 'field' => 'scheduled_start',
                 'type' => 'datetime',
@@ -451,6 +466,7 @@ class ShowController extends Controller
         $validated = $request->validate([
             'source_id' => ['sometimes', 'integer', 'exists:sources,id'],
             'category_id' => ['sometimes', 'nullable', 'integer', 'exists:categories,id'],
+            'event_id' => ['sometimes', 'nullable', 'integer', 'exists:events,id'],
             'scheduled_start' => ['sometimes', 'required', 'date'],
             'scheduled_end' => ['sometimes', 'required', 'date'],
         ]);
@@ -523,6 +539,24 @@ class ShowController extends Controller
         );
     }
 
+    /**
+     * Event options for the inline select and the form. An empty first entry: a show
+     * that belongs to no run is a valid thing - a test stream, a one-off - and
+     * clearing one has to be possible.
+     *
+     * @return array<int, array{value: int|string, label: string}>
+     */
+    private function eventOptions(): array
+    {
+        return array_merge(
+            [['value' => '', 'label' => 'No event']],
+            Event::ordered()
+                ->get(['id', 'name'])
+                ->map(fn (Event $event) => ['value' => $event->id, 'label' => $event->name])
+                ->all(),
+        );
+    }
+
     private function row(Show $show): array
     {
         return [
@@ -533,6 +567,9 @@ class ShowController extends Controller
                 : null,
             'category' => $show->category
                 ? Status::make($show->category->name, Status::IDLE)
+                : null,
+            'event' => $show->event
+                ? Status::make($show->event->name, Status::IDLE)
                 : null,
             'status' => Status::show($show->status),
             'scheduled_start' => $show->scheduled_start?->format('M j, Y H:i'),
@@ -715,6 +752,35 @@ class ShowController extends Controller
     }
 
     /**
+     * File a batch of shows under a run. Their recordings follow, unless a recording
+     * carries an event of its own.
+     */
+    public function bulkEvent(Request $request): RedirectResponse
+    {
+        $this->authorize('create', Show::class);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['integer'],
+            'event_id' => ['nullable', 'integer', 'exists:events,id'],
+        ]);
+
+        $eventId = $validated['event_id'] ?? null;
+        $count = Show::whereIn('id', $validated['ids'])->update(['event_id' => $eventId]);
+
+        $label = $eventId ? Event::find($eventId)?->name : null;
+
+        Toast::flashSuccess(
+            'Event set',
+            $label
+                ? "{$count} show(s) are now part of {$label}."
+                : "{$count} show(s) are no longer part of any event.",
+        );
+
+        return back();
+    }
+
+    /**
      * @return array<int, Action>
      */
     private function bulkActions(): array
@@ -741,6 +807,25 @@ class ShowController extends Controller
                     'options' => Category::ordered()
                         ->get()
                         ->map(fn (Category $category) => ['value' => (string) $category->id, 'label' => $category->name])
+                        ->all(),
+                ]]),
+            Action::post('bulk_event', 'Set Event', route('manage.shows.bulk.event'))
+                ->icon('calendar')
+                ->tone(Status::IDLE)
+                ->confirm(
+                    'Set event on selected shows',
+                    'Their recordings follow, unless a recording is filed under an event of its own.',
+                    'Set event',
+                )
+                ->fields([[
+                    'key' => 'event_id',
+                    'label' => 'Event',
+                    'type' => 'select',
+                    'required' => false,
+                    'helper' => 'Leave empty to unfile them.',
+                    'options' => Event::ordered()
+                        ->get()
+                        ->map(fn (Event $event) => ['value' => (string) $event->id, 'label' => $event->name])
                         ->all(),
                 ]]),
             Action::post('bulk_cancel', 'Cancel Shows', route('manage.shows.bulk.cancel'))
@@ -799,6 +884,7 @@ class ShowController extends Controller
                 ->map(fn (Source $source) => ['value' => $source->id, 'label' => $source->name])
                 ->all(),
             'categories' => $this->categoryOptions(),
+            'events' => $this->eventOptions(),
             'statuses' => array_map(
                 fn (string $status) => ['value' => $status, 'label' => ucfirst($status)],
                 ShowRequest::STATUSES,

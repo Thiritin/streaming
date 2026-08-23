@@ -111,7 +111,8 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      `useHoverPreview` allows exactly one preview on the page at a time and refuses on
      touch, reduced motion and save-data. Never let a grid open more than one. Once a
      preview is up the tile scrubs: the cursor's x position picks one of six chunks
-     and the bar under it shows them. Chunks and not a free seek, because every
+     and the bar under it shows them. Rows in the watch page's rail preview the same
+     way, through the same composable and so under the same one-at-a-time rule. Chunks and not a free seek, because every
      distinct position is a segment fetched off the edge.
    - Skip points are what a viewer is offered a way past - an intermission, a wait
      before the doors. Ranges in `recordings.skip_segments`, seconds from the start,
@@ -119,10 +120,10 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      (sorted, merged, clamped to the duration), never off the column. They gate and
      cut nothing: the player shows a button while the playhead is inside one and only
      a press moves it, so somebody who wants to watch the intermission still can.
-     Marked with `SkipEditor`, which is on the watch page for anyone who may update
-     the recording (the moment worth marking is while it is on screen) and in the
-     recording form in `/manage`. The watch page posts the whole set to
-     `PUT /manage/recordings/{recording}/skips`.
+     Marked in `/manage` > Recordings > the recording's form and nowhere else, with
+     `SkipEditor` beside a player of its own: park the playhead, press in, park it
+     again, press out (I and O, N for a new one, Del to drop one, , and . to nudge).
+     They save with the rest of the form.
    - Playback position lives in `recording_progress`, one row per viewer per recording,
      written by the player every 15s and on the way out. Signed-in only: there is
      nothing to key a guest's row on, and Continue watching is assembled server-side

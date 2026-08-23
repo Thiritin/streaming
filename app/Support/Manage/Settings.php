@@ -145,29 +145,40 @@ final class Settings
         ], $groups);
 
         /*
-         * Categories are a settings area too, but a set of rows rather than a set of
-         * knobs, so the registry cannot generate them. They join the menu by hand and
-         * render their own page inside the same shell.
+         * Events and categories are settings areas too, but sets of rows rather than
+         * sets of knobs, so the registry cannot generate them. They join the menu by
+         * hand and render their own pages inside the same shell.
+         *
+         * Events first: the calendar decides whether the front page is a programme or
+         * the archive, so it is the more consequential of the two.
          */
-        $categories = [
-            'key' => 'categories',
-            'label' => 'Categories',
-            'blurb' => 'Programme labels',
-            'action' => null,
-            'icon' => 'tags',
-            'url' => route('manage.categories.index'),
+        $rowPanes = [
+            [
+                'key' => 'events',
+                'label' => 'Events',
+                'blurb' => 'Convention dates',
+                'action' => null,
+                'icon' => 'calendar',
+                'url' => route('manage.events.index'),
+            ],
+            [
+                'key' => 'categories',
+                'label' => 'Categories',
+                'blurb' => 'Programme labels',
+                'action' => null,
+                'icon' => 'tags',
+                'url' => route('manage.categories.index'),
+            ],
         ];
 
         // Ahead of the reset pane, which throws every saved value away and stays last.
         $reset = array_search('reset', array_column($panes, 'action'), true);
 
         if ($reset === false) {
-            $panes[] = $categories;
-
-            return $panes;
+            return [...$panes, ...$rowPanes];
         }
 
-        array_splice($panes, $reset, 0, [$categories]);
+        array_splice($panes, $reset, 0, $rowPanes);
 
         return $panes;
     }

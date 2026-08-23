@@ -9,7 +9,7 @@
           <h1 class="text-3xl font-bold text-white tracking-tight">Past streams</h1>
           <p class="text-primary-300 text-sm">
             {{ totalRecordings }} {{ totalRecordings === 1 ? 'recording' : 'recordings' }} across
-            {{ chips.years.length }} {{ chips.years.length === 1 ? 'year' : 'years' }}.
+            {{ chips.collections.length }} {{ chips.collections.length === 1 ? 'event' : 'events' }}.
           </p>
         </div>
 
@@ -116,10 +116,10 @@ const props = defineProps({
   // Shows that ended but have not been published yet. Page one only.
   pending: { type: Array, default: () => [] },
   pagination: { type: Object, default: () => ({ page: 1, lastPage: 1, total: 0 }) },
-  chips: { type: Object, default: () => ({ years: [], sources: [], categories: [] }) },
+  chips: { type: Object, default: () => ({ collections: [], sources: [], categories: [] }) },
   filters: {
     type: Object,
-    default: () => ({ search: null, year: null, source: null, category: null, sort: 'newest' }),
+    default: () => ({ search: null, event: null, year: null, source: null, category: null, sort: 'newest' }),
   },
   totalRecordings: { type: Number, default: 0 },
 });
@@ -137,7 +137,13 @@ watch(
 
 const isFiltered = computed(
   () =>
-    Boolean(props.filters.search || props.filters.year || props.filters.source || props.filters.category)
+    Boolean(
+      props.filters.search
+      || props.filters.event
+      || props.filters.year
+      || props.filters.source
+      || props.filters.category
+    )
     || props.filters.sort !== 'newest'
 );
 
@@ -161,8 +167,11 @@ const resultsLabel = computed(() => {
 
   const source = props.chips.sources.find((entry) => entry.slug === props.filters.source);
   const category = props.chips.categories.find((entry) => entry.slug === props.filters.category);
+  const collection = props.chips.collections.find((entry) =>
+    props.filters.event ? entry.event === props.filters.event : entry.year === props.filters.year
+  );
 
-  return [total, category?.name ?? noun, props.filters.year, source?.name].filter(Boolean).join(' ');
+  return [total, category?.name ?? noun, collection?.label, source?.name].filter(Boolean).join(' ');
 });
 
 // Every control funnels through here, so a chip does not drop the search and a
@@ -170,6 +179,7 @@ const resultsLabel = computed(() => {
 const applyFilters = (changes) => {
   const next = {
     search: searchQuery.value || null,
+    event: props.filters.event,
     year: props.filters.year,
     source: props.filters.source,
     category: props.filters.category,
@@ -179,6 +189,7 @@ const applyFilters = (changes) => {
 
   const query = {};
   if (next.search) query.search = next.search;
+  if (next.event) query.event = next.event;
   if (next.year) query.year = next.year;
   if (next.source) query.source = next.source;
   if (next.category) query.category = next.category;

@@ -30,6 +30,8 @@ class DatabaseSeeder extends Seeder
                 LocalDevelopmentSourceSeeder::class,
                 ShowSeeder::class,
                 RecordingSeeder::class,
+                // After both: it files what they made under the two runs it creates.
+                EventSeeder::class,
                 LocalStreamActivitySeeder::class,
             ]);
         }

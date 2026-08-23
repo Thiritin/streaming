@@ -1,22 +1,50 @@
 <template>
-  <Link :href="route('recordings.show', recording.id)" class="row group" prefetch>
-    <div class="row-art">
+  <Link
+    :href="route('recordings.show', recording.id)"
+    class="row group"
+    prefetch
+    @pointerenter="onPointerEnter"
+    @pointerleave="leave"
+    @focusin="onPointerEnter"
+    @focusout="leave"
+  >
+    <div ref="art" class="row-art" @pointermove="onScrub">
       <img
         v-if="recording.thumbnail_url && !thumbnailError"
         :src="recording.thumbnail_url"
         :alt="recording.title"
         loading="lazy"
         decoding="async"
-        class="h-full w-full object-cover transition-transform duration-(--dur-slow) ease-(--ease-out-expo) group-hover:scale-105"
+        class="h-full w-full object-cover transition-[transform,opacity] duration-(--dur-slow) ease-(--ease-out-expo) group-hover:scale-105"
+        :class="previewPlaying ? 'opacity-0' : 'opacity-100'"
         @error="thumbnailError = true"
       />
       <TilePlaceholder v-else />
 
+      <!-- Same hover preview as the grid, and the same one-at-a-time rule: a rail
+           beside a playing recording is exactly where a second stream would hurt. -->
+      <video
+        v-if="previewMounted"
+        ref="previewVideo"
+        class="absolute inset-0 h-full w-full object-cover transition-opacity duration-(--dur-base)"
+        :class="previewPlaying ? 'opacity-100' : 'opacity-0'"
+        muted
+        playsinline
+        disablepictureinpicture
+        aria-hidden="true"
+      />
+
       <span v-if="recording.duration" class="row-duration tabular-nums">
-        {{ formatDuration(recording.duration) }}
+        {{ previewPlaying ? formatDuration(Math.floor(previewTime)) : formatDuration(recording.duration) }}
       </span>
 
-      <span v-if="fraction > 0" class="row-progress" aria-hidden="true">
+      <span v-if="previewPlaying" class="row-scrub" aria-hidden="true">
+        <span v-for="index in previewChunks" :key="index" class="row-scrub-chunk">
+          <span class="row-scrub-fill" :style="{ transform: `scaleX(${previewChunkFill(index - 1)})` }" />
+        </span>
+      </span>
+
+      <span v-else-if="fraction > 0" class="row-progress" aria-hidden="true">
         <span class="row-progress-fill" :style="{ width: `${Math.min(100, fraction * 100)}%` }" />
       </span>
     </div>
@@ -43,12 +71,43 @@
 import { Link } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import TilePlaceholder from '../TilePlaceholder.vue';
+import { useHoverPreview } from '@/composables/useHoverPreview';
 
 const props = defineProps({
   recording: { type: Object, required: true },
+  /** Off where a rail is being dragged sideways under the cursor. */
+  preview: { type: Boolean, default: true },
 });
 
 const thumbnailError = ref(false);
+const art = ref(null);
+
+const {
+  mounted: previewMounted,
+  playing: previewPlaying,
+  video: previewVideo,
+  chunks: previewChunks,
+  chunkFill: previewChunkFill,
+  time: previewTime,
+  scrubTo,
+  enter,
+  leave,
+} = useHoverPreview(() => (props.preview ? props.recording.preview_url : null));
+
+const onPointerEnter = (event) => {
+  if (event?.pointerType === 'touch') return;
+
+  enter();
+};
+
+const onScrub = (event) => {
+  if (!previewPlaying.value || event.pointerType === 'touch') return;
+
+  const rect = art.value?.getBoundingClientRect();
+  if (!rect?.width) return;
+
+  scrubTo((event.clientX - rect.left) / rect.width);
+};
 
 const fraction = computed(() => props.recording.progress?.fraction ?? 0);
 
@@ -115,6 +174,20 @@ const formatAge = (dateString) => {
 
 .row-progress-fill {
   @apply block h-full bg-primary-400;
+}
+
+.row-scrub {
+  @apply absolute inset-x-1 bottom-1 flex h-[3px] gap-[2px];
+}
+
+.row-scrub-chunk {
+  @apply relative block h-full flex-1 overflow-hidden rounded-full bg-white/30;
+}
+
+.row-scrub-fill {
+  @apply absolute inset-0 block rounded-full bg-primary-300;
+  transform-origin: left center;
+  transition: transform 120ms linear;
 }
 
 .line-clamp-2 {

@@ -5,6 +5,7 @@ use App\Http\Controllers\Manage\DashboardController;
 use App\Http\Controllers\Manage\DisplayScreenController;
 use App\Http\Controllers\Manage\EmbedKeyController;
 use App\Http\Controllers\Manage\EmoteController;
+use App\Http\Controllers\Manage\EventController;
 use App\Http\Controllers\Manage\FeedbackController;
 use App\Http\Controllers\Manage\PretalxConnectionController;
 use App\Http\Controllers\Manage\PretalxImportController;
@@ -137,6 +138,7 @@ Route::patch('shows/{show}/recording-plan', [RecordingPlanController::class, 'up
     ->name('shows.recording-plan');
 
 Route::post('shows/bulk/category', [ShowController::class, 'bulkCategory'])->name('shows.bulk.category');
+Route::post('shows/bulk/event', [ShowController::class, 'bulkEvent'])->name('shows.bulk.event');
 Route::post('shows/bulk/cancel', [ShowController::class, 'bulkCancel'])->name('shows.bulk.cancel');
 Route::post('shows/bulk/archive', [ShowController::class, 'bulkArchive'])->name('shows.bulk.archive');
 Route::post('shows/bulk/unarchive', [ShowController::class, 'bulkUnarchive'])->name('shows.bulk.unarchive');
@@ -235,11 +237,10 @@ Route::get('recordings/plan', [RecordingPlanController::class, 'index'])->name('
 Route::post('recordings/storage/rescan', [RecordingController::class, 'rescanStorage'])
     ->name('recordings.storage.rescan');
 Route::post('recordings/bulk/category', [RecordingController::class, 'bulkCategory'])->name('recordings.bulk.category');
+Route::post('recordings/bulk/event', [RecordingController::class, 'bulkEvent'])->name('recordings.bulk.event');
 Route::post('recordings/bulk/thumbnail', [RecordingController::class, 'bulkRegenerateThumbnails'])
     ->name('recordings.bulk.thumbnail');
 Route::delete('recordings/bulk', [RecordingController::class, 'bulkDestroy'])->name('recordings.bulk.destroy');
-Route::put('recordings/{recording}/skips', [RecordingController::class, 'updateSkips'])
-    ->name('recordings.skips');
 Route::post('recordings/{recording}/thumbnail', [RecordingController::class, 'regenerateThumbnail'])
     ->name('recordings.thumbnail');
 
@@ -279,6 +280,19 @@ Route::post('settings/categories', [CategoryController::class, 'store'])->name('
 Route::get('settings/categories/{category}', [CategoryController::class, 'edit'])->name('categories.edit');
 Route::put('settings/categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
 Route::delete('settings/categories/{category}', [CategoryController::class, 'destroy'])->name('categories.destroy');
+
+/*
+ * Events: the runs of the convention and the days they cover. Same placement as
+ * categories - a settings area whose contents are rows - and declared before the
+ * generated panes for the same reason.
+ */
+Route::get('settings/events', [EventController::class, 'index'])->name('events.index');
+Route::get('settings/events/create', [EventController::class, 'create'])->name('events.create');
+Route::post('settings/events', [EventController::class, 'store'])->name('events.store');
+Route::get('settings/events/{event}', [EventController::class, 'edit'])->name('events.edit');
+Route::put('settings/events/{event}', [EventController::class, 'update'])->name('events.update');
+Route::post('settings/events/{event}/match', [EventController::class, 'match'])->name('events.match');
+Route::delete('settings/events/{event}', [EventController::class, 'destroy'])->name('events.destroy');
 
 Route::post('settings/pretalx/test', PretalxConnectionController::class)->name('settings.pretalx.test');
 Route::get('settings', [SettingsController::class, 'edit'])->name('settings');

@@ -4,9 +4,34 @@
 
     <AnnouncementBanner :announcement="announcement" />
 
+    <!-- Between runs of the convention there is nothing to be on next, so the page
+         stops offering a programme and becomes the archive. Anything on air keeps
+         the programme regardless; the server decides, and it never hides a stream. -->
+    <div v-if="archiveMode" class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-16 pb-10">
+      <div class="max-w-2xl space-y-3">
+        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-primary-300">Archive</p>
+        <h1 class="text-3xl sm:text-4xl font-bold text-white tracking-tight">
+          {{ leadEvent ? `${leadEvent.name} has ended` : 'Nothing on air right now' }}
+        </h1>
+        <p class="text-primary-300">
+          <template v-if="leadEvent">Everything that was streamed is here to watch back.</template>
+          <template v-else>Past streams are below.</template>
+          <template v-if="nextEvent">
+            {{ nextEvent.name }} runs {{ nextEvent.dates }}{{ nextEventCountdown }}.
+          </template>
+        </p>
+        <Link
+          :href="route('recordings.index')"
+          class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary-500 hover:bg-primary-400 text-white text-sm font-semibold transition-colors"
+        >
+          Browse the archive
+        </Link>
+      </div>
+    </div>
+
     <!-- Featured channel: the primary channel owns this slot, live or not -->
     <StageHero
-      v-if="featured"
+      v-else-if="featured"
       :show="featured"
       :source-status="featuredSourceStatus"
       :side-shows="sideShows"
@@ -31,7 +56,7 @@
 
     <!-- Filters: these replace the old stacked section headings, so a quiet day
          still reads as one deliberate grid instead of three empty sections. -->
-    <div class="sticky top-14 z-30 bg-primary-900 border-b border-primary-800/50">
+    <div v-if="!archiveMode" class="sticky top-14 z-30 bg-primary-900 border-b border-primary-800/50">
       <div
         role="tablist"
         aria-label="Filter shows"
@@ -58,6 +83,25 @@
          filter chips narrow which sections render; they no longer flatten
          three different kinds of tile into one undifferentiated grid. -->
     <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 py-6 space-y-10">
+      <!-- Archive mode only: with no programme to lead with, what people watched
+           most is the most useful thing to put first. -->
+      <section v-if="archiveMode && popularRecordings.length">
+        <div class="flex items-center gap-3 pb-4">
+          <h2 class="text-sm font-semibold uppercase tracking-[0.12em] text-primary-300">Most watched</h2>
+          <span class="h-px flex-1 bg-primary-800/60" aria-hidden="true" />
+        </div>
+
+        <TransitionGroup tag="div" name="tile" appear class="stream-grid">
+          <RecordingTile
+            v-for="(recording, index) in popularRecordings"
+            :key="`popular-${recording.id}`"
+            :recording="recording"
+            :priority="index < 4"
+            :style="{ '--stagger': Math.min(index, 12) }"
+          />
+        </TransitionGroup>
+      </section>
+
       <section v-for="group in visibleGroups" :key="group.key">
         <div class="flex items-center gap-3 pb-4">
           <span v-if="group.key === 'live'" class="w-2 h-2 rounded-full bg-red-500" aria-hidden="true" />
@@ -95,15 +139,16 @@
       </div>
     </div>
 
-    <!-- Older than six months: past events, kept out of the grid above so the
-         current event's shows are not buried under previous years. -->
+    <!-- Everything from other runs, kept out of the grid above so the run the page
+         is leading with is not buried under previous years. -->
     <div v-if="showOlderSection" class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pb-14">
       <div class="border-t border-primary-800/50 pt-8">
         <div class="flex items-center justify-between pb-4">
           <div class="space-y-1">
             <h2 class="text-sm font-semibold uppercase tracking-[0.12em] text-primary-300">From the archive</h2>
             <p class="text-sm text-primary-400">
-              {{ olderTotal }} {{ olderTotal === 1 ? 'show' : 'shows' }} older than six months.
+              {{ olderTotal }} {{ olderTotal === 1 ? 'show' : 'shows' }}
+              {{ leadEvent ? 'from earlier events' : 'older than six months' }}.
             </p>
           </div>
           <Link
@@ -145,9 +190,22 @@ defineOptions({
 const props = defineProps({
   /** The banner from /manage > Settings > Announcement, or null when there is none. */
   announcement: { type: Object, default: null },
+  /*
+   * Whether the page is a programme or the archive. Decided on the server from the
+   * convention calendar: between runs there is nothing to be on next. Anything on
+   * air keeps the programme regardless, so this never hides a live stream.
+   */
+  archiveMode: { type: Boolean, default: false },
+  /** The run happening now, or null. */
+  event: { type: Object, default: null },
+  /** The run the archive slice below is a slice of: the current one, or the last to finish. */
+  leadEvent: { type: Object, default: null },
+  /** The next run that has not started, or null when nothing further is scheduled. */
+  nextEvent: { type: Object, default: null },
   liveShows: { type: Array, default: () => [] },
   startingSoonShows: { type: Array, default: () => [] },
   upcomingShows: { type: Array, default: () => [] },
+  popularRecordings: { type: Array, default: () => [] },
   archiveRecordings: { type: Array, default: () => [] },
   archiveTotal: { type: Number, default: 0 },
   // Older than six months: rendered in their own section under the grid.
@@ -166,6 +224,26 @@ const featured = ref(props.featured ? { ...props.featured } : null);
 const featuredSourceStatus = ref(props.featured?.source_status ?? null);
 
 const activeFilter = ref('all');
+
+/*
+ * The server decides the mode, but Echo can put a show on air without a page load,
+ * and an archive page that ignores a stream starting is the one failure this must
+ * not have. Same rule as the server's: anything on air wins.
+ */
+const archiveMode = computed(() =>
+  props.archiveMode && !liveShows.value.length && !startingSoonShows.value.length
+);
+
+// Reads as a clause after the dates: "runs 12 - 16 August 2026, in 84 days". Silent
+// for a run starting today, where a countdown would say nothing the dates do not.
+const nextEventCountdown = computed(() => {
+  const days = props.nextEvent?.days_away ?? 0;
+
+  if (days <= 0) return '';
+  if (days === 1) return ', tomorrow';
+
+  return `, in ${days} days`;
+});
 
 // The featured show already has the hero, so it is not repeated in the grid.
 const otherLiveShows = computed(() =>
@@ -231,9 +309,18 @@ const GROUPS = [
   { key: 'archive', label: 'Recently streamed' },
 ];
 
+// The archive section is one run's worth, so it says which run rather than
+// "Recently streamed", which stops being true a year after the event.
+const groupLabel = (group) =>
+  group.key === 'archive' && props.leadEvent ? props.leadEvent.name : group.label;
+
 const visibleGroups = computed(() =>
   GROUPS
-    .map((group) => ({ ...group, items: visibleItems.value.filter((item) => item.kind === group.key) }))
+    .map((group) => ({
+      ...group,
+      label: groupLabel(group),
+      items: visibleItems.value.filter((item) => item.kind === group.key),
+    }))
     .filter((group) => group.items.length > 0)
 );
 
@@ -261,7 +348,7 @@ const showOlderSection = computed(() =>
 // cannot do is replay what it missed, so pull fresh props back after a gap.
 const resync = () => {
   router.reload({
-    only: ['liveShows', 'startingSoonShows', 'upcomingShows', 'featured'],
+    only: ['liveShows', 'startingSoonShows', 'upcomingShows', 'featured', 'archiveMode', 'event', 'leadEvent', 'nextEvent'],
   });
 };
 

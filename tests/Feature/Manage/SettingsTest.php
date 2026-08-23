@@ -79,12 +79,12 @@ class SettingsTest extends TestCase
                 $keys = collect($page->toArray()['props']['navigation'])->pluck('key')->all();
 
                 /*
-                 * Every registry group, plus Categories, which is a settings area whose
-                 * contents are rows rather than fields and so joins the menu by hand.
-                 * It sits ahead of the reset pane, which stays last.
+                 * Every registry group, plus Events and Categories, which are settings
+                 * areas whose contents are rows rather than fields and so join the menu
+                 * by hand. They sit ahead of the reset pane, which stays last.
                  */
                 $expected = collect(config('settings.groups'))->pluck('key')->all();
-                array_splice($expected, array_search('reset', $expected, true), 0, ['categories']);
+                array_splice($expected, array_search('reset', $expected, true), 0, ['events', 'categories']);
 
                 $this->assertSame($expected, $keys);
 

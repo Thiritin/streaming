@@ -113,6 +113,7 @@ class ShowsTest extends TestCase
                     'title',
                     'source',
                     'category',
+                    'event',
                     'status',
                     'scheduled_start',
                     'scheduled_end',
@@ -138,6 +139,7 @@ class ShowsTest extends TestCase
                     'status',
                     'source',
                     'category',
+                    'event',
                     'today',
                     'upcoming',
                 ],
@@ -971,7 +973,7 @@ class ShowsTest extends TestCase
                 $this->assertTrue($table['inlineEditable']);
                 $this->assertSame(route('manage.shows.inline', $show), $inline['url']);
                 $this->assertSame(
-                    ['source', 'category', 'scheduled_start', 'scheduled_end'],
+                    ['source', 'category', 'event', 'scheduled_start', 'scheduled_end'],
                     collect($inline['fields'])->pluck('key')->all(),
                 );
             });

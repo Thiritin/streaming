@@ -118,6 +118,14 @@ const submit = () => {
             helper="What kind of thing this is. Its recordings inherit it, and the archive filters on it."
           />
           <FormField
+            v-model="form.event_id"
+            label="Event"
+            type="select"
+            :options="options.events"
+            :error="form.errors.event_id"
+            helper="Which run of the convention this belongs to. Filled in from the scheduled date when a new show falls inside one."
+          />
+          <FormField
             v-model="form.description"
             label="Description"
             type="textarea"

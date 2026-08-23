@@ -7,6 +7,7 @@ use App\Http\Requests\Manage\RecordingRequest;
 use App\Jobs\ProcessRecordingJob;
 use App\Jobs\ScanArchiveStorageJob;
 use App\Models\Category;
+use App\Models\Event;
 use App\Models\Recording;
 use App\Models\Role;
 use App\Models\Show;
@@ -18,7 +19,6 @@ use App\Support\Manage\Filter;
 use App\Support\Manage\Status;
 use App\Support\Manage\Table;
 use App\Support\Manage\Toast;
-use App\Support\SkipSegments;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -40,7 +40,7 @@ class RecordingController extends Controller
     {
         $this->authorize('viewAny', Recording::class);
 
-        $table = Table::make(Recording::query()->with(['show.category', 'category']))
+        $table = Table::make(Recording::query()->with(['show.category', 'show.event', 'category', 'event']))
             ->name('recordings')
             ->columns([
                 Column::image('thumbnail', 'Thumbnail'),
@@ -48,6 +48,7 @@ class RecordingController extends Controller
                 Column::copyable('slug', 'Slug')->searchable()->toggleable(hiddenByDefault: true),
                 Column::text('show', 'Show')->toggleable(),
                 Column::badge('category', 'Category')->toggleable(),
+                Column::badge('event', 'Event')->toggleable(),
                 Column::datetime('date', 'Date')->sortable(),
                 Column::duration('duration', 'Duration'),
                 Column::number('size', 'Size')->sortable('archive_bytes'),
@@ -63,6 +64,9 @@ class RecordingController extends Controller
                 Filter::select('category', 'Category')
                     ->options(Category::ordered()->pluck('name', 'slug')->all())
                     ->apply(fn ($query, string $value) => $query->inCategory($value)),
+                Filter::select('event', 'Event')
+                    ->options(Event::ordered()->pluck('name', 'slug')->all())
+                    ->apply(fn ($query, string $value) => $query->inEvent($value)),
             ])
             ->defaultSort('date', 'desc')
             ->rows(fn (Recording $recording) => $this->row($recording))
@@ -89,11 +93,13 @@ class RecordingController extends Controller
             'options' => [
                 'shows' => $this->showOptions(),
                 'categories' => $this->categoryOptions(),
+                'events' => $this->eventOptions(),
                 'roles' => $this->roleOptions(),
             ],
             'defaults' => [
                 'show_id' => '',
                 'category_id' => '',
+                'event_id' => '',
                 'title' => '',
                 'slug' => '',
                 'description' => '',
@@ -131,6 +137,8 @@ class RecordingController extends Controller
                 'id' => $recording->id,
                 'show_id' => $recording->show_id,
                 'category_id' => $recording->category_id,
+                'event_id' => $recording->event_id,
+                'inherited_event' => $recording->show?->event?->name,
                 // What applies when the override above is empty, so the form can say
                 // what the recording is currently filed as without pretending it is set.
                 'inherited_category' => $recording->show?->category?->name,
@@ -163,6 +171,7 @@ class RecordingController extends Controller
             'options' => [
                 'shows' => $this->showOptions(),
                 'categories' => $this->categoryOptions(),
+                'events' => $this->eventOptions(),
                 'roles' => $this->roleOptions(),
             ],
             'actions' => array_map(
@@ -190,32 +199,6 @@ class RecordingController extends Controller
         }
 
         Toast::flashSuccess('Recording updated');
-
-        return back();
-    }
-
-    /**
-     * Save the skip points on their own, from the player page.
-     *
-     * Marking an intermission is done while watching one, not from a form: the
-     * operator is on the watch page with the playhead already sitting in it. The
-     * whole set is posted every time, which is what makes deleting one a save
-     * rather than an endpoint of its own.
-     */
-    public function updateSkips(Request $request, Recording $recording): RedirectResponse
-    {
-        $this->authorize('update', $recording);
-
-        $validated = $request->validate([
-            'skip_segments' => ['present', 'array', 'max:'.SkipSegments::MAX],
-            'skip_segments.*.start' => ['required', 'numeric', 'min:0'],
-            'skip_segments.*.end' => ['required', 'numeric', 'min:0'],
-            'skip_segments.*.label' => ['nullable', 'string', 'max:'.SkipSegments::LABEL_MAX],
-        ]);
-
-        $recording->update([
-            'skip_segments' => SkipSegments::normalise($validated['skip_segments'], $recording->duration),
-        ]);
 
         return back();
     }
@@ -577,6 +560,7 @@ class RecordingController extends Controller
             'slug' => $recording->slug,
             'show' => $recording->show?->title ?? '-',
             'category' => $this->categoryCell($recording),
+            'event' => $this->eventCell($recording),
             'date' => $recording->date?->format('M j, Y H:i'),
             'duration' => $recording->duration,
             'size' => $this->sizeCell($recording),
@@ -659,6 +643,37 @@ class RecordingController extends Controller
     }
 
     /**
+     * Event options for the form and the bulk modal. The empty entry means "follow
+     * the show", which is the normal state for a recording cut from one.
+     */
+    private function eventOptions(): array
+    {
+        return array_merge(
+            [['value' => '', 'label' => 'Follow the show']],
+            Event::ordered()
+                ->get(['id', 'name'])
+                ->map(fn (Event $event) => ['value' => $event->id, 'label' => $event->name])
+                ->all(),
+        );
+    }
+
+    /**
+     * The run as it reads on the row: its own, or the show's, said so.
+     *
+     * @return array{label: string, tone: string, icon: string|null}|null
+     */
+    private function eventCell(Recording $recording): ?array
+    {
+        if ($recording->event) {
+            return Status::make($recording->event->name, Status::INFO);
+        }
+
+        return $recording->show?->event
+            ? Status::make($recording->show->event->name.' (show)', Status::IDLE)
+            : null;
+    }
+
+    /**
      * The category as it reads on the row: its own, or the show's, said so.
      *
      * @return array{label: string, tone: string, icon: string|null}|null
@@ -702,6 +717,34 @@ class RecordingController extends Controller
     }
 
     /**
+     * Override the run on a batch of recordings, or clear the override so they
+     * follow their shows again. This is what files an archive that predates the
+     * calendar under the runs it belongs to.
+     */
+    public function bulkEvent(Request $request): RedirectResponse
+    {
+        $this->authorize('create', Recording::class);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['integer'],
+            'event_id' => ['nullable', 'integer', 'exists:events,id'],
+        ]);
+
+        $eventId = $validated['event_id'] ?? null;
+        $count = Recording::whereIn('id', $validated['ids'])->update(['event_id' => $eventId]);
+
+        Toast::flashSuccess(
+            'Event set',
+            $eventId
+                ? $count.' recording(s) are now part of '.Event::find($eventId)?->name.'.'
+                : $count.' recording(s) follow their show again.',
+        );
+
+        return back();
+    }
+
+    /**
      * @return array<int, Action>
      */
     private function bulkActions(): array
@@ -728,6 +771,25 @@ class RecordingController extends Controller
                     'options' => Category::ordered()
                         ->get()
                         ->map(fn (Category $category) => ['value' => (string) $category->id, 'label' => $category->name])
+                        ->all(),
+                ]]),
+            Action::post('bulk_event', 'Set Event', route('manage.recordings.bulk.event'))
+                ->icon('calendar')
+                ->tone(Status::IDLE)
+                ->confirm(
+                    'Set event on selected recordings',
+                    'This overrides whatever their shows say. Clearing it hands them back to their show.',
+                    'Set event',
+                )
+                ->fields([[
+                    'key' => 'event_id',
+                    'label' => 'Event',
+                    'type' => 'select',
+                    'required' => false,
+                    'helper' => 'Leave empty to clear the override and follow the show again.',
+                    'options' => Event::ordered()
+                        ->get()
+                        ->map(fn (Event $event) => ['value' => (string) $event->id, 'label' => $event->name])
                         ->all(),
                 ]]),
             Action::post('bulk_thumbnails', 'Regenerate Thumbnails', route('manage.recordings.bulk.thumbnail'))

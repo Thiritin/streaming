@@ -31,6 +31,7 @@ class ShowRequest extends FormRequest
             'slug' => ['required', 'string', 'max:255', Rule::unique('shows', 'slug')->ignore($show)],
             'source_id' => ['required', 'integer', Rule::exists('sources', 'id')],
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')],
+            'event_id' => ['nullable', 'integer', Rule::exists('events', 'id')],
             'description' => ['nullable', 'string'],
 
             'scheduled_start' => ['required', 'date'],

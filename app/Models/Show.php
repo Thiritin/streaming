@@ -19,6 +19,7 @@ class Show extends Model
         'slug',
         'description',
         'source_id',
+        'event_id',
         'category_id',
         'scheduled_start',
         'scheduled_end',
@@ -103,6 +104,16 @@ class Show extends Model
             if (empty($show->slug)) {
                 $show->slug = Str::slug($show->title.'-'.Carbon::parse($show->scheduled_start)->format('Y-m-d'));
             }
+
+            /*
+             * A show scheduled inside a run belongs to it, so neither the form nor the
+             * pretalx import has to say so. Only on create: an edit that clears the
+             * event means the event was cleared on purpose, and guessing it back on
+             * every save would make the field impossible to empty.
+             */
+            if ($show->event_id === null && $show->scheduled_start) {
+                $show->event_id = Event::forDate(Carbon::parse($show->scheduled_start))?->id;
+            }
         });
 
         static::updating(function ($show) {
@@ -119,6 +130,15 @@ class Show extends Model
     public function source()
     {
         return $this->belongsTo(Source::class);
+    }
+
+    /**
+     * The run of the convention this show is part of. Recordings of the show
+     * inherit it. Filed by, never gated on.
+     */
+    public function event()
+    {
+        return $this->belongsTo(Event::class);
     }
 
     /**

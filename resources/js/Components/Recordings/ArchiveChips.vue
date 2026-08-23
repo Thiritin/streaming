@@ -3,8 +3,8 @@
     <button
       type="button"
       class="chip"
-      :class="{ 'chip-active': !filters.year && !filters.source }"
-      @click="$emit('select', { year: null, source: null, category: null })"
+      :class="{ 'chip-active': !filters.event && !filters.year && !filters.source && !filters.category }"
+      @click="$emit('select', { event: null, year: null, source: null, category: null })"
     >
       All
     </button>
@@ -20,20 +20,26 @@
       {{ category.name }}
     </button>
 
-    <span v-if="chips.categories.length && chips.years.length" class="chip-divider" aria-hidden="true" />
+    <span v-if="chips.categories.length && chips.collections.length" class="chip-divider" aria-hidden="true" />
 
+    <!-- One chip per run of the convention. A recording filed under no run keeps a
+         year chip instead, which is why these are one row and not two: they answer
+         the same question and only one of them can apply to a given recording. -->
     <button
-      v-for="year in chips.years"
-      :key="`year-${year.year}`"
+      v-for="collection in chips.collections"
+      :key="collection.key"
       type="button"
-      class="chip tabular-nums"
-      :class="{ 'chip-active': filters.year === year.year }"
-      @click="$emit('select', { year: filters.year === year.year ? null : year.year })"
+      class="chip"
+      :class="{
+        'chip-active': isActive(collection),
+        'tabular-nums': collection.year !== null,
+      }"
+      @click="$emit('select', select(collection))"
     >
-      {{ year.year }}
+      {{ collection.label }}
     </button>
 
-    <span v-if="chips.years.length && chips.sources.length" class="chip-divider" aria-hidden="true" />
+    <span v-if="chips.collections.length && chips.sources.length" class="chip-divider" aria-hidden="true" />
 
     <button
       v-for="source in chips.sources"
@@ -49,12 +55,24 @@
 </template>
 
 <script setup>
-defineProps({
+const props = defineProps({
   chips: { type: Object, required: true },
   filters: { type: Object, required: true },
 });
 
 defineEmits(['select']);
+
+const isActive = (collection) =>
+  collection.event !== null
+    ? props.filters.event === collection.event
+    : props.filters.year === collection.year;
+
+// Events and years are the same axis, so picking either clears the other. Picking
+// the one already on clears it, which is how a chip toggles off.
+const select = (collection) =>
+  isActive(collection)
+    ? { event: null, year: null }
+    : { event: collection.event, year: collection.year };
 </script>
 
 <style scoped>

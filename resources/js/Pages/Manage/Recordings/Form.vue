@@ -11,6 +11,7 @@ import FormSection from '@/Components/Manage/FormSection.vue';
 import PageHeader from '@/Components/Manage/PageHeader.vue';
 import CutEditor from '@/Components/Manage/CutEditor.vue';
 import SkipEditor from '@/Components/Recordings/SkipEditor.vue';
+import VideoPlayer from '@/Components/Player/VideoPlayer.vue';
 
 const props = defineProps({
   /** null when creating */
@@ -39,11 +40,18 @@ const categoryHelper = computed(() =>
     : 'Left empty, this follows its show. Set it to override, or for a recording with no show.',
 );
 
+const eventHelper = computed(() =>
+  props.recording?.inherited_event
+    ? `Left empty, this follows its show: ${props.recording.inherited_event}.`
+    : 'Left empty, this follows its show. Set it for an edit imported without one.',
+);
+
 const form = useForm(
   props.recording
     ? {
         show_id: props.recording.show_id ?? '',
         category_id: props.recording.category_id ?? '',
+        event_id: props.recording.event_id ?? '',
         title: props.recording.title,
         slug: props.recording.slug,
         description: props.recording.description ?? '',
@@ -60,6 +68,7 @@ const form = useForm(
     : {
         show_id: '',
         category_id: '',
+        event_id: '',
         title: '',
         slug: '',
         description: '',
@@ -106,6 +115,18 @@ const uploadingThumbnail = computed(() => Boolean(thumbnailField.value?.uploadin
 
 const onCapture = (file) => thumbnailField.value?.uploadFile(file);
 
+/*
+ * The playhead the skip editor marks against.
+ *
+ * Marking an intermission is a transport job - park the playhead, press in, park it
+ * again, press out - so the section carries a player of its own rather than asking
+ * the operator to read times off somewhere else and type them in.
+ */
+const skipPlayer = ref(null);
+const skipTime = ref(0);
+
+const seekSkipPlayer = (seconds) => skipPlayer.value?.seek(seconds);
+
 const submit = () => {
   if (isEdit.value) {
     form.put(route('manage.recordings.update', props.recording.id), { preserveScroll: true });
@@ -128,6 +149,17 @@ const submit = () => {
       <template #actions>
         <ActionButton v-for="action in actions" :key="action.name" :action="action" />
       </template>
+
+<style scoped>
+@reference "../../../../css/app.css";
+
+/* Capped so the section stays a workbench rather than a cinema: the timeline under
+   it is the thing being worked, and it has to stay on screen with the picture. */
+.skip-preview {
+  @apply mx-auto w-full max-w-3xl overflow-hidden rounded-lg border border-hairline bg-black;
+  aspect-ratio: 16 / 9;
+}
+</style>
     </PageHeader>
 
     <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="submit">
@@ -148,6 +180,14 @@ const submit = () => {
             :options="options.categories"
             :error="form.errors.category_id"
             :helper="categoryHelper"
+          />
+          <FormField
+            v-model="form.event_id"
+            label="Event"
+            type="select"
+            :options="options.events"
+            :error="form.errors.event_id"
+            :helper="eventHelper"
           />
           <FormField v-model="form.title" label="Title" required :error="form.errors.title" />
           <FormField
@@ -240,11 +280,27 @@ const submit = () => {
              the same thing. Only on an existing recording: a timeline needs a length,
              and one is not known until the playlist has been read. -->
         <FormSection v-if="isEdit" title="Skip points" :columns="1">
-          <div class="md:col-span-full space-y-2">
+          <div class="md:col-span-full space-y-3">
+            <div v-if="form.m3u8_url" class="skip-preview">
+              <VideoPlayer
+                ref="skipPlayer"
+                :src="form.m3u8_url"
+                :title="form.title"
+                :poster="recording?.thumbnail_url ?? ''"
+                :is-live="false"
+                :autoplay="false"
+                storage-key="manage-skip-player"
+                @time-update="skipTime = $event"
+              />
+            </div>
+
             <SkipEditor
               v-model="form.skip_segments"
               :duration="Number(form.duration) || 0"
+              :current-time="form.m3u8_url ? skipTime : null"
+              @seek="seekSkipPlayer"
             />
+
             <p class="text-xs text-fg-3">
               Viewers inside one of these are offered a button. Nothing is cut, and nobody
               is moved without pressing it.

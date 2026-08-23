@@ -58,7 +58,7 @@ class ArchiveBrowsingTest extends TestCase
                 ->component('Archive/Index')
                 ->where('totalRecordings', 2)
                 ->has('recordings', 2)
-                ->has('chips.years', 2)
+                ->has('chips.collections', 2)
                 ->where('continueWatching', [])
             );
     }
