@@ -44,7 +44,7 @@ class RecordingController extends Controller
 
         return Inertia::render('Archive/Index', [
             'filters' => $filters,
-            'chips' => $this->chips($user),
+            'chips' => $this->chips($user, $filters),
             'totalRecordings' => Recording::where('is_published', true)->accessibleBy($user)->count(),
             'continueWatching' => $this->isFiltered($filters)
                 ? []
@@ -128,7 +128,6 @@ class RecordingController extends Controller
              */
             'event' => $request->filled('event') ? (string) $request->get('event') : null,
             'year' => $request->filled('year') ? (int) $request->get('year') : null,
-            'source' => $request->filled('source') ? (string) $request->get('source') : null,
             'category' => $request->filled('category') ? (string) $request->get('category') : null,
             'sort' => in_array($sort, ['newest', 'oldest', 'views', 'longest'], true) ? $sort : 'newest',
         ];
@@ -139,16 +138,18 @@ class RecordingController extends Controller
         return $filters['search'] !== null
             || $filters['event'] !== null
             || $filters['year'] !== null
-            || $filters['source'] !== null
             || $filters['category'] !== null
             || $filters['sort'] !== 'newest';
     }
 
     /**
-     * The chip bar: every year and every source that actually has something behind
-     * it, so a chip never leads to an empty grid.
+     * The chip bar: the runs, and the categories inside whichever run is on screen.
+     *
+     * Categories are counted against the collection that is selected rather than
+     * the whole archive, because a chip counted across every run reads "4 Theater"
+     * and then hands back only the ones filed under this one.
      */
-    private function chips($user): array
+    private function chips($user, array $filters): array
     {
         $recordings = Recording::where('is_published', true)
             ->accessibleBy($user)
@@ -164,20 +165,9 @@ class RecordingController extends Controller
 
         $collections = $this->collectionChips($recordings);
 
-        $sources = $recordings
-            ->filter(fn (Recording $recording) => $recording->source !== null)
-            ->groupBy(fn (Recording $recording) => $recording->source->slug)
-            ->map(fn ($group, $slug) => [
-                'slug' => $slug,
-                'name' => $group->first()->source->name,
-                'count' => $group->count(),
-            ])
-            ->sortByDesc('count')
-            ->values();
-
         // A category chip counts the recordings that have it through their show as
         // well as the ones labelled directly, because that is what the chip filters.
-        $categories = $recordings
+        $categories = $this->inCollection($recordings, $filters)
             ->map(fn (Recording $recording) => $recording->effectiveCategory())
             ->filter()
             ->groupBy('slug')
@@ -192,9 +182,35 @@ class RecordingController extends Controller
 
         return [
             'collections' => $collections,
-            'sources' => $sources,
             'categories' => $categories,
         ];
+    }
+
+    /**
+     * The slice of the archive the collection chips point at. Events and years are
+     * one axis, so at most one of them is ever on.
+     *
+     * @param  Collection<int, Recording>  $recordings
+     * @return Collection<int, Recording>
+     */
+    private function inCollection(Collection $recordings, array $filters): Collection
+    {
+        if ($filters['event'] !== null) {
+            return $recordings->filter(function (Recording $recording) use ($filters) {
+                $event = $recording->effectiveEvent();
+
+                return $event !== null
+                    && ($event->slug === $filters['event'] || (string) $event->id === $filters['event']);
+            });
+        }
+
+        if ($filters['year'] !== null) {
+            return $recordings->filter(
+                fn (Recording $recording) => $recording->date?->year === $filters['year'],
+            );
+        }
+
+        return $recordings;
     }
 
     /**
@@ -267,10 +283,6 @@ class RecordingController extends Controller
 
         if ($filters['year']) {
             $query->whereYear('date', $filters['year']);
-        }
-
-        if ($filters['source']) {
-            $query->whereHas('source', fn ($q) => $q->where('slug', $filters['source']));
         }
 
         if ($filters['category']) {
@@ -472,7 +484,6 @@ class RecordingController extends Controller
                 || $show->event?->slug === $filters['event'])
             ->filter(fn (Show $show) => $filters['year'] === null
                 || ($show->actual_end ?? $show->scheduled_end)?->year === $filters['year'])
-            ->filter(fn (Show $show) => $filters['source'] === null || $show->source?->slug === $filters['source'])
             ->filter(fn (Show $show) => $filters['category'] === null || $show->category?->slug === $filters['category'])
             // Dates go out as ISO strings, matching how the models serialise theirs, so
             // the merged list sorts on one comparable type.

@@ -145,8 +145,11 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
 
 8. **The archive page**
    - `/archive` is one grid, newest first until asked otherwise, paged in through
-     `Inertia::merge` and `WhenVisible` as it is scrolled. Chips (categories, then
-     events, then sources) and a sort narrow it in place. The archive runs to around
+     `Inertia::merge` and `WhenVisible` as it is scrolled. Chips (events, then the
+     categories inside the selected one) and a sort narrow it in place. There are no
+     source chips: which room a recording came out of is not how anyone looks for it.
+     The category chips are counted against the run that is selected, so a chip never
+     says four and hands back one. The archive runs to around
      twenty recordings a year, so a wall of shelves would show the same recordings
      three times over; the one shelf left is Continue watching, on the unfiltered
      page only. `/archive/year/{year}` is now a redirect into `?year=`, kept for

@@ -81,7 +81,7 @@ class ArchiveBrowsingTest extends TestCase
             );
     }
 
-    public function test_the_grid_can_be_filtered_by_source_and_sorted(): void
+    public function test_the_grid_sorts_and_no_longer_filters_by_source(): void
     {
         $stage = Source::factory()->create(['name' => 'Main Stage', 'slug' => 'main-stage']);
         $other = Source::factory()->create(['name' => 'Dance', 'slug' => 'dance']);
@@ -90,11 +90,15 @@ class ArchiveBrowsingTest extends TestCase
         $this->recording(['title' => 'Packed panel', 'source_id' => $stage->id, 'views' => 900]);
         $this->recording(['title' => 'Elsewhere', 'source_id' => $other->id, 'views' => 4000]);
 
+        // The source chips are gone, so a source in the URL narrows nothing: the
+        // archive is filed by run and by what a show is, not by which room it came
+        // out of.
         $this->get(route('recordings.index', ['source' => 'main-stage', 'sort' => 'views']))
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
-                ->has('recordings', 2)
-                ->where('recordings.0.title', 'Packed panel')
+                ->has('recordings', 3)
+                ->where('recordings.0.title', 'Elsewhere')
+                ->missing('chips.sources')
             );
     }
 
@@ -336,6 +340,41 @@ class ArchiveBrowsingTest extends TestCase
                 ->has('chips.categories', 1)
                 ->where('chips.categories.0.slug', 'dances')
                 ->where('chips.categories.0.count', 2)
+            );
+    }
+
+    public function test_category_chips_are_counted_against_the_run_that_is_selected(): void
+    {
+        $theater = Category::factory()->create(['name' => 'Theater', 'slug' => 'theater']);
+        $source = Source::factory()->create();
+
+        $thisRun = Event::create([
+            'name' => 'EF30',
+            'starts_on' => now()->subDays(3)->toDateString(),
+            'ends_on' => now()->addDays(3)->toDateString(),
+        ]);
+        $lastRun = Event::create([
+            'name' => 'EF29',
+            'starts_on' => now()->subYear()->toDateString(),
+            'ends_on' => now()->subYear()->addDays(6)->toDateString(),
+        ]);
+        Event::forgetWindow();
+
+        $now = Show::factory()->create(['source_id' => $source->id, 'event_id' => $thisRun->id]);
+        $then = Show::factory()->create(['source_id' => $source->id, 'event_id' => $lastRun->id]);
+
+        $this->recording(['title' => 'This run', 'show_id' => $now->id, 'category_id' => $theater->id]);
+        $this->recording(['title' => 'Last run', 'show_id' => $then->id, 'category_id' => $theater->id]);
+        $this->recording(['title' => 'Also last run', 'show_id' => $then->id, 'category_id' => $theater->id]);
+
+        $this->get(route('recordings.index'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('chips.categories.0.count', 3)
+            );
+
+        $this->get(route('recordings.index', ['event' => $thisRun->slug]))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('chips.categories.0.count', 1)
             );
     }
 }

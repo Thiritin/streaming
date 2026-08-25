@@ -3,24 +3,11 @@
     <button
       type="button"
       class="chip"
-      :class="{ 'chip-active': !filters.event && !filters.year && !filters.source && !filters.category }"
-      @click="$emit('select', { event: null, year: null, source: null, category: null })"
+      :class="{ 'chip-active': !filters.event && !filters.year && !filters.category }"
+      @click="$emit('select', { event: null, year: null, category: null })"
     >
       All
     </button>
-
-    <button
-      v-for="category in chips.categories"
-      :key="`category-${category.slug}`"
-      type="button"
-      class="chip"
-      :class="{ 'chip-active': filters.category === category.slug }"
-      @click="$emit('select', { category: filters.category === category.slug ? null : category.slug })"
-    >
-      {{ category.name }}
-    </button>
-
-    <span v-if="chips.categories.length && chips.collections.length" class="chip-divider" aria-hidden="true" />
 
     <!-- One chip per run of the convention. A recording filed under no run keeps a
          year chip instead, which is why these are one row and not two: they answer
@@ -39,17 +26,20 @@
       {{ collection.label }}
     </button>
 
-    <span v-if="chips.collections.length && chips.sources.length" class="chip-divider" aria-hidden="true" />
+    <span v-if="chips.collections.length && chips.categories.length" class="chip-divider" aria-hidden="true" />
 
+    <!-- Categories come after the runs and belong to whichever one is selected: the
+         server counts them against that run, so the row never offers a category the
+         grid underneath cannot show. -->
     <button
-      v-for="source in chips.sources"
-      :key="`source-${source.slug}`"
+      v-for="category in chips.categories"
+      :key="`category-${category.slug}`"
       type="button"
       class="chip"
-      :class="{ 'chip-active': filters.source === source.slug }"
-      @click="$emit('select', { source: filters.source === source.slug ? null : source.slug })"
+      :class="{ 'chip-active': filters.category === category.slug }"
+      @click="$emit('select', { category: filters.category === category.slug ? null : category.slug })"
     >
-      {{ source.name }}
+      {{ category.name }}
     </button>
   </div>
 </template>
