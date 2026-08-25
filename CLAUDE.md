@@ -192,6 +192,14 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      (the account, or the session for a guest) and only the claim that lands
      increments. The write goes through the query builder, because a view is not an
      edit - it must not touch `updated_at` and must not wake `RecordingObserver`.
+   - Autoplay never plays the same recording twice in a row of its own accord. The
+     rail is the rest of the same source, newest first, so two recordings on one
+     source point at each other and a tab left alone rolled A, B, A, B until it was
+     closed. `RecordingPlayer.vue` keeps the chain of what autoplay has already
+     rolled through in session storage and takes the first rail entry that is not in
+     it; with nothing left the countdown does not start. Arriving at a recording that
+     is not in the chain, or pressing the card, means the viewer chose it, which
+     starts the chain again.
    - Playback position lives in `recording_progress`, one row per viewer per recording,
      written by the player every 15s and on the way out. Signed-in only: there is
      nothing to key a guest's row on, and Continue watching is assembled server-side

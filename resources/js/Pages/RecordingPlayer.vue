@@ -262,7 +262,60 @@ const autoplayNext = ref(true);
 const countdown = ref(null);
 let countdownTimer = null;
 
-const nextUp = computed(() => props.upNext[0] ?? null);
+/*
+ * What autoplay has already rolled through this tab.
+ *
+ * The rail is the rest of the same source, newest first, so the newest recording
+ * on a source with two of them points at the other one and the other one points
+ * straight back: a tab left alone played A, B, A, B until it was closed, and every
+ * hop was a page render counted as a view. The chain is what has been played
+ * without the viewer choosing anything, and autoplay skips past it - a source that
+ * has run out of recordings the viewer has not seen ends rather than starting over.
+ *
+ * Session storage, so it is this tab's chain and it survives the reload a visit is.
+ * Arriving at a recording that is not in the chain means the viewer picked it
+ * themselves, which starts a new one.
+ */
+const CHAIN_KEY = 'archive:autoplay-chain';
+const CHAIN_MAX = 50;
+
+const readChain = () => {
+    try {
+        const raw = window.sessionStorage.getItem(CHAIN_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+};
+
+const chain = ref([]);
+
+const writeChain = (ids) => {
+    chain.value = ids.slice(-CHAIN_MAX);
+
+    try {
+        window.sessionStorage.setItem(CHAIN_KEY, JSON.stringify(chain.value));
+    } catch {
+        // A tab with storage switched off just gets no memory of the chain.
+    }
+};
+
+const syncChain = () => {
+    const stored = readChain();
+
+    chain.value = stored.includes(props.recording.id) ? stored : [];
+};
+
+const autoplayTarget = computed(
+    () => props.upNext.find((item) => !chain.value.includes(item.id)) ?? null,
+);
+
+// What the card offers: the first one the chain has not been through, so the name
+// on the card is the one the countdown plays. With everything on the rail already
+// played it falls back to the rail's own lead, which a press can still take.
+const nextUp = computed(() => autoplayTarget.value ?? props.upNext[0] ?? null);
 
 const nextUpMeta = computed(() =>
     nextUp.value
@@ -274,16 +327,19 @@ const nextUpMeta = computed(() =>
 // a queue somebody had put together, which is not what this is.
 const railTitle = computed(() => (props.sourceName ? `More from ${props.sourceName}` : 'More in the archive'));
 
+// Pressed, so it is a choice rather than a roll-on: the chain starts again from here.
 const playNext = () => {
     if (!nextUp.value) return;
 
     cancelAutoplay();
+    writeChain([]);
     router.visit(route('recordings.show', nextUp.value.id));
 };
 
 onMounted(() => {
     // Off is the only thing worth remembering; a missing key means the default.
     autoplayNext.value = window.localStorage.getItem(AUTOPLAY_KEY) !== 'off';
+    syncChain();
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('resize', measureDescription);
     measureDescription();
@@ -302,7 +358,9 @@ const cancelAutoplay = () => {
 };
 
 const startAutoplay = () => {
-    if (!autoplayNext.value || !nextUp.value) return;
+    const target = autoplayTarget.value;
+
+    if (!autoplayNext.value || !target) return;
 
     countdown.value = AUTOPLAY_SECONDS;
 
@@ -311,7 +369,8 @@ const startAutoplay = () => {
 
         if (countdown.value <= 0) {
             cancelAutoplay();
-            router.visit(route('recordings.show', nextUp.value.id));
+            writeChain([...chain.value, props.recording.id, target.id]);
+            router.visit(route('recordings.show', target.id));
         }
     }, 1000);
 };
@@ -412,6 +471,7 @@ watch(
         watched.value = false;
         mediaDuration.value = null;
         cancelAutoplay();
+        syncChain();
     },
 );
 
