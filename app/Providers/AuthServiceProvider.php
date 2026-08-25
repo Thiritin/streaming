@@ -9,6 +9,7 @@ use App\Models\Emote;
 use App\Models\Event;
 use App\Models\FeedbackReport;
 use App\Models\Recording;
+use App\Models\RecordingComment;
 use App\Models\Role;
 use App\Models\Server;
 use App\Models\Show;
@@ -21,6 +22,7 @@ use App\Policies\EmbedKeyPolicy;
 use App\Policies\EmotePolicy;
 use App\Policies\EventPolicy;
 use App\Policies\FeedbackReportPolicy;
+use App\Policies\RecordingCommentPolicy;
 use App\Policies\RecordingPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\ServerPolicy;
@@ -48,6 +50,7 @@ class AuthServiceProvider extends ServiceProvider
         Emote::class => EmotePolicy::class,
         FeedbackReport::class => FeedbackReportPolicy::class,
         Recording::class => RecordingPolicy::class,
+        RecordingComment::class => RecordingCommentPolicy::class,
         Role::class => RolePolicy::class,
         Server::class => ServerPolicy::class,
         Show::class => ShowPolicy::class,

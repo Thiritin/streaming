@@ -324,6 +324,14 @@ return [
                     'rules' => ['boolean'],
                 ],
                 [
+                    'key' => 'comments',
+                    'label' => 'Comments',
+                    'type' => 'toggle',
+                    'store' => 'features',
+                    'helper' => 'Comments and replies under a recording in the archive. Off hides the section and closes the endpoints without deleting anything already posted.',
+                    'rules' => ['boolean'],
+                ],
+                [
                     'key' => 'announcement',
                     'label' => 'Announcements',
                     'type' => 'toggle',

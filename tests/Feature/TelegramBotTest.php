@@ -7,6 +7,7 @@ use App\Jobs\Telegram\NotifyUpcomingShowsJob;
 use App\Models\BrandingSetting;
 use App\Models\FeedbackReport;
 use App\Models\Recording;
+use App\Models\RecordingComment;
 use App\Models\Role;
 use App\Models\Show;
 use App\Models\Source;
@@ -641,5 +642,150 @@ class TelegramBotTest extends TestCase
 
             return true;
         });
+    }
+
+    private function reportedComment(): RecordingComment
+    {
+        $recording = Recording::create([
+            'title' => 'Fursuit Parade',
+            'date' => now()->subDay(),
+            'duration' => 3600,
+            'is_published' => true,
+            'status' => 'ready',
+            'm3u8_url' => 'https://example.test/a.m3u8',
+        ]);
+
+        $comment = RecordingComment::create([
+            'recording_id' => $recording->id,
+            'user_id' => User::factory()->create(['name' => 'Loud Account'])->id,
+            'body' => 'BUY CHEAP FURSUITS',
+        ]);
+
+        $comment->reports()->create([
+            'user_id' => User::factory()->create(['name' => 'Reporter'])->id,
+            'message' => 'Same copypasta as the other four',
+        ]);
+        $comment->hideOnReport();
+
+        return $comment;
+    }
+
+    public function test_a_reported_comment_is_posted_with_the_three_decisions(): void
+    {
+        $this->chat(['notify_comments' => true]);
+        $comment = $this->reportedComment();
+
+        app(TelegramNotifier::class)->commentReported($comment);
+
+        Http::assertSent(function ($request) use ($comment) {
+            if (! str_contains($request->url(), '/sendMessage')) {
+                return false;
+            }
+
+            $keyboard = json_encode($request['reply_markup'] ?? []);
+
+            return str_contains($request['text'], 'Comment reported')
+                && str_contains($request['text'], 'Same copypasta as the other four')
+                && str_contains($keyboard, 'c:approve:'.$comment->id)
+                && str_contains($keyboard, 'c:delete:'.$comment->id)
+                && str_contains($keyboard, 'c:ban:'.$comment->id);
+        });
+
+        $this->assertDatabaseHas('telegram_messages', [
+            'kind' => TelegramMessage::KIND_COMMENT,
+            'subject_id' => $comment->id,
+            'state' => 'reported',
+        ]);
+    }
+
+    public function test_approving_from_the_chat_puts_the_comment_back(): void
+    {
+        $chat = $this->chat(['notify_comments' => true]);
+        $comment = $this->reportedComment();
+
+        app(TelegramNotifier::class)->commentReported($comment);
+        $messageId = TelegramMessage::where('kind', TelegramMessage::KIND_COMMENT)->value('message_id');
+
+        $this->deliver($this->press("c:approve:{$comment->id}", $messageId, $chat->chat_id))->assertOk();
+
+        $comment->refresh();
+        $this->assertNull($comment->hidden_at);
+        $this->assertNotNull($comment->approved_at);
+        $this->assertSame(0, $comment->reports()->unresolved()->count());
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/editMessageText')
+            && str_contains($request['text'], 'Back up'));
+    }
+
+    public function test_deleting_from_the_chat_removes_it_and_says_so(): void
+    {
+        $chat = $this->chat(['notify_comments' => true]);
+        $comment = $this->reportedComment();
+
+        app(TelegramNotifier::class)->commentReported($comment);
+        $messageId = TelegramMessage::where('kind', TelegramMessage::KIND_COMMENT)->value('message_id');
+
+        $this->deliver($this->press("c:delete:{$comment->id}", $messageId, $chat->chat_id))->assertOk();
+
+        $this->assertSame(0, RecordingComment::count());
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/editMessageText')
+            && str_contains($request['text'], 'Comment deleted'));
+    }
+
+    public function test_banning_from_the_chat_asks_twice_and_then_silences_the_account(): void
+    {
+        $chat = $this->chat(['notify_comments' => true]);
+        $comment = $this->reportedComment();
+
+        app(TelegramNotifier::class)->commentReported($comment);
+        $messageId = TelegramMessage::where('kind', TelegramMessage::KIND_COMMENT)->value('message_id');
+
+        $this->deliver($this->press("c:ban:{$comment->id}", $messageId, $chat->chat_id))->assertOk();
+
+        // One press only arms it.
+        $this->assertNull($comment->user->fresh()->activeChatBan());
+        $this->assertDatabaseHas('telegram_messages', [
+            'subject_id' => $comment->id,
+            'state' => TelegramMessage::STATE_CONFIRM_BAN,
+        ]);
+
+        $this->deliver($this->press("c:banyes:{$comment->id}", $messageId, $chat->chat_id))->assertOk();
+
+        $ban = $comment->user->fresh()->activeChatBan();
+        $this->assertNotNull($ban);
+        $this->assertTrue($ban->isPermanent());
+    }
+
+    public function test_a_read_only_chat_gets_the_comment_without_buttons(): void
+    {
+        $this->chat(['notify_comments' => true, 'interactive' => false]);
+        $comment = $this->reportedComment();
+
+        app(TelegramNotifier::class)->commentReported($comment);
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), '/sendMessage')) {
+                return false;
+            }
+
+            $keyboard = json_encode($request['reply_markup'] ?? []);
+
+            return ! str_contains($keyboard, 'c:approve:') && str_contains($keyboard, 'Open in panel');
+        });
+    }
+
+    public function test_a_second_report_does_not_post_the_comment_twice(): void
+    {
+        $this->chat(['notify_comments' => true]);
+        $comment = $this->reportedComment();
+
+        app(TelegramNotifier::class)->commentReported($comment);
+        app(TelegramNotifier::class)->commentReported($comment->refresh());
+
+        $this->assertSame(
+            1,
+            TelegramMessage::where('kind', TelegramMessage::KIND_COMMENT)->count(),
+        );
     }
 }

@@ -187,6 +187,49 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      `SkipEditor` beside a player of its own: park the playhead, press in, park it
      again, press out (I and O, N for a new one, Del to drop one, , and . to nudge).
      They save with the rest of the form.
+   - Comments live under the recording on its watch page, in `recording_comments`,
+     and are switched by the `comments` feature flag (installation-wide in
+     /manage > Settings > Features, and a viewer can hide them for themselves in
+     /settings). The thread is one level: a row with a `parent_id` is a reply, a
+     row without one is not, and `RecordingCommentController::store()` re-points a
+     reply-to-a-reply at the top of its thread rather than letting depth grow.
+     Deleting takes the replies with it, by cascade, because a reply left behind
+     answers whatever ends up above it. Signed-in only - a comment is attributed -
+     and a chat ban or timeout silences the box too, since it is the same audience.
+     Reporting a comment hides it from the room on the spot and asks moderation
+     afterwards, because the point of the button is the hour between somebody
+     seeing a thing and a moderator being awake: `recording_comments.hidden_at`
+     plus a row in `recording_comment_reports` (one per person per comment, with
+     the reporter's own sentence, kept after a ruling so an account that reports
+     everything is visible). It is never hidden from its author - somebody
+     watching their own words vanish starts again in a new thread - nor from a
+     moderator, who sees it flagged with what was said and can approve it back
+     from the page. Approving sets `approved_at`, after which a further report
+     cannot hide it again, which is what stops one account silencing another for
+     good. Read a thread through `RecordingComment::visibleTo($user)`, never off
+     the table: a plain read leaks the hidden rows. Counts follow the same scope,
+     so a hidden comment is not a gap in the total.
+     A chat that asked for `notify_comments` is posted the comment and what was
+     said about it, and an interactive one can approve it, delete it or ban its
+     author from the message - banning asks twice, like ending a show. Every
+     decision, wherever it is made, syncs the others through
+     `SyncTelegramMessagesJob` with `TelegramMessage::KIND_COMMENT`.
+     Its author can edit it (`edited_at`, shown as "(edited)"), which drops the
+     approval with it - a comment approved and then rewritten has not been looked
+     at - and delete it. Moderators deliberately cannot edit: putting words in
+     somebody else's mouth is what deleting exists instead of.
+     A silenced viewer - chat ban or timeout - is shown no section at all rather
+     than a read-only one (`RecordingCommentController::availableTo()`), and one
+     viewer's posts are spaced by `COOLDOWN_SECONDS` with `HOURLY_LIMIT` an hour
+     on top of the route throttle.
+     Hearts are `recording_comment_hearts`, one per person per comment, and they
+     order the thread: most hearted first, newest first between the ones nobody has
+     hearted. Roots are paged twenty at a time and Load more widens the window
+     (`?comments=`) rather than fetching a page of its own, so posting and hearting
+     re-render everything the viewer had open. Read the thread through
+     `RecordingCommentController::thread()`; nothing here uses fetch(). An author
+     deletes their own and a moderator deletes any, from the page itself or from
+     /manage > Comments, which is the sweep for a run of spam.
    - `recordings.views` counts viewers, not renders. The watch page is an Inertia
      visit, so a reload, a comment posted or a heart pressed renders it again, and
      counting each one put every viewer of a popular recording behind the same row
@@ -398,6 +441,19 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   chat id. A forum group's topics each link as a row of their own, so one group can split
   shows and reports across topics. See docs/admin/telegram.md. Administrators only, since an interactive chat can
   take a show on and off air
+- Comments: what viewers said under a recording, comments and replies in one list,
+  newest first. Reported ones lead the State filter: a report has already taken them
+  down, so they are the only rows anybody is waiting on, and the rail badge counts
+  them. Approve puts one back for good; delete takes it and its replies. A comment's
+  own page carries the reports against it, the thread around it, and the three
+  decisions - approve, delete, ban the author - because the panel is where the work
+  is done and the buttons on the watch page are only the shortcut for whoever is
+  already reading it. Banning writes an ordinary chat ban: the comment box already
+  refuses anyone chat has silenced, so a second kind would be a second thing to
+  remember to lift The watch page is where a single comment is dealt with; this is the
+  sweep - a run of spam under one recording, or one account busy across several.
+  Deleting a comment takes its replies. Reading is open to anyone past
+  `access-manage`; a viewer deletes their own anywhere, moderators delete any
 - Feedback: what viewers sent in from the site - the Feedback button in the top bar
   and "Report" on the player. Each report carries the browser, screen, connection and
   player snapshot the client collected, bounded by `App\Support\Diagnostics`, plus an

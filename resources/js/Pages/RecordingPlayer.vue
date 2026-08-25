@@ -145,6 +145,18 @@
                         </button>
                     </div>
 
+                    <!-- What people said about it. Under the description and above
+                         the way back out, which is where a conversation about the
+                         thing being watched belongs. -->
+                    <CommentSection
+                        v-if="commentsEnabled"
+                        :recording-id="recording.id"
+                        :comments="comments"
+                        :meta="commentsMeta"
+                        :can-comment="canComment"
+                        :login-url="loginUrl"
+                    />
+
                     <!-- Navigation -->
                     <div class="mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                         <Link
@@ -170,6 +182,17 @@
                             />
                         </a>
                     </div>
+
+                    <!-- Report sits below the sponsor rather than beside the player:
+                         a problem with a recording is usually noticed while watching
+                         it and reported after, and it carries the same player
+                         snapshot the live report does. -->
+                    <div v-if="feedbackEnabled" class="mt-8 mb-10 flex justify-center sm:justify-end">
+                        <button type="button" class="report-button" @click="isReportOpen = true">
+                            <FaVideoSlashIcon class="h-4 w-4" />
+                            Report a problem
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -191,6 +214,15 @@
                 <RecordingRow v-for="item in upNext" :key="item.id" :recording="item" />
             </aside>
         </div>
+
+        <!-- Outside the columns so the grid cannot clip it. -->
+        <FeedbackDialog
+            v-if="feedbackEnabled"
+            v-model:open="isReportOpen"
+            type="issue"
+            :player="reportPlayer"
+            :extra="reportContext"
+        />
     </div>
 </template>
 
@@ -200,6 +232,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import VideoPlayer from '@/Components/Player/VideoPlayer.vue';
 import RecordingRow from '@/Components/Recordings/RecordingRow.vue';
+import CommentSection from '@/Components/Recordings/CommentSection.vue';
+import FeedbackDialog from '@/Components/Feedback/FeedbackDialog.vue';
 import { rememberProgress } from '@/composables/useRecentProgress';
 import TilePlaceholder from '@/Components/TilePlaceholder.vue';
 import FaVideoSlashIcon from '@/Components/Icons/FaVideoSlashIcon.vue';
@@ -223,6 +257,24 @@ const props = defineProps({
     upNext: {
         type: Array,
         default: () => []
+    },
+    // The thread under this recording, flat and oldest first. Empty when comments
+    // are off for the installation or for this viewer.
+    comments: {
+        type: Array,
+        default: () => []
+    },
+    commentsMeta: {
+        type: Object,
+        default: () => ({ shown: 0, total: 0, hasMore: false, pageSize: 20 })
+    },
+    commentsEnabled: {
+        type: Boolean,
+        default: false
+    },
+    canComment: {
+        type: Boolean,
+        default: false
     },
     // Where this viewer left off, or 0. Guests always get 0: nothing is stored.
     resumeAt: {
@@ -410,6 +462,25 @@ const POST_EVERY = 15;
 const page = usePage();
 const canSaveProgress = computed(() => Boolean(page.props.auth?.user));
 
+// Where a guest is sent to be able to comment.
+const loginUrl = computed(() => page.props.features?.loginUrl ?? null);
+
+const feedbackEnabled = computed(() => page.props.features?.feedback !== false);
+const isReportOpen = ref(false);
+
+/*
+ * Resolved when the dialog opens rather than passed as an instance: the player is
+ * rebuilt on a source change, so what is on screen at press time is the only one
+ * worth a snapshot. Same contract as the live player's report button.
+ */
+const reportPlayer = () => playerRef.value?.player ?? playerRef.value;
+
+const reportContext = computed(() => ({
+    recording: props.recording.title,
+    recording_id: props.recording.id,
+    position: Math.round(currentTime.value),
+}));
+
 const currentTime = ref(props.resumeAt);
 // Whether this visit has played past where it resumed. See handleEnded.
 const watched = ref(false);
@@ -561,6 +632,14 @@ const formatViews = (views) => {
 
 <style scoped>
 @reference "../../css/app.css";
+
+.report-button {
+    @apply inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-primary-300 transition-colors;
+}
+
+.report-button:hover {
+    @apply border-white/25 text-white;
+}
 
 /*
  * One column until there is room for the rail beside the player. The player keeps

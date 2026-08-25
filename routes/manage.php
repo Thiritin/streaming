@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Manage\CategoryController;
+use App\Http\Controllers\Manage\CommentController;
 use App\Http\Controllers\Manage\DashboardController;
 use App\Http\Controllers\Manage\DisplayScreenController;
 use App\Http\Controllers\Manage\EmbedKeyController;
@@ -181,6 +182,20 @@ Route::get('users', [UserController::class, 'index'])->name('users.index');
 Route::get('users/{user}', [UserController::class, 'edit'])->name('users.edit');
 Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
 Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+
+/*
+ * What viewers said under a recording. Bulk route first, so 'comments/bulk' is not
+ * read as a comment id.
+ */
+Route::middleware('comments.enabled')->group(function () {
+    Route::delete('comments/bulk', [CommentController::class, 'bulkDestroy'])->name('comments.bulk.destroy');
+    Route::post('comments/bulk/approve', [CommentController::class, 'bulkApprove'])->name('comments.bulk.approve');
+    Route::get('comments', [CommentController::class, 'index'])->name('comments.index');
+    Route::get('comments/{comment}', [CommentController::class, 'show'])->name('comments.show');
+    Route::post('comments/{comment}/approve', [CommentController::class, 'approve'])->name('comments.approve');
+    Route::post('comments/{comment}/ban', [CommentController::class, 'ban'])->name('comments.ban');
+    Route::delete('comments/{comment}', [CommentController::class, 'destroy'])->name('comments.destroy');
+});
 
 /*
  * Viewer reports: feedback from the top bar, stream problems from the player. Bulk

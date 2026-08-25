@@ -6,6 +6,7 @@ use App\Http\Middleware\Authenticate;
 use App\Http\Middleware\AuthenticateIfRequired;
 use App\Http\Middleware\EncryptCookies;
 use App\Http\Middleware\EnsureChatIsEnabled;
+use App\Http\Middleware\EnsureCommentsAreEnabled;
 use App\Http\Middleware\EnsureEmotesAreEnabled;
 use App\Http\Middleware\EnsureFeedbackIsEnabled;
 use App\Http\Middleware\EnsureScreensAreEnabled;
@@ -108,6 +109,7 @@ class Kernel extends HttpKernel
         'auth.basic' => AuthenticateWithBasicAuth::class,
         'chat.enabled' => EnsureChatIsEnabled::class,
         'emotes.enabled' => EnsureEmotesAreEnabled::class,
+        'comments.enabled' => EnsureCommentsAreEnabled::class,
         'feedback.enabled' => EnsureFeedbackIsEnabled::class,
         'telegram.enabled' => EnsureTelegramIsEnabled::class,
         'screens.enabled' => EnsureScreensAreEnabled::class,

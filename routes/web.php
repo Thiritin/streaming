@@ -11,6 +11,7 @@ use App\Http\Controllers\DisplayController;
 use App\Http\Controllers\EmoteController;
 use App\Http\Controllers\FeedbackController;
 use App\Http\Controllers\MessageController;
+use App\Http\Controllers\RecordingCommentController;
 use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\RecordingPlaylistController;
 use App\Http\Controllers\RecordingProgressController;
@@ -150,6 +151,35 @@ Route::middleware(['auth.optional:web'])->group(function () {
     Route::put('/archive/{recording}/progress', [RecordingProgressController::class, 'update'])
         ->middleware('auth:web')
         ->name('recordings.progress');
+    /*
+     * Comments under a recording, and taking one down again. Signed-in only:
+     * a comment is attributed, so there is nothing to post as a guest. The
+     * throttle is what bounds a run of them; the section itself is one Inertia
+     * prop on the watch page, so both of these answer a redirect back.
+     */
+    Route::post('/archive/{recording}/comments', [RecordingCommentController::class, 'store'])
+        ->middleware(['auth:web', 'comments.enabled', 'throttle:20,1'])
+        ->name('recordings.comments.store');
+    Route::patch('/archive/{recording}/comments/{comment}', [RecordingCommentController::class, 'update'])
+        ->middleware(['auth:web', 'comments.enabled', 'throttle:30,1'])
+        ->name('recordings.comments.update');
+    Route::delete('/archive/{recording}/comments/{comment}', [RecordingCommentController::class, 'destroy'])
+        ->middleware(['auth:web', 'comments.enabled'])
+        ->name('recordings.comments.destroy');
+    Route::post('/archive/{recording}/comments/{comment}/heart', [RecordingCommentController::class, 'heart'])
+        ->middleware(['auth:web', 'comments.enabled', 'throttle:120,1'])
+        ->name('recordings.comments.heart');
+    /*
+     * Reporting takes a comment down on the spot and asks a moderator afterwards;
+     * approving puts it back. Both signed-in, the first throttled because it is a
+     * write that hides somebody else's words.
+     */
+    Route::post('/archive/{recording}/comments/{comment}/report', [RecordingCommentController::class, 'report'])
+        ->middleware(['auth:web', 'comments.enabled', 'throttle:20,1'])
+        ->name('recordings.comments.report');
+    Route::post('/archive/{recording}/comments/{comment}/approve', [RecordingCommentController::class, 'approve'])
+        ->middleware(['auth:web', 'comments.enabled'])
+        ->name('recordings.comments.approve');
     Route::redirect('/recordings', '/archive');
     Route::get('/recordings/{recording}', fn ($recording) => redirect("/archive/{$recording}"));
 });

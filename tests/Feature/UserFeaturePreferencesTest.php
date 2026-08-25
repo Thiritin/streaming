@@ -52,7 +52,8 @@ class UserFeaturePreferencesTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('Settings')
-                ->count('featureSettings', 3)
+                // chat, emotes, boops, comments: everything a viewer may switch off.
+                ->count('featureSettings', 4)
                 ->where('featureSettings.0.key', 'chat')
                 ->where('featureSettings.0.enabled', true)
             );
@@ -67,7 +68,7 @@ class UserFeaturePreferencesTest extends TestCase
             ->get('/settings')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->count('featureSettings', 2)
+                ->count('featureSettings', 3)
                 ->where('featureSettings.0.key', 'chat')
                 ->where('featureSettings.1.key', 'emotes')
             );

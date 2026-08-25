@@ -4,6 +4,7 @@ namespace App\Jobs\Telegram;
 
 use App\Models\FeedbackReport;
 use App\Models\Recording;
+use App\Models\RecordingComment;
 use App\Models\Show;
 use App\Models\TelegramMessage;
 use App\Services\Telegram\TelegramNotifier;
@@ -45,6 +46,16 @@ class SyncTelegramMessagesJob implements ShouldQueue
 
             if ($recording) {
                 $notifier->syncRecording($recording);
+            }
+
+            return;
+        }
+
+        if ($this->kind === TelegramMessage::KIND_COMMENT) {
+            $comment = RecordingComment::with(['user', 'recording', 'approver'])->find($this->subjectId);
+
+            if ($comment) {
+                $notifier->syncComment($comment);
             }
 
             return;

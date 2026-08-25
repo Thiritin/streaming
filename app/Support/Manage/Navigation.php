@@ -7,6 +7,7 @@ use App\Enum\SourceStatusEnum;
 use App\Models\Emote;
 use App\Models\Event;
 use App\Models\FeedbackReport;
+use App\Models\RecordingComment;
 use App\Models\Role;
 use App\Models\Server;
 use App\Models\Show;
@@ -61,6 +62,9 @@ final class Navigation
             ['label' => 'Administration', 'items' => [
                 Features::feedback()
                     ? $this->item('Feedback', 'message-square', 'manage.feedback.index', $badges['feedback'] ?? null)
+                    : null,
+                Features::comments()
+                    ? $this->item('Comments', 'messages-square', 'manage.comments.index', $badges['comments'] ?? null)
                     : null,
                 // Administrators only, like the settings pane the bot's token lives in:
                 // an interactive chat can start and end shows.
@@ -119,6 +123,9 @@ final class Navigation
             $online = Source::where('status', SourceStatusEnum::ONLINE)->count();
             $pending = Emote::pending()->count();
             $unread = FeedbackReport::unread()->count();
+            // Comments a report has taken down and nobody has ruled on. They are
+            // invisible to the room while they sit here, so the count is the wait.
+            $reported = RecordingComment::whereNotNull('hidden_at')->count();
 
             /*
              * What is outstanding: shows meant to be published that have been on air and
@@ -170,6 +177,7 @@ final class Navigation
                 'recording_gaps' => $gaps > 0 ? ['label' => (string) $gaps, 'tone' => Status::DANGER] : null,
                 'emotes' => $pending > 0 ? ['label' => (string) $pending, 'tone' => Status::WARN] : null,
                 'feedback' => $unread > 0 ? ['label' => (string) $unread, 'tone' => Status::WARN] : null,
+                'comments' => $reported > 0 ? ['label' => (string) $reported, 'tone' => Status::DANGER] : null,
                 'roles' => $roles > 0 ? ['label' => (string) $roles, 'tone' => Status::IDLE] : null,
             ];
         });

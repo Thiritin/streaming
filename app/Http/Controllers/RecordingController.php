@@ -504,7 +504,7 @@ class RecordingController extends Controller
             ->values();
     }
 
-    public function show(Recording $recording)
+    public function show(Request $request, Recording $recording)
     {
         $user = Auth::user();
 
@@ -525,6 +525,12 @@ class RecordingController extends Controller
 
         $upNext = $this->upNext($recording, $user);
 
+        $thread = RecordingCommentController::thread(
+            $recording,
+            $user,
+            RecordingCommentController::limitFrom($request),
+        );
+
         return Inertia::render('RecordingPlayer', [
             'recording' => $recording,
             'sourceName' => $recording->source?->name,
@@ -533,6 +539,18 @@ class RecordingController extends Controller
             'skips' => $recording->skips(),
             'category' => $recording->effectiveCategory()?->only(['name', 'slug']),
             'upNext' => $upNext,
+            /*
+             * The thread, most hearted first, and how much of it is on screen.
+             * Shared as ordinary props rather than fetched: posting, hearting and
+             * Load more are all Inertia visits, so the page re-renders with the
+             * answer in place.
+             */
+            'comments' => $thread['comments'],
+            'commentsMeta' => $thread['meta'],
+            'commentsEnabled' => RecordingCommentController::availableTo($user),
+            // A guest sees the thread and is told where to sign in; there is nothing
+            // to attribute a guest's comment to.
+            'canComment' => $user !== null,
             // Where this viewer left off, so the player can offer to resume. Zero
             // for a guest, and zero once they have watched it to the end.
             'resumeAt' => $this->resumeAt($recording, $user),

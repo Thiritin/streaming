@@ -136,6 +136,15 @@ final class Features
         return self::enabled('boops');
     }
 
+    /**
+     * Comments under a recording. The installation's answer; a viewer who has
+     * hidden them for themselves is answered by enabledFor().
+     */
+    public static function comments(): bool
+    {
+        return self::enabled('comments');
+    }
+
     public static function announcement(): bool
     {
         return self::enabled('announcement');

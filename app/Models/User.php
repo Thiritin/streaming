@@ -343,6 +343,19 @@ class User extends Authenticatable
     }
 
     /**
+     * Silenced: banned from chat, or timed out.
+     *
+     * One answer for both rooms. The comment section is not shown to somebody who
+     * cannot post in it - a box that takes what is typed and refuses it is worse
+     * than no box - so this is what hides the whole thing rather than only the
+     * form.
+     */
+    public function isSilenced(): bool
+    {
+        return $this->activeChatBan() !== null || $this->activeTimeout() !== null;
+    }
+
+    /**
      * The ban currently silencing this user, if any.
      */
     public function activeChatBan(): ?ChatBan

@@ -5,6 +5,7 @@ namespace App\Services\Telegram;
 use App\Enum\SourceStatusEnum;
 use App\Models\FeedbackReport;
 use App\Models\Recording;
+use App\Models\RecordingComment;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\TelegramChat;
@@ -263,6 +264,175 @@ class TelegramNotifier
                 : null,
             ['text' => 'Open in panel', 'url' => route('manage.recordings.edit', $recording)],
         ]));
+
+        return $rows;
+    }
+
+    /**
+     * Announce a comment a report has just taken down.
+     *
+     * The chat is the queue for these: the comment is already invisible to the
+     * room, so what the message is for is somebody deciding whether it stays that
+     * way. An interactive chat gets all three decisions; a read-only one gets the
+     * text and a link into the panel.
+     *
+     * Which chats hear about it follows the recording's source, the same as
+     * everything else, so a group that covers one hall is not sent the whole
+     * archive's moderation.
+     */
+    public function commentReported(RecordingComment $comment): void
+    {
+        if (! $this->client->enabled()) {
+            return;
+        }
+
+        foreach ($this->chatsFor('notify_comments', $comment->recording?->source_id) as $chat) {
+            // One message per comment per chat: a second report on the same comment
+            // updates what is already there rather than posting it again.
+            if ($this->messagesFor(TelegramMessage::KIND_COMMENT, $comment->id)
+                ->contains(fn (TelegramMessage $message) => $message->telegram_chat_id === $chat->id)
+            ) {
+                continue;
+            }
+
+            $messageId = $this->client->send(
+                $chat,
+                $this->commentText($comment),
+                $this->commentKeyboard($chat, $comment),
+            );
+
+            if ($messageId !== null) {
+                TelegramMessage::create([
+                    'telegram_chat_id' => $chat->id,
+                    'message_id' => $messageId,
+                    'kind' => TelegramMessage::KIND_COMMENT,
+                    'subject_id' => $comment->id,
+                    'state' => 'reported',
+                ]);
+            }
+        }
+    }
+
+    public function syncComment(RecordingComment $comment): void
+    {
+        if (! $this->client->enabled()) {
+            return;
+        }
+
+        foreach ($this->messagesFor(TelegramMessage::KIND_COMMENT, $comment->id) as $message) {
+            $this->client->edit(
+                $message->chat,
+                $message->message_id,
+                $this->commentText($comment),
+                $this->commentKeyboard($message->chat, $comment, $message->state),
+            );
+
+            if ($message->state !== TelegramMessage::STATE_CONFIRM_BAN) {
+                $message->forceFill([
+                    'state' => $comment->isHidden() ? 'reported' : 'approved',
+                ])->save();
+            }
+        }
+    }
+
+    /**
+     * What is left in the chat once the comment itself is gone. Edited rather than
+     * deleted, so the record of the decision stays where it was made.
+     */
+    public function commentDeleted(int $commentId, string $author, string $by): void
+    {
+        if (! $this->client->enabled()) {
+            return;
+        }
+
+        foreach ($this->messagesFor(TelegramMessage::KIND_COMMENT, $commentId) as $message) {
+            $this->client->edit(
+                $message->chat,
+                $message->message_id,
+                '🗑 <b>Comment deleted</b>'."\n".'By '.$this->escape($by).'. It was '.$this->escape($author).'\'s.',
+                [],
+            );
+
+            $message->forceFill(['state' => 'deleted'])->save();
+        }
+    }
+
+    public function commentText(RecordingComment $comment): string
+    {
+        $lines = [];
+
+        $lines[] = $comment->isHidden()
+            ? '🚩 <b>Comment reported</b>'
+            : '💬 <b>Comment</b>';
+
+        $lines[] = 'From: '.$this->escape($comment->user?->name ?? 'Deleted account');
+
+        if ($comment->recording) {
+            $lines[] = 'Under: '.$this->escape($comment->recording->title);
+        }
+
+        $lines[] = '';
+        $lines[] = '<i>'.$this->escape($comment->excerpt(600)).'</i>';
+
+        $reports = $comment->reports()->unresolved()->with('user:id,name')->latest()->limit(3)->get();
+
+        if ($reports->isNotEmpty()) {
+            $lines[] = '';
+            $lines[] = 'Reported by:';
+
+            foreach ($reports as $report) {
+                $lines[] = '· '.$this->escape($report->user?->name ?? 'Deleted account')
+                    .': '.$this->escape($report->message);
+            }
+        }
+
+        if (! $comment->isHidden() && $comment->approved_at) {
+            $lines[] = '';
+            $lines[] = '✅ Back up'.($comment->approver ? ', approved by '.$this->escape($comment->approver->name) : '').'.';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @return array<int, array<int, array<string, string>>>
+     */
+    public function commentKeyboard(TelegramChat $chat, RecordingComment $comment, ?string $state = null): array
+    {
+        $open = ['text' => 'Open in panel', 'url' => route('manage.comments.show', $comment)];
+
+        if (! $chat->interactive) {
+            return [[$open]];
+        }
+
+        // Banning is the one that cannot be undone in a press, so it asks twice -
+        // the same shape the End button uses on a show.
+        if ($state === TelegramMessage::STATE_CONFIRM_BAN) {
+            return [
+                [
+                    ['text' => '🚫 Yes, ban them', 'callback_data' => "c:banyes:{$comment->id}"],
+                    ['text' => 'Cancel', 'callback_data' => "c:bancancel:{$comment->id}"],
+                ],
+                [$open],
+            ];
+        }
+
+        $rows = [];
+
+        if ($comment->isHidden()) {
+            $rows[] = [
+                ['text' => '✅ Approve', 'callback_data' => "c:approve:{$comment->id}"],
+                ['text' => '🗑 Delete', 'callback_data' => "c:delete:{$comment->id}"],
+            ];
+        } else {
+            $rows[] = [['text' => '🗑 Delete', 'callback_data' => "c:delete:{$comment->id}"]];
+        }
+
+        if ($comment->user_id) {
+            $rows[] = [['text' => '🚫 Ban author', 'callback_data' => "c:ban:{$comment->id}"]];
+        }
+
+        $rows[] = [$open];
 
         return $rows;
     }

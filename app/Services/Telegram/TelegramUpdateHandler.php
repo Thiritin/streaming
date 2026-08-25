@@ -2,8 +2,10 @@
 
 namespace App\Services\Telegram;
 
+use App\Models\ChatBan;
 use App\Models\FeedbackReport;
 use App\Models\Recording;
+use App\Models\RecordingComment;
 use App\Models\Show;
 use App\Models\TelegramChat;
 use App\Models\TelegramLinkCode;
@@ -259,6 +261,7 @@ class TelegramUpdateHandler
             's' => $this->showAction($callbackId, $chat, $record, (string) $action, (int) $id, $actor),
             'f' => $this->feedbackAction($callbackId, (string) $action, (int) $id, $actor),
             'r' => $this->recordingAction($callbackId, (string) $action, (int) $id, $actor, $chat),
+            'c' => $this->commentAction($callbackId, $record, (string) $action, (int) $id, $actor),
             default => $this->client->answerCallback($callbackId, 'Unknown button.'),
         };
     }
@@ -386,6 +389,119 @@ class TelegramUpdateHandler
 
         $this->client->answerCallback($callbackId, 'Resolved.');
         $this->notifier->syncFeedback($report->refresh());
+    }
+
+    /**
+     * Moderating a reported comment from the chat: put it back, take it down, or
+     * stop the account that wrote it.
+     *
+     * All three are decisions the panel offers, and none of them needs anything the
+     * panel has that a chat does not - the report and the comment are both in the
+     * message. Banning asks twice, because it is the one that does not undo itself.
+     */
+    private function commentAction(
+        string $callbackId,
+        ?TelegramMessage $record,
+        string $action,
+        int $commentId,
+        string $actor,
+    ): void {
+        $comment = RecordingComment::with(['user', 'recording', 'approver'])->find($commentId);
+
+        if (! $comment) {
+            $this->client->answerCallback($callbackId, 'That comment is gone.', alert: true);
+
+            return;
+        }
+
+        match ($action) {
+            'approve' => $this->approveComment($callbackId, $comment),
+            'delete' => $this->deleteComment($callbackId, $comment, $actor),
+            'ban' => $this->askToBan($callbackId, $record, $comment),
+            'bancancel' => $this->cancelBan($callbackId, $record, $comment),
+            'banyes' => $this->banCommentAuthor($callbackId, $record, $comment, $actor),
+            default => $this->client->answerCallback($callbackId, 'Unknown button.'),
+        };
+    }
+
+    private function approveComment(string $callbackId, RecordingComment $comment): void
+    {
+        if (! $comment->isHidden()) {
+            $this->client->answerCallback($callbackId, 'Already up.');
+            $this->notifier->syncComment($comment);
+
+            return;
+        }
+
+        // No user id: the presser is a Telegram account, so there is nobody to
+        // attribute it to on this side.
+        $comment->approve(null);
+
+        $this->client->answerCallback($callbackId, 'Back up.');
+        $this->notifier->syncComment($comment->refresh());
+    }
+
+    private function deleteComment(string $callbackId, RecordingComment $comment, string $actor): void
+    {
+        $author = $comment->user?->name ?? 'a deleted account';
+        $id = $comment->id;
+
+        // Replies go with it, the same as everywhere else.
+        $comment->delete();
+
+        $this->client->answerCallback($callbackId, 'Deleted.');
+        $this->notifier->commentDeleted($id, $author, $actor.' (Telegram)');
+    }
+
+    private function askToBan(string $callbackId, ?TelegramMessage $record, RecordingComment $comment): void
+    {
+        if (! $comment->user_id) {
+            $this->client->answerCallback($callbackId, 'That comment has no account behind it.', alert: true);
+
+            return;
+        }
+
+        $record?->forceFill(['state' => TelegramMessage::STATE_CONFIRM_BAN])->save();
+
+        $this->client->answerCallback($callbackId, 'Confirm to ban them.');
+        $this->notifier->syncComment($comment);
+    }
+
+    private function cancelBan(string $callbackId, ?TelegramMessage $record, RecordingComment $comment): void
+    {
+        $record?->forceFill(['state' => $comment->isHidden() ? 'reported' : 'approved'])->save();
+
+        $this->client->answerCallback($callbackId, 'Left alone.');
+        $this->notifier->syncComment($comment);
+    }
+
+    private function banCommentAuthor(
+        string $callbackId,
+        ?TelegramMessage $record,
+        RecordingComment $comment,
+        string $actor,
+    ): void {
+        if (! $comment->user_id) {
+            $this->client->answerCallback($callbackId, 'That comment has no account behind it.', alert: true);
+
+            return;
+        }
+
+        /*
+         * Permanent, and a chat ban rather than a comment-only one: the comment box
+         * already refuses anyone chat has silenced. A ban meant to run out is set in
+         * the panel, where the length can be chosen; from here the answer is stop.
+         */
+        ChatBan::create([
+            'user_id' => $comment->user_id,
+            'reason' => 'Comment moderation by '.$actor.' (Telegram)',
+            'expires_at' => null,
+        ]);
+
+        $record?->forceFill(['state' => $comment->isHidden() ? 'reported' : 'approved'])->save();
+
+        $this->client->answerCallback($callbackId, 'Banned.');
+        $this->notifier->syncComment($comment->refresh());
     }
 
     /**

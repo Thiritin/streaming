@@ -16,12 +16,18 @@ class TelegramMessage extends Model
 
     public const KIND_RECORDING = 'recording';
 
+    /** A comment a report has taken down, waiting on a ruling. */
+    public const KIND_COMMENT = 'comment';
+
     public const STATE_UPCOMING = 'upcoming';
 
     public const STATE_LIVE = 'live';
 
     /** The End button has been pressed once and is waiting for the confirmation. */
     public const STATE_CONFIRM_END = 'confirm_end';
+
+    /** Same shape for a ban: pressed once, waiting to be meant. */
+    public const STATE_CONFIRM_BAN = 'confirm_ban';
 
     public const STATE_CLOSED = 'closed';
 

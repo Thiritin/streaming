@@ -36,6 +36,13 @@ return [
     'boops' => true,
 
     /*
+     | Comments under a recording in the archive, with one level of replies. Off
+     | hides the section and closes the endpoints; nothing already posted is
+     | deleted, so switching it back on brings the threads back as they were.
+     */
+    'comments' => true,
+
+    /*
      | The banner on the front page and the page behind it. Off answers 404 on
      | /announcement and shows nothing, whatever is written in the settings.
      */
