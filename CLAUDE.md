@@ -154,6 +154,21 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      three times over; the one shelf left is Continue watching, on the unfiltered
      page only. `/archive/year/{year}` is now a redirect into `?year=`, kept for
      links already handed out.
+   - A category on its own is read run by run: the grid is ordered by run and split
+     into a section per run, headed with how many that run holds ("4 Theater
+     recordings for EF30"). Picking a run already answers the question, so the
+     sections only appear while a category is on and no run is picked, and only in
+     the default order - a most-viewed grid sliced by run is two orderings arguing.
+     The order comes from a correlated subquery over the recording's own event and
+     its show's, never a join: joining `shows` puts a second `is_published` and
+     `category_id` in scope and every unqualified column in the filters turns
+     ambiguous.
+   - A filter visit rebuilds the page rather than preserving its state, and the
+     infinite-scroll sentinel comes off the page while one is in flight. The
+     sentinel fires on `always`, so an emptying grid brings it back into view
+     mid-visit and its partial reload cancels the filter's own request - which is
+     how a chip could land in the URL while the chips and the grid still showed the
+     filter before it.
    - The collection chips are events, not years: a run is what people mean when they
      say which year a recording is from. A recording filed under no run keeps a year
      chip after the events, which is the only place a year chip survives and it

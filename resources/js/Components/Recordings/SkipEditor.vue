@@ -242,6 +242,47 @@ const endDrag = () => {
 };
 
 /*
+ * The playhead's own lane, across the top of the track.
+ *
+ * The segments fill the track and the playhead sat on top of them, so a grab meant
+ * to move the playhead moved whatever segment was under it instead. The top strip
+ * belongs to the playhead alone and nothing else reacts to a press in it; the body
+ * of the track below is still the segments'.
+ */
+const scrubbing = ref(false);
+
+const onScrubDown = (event) => {
+  if (!usable.value || event.button !== 0) return;
+
+  event.stopPropagation();
+  event.preventDefault();
+
+  scrubbing.value = true;
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+
+  emit('seek', timeAt(event.clientX));
+
+  window.addEventListener('pointermove', onScrubMove);
+  window.addEventListener('pointerup', endScrub);
+  window.addEventListener('pointercancel', endScrub);
+};
+
+const onScrubMove = (event) => {
+  if (!scrubbing.value) return;
+
+  event.preventDefault();
+  emit('seek', timeAt(event.clientX));
+};
+
+const endScrub = () => {
+  scrubbing.value = false;
+
+  window.removeEventListener('pointermove', onScrubMove);
+  window.removeEventListener('pointerup', endScrub);
+  window.removeEventListener('pointercancel', endScrub);
+};
+
+/*
  * Keys, against the playhead: I in, O out, N a fresh segment, Delete removes the
  * selected one, and , / . nudge the marker nearest the playhead by a second.
  *
@@ -288,6 +329,7 @@ window.addEventListener('keydown', onKey);
 
 onBeforeUnmount(() => {
   endDrag();
+  endScrub();
   window.removeEventListener('keydown', onKey);
 });
 
@@ -355,7 +397,16 @@ const onClockInput = (index, field, event) => {
           <span class="skip-grip skip-grip-end" @pointerdown="onSegmentDown($event, index, 'end')" />
         </div>
 
-        <div v-if="playheadPct !== null" class="skip-playhead" :style="{ left: `${playheadPct}%` }" />
+        <div v-if="playheadPct !== null" class="skip-playhead" :style="{ left: `${playheadPct}%` }">
+          <span class="skip-playhead-knob" />
+        </div>
+
+        <div
+          class="skip-scrub"
+          :class="{ 'is-scrubbing': scrubbing }"
+          :title="currentTime === null ? '' : 'Drag here to move the playhead'"
+          @pointerdown="onScrubDown"
+        />
       </div>
 
       <div class="skip-actions">
@@ -401,7 +452,8 @@ const onClockInput = (index, field, event) => {
             <kbd>,</kbd> <kbd>.</kbd> nudge by a second.
           </template>
           <template v-else-if="currentTime !== null">
-            Park the playhead and press in. Or drag on the bar to draw one.
+            Park the playhead and press in. Drag the top strip to move it, or the bar
+            below to draw a skip.
           </template>
           <template v-else>
             Drag on the bar to draw one, drag its edges to trim.
@@ -486,7 +538,7 @@ const onClockInput = (index, field, event) => {
 }
 
 .skip-track {
-  @apply relative h-10 w-full cursor-crosshair overflow-hidden rounded-lg border border-hairline bg-surface-2;
+  @apply relative h-12 w-full cursor-crosshair overflow-hidden rounded-lg border border-hairline bg-surface-2;
   touch-action: none;
 }
 
@@ -495,7 +547,7 @@ const onClockInput = (index, field, event) => {
 }
 
 .skip-block {
-  @apply absolute inset-y-1 flex cursor-grab items-center justify-center overflow-hidden rounded-md bg-primary-500/70 ring-1 ring-primary-300/60;
+  @apply absolute bottom-1 top-5 flex cursor-grab items-center justify-center overflow-hidden rounded-md bg-primary-500/70 ring-1 ring-primary-300/60;
 }
 
 .skip-block:active {
@@ -541,7 +593,22 @@ const onClockInput = (index, field, event) => {
 }
 
 .skip-playhead {
-  @apply pointer-events-none absolute inset-y-0 w-0.5 bg-fg-1;
+  @apply pointer-events-none absolute inset-y-0 z-20 w-0.5 bg-fg-1;
+}
+
+.skip-playhead-knob {
+  @apply absolute -top-px left-1/2 h-3 w-3 -translate-x-1/2 rounded-b-sm bg-fg-1;
+}
+
+/* Above the segments, so a press in the top strip moves the playhead whatever is
+   drawn underneath it. */
+.skip-scrub {
+  @apply absolute inset-x-0 top-0 z-30 h-4 cursor-ew-resize border-b border-hairline bg-surface-3/60;
+}
+
+.skip-scrub:hover,
+.skip-scrub.is-scrubbing {
+  @apply bg-surface-3;
 }
 
 .skip-actions {

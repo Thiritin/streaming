@@ -77,7 +77,26 @@
         </h2>
       </div>
 
-      <div v-if="tiles.length" class="stream-grid">
+      <!-- Read run by run when a category is on and no run is picked: this run's
+           four theatre pieces are not the tail of last run's nine. -->
+      <template v-if="sections.length">
+        <section v-for="section in sections" :key="section.key" class="pb-8">
+          <h3 class="pb-3 text-sm font-semibold text-white">
+            {{ section.heading }}
+          </h3>
+
+          <div class="stream-grid">
+            <RecordingTile
+              v-for="(recording, index) in section.recordings"
+              :key="recording.id"
+              :recording="recording"
+              :priority="section.first && index < 8"
+            />
+          </div>
+        </section>
+      </template>
+
+      <div v-else-if="tiles.length" class="stream-grid">
         <RecordingTile
           v-for="(recording, index) in tiles"
           :key="recording.id"
@@ -86,13 +105,14 @@
         />
       </div>
 
-      <p v-else class="py-16 text-center text-primary-400">
+      <p v-else-if="!tiles.length" class="py-16 text-center text-primary-400">
         {{ isFiltered ? 'Nothing matches that.' : 'Nothing here yet.' }}
       </p>
 
       <!-- Next page loads when this comes into view. -->
       <WhenVisible
-        v-if="hasMore"
+        v-if="hasMore && !filtering"
+        :key="`more-${filters.event ?? filters.year ?? 'all'}-${filters.category ?? 'any'}-${filters.sort}`"
         :params="{
           data: { page: pagination.page + 1 },
           only: ['recordings', 'pagination'],
@@ -129,6 +149,8 @@ const props = defineProps({
   // Shows that ended but have not been published yet. Page one only.
   pending: { type: Array, default: () => [] },
   pagination: { type: Object, default: () => ({ page: 1, lastPage: 1, total: 0 }) },
+  // One entry per run, when the grid is read run by run. Empty otherwise.
+  groups: { type: Array, default: () => [] },
   chips: { type: Object, default: () => ({ collections: [], categories: [] }) },
   filters: {
     type: Object,
@@ -173,6 +195,51 @@ const isFiltered = computed(
 const tiles = computed(() => [...props.pending, ...props.recordings]);
 
 const hasMore = computed(() => props.pagination.page < props.pagination.lastPage);
+
+/*
+ * The tiles sliced into runs. The server orders them by run and hands back a count
+ * per run, so a section starts wherever the run changes and its heading can say how
+ * many there are in total rather than how many have been scrolled in so far.
+ */
+const sections = computed(() => {
+  if (!props.groups.length) return [];
+
+  const counts = new Map(props.groups.map((group) => [group.label ?? '', group.count]));
+  const category = props.chips.categories.find((entry) => entry.slug === props.filters.category);
+  const noun = category?.name ?? 'recording';
+  const out = [];
+
+  for (const recording of tiles.value) {
+    const label = recording.event_label ?? '';
+    const last = out[out.length - 1];
+
+    if (!last || last.label !== label) {
+      const total = counts.get(label) ?? 0;
+
+      out.push({
+        key: label || 'unfiled',
+        label,
+        first: out.length === 0,
+        heading: label
+          ? `${total} ${noun} ${total === 1 ? 'recording' : 'recordings'} for ${label}`
+          : `${total} ${noun} ${total === 1 ? 'recording' : 'recordings'} filed under no event`,
+        recordings: [],
+      });
+    }
+
+    out[out.length - 1].recordings.push(recording);
+  }
+
+  return out;
+});
+
+/*
+ * True while a filter visit is in flight. The infinite-scroll sentinel comes off
+ * the page for that moment: it fires on `always`, so an empty grid puts it back in
+ * view mid-visit, and its partial reload would cancel the filter's own request -
+ * leaving the URL on the new filter and the props on the old one.
+ */
+const filtering = ref(false);
 
 const resultsLabel = computed(() => {
   const total = props.pagination.total ?? 0;
@@ -219,10 +286,21 @@ const applyFilters = (changes) => {
   if (next.category) query.category = next.category;
   if (next.sort && next.sort !== 'newest') query.sort = next.sort;
 
+  filtering.value = true;
+
   router.get(route('recordings.index'), query, {
-    preserveState: true,
+    /*
+     * Deliberately not preserveState: the component is rebuilt from the response
+     * rather than kept and re-fed. Keeping it is what let a chip land in the URL
+     * while the chips and the grid still showed the filter before it - the page
+     * had nothing to re-render from if anything cancelled or raced the visit.
+     * There is no state here worth keeping: the search box and the sort both read
+     * from props.
+     */
+    preserveState: false,
     preserveScroll: true,
     replace: true,
+    onFinish: () => (filtering.value = false),
     /*
      * The grid is a merge prop, so pages two and three can be appended to it as they
      * are scrolled in. A filter is not another page: without this its results are

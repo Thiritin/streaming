@@ -377,4 +377,75 @@ class ArchiveBrowsingTest extends TestCase
                 ->where('chips.categories.0.count', 1)
             );
     }
+
+    public function test_a_category_on_its_own_is_grouped_by_run(): void
+    {
+        $theatre = Category::factory()->create(['name' => 'Theater', 'slug' => 'theater']);
+        $source = Source::factory()->create();
+
+        $thisRun = Event::create([
+            'name' => 'EF30',
+            'starts_on' => now()->subDays(3)->toDateString(),
+            'ends_on' => now()->addDays(3)->toDateString(),
+        ]);
+        $lastRun = Event::create([
+            'name' => 'EF29',
+            'starts_on' => now()->subYear()->toDateString(),
+            'ends_on' => now()->subYear()->addDays(6)->toDateString(),
+        ]);
+        Event::forgetWindow();
+
+        $now = Show::factory()->create(['source_id' => $source->id, 'event_id' => $thisRun->id]);
+        $then = Show::factory()->create(['source_id' => $source->id, 'event_id' => $lastRun->id]);
+
+        $this->recording(['title' => 'This run theatre', 'show_id' => $now->id, 'category_id' => $theatre->id]);
+        $this->recording([
+            'title' => 'Last run theatre',
+            'show_id' => $then->id,
+            'category_id' => $theatre->id,
+            'date' => now()->subYear(),
+        ]);
+        $this->recording([
+            'title' => 'Also last run',
+            'show_id' => $then->id,
+            'category_id' => $theatre->id,
+            'date' => now()->subYear()->subDay(),
+        ]);
+
+        $this->get(route('recordings.index', ['category' => 'theater']))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                // Newest run first, and its recordings lead the grid.
+                ->where('groups.0.label', 'EF30')
+                ->where('groups.0.count', 1)
+                ->where('groups.1.label', 'EF29')
+                ->where('groups.1.count', 2)
+                ->where('recordings.0.title', 'This run theatre')
+                ->where('recordings.0.event_label', 'EF30')
+                ->where('recordings.1.event_label', 'EF29')
+            );
+    }
+
+    public function test_picking_a_run_answers_the_question_so_the_grid_is_flat_again(): void
+    {
+        $theatre = Category::factory()->create(['name' => 'Theater', 'slug' => 'theater']);
+        $source = Source::factory()->create();
+
+        $run = Event::create([
+            'name' => 'EF30',
+            'starts_on' => now()->subDays(3)->toDateString(),
+            'ends_on' => now()->addDays(3)->toDateString(),
+        ]);
+        Event::forgetWindow();
+
+        $show = Show::factory()->create(['source_id' => $source->id, 'event_id' => $run->id]);
+        $this->recording(['title' => 'Theatre', 'show_id' => $show->id, 'category_id' => $theatre->id]);
+
+        $this->get(route('recordings.index', ['category' => 'theater', 'event' => $run->slug]))
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('groups', []));
+
+        // Nor in an order the grouping would argue with.
+        $this->get(route('recordings.index', ['category' => 'theater', 'sort' => 'views']))
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('groups', []));
+    }
 }

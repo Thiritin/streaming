@@ -371,6 +371,21 @@ const beginDrag = (what) => {
     window.addEventListener('pointerup', onPointerUp, { once: true });
 };
 
+/*
+ * The top strip of the track is the playhead's and nothing else's.
+ *
+ * The in and out handles are grabbed by proximity, so a press meant to move the
+ * playhead next to a marker moved the marker instead. Pressing in the lane always
+ * scrubs; the body of the track below still behaves as a range slider.
+ */
+const SCRUB_LANE_PX = 16;
+
+const inScrubLane = (event) => {
+    const rect = track.value?.getBoundingClientRect();
+
+    return !!rect && event.clientY - rect.top <= SCRUB_LANE_PX;
+};
+
 const onTrackPointerDown = (event) => {
     const ms = msFromClientX(event.clientX);
     if (ms === null) return;
@@ -380,7 +395,7 @@ const onTrackPointerDown = (event) => {
     const near = (a) => (a === null ? Infinity : Math.abs(a - ms));
     const grabbable = window_.value.span * 0.02;
 
-    if (Math.min(near(inMs.value), near(outMs.value)) < grabbable) {
+    if (!inScrubLane(event) && Math.min(near(inMs.value), near(outMs.value)) < grabbable) {
         beginDrag(near(inMs.value) <= near(outMs.value) ? 'in' : 'out');
         return;
     }
@@ -884,7 +899,7 @@ onBeforeUnmount(() => {
 
                     <div
                         v-if="inPct !== null"
-                        class="group absolute inset-y-0 -ml-1.5 flex w-3 cursor-ew-resize items-center justify-center rounded-sm bg-primary-500"
+                        class="group absolute bottom-0 top-4 -ml-1.5 flex w-3 cursor-ew-resize items-center justify-center rounded-sm bg-primary-500"
                         :style="{ left: `${inPct}%` }"
                         title="Drag the in point"
                         @pointerdown="grabHandle('in', $event)"
@@ -893,7 +908,7 @@ onBeforeUnmount(() => {
                     </div>
                     <div
                         v-if="outPct !== null"
-                        class="group absolute inset-y-0 -ml-1.5 flex w-3 cursor-ew-resize items-center justify-center rounded-sm bg-primary-500"
+                        class="group absolute bottom-0 top-4 -ml-1.5 flex w-3 cursor-ew-resize items-center justify-center rounded-sm bg-primary-500"
                         :style="{ left: `${outPct}%` }"
                         title="Drag the out point"
                         @pointerdown="grabHandle('out', $event)"
@@ -903,11 +918,21 @@ onBeforeUnmount(() => {
 
                     <div
                         v-if="playheadPct !== null"
-                        class="pointer-events-none absolute inset-y-0 w-0.5 bg-fg-1"
+                        class="pointer-events-none absolute inset-y-0 z-20 w-0.5 bg-fg-1"
                         :style="{ left: `${playheadPct}%` }"
                     >
-                        <div class="absolute -top-px -left-[3px] h-1.5 w-2 bg-fg-1"></div>
+                        <div class="absolute -top-px left-1/2 h-3 w-3 -translate-x-1/2 rounded-b-sm bg-fg-1"></div>
                     </div>
+
+                    <!-- Above the handles, so a press here is the playhead's whatever is
+                         drawn underneath it. -->
+                    <div
+                        class="absolute inset-x-0 top-0 z-30 h-4 cursor-ew-resize border-b border-hairline bg-surface-3/60 hover:bg-surface-3"
+                        title="Drag here to move the playhead"
+                        @pointerdown="onTrackPointerDown"
+                        @pointermove="hoverMs = msFromClientX($event.clientX)"
+                        @pointerleave="hoverMs = null"
+                    ></div>
                 </div>
             </div>
 

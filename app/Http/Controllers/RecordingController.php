@@ -289,6 +289,20 @@ class RecordingController extends Controller
             $query->inCategory($filters['category']);
         }
 
+        /*
+         * A category on its own is read run by run: "what theatre is there" is
+         * really "what theatre is there from each year", and a flat newest-first
+         * grid buries this run's four under last run's nine. Picking a run already
+         * answers the question, so grouping only applies while none is picked, and
+         * only in the default order - a most-viewed grid sliced by run is two
+         * orderings arguing.
+         */
+        $grouped = $this->isGrouped($filters);
+
+        if ($grouped) {
+            $query = $this->orderByEvent($query);
+        }
+
         match ($filters['sort']) {
             'oldest' => $query->orderBy('date'),
             'views' => $query->orderByDesc('views')->orderByDesc('date'),
@@ -312,6 +326,13 @@ class RecordingController extends Controller
                 'total' => $page->total(),
             ],
             /*
+             * One entry per run present in the whole filtered set, not just the page
+             * on screen: the heading over a section says how many there are, and a
+             * count that grows as more of the grid is scrolled in would be a lie
+             * every time it is read.
+             */
+            'groups' => $grouped ? $this->groupCounts($user, $filters) : [],
+            /*
              * Page one only, and only while the grid is newest-first: prepending
              * them to every page would repeat the same processing tiles all the
              * way down, and prepending them to a most-viewed grid would put four
@@ -321,6 +342,75 @@ class RecordingController extends Controller
                 ? $this->pendingTiles($filters)
                 : [],
         ];
+    }
+
+    /**
+     * Whether the grid is read run by run: a category picked, no run picked, and
+     * the default order.
+     */
+    private function isGrouped(array $filters): bool
+    {
+        return $filters['category'] !== null
+            && $filters['event'] === null
+            && $filters['year'] === null
+            && $filters['sort'] === 'newest';
+    }
+
+    /**
+     * Newest run first, with everything filed under no run at the end.
+     *
+     * A recording's run is its own or its show's, so the order has to come from a
+     * coalesce over both - `orderBy('event_id')` would scatter every recording that
+     * has its run through its show. Written as a correlated subquery rather than a
+     * join: joining `shows` puts a second `is_published`, `category_id` and
+     * `required_roles` in scope and every unqualified column in the filters becomes
+     * ambiguous. Spelled out rather than using NULLS LAST, which Postgres has and
+     * MySQL does not.
+     */
+    private function orderByEvent($query)
+    {
+        $runStart = '(select coalesce(own_event.starts_on, show_event.starts_on)
+            from recordings as ordered
+            left join events as own_event on own_event.id = ordered.event_id
+            left join shows as ordered_show on ordered_show.id = ordered.show_id
+            left join events as show_event on show_event.id = ordered_show.event_id
+            where ordered.id = recordings.id)';
+
+        return $query
+            ->orderByRaw("({$runStart}) is null")
+            ->orderByRaw("({$runStart}) desc");
+    }
+
+    /**
+     * How many the filter finds in each run, in the order the grid puts them.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function groupCounts($user, array $filters): array
+    {
+        $recordings = $this->publishedRecordings($user, $filters['search'])
+            ->inCategory($filters['category'])
+            ->with(['event:id,name,slug,starts_on', 'show:id,event_id', 'show.event:id,name,slug,starts_on'])
+            ->get(['id', 'date', 'event_id', 'show_id']);
+
+        return $recordings
+            ->groupBy(fn (Recording $recording) => $recording->effectiveEvent()?->slug ?? '')
+            ->map(function (Collection $group, string $slug) {
+                $event = $group->first()->effectiveEvent();
+
+                return [
+                    'key' => $slug === '' ? 'unfiled' : $slug,
+                    // The label the section is headed with, and what the client
+                    // matches its tiles against.
+                    'label' => $event?->name,
+                    'count' => $group->count(),
+                    'sort' => $event?->starts_on?->timestamp ?? -1,
+                ];
+            })
+            ->sortByDesc('sort')
+            ->map(fn (array $group) => Arr::except($group, 'sort'))
+            ->values()
+            ->all();
     }
 
     /**
@@ -423,6 +513,9 @@ class RecordingController extends Controller
             'source_name' => $recording->source?->name,
             'source_slug' => $recording->source?->slug,
             'category_name' => $recording->effectiveCategory()?->name,
+            // What run it belongs to, so a grid read run by run can start a new
+            // section when this changes without asking the server again.
+            'event_label' => $recording->effectiveEvent()?->name,
             // The same playlist the player uses. The hover preview attaches to it
             // at the lowest rendition; nothing else is stored per recording to
             // preview from. A recording registered from outside has no archive to
@@ -497,6 +590,7 @@ class RecordingController extends Controller
                 'source_name' => $show->source?->name,
                 'source_slug' => $show->source?->slug,
                 'category_name' => $show->category?->name,
+                'event_label' => $show->event?->name,
                 'preview_url' => null,
                 'progress' => null,
                 'is_pending' => true,
