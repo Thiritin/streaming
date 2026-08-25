@@ -71,19 +71,18 @@
         eager
       />
 
-      <div class="flex flex-wrap items-center justify-between gap-3 pb-4">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.12em] text-primary-300">
-          {{ resultsLabel }}
-        </h2>
+      <!-- One count, in one place. Grouped, each row carries its own in the same
+           lettering, so the page does not say how many there are and then say it
+           again per run directly underneath. -->
+      <div v-if="!sections.length" class="flex flex-wrap items-center justify-between gap-3 pb-4">
+        <h2 class="results-label">{{ resultsLabel }}</h2>
       </div>
 
       <!-- Read run by run when a category is on and no run is picked: this run's
            four theatre pieces are not the tail of last run's nine. -->
       <template v-if="sections.length">
         <section v-for="section in sections" :key="section.key" class="pb-8">
-          <h3 class="pb-3 text-sm font-semibold text-white">
-            {{ section.heading }}
-          </h3>
+          <h2 class="results-label pb-3">{{ section.heading }}</h2>
 
           <div class="stream-grid">
             <RecordingTile
@@ -220,9 +219,9 @@ const sections = computed(() => {
         key: label || 'unfiled',
         label,
         first: out.length === 0,
-        heading: label
-          ? `${total} ${noun} ${total === 1 ? 'recording' : 'recordings'} for ${label}`
-          : `${total} ${noun} ${total === 1 ? 'recording' : 'recordings'} filed under no event`,
+        // Same shape as the label over an ungrouped grid - "4 Theater" - with the
+        // run it belongs to on the end, because that is what the row is.
+        heading: label ? `${total} ${noun} ${label}` : `${total} ${noun} filed under no event`,
         recordings: [],
       });
     }
@@ -320,6 +319,12 @@ const applySearch = (term) => {
 
 <style scoped>
 @reference "../../../css/app.css";
+
+/* What a count of recordings looks like, wherever one is written: over the whole
+   grid, or over one run's row of it. */
+.results-label {
+  @apply text-sm font-semibold uppercase tracking-[0.12em] text-primary-300;
+}
 
 /* Docked under the site's own bar, which is h-14 and sticky at the top. */
 .chip-dock {
