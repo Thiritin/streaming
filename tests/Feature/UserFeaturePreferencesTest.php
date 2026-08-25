@@ -186,4 +186,17 @@ class UserFeaturePreferencesTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page->where('features.boops', true));
     }
+
+    public function test_a_flag_added_in_a_deploy_is_not_read_off_a_cache_that_predates_it(): void
+    {
+        // What the cache holds after an upgrade: the set as it was before the new
+        // flag existed. Comments shipped switched off this way, because the whole
+        // set lives under one key and the missing key read as false.
+        cache()->put(Features::cacheKey(), ['chat' => true], 3600);
+
+        config(['features.newthing' => true]);
+
+        $this->assertTrue(Features::enabled('newthing'));
+        $this->assertTrue(Features::enabled('chat'));
+    }
 }

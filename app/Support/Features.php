@@ -41,9 +41,23 @@ final class Features
      *
      * @return array<string, bool>
      */
+    /**
+     * The cache key for the current set of flags.
+     *
+     * Keyed on the flag names, not just a constant: the whole set is cached under
+     * one key, so a flag added in a deploy would otherwise be missing from an
+     * array written before it existed and read as off until the TTL ran out. That
+     * is exactly how comments shipped switched off while their toggle - built from
+     * config/settings.php, which is read fresh - sat in Settings looking on.
+     */
+    public static function cacheKey(): string
+    {
+        return self::CACHE_KEY.':'.substr(md5(implode(',', array_keys(config('features', [])))), 0, 8);
+    }
+
     public static function all(): array
     {
-        return Cache::remember(self::CACHE_KEY, self::TTL, function () {
+        return Cache::remember(self::cacheKey(), self::TTL, function () {
             $keys = array_keys(config('features', []));
 
             $saved = BrandingSetting::whereIn('key', $keys)->pluck('value', 'key');
@@ -167,9 +181,13 @@ final class Features
 
     /**
      * Drop the resolved set. Called from BrandingSetting when a row is written.
+     *
+     * Both keys: the bare one is what installations cached before the key carried
+     * the flag names, and a stale entry under it would outlive this deploy.
      */
     public static function flush(): void
     {
+        Cache::forget(self::cacheKey());
         Cache::forget(self::CACHE_KEY);
     }
 }
