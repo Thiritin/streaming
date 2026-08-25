@@ -184,6 +184,14 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      `SkipEditor` beside a player of its own: park the playhead, press in, park it
      again, press out (I and O, N for a new one, Del to drop one, , and . to nudge).
      They save with the rest of the form.
+   - `recordings.views` counts viewers, not renders. The watch page is an Inertia
+     visit, so a reload, a comment posted or a heart pressed renders it again, and
+     counting each one put every viewer of a popular recording behind the same row
+     lock - enough of them to hold up every Octane worker in the pool. One viewer
+     counts once per thirty minutes: `App\Support\RecordingViews` claims a cache key
+     (the account, or the session for a guest) and only the claim that lands
+     increments. The write goes through the query builder, because a view is not an
+     edit - it must not touch `updated_at` and must not wake `RecordingObserver`.
    - Playback position lives in `recording_progress`, one row per viewer per recording,
      written by the player every 15s and on the way out. Signed-in only: there is
      nothing to key a guest's row on, and Continue watching is assembled server-side

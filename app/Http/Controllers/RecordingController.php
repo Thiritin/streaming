@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Recording;
 use App\Models\RecordingProgress;
 use App\Models\Show;
+use App\Support\RecordingViews;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -506,8 +507,8 @@ class RecordingController extends Controller
                 ->with('error', 'You do not have permission to view this recording');
         }
 
-        // Increment views
-        $recording->increment('views');
+        // One view per viewer per window, not one per render; see RecordingViews.
+        RecordingViews::count($recording, $request);
 
         $recording->load(['source:id,name,slug', 'category:id,name,slug', 'show:id,category_id', 'show.category:id,name,slug']);
 
