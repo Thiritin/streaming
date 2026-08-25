@@ -302,12 +302,13 @@ const applyFilters = (changes) => {
     replace: true,
     onFinish: () => (filtering.value = false),
     /*
-     * The grid is a merge prop, so pages two and three can be appended to it as they
-     * are scrolled in. A filter is not another page: without this its results are
-     * appended to whatever was already on screen, and the run you just switched away
-     * from stays in the grid underneath the one you asked for.
+     * No `reset` here, deliberately. It reads like the way to stop the grid being
+     * appended to, but Inertia sends it as a partial reload for that one prop, so
+     * the server answers with `recordings` alone and the chips, the filters and
+     * Continue watching keep whatever they had - a chip that changed the URL and
+     * the grid and nothing else. The server decides instead: only page two and up
+     * come back as a merge prop.
      */
-    reset: ['recordings'],
   });
 };
 

@@ -314,13 +314,28 @@ class RecordingController extends Controller
         $page = $query->paginate(self::PAGE_SIZE)->withQueryString();
         $progress = $this->progressFor($user, collect($page->items())->pluck('id'));
 
+        $tiles = collect($page->items())
+            ->map(fn (Recording $recording) => $this->tile($recording, $progress))
+            ->values()
+            ->all();
+
         return [
-            'recordings' => Inertia::merge(
-                collect($page->items())
-                    ->map(fn (Recording $recording) => $this->tile($recording, $progress))
-                    ->values()
-                    ->all()
-            ),
+            /*
+             * A merge prop only from page two.
+             *
+             * Merging is what lets scrolling append the next page, but it is wrong
+             * for the first one: a filter visit is a fresh list, and appending it to
+             * whatever was on screen leaves the run just switched away from sitting
+             * under the one that was asked for. The client used to say `reset` to
+             * undo that, which turned the whole visit into a partial reload asking
+             * for `recordings` alone - the chips, the filters and Continue watching
+             * then kept the values they had, so a chip changed the URL and the grid
+             * and nothing else. Deciding it here means a filter visit is an ordinary
+             * visit that replaces every prop.
+             */
+            'recordings' => $page->currentPage() > 1
+                ? Inertia::merge($tiles)
+                : $tiles,
             'pagination' => [
                 'page' => $page->currentPage(),
                 'lastPage' => $page->lastPage(),

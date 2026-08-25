@@ -163,12 +163,16 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      its show's, never a join: joining `shows` puts a second `is_published` and
      `category_id` in scope and every unqualified column in the filters turns
      ambiguous.
-   - A filter visit rebuilds the page rather than preserving its state, and the
-     infinite-scroll sentinel comes off the page while one is in flight. The
-     sentinel fires on `always`, so an emptying grid brings it back into view
-     mid-visit and its partial reload cancels the filter's own request - which is
-     how a chip could land in the URL while the chips and the grid still showed the
-     filter before it.
+   - The grid is a merge prop from page two only (`$page->currentPage() > 1`), and a
+     filter visit passes no `reset`. `reset` reads like the way to stop a fresh list
+     being appended to the old one, but Inertia sends it as a partial reload for
+     that prop alone: the server then answers with `recordings` and nothing else, so
+     a chip changed the URL and the grid while the chips, the filters and Continue
+     watching kept the values they had. Deciding it server-side keeps a filter visit
+     an ordinary visit that replaces every prop. A filter visit also rebuilds the
+     page rather than preserving its state, and the infinite-scroll sentinel comes
+     off the page while one is in flight, so its `always` reload cannot race the
+     visit it would otherwise cancel.
    - The collection chips are events, not years: a run is what people mean when they
      say which year a recording is from. A recording filed under no run keeps a year
      chip after the events, which is the only place a year chip survives and it
