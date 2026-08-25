@@ -64,6 +64,10 @@ const form = useForm(
         starts_at: props.recording.starts_at ?? null,
         ends_at: props.recording.ends_at ?? null,
         skip_segments: props.recording.skip_segments ?? [],
+        // Handed straight back on save. If somebody re-cut the recording while this
+        // form was open, the server refuses rather than writing skips that were
+        // marked against media that has since moved.
+        cut_fingerprint: props.recording.cut_fingerprint ?? null,
       }
     : {
         show_id: '',

@@ -20,6 +20,7 @@ use App\Support\Manage\Filter;
 use App\Support\Manage\Status;
 use App\Support\Manage\Table;
 use App\Support\Manage\Toast;
+use App\Support\SkipSegments;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -163,6 +164,9 @@ class RecordingController extends Controller
                 'thumbnail_error' => $recording->thumbnail_capture_error,
                 'is_published' => (bool) $recording->is_published,
                 'skip_segments' => $recording->skips(),
+                // What those skips were marked against; handed back on save so a
+                // cut changed underneath this form is caught rather than written on.
+                'cut_fingerprint' => $recording->cutFingerprint(),
                 'required_roles' => $recording->required_roles ?? [],
                 'views' => $recording->views,
                 // A cut carries these; a recording registered from outside does not, and
@@ -195,7 +199,45 @@ class RecordingController extends Controller
     {
         $this->authorize('update', $recording);
 
-        $recording->update($request->validated());
+        /*
+         * Refuse a save built against a cut that has since moved.
+         *
+         * Two people work a recording at once - one trimming, one marking skips -
+         * and the skips in this payload were marked against the media the form
+         * loaded. If the in-point has changed since, every one of them means a
+         * different moment now, and writing them would put the buttons minutes
+         * away from the intermissions they belong to.
+         */
+        if ($request->filled('cut_fingerprint')
+            && $request->input('cut_fingerprint') !== $recording->cutFingerprint()
+        ) {
+            Toast::flashError(
+                'The cut changed while you were editing',
+                'Somebody has re-cut this recording, so the skip points you marked no longer line up. Reload and mark them against the new cut.',
+            );
+
+            return back();
+        }
+
+        $data = $request->validated();
+
+        /*
+         * A trim of the head moves every skip with it. They are seconds from the
+         * start of the recording, so an in-point pushed thirty seconds later means
+         * each of them is thirty seconds earlier than it was - the alternative is
+         * an operator silently losing the alignment of work they had already done.
+         */
+        $shift = $this->startShift($recording, $data);
+
+        if ($shift !== 0 && array_key_exists('skip_segments', $data)) {
+            $data['skip_segments'] = SkipSegments::shift(
+                $data['skip_segments'],
+                -$shift,
+                $this->cutLength($data) ?: $recording->duration,
+            );
+        }
+
+        $recording->update($data);
 
         // A cut is derived state: the archive is truth and the playlist is generated
         // from the markers, so every save rebuilds rather than mutating media. That is
@@ -211,6 +253,38 @@ class RecordingController extends Controller
         Toast::flashSuccess('Recording updated');
 
         return back();
+    }
+
+    /**
+     * How far the in-point has moved in this save, in seconds. Positive means the
+     * recording now starts later than it did.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function startShift(Recording $recording, array $data): int
+    {
+        if (! $recording->starts_at || empty($data['starts_at'])) {
+            return 0;
+        }
+
+        return (int) round(CarbonImmutable::parse($data['starts_at'])->getTimestamp() - $recording->starts_at->getTimestamp());
+    }
+
+    /**
+     * The length the new markers describe, so a shifted skip is clamped to the cut
+     * this save produces rather than to the one it replaces.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function cutLength(array $data): ?int
+    {
+        if (empty($data['starts_at']) || empty($data['ends_at'])) {
+            return null;
+        }
+
+        return max(0, (int) round(
+            CarbonImmutable::parse($data['ends_at'])->getTimestamp() - CarbonImmutable::parse($data['starts_at'])->getTimestamp()
+        ));
     }
 
     /**

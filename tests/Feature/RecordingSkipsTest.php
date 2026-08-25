@@ -169,4 +169,120 @@ class RecordingSkipsTest extends TestCase
             'required_roles' => [],
         ], $overrides);
     }
+
+    public function test_trimming_the_head_moves_every_skip_with_it(): void
+    {
+        $start = now()->subHours(3)->startOfMinute();
+
+        $recording = $this->recording([
+            'starts_at' => $start,
+            'ends_at' => $start->copy()->addHour(),
+            'duration' => 3600,
+            'skip_segments' => [
+                ['start' => 600, 'end' => 900, 'label' => 'Intermission'],
+                ['start' => 1800, 'end' => 1860, 'label' => 'Wait'],
+            ],
+        ]);
+
+        // The in-point moves 60 seconds later, so everything is 60 seconds earlier.
+        $this->actingAs($this->admin)
+            ->put(route('manage.recordings.update', $recording), $this->payload($recording, [
+                'starts_at' => $start->copy()->addMinute()->format('Y-m-d\TH:i:s'),
+                'ends_at' => $start->copy()->addHour()->format('Y-m-d\TH:i:s'),
+                'cut_fingerprint' => $recording->cutFingerprint(),
+                'skip_segments' => [
+                    ['start' => 600, 'end' => 900, 'label' => 'Intermission'],
+                    ['start' => 1800, 'end' => 1860, 'label' => 'Wait'],
+                ],
+            ]));
+
+        $this->assertSame(
+            [
+                ['start' => 540, 'end' => 840, 'label' => 'Intermission'],
+                ['start' => 1740, 'end' => 1800, 'label' => 'Wait'],
+            ],
+            $recording->fresh()->skip_segments,
+        );
+    }
+
+    public function test_a_skip_trimmed_off_the_front_is_dropped_rather_than_pinned(): void
+    {
+        $start = now()->subHours(3)->startOfMinute();
+
+        $recording = $this->recording([
+            'starts_at' => $start,
+            'ends_at' => $start->copy()->addHour(),
+            'duration' => 3600,
+            'skip_segments' => [['start' => 30, 'end' => 90, 'label' => 'Doors']],
+        ]);
+
+        // Two minutes off the head: the marked stretch is no longer in the cut.
+        $this->actingAs($this->admin)
+            ->put(route('manage.recordings.update', $recording), $this->payload($recording, [
+                'starts_at' => $start->copy()->addMinutes(2)->format('Y-m-d\TH:i:s'),
+                'ends_at' => $start->copy()->addHour()->format('Y-m-d\TH:i:s'),
+                'cut_fingerprint' => $recording->cutFingerprint(),
+                'skip_segments' => [['start' => 30, 'end' => 90, 'label' => 'Doors']],
+            ]));
+
+        $this->assertSame([], $recording->fresh()->skip_segments);
+    }
+
+    public function test_a_save_against_a_cut_somebody_else_changed_is_refused(): void
+    {
+        $start = now()->subHours(3)->startOfMinute();
+
+        $recording = $this->recording([
+            'starts_at' => $start,
+            'ends_at' => $start->copy()->addHour(),
+            'duration' => 3600,
+            'skip_segments' => [],
+        ]);
+
+        // What the form loaded with, before somebody else re-cut it underneath.
+        $stale = $recording->cutFingerprint();
+
+        $recording->forceFill([
+            'starts_at' => $start->copy()->addMinutes(5),
+            'ends_at' => $start->copy()->addHour(),
+            'duration' => 3300,
+        ])->save();
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.recordings.update', $recording), $this->payload($recording, [
+                'starts_at' => $start->format('Y-m-d\TH:i:s'),
+                'ends_at' => $start->copy()->addHour()->format('Y-m-d\TH:i:s'),
+                'cut_fingerprint' => $stale,
+                'skip_segments' => [['start' => 600, 'end' => 900, 'label' => 'Marked against the old cut']],
+            ]));
+
+        // Nothing written: not the skips, and not the markers they were marked against.
+        $fresh = $recording->fresh();
+        $this->assertSame([], $fresh->skip_segments);
+        $this->assertSame(3300, (int) $fresh->duration);
+    }
+
+    public function test_a_save_carrying_the_current_cut_goes_through(): void
+    {
+        $start = now()->subHours(3)->startOfMinute();
+
+        $recording = $this->recording([
+            'starts_at' => $start,
+            'ends_at' => $start->copy()->addHour(),
+            'duration' => 3600,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.recordings.update', $recording), $this->payload($recording, [
+                'starts_at' => $start->format('Y-m-d\TH:i:s'),
+                'ends_at' => $start->copy()->addHour()->format('Y-m-d\TH:i:s'),
+                'cut_fingerprint' => $recording->cutFingerprint(),
+                'skip_segments' => [['start' => 600, 'end' => 900, 'label' => 'Intermission']],
+            ]));
+
+        $this->assertSame(
+            [['start' => 600, 'end' => 900, 'label' => 'Intermission']],
+            $recording->fresh()->skip_segments,
+        );
+    }
 }

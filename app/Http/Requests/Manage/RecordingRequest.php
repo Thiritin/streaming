@@ -57,6 +57,9 @@ class RecordingRequest extends FormRequest
             // Offers, not edits: ranges the player may show a Skip button over. Kept
             // to seconds from the start of the recording, which is what the player
             // knows; overlaps are merged rather than refused.
+            // The cut the form loaded against, so a save that missed a re-cut is
+            // refused rather than writing skips that no longer line up.
+            'cut_fingerprint' => ['nullable', 'string', 'max:64'],
             'skip_segments' => ['nullable', 'array', 'max:'.SkipSegments::MAX],
             'skip_segments.*.start' => ['required', 'numeric', 'min:0'],
             'skip_segments.*.end' => ['required', 'numeric', 'min:0', 'gt:skip_segments.*.start'],

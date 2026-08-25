@@ -183,6 +183,14 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      (sorted, merged, clamped to the duration), never off the column. They gate and
      cut nothing: the player shows a button while the playhead is inside one and only
      a press moves it, so somebody who wants to watch the intermission still can.
+     They move with the cut: trimming the head shifts every one of them by the
+     same seconds (`SkipSegments::shift()`), because a skip is seconds from the
+     start and an in-point nudged forward would otherwise leave every button
+     minutes from the intermission it belongs to. A save also carries the cut it
+     was marked against (`Recording::cutFingerprint()`, sent as `cut_fingerprint`);
+     a save built against a cut somebody else has since changed is refused rather
+     than written on top, which is the one case a shift cannot fix - two people
+     working the same recording, one trimming and one marking.
      Marked in `/manage` > Recordings > the recording's form and nowhere else, with
      `SkipEditor` beside a player of its own: park the playhead, press in, park it
      again, press out (I and O, N for a new one, Del to drop one, , and . to nudge).

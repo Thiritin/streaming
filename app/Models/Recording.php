@@ -282,6 +282,23 @@ class Recording extends Model
      *
      * @return array<int, array{start: int, end: int, label: string|null}>
      */
+    /**
+     * What the skip points were marked against.
+     *
+     * The cut is what gives a skip its meaning: the same "3365" is a different
+     * moment once the in-point moves. A form carries this from the load and hands
+     * it back on save, so a save built against a cut somebody else has since
+     * changed is refused rather than written on top.
+     */
+    public function cutFingerprint(): string
+    {
+        return md5(implode('|', [
+            $this->starts_at?->toIso8601String() ?? '',
+            $this->ends_at?->toIso8601String() ?? '',
+            (int) $this->duration,
+        ]));
+    }
+
     public function skips(): array
     {
         return SkipSegments::normalise($this->skip_segments, $this->duration);

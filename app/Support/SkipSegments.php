@@ -21,6 +21,44 @@ class SkipSegments
     public const LABEL_MAX = 40;
 
     /**
+     * Move every range by a number of seconds, for a cut whose start has moved.
+     *
+     * Skips are seconds from the start of the recording, so trimming the head by
+     * thirty seconds moves all of them thirty seconds earlier. Without this an
+     * operator who nudges the in-point silently loses the alignment of every skip
+     * they had already marked - the ranges stay where they were while the media
+     * underneath them slides.
+     *
+     * A range that falls off the front is clipped to zero and dropped once it has
+     * nothing left; normalise() does the clamping at the end.
+     *
+     * @param  mixed  $segments
+     * @return array<int, array{start: int, end: int, label: string|null}>
+     */
+    public static function shift($segments, int $seconds, ?int $duration = null): array
+    {
+        $shifted = [];
+
+        foreach (self::normalise($segments) as $segment) {
+            $shifted[] = [
+                'start' => $segment['start'] + $seconds,
+                'end' => $segment['end'] + $seconds,
+                'label' => $segment['label'],
+            ];
+        }
+
+        // A range that has moved entirely past either end is gone rather than
+        // pinned to the edge, where it would offer a skip over nothing.
+        $shifted = array_values(array_filter(
+            $shifted,
+            fn (array $segment) => $segment['end'] > 0
+                && ($duration === null || $duration <= 0 || $segment['start'] < $duration),
+        ));
+
+        return self::normalise($shifted, $duration);
+    }
+
+    /**
      * @param  mixed  $segments
      * @return array<int, array{start: int, end: int, label: string|null}>
      */
