@@ -145,6 +145,16 @@
                         </button>
                     </div>
 
+                    <!-- The operator's panel. Absent from a viewer's props entirely,
+                         so this renders for nobody who cannot use it. -->
+                    <WatchTools
+                        v-if="tools"
+                        :tools="tools"
+                        :skips="skips"
+                        :current-time="currentTime"
+                        @seek="seekTo"
+                    />
+
                     <!-- What people said about it. Under the description and above
                          the way back out, which is where a conversation about the
                          thing being watched belongs. -->
@@ -233,6 +243,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import VideoPlayer from '@/Components/Player/VideoPlayer.vue';
 import RecordingRow from '@/Components/Recordings/RecordingRow.vue';
 import CommentSection from '@/Components/Recordings/CommentSection.vue';
+import WatchTools from '@/Components/Recordings/WatchTools.vue';
 import FeedbackDialog from '@/Components/Feedback/FeedbackDialog.vue';
 import { rememberProgress } from '@/composables/useRecentProgress';
 import TilePlaceholder from '@/Components/TilePlaceholder.vue';
@@ -257,6 +268,12 @@ const props = defineProps({
     upNext: {
         type: Array,
         default: () => []
+    },
+    // The operator's half of the page: null for everybody else, which is what
+    // decides whether the Tools panel exists at all.
+    tools: {
+        type: Object,
+        default: null
     },
     // The thread under this recording, flat and oldest first. Empty when comments
     // are off for the installation or for this viewer.

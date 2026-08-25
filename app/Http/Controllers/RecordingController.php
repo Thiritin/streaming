@@ -6,6 +6,7 @@ use App\Models\Recording;
 use App\Models\RecordingProgress;
 use App\Models\Show;
 use App\Support\RecordingViews;
+use App\Support\SkipSegments;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -631,6 +632,17 @@ class RecordingController extends Controller
             // Stretches the player may offer a way past. Sorted and non-overlapping,
             // so the player can walk them without deciding anything.
             'skips' => $recording->skips(),
+            /*
+             * The operator's half of the page, and null for everybody else: a
+             * viewer is offered the skip button, never the marking of it. Absent
+             * rather than a false flag, so nothing about the tools reaches a
+             * browser that may not use them.
+             */
+            'tools' => $user?->can('update', $recording) ? [
+                'skipsUrl' => route('recordings.skips', $recording),
+                'duration' => (int) $recording->duration,
+                'manageUrl' => route('manage.recordings.edit', $recording),
+            ] : null,
             'category' => $recording->effectiveCategory()?->only(['name', 'slug']),
             'upNext' => $upNext,
             /*
@@ -656,6 +668,32 @@ class RecordingController extends Controller
      * then the same year to fill the rail. Same source before same year, because
      * a stage's own programme is the closest thing the archive has to a channel.
      */
+    /**
+     * Mark skip points from the watch page.
+     *
+     * The same column the recording form writes, from the other side of the glass:
+     * an operator watching a recording is the one who notices the intermission, and
+     * making them find it again in /manage is how it stays unmarked. Only the
+     * ranges - nothing here can touch the cut, the title or whether it is published.
+     */
+    public function updateSkips(Request $request, Recording $recording)
+    {
+        $this->authorize('update', $recording);
+
+        $data = $request->validate([
+            'skip_segments' => ['present', 'array', 'max:'.SkipSegments::MAX],
+            'skip_segments.*.start' => ['required', 'numeric', 'min:0'],
+            'skip_segments.*.end' => ['required', 'numeric', 'min:0', 'gt:skip_segments.*.start'],
+            'skip_segments.*.label' => ['nullable', 'string', 'max:'.SkipSegments::LABEL_MAX],
+        ]);
+
+        $recording->forceFill([
+            'skip_segments' => SkipSegments::normalise($data['skip_segments'], $recording->duration),
+        ])->save();
+
+        return back();
+    }
+
     private function upNext(Recording $recording, $user): Collection
     {
         $take = 15;

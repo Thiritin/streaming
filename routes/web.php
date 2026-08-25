@@ -180,6 +180,14 @@ Route::middleware(['auth.optional:web'])->group(function () {
     Route::post('/archive/{recording}/comments/{comment}/approve', [RecordingCommentController::class, 'approve'])
         ->middleware(['auth:web', 'comments.enabled'])
         ->name('recordings.comments.approve');
+    /*
+     * Marking skip points from the watch page. Behind the recording policy, so it
+     * is the same `stream.manage` the form in /manage sits behind.
+     */
+    Route::patch('/archive/{recording}/skips', [RecordingController::class, 'updateSkips'])
+        ->middleware('auth:web')
+        ->name('recordings.skips');
+
     Route::redirect('/recordings', '/archive');
     Route::get('/recordings/{recording}', fn ($recording) => redirect("/archive/{$recording}"));
 });

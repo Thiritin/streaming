@@ -285,4 +285,74 @@ class RecordingSkipsTest extends TestCase
             $recording->fresh()->skip_segments,
         );
     }
+
+    public function test_the_watch_page_carries_the_tools_only_for_somebody_who_may_use_them(): void
+    {
+        $recording = $this->recording(['skip_segments' => [['start' => 60, 'end' => 90, 'label' => 'Doors']]]);
+
+        // A viewer is offered the skip button, never the marking of it - and the
+        // prop is absent rather than false, so nothing about it reaches them.
+        $this->actingAs($this->viewer)
+            ->get(route('recordings.show', $recording))
+            ->assertInertia(fn ($page) => $page->where('tools', null));
+
+        $this->actingAs($this->admin)
+            ->get(route('recordings.show', $recording))
+            ->assertInertia(fn ($page) => $page
+                ->where('tools.duration', 3600)
+                ->where('tools.skipsUrl', route('recordings.skips', $recording))
+            );
+    }
+
+    public function test_skips_can_be_marked_from_the_watch_page(): void
+    {
+        $recording = $this->recording();
+
+        $this->actingAs($this->admin)
+            ->patch(route('recordings.skips', $recording), [
+                'skip_segments' => [
+                    ['start' => 300, 'end' => 420, 'label' => 'Intermission'],
+                    ['start' => 100, 'end' => 150, 'label' => null],
+                ],
+            ])
+            ->assertRedirect();
+
+        // Sorted and merged on the way in, like every other way they are written.
+        $this->assertSame(
+            [
+                ['start' => 100, 'end' => 150, 'label' => null],
+                ['start' => 300, 'end' => 420, 'label' => 'Intermission'],
+            ],
+            $recording->fresh()->skip_segments,
+        );
+    }
+
+    public function test_marking_from_the_watch_page_needs_stream_manage(): void
+    {
+        $recording = $this->recording(['skip_segments' => []]);
+
+        $this->actingAs($this->viewer)
+            ->patch(route('recordings.skips', $recording), [
+                'skip_segments' => [['start' => 10, 'end' => 20, 'label' => 'Nope']],
+            ])
+            ->assertForbidden();
+
+        $this->assertSame([], $recording->fresh()->skip_segments);
+    }
+
+    public function test_the_watch_page_endpoint_cannot_touch_anything_but_the_skips(): void
+    {
+        $recording = $this->recording(['title' => 'Dance Competition', 'is_published' => true]);
+
+        $this->actingAs($this->admin)
+            ->patch(route('recordings.skips', $recording), [
+                'skip_segments' => [],
+                'title' => 'Renamed from the watch page',
+                'is_published' => false,
+            ]);
+
+        $fresh = $recording->fresh();
+        $this->assertSame('Dance Competition', $fresh->title);
+        $this->assertTrue((bool) $fresh->is_published);
+    }
 }

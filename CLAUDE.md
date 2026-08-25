@@ -206,8 +206,15 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      a save built against a cut somebody else has since changed is refused rather
      than written on top, which is the one case a shift cannot fix - two people
      working the same recording, one trimming and one marking.
-     Marked in `/manage` > Recordings > the recording's form and nowhere else, with
-     `SkipEditor` beside a player of its own: park the playhead, press in, park it
+     Marked from two places, both behind the recording policy's `stream.manage`:
+     the recording's form in `/manage`, and the Tools panel on the watch page
+     (`WatchTools.vue`, `PATCH /archive/{recording}/skips`), which exists because
+     the person who notices an intermission is the one watching the recording. That
+     endpoint writes the ranges and nothing else - not the cut, not the title, not
+     whether it is published. The `tools` prop is absent for anyone who may not use
+     it rather than false, so nothing about it reaches a viewer's browser. The
+     editor itself is the same component on both sides, with
+     `SkipEditor` beside a player: park the playhead, press in, park it
      again, press out (I and O, N for a new one, Del to drop one, , and . to nudge).
      They save with the rest of the form.
    - Comments live under the recording on its watch page, in `recording_comments`,
