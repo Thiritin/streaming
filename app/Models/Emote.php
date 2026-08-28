@@ -13,6 +13,11 @@ class Emote extends Model
 {
     use HasFactory;
 
+    /**
+     * Every emote object lives here; nothing outside it is ever deleted or signed for.
+     */
+    const S3_PREFIX = 'emotes/';
+
     protected $fillable = [
         'name',
         'file_path',
@@ -46,8 +51,8 @@ class Emote extends Model
         });
 
         static::deleting(function ($emote) {
-            // Delete from S3 when emote is deleted
-            if ($emote->s3_key && Storage::disk('s3')->exists($emote->s3_key)) {
+            // Only ever the emote's own object, whatever the column ended up holding.
+            if ($emote->s3_key && str_starts_with($emote->s3_key, self::S3_PREFIX) && Storage::disk('s3')->exists($emote->s3_key)) {
                 Storage::disk('s3')->delete($emote->s3_key);
             }
         });
@@ -161,8 +166,8 @@ class Emote extends Model
             return $value;
         }
 
-        // If no S3 key, return null
-        if (! $this->s3_key) {
+        // No key, or a key from outside the emote prefix: nothing to sign.
+        if (! $this->s3_key || ! str_starts_with($this->s3_key, self::S3_PREFIX)) {
             return null;
         }
 

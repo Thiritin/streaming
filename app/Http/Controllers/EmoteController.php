@@ -72,7 +72,7 @@ class EmoteController extends Controller
 
             return redirect()->route('emotes.index')
                 ->with('success', 'Emote uploaded successfully! It will be available after admin approval.');
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return back()->withErrors([
                 'image' => 'Failed to upload emote. Please try again.',
             ]);

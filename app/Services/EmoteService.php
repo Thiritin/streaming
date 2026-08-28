@@ -28,23 +28,28 @@ class EmoteService
     const DISPLAY_SIZE = 32;
 
     /**
+     * Content types for the extensions the upload rules allow.
+     */
+    const MIME_TYPES = [
+        'png' => 'image/png',
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'gif' => 'image/gif',
+        'webp' => 'image/webp',
+    ];
+
+    /**
      * Upload and create a new emote.
      */
     public function uploadEmote(UploadedFile $file, string $name, bool $isGlobal, User $user): Emote
     {
-        $image = Image::read($file);
-
-        if ($image->width() !== self::EMOTE_SIZE || $image->height() !== self::EMOTE_SIZE) {
-            $image->resize(self::EMOTE_SIZE, self::EMOTE_SIZE);
-        }
-
-        $extension = $file->getClientOriginalExtension();
+        $extension = strtolower($file->getClientOriginalExtension());
         $s3Key = 'emotes/'.Str::uuid().'.'.$extension;
 
-        Storage::disk('s3')->put($s3Key, (string) $image->encode(), [
+        Storage::disk('s3')->put($s3Key, $this->resized($file), [
             'visibility' => 'private',
             'CacheControl' => 'max-age=31536000',
-            'ContentType' => 'image/'.$extension,
+            'ContentType' => self::MIME_TYPES[$extension] ?? 'application/octet-stream',
         ]);
 
         $emote = Emote::create([
@@ -59,6 +64,21 @@ class EmoteService
         $this->clearCache();
 
         return $emote;
+    }
+
+    /**
+     * Square the upload to EMOTE_SIZE.
+     */
+    private function resized(UploadedFile $file): string
+    {
+        $image = Image::decode($file);
+
+        // Already stored size, so the file goes up untouched and an animated gif keeps its frames.
+        if ($image->width() === self::EMOTE_SIZE && $image->height() === self::EMOTE_SIZE) {
+            return (string) file_get_contents($file->getRealPath());
+        }
+
+        return (string) $image->resize(self::EMOTE_SIZE, self::EMOTE_SIZE)->encode();
     }
 
     /**

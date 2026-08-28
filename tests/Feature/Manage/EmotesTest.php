@@ -20,6 +20,9 @@ class EmotesTest extends TestCase
 
         // Emote::url signs against the s3 disk, which has no bucket in the test env.
         Storage::fake('s3');
+        Storage::disk('s3')->put('emotes/wave.png', 'png');
+        Storage::disk('s3')->put('emotes/other.png', 'png');
+        Storage::disk('s3')->put('recordings/master.mp4', 'not for chat');
 
         $this->createManageUsers();
     }
@@ -98,6 +101,97 @@ class EmotesTest extends TestCase
         $this->assertSame($this->admin->id, $pending->fresh()->approved_by_user_id);
         // Untouched: it was already approved, so no approver is rewritten.
         $this->assertNull($approved->fresh()->approved_by_user_id);
+    }
+
+    public function test_the_s3_key_must_sit_under_the_emote_prefix(): void
+    {
+        $this->actingAs($this->admin)
+            ->post(route('manage.emotes.store'), [
+                'name' => 'leak',
+                's3_key' => 'recordings/master.mp4',
+                'is_global' => true,
+                'is_approved' => true,
+            ])
+            ->assertSessionHasErrors('s3_key');
+
+        $this->assertDatabaseMissing('emotes', ['name' => 'leak']);
+    }
+
+    public function test_the_s3_key_cannot_climb_out_of_the_prefix(): void
+    {
+        $this->actingAs($this->admin)
+            ->post(route('manage.emotes.store'), [
+                'name' => 'leak',
+                's3_key' => 'emotes/../recordings/master.mp4',
+                'is_global' => true,
+                'is_approved' => true,
+            ])
+            ->assertSessionHasErrors('s3_key');
+
+        $this->assertDatabaseMissing('emotes', ['name' => 'leak']);
+    }
+
+    public function test_the_s3_key_must_be_an_object_that_was_uploaded(): void
+    {
+        $this->actingAs($this->admin)
+            ->post(route('manage.emotes.store'), [
+                'name' => 'ghost',
+                's3_key' => 'emotes/never-uploaded.png',
+                'is_global' => true,
+                'is_approved' => true,
+            ])
+            ->assertSessionHasErrors('s3_key');
+
+        $this->assertDatabaseMissing('emotes', ['name' => 'ghost']);
+    }
+
+    public function test_an_uploaded_key_is_accepted(): void
+    {
+        $this->actingAs($this->admin)
+            ->post(route('manage.emotes.store'), [
+                'name' => 'clap',
+                's3_key' => 'emotes/other.png',
+                'is_global' => true,
+                'is_approved' => true,
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('emotes', ['name' => 'clap', 's3_key' => 'emotes/other.png']);
+    }
+
+    public function test_an_edit_cannot_repoint_an_emote_at_another_object(): void
+    {
+        $emote = $this->emote();
+
+        $this->actingAs($this->admin)
+            ->put(route('manage.emotes.update', $emote), [
+                'name' => 'wave',
+                's3_key' => 'recordings/master.mp4',
+                'is_global' => true,
+                'is_approved' => true,
+            ])
+            ->assertSessionHasErrors('s3_key');
+
+        $this->assertSame('emotes/wave.png', $emote->fresh()->s3_key);
+    }
+
+    public function test_deleting_an_emote_never_removes_an_object_outside_the_prefix(): void
+    {
+        $emote = $this->emote(['name' => 'stray', 's3_key' => 'recordings/master.mp4']);
+
+        $this->actingAs($this->admin)
+            ->delete(route('manage.emotes.destroy', $emote))
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('emotes', ['id' => $emote->id]);
+        Storage::disk('s3')->assertExists('recordings/master.mp4');
+    }
+
+    public function test_a_key_outside_the_prefix_is_never_signed(): void
+    {
+        $emote = $this->emote(['name' => 'stray', 's3_key' => 'recordings/master.mp4']);
+
+        $this->assertNull($emote->url);
     }
 
     public function test_a_user_without_chat_moderation_cannot_approve(): void
