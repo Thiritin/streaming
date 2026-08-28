@@ -210,8 +210,9 @@ class RecordingController extends Controller
          */
         if ($request->filled('cut_fingerprint')
             && $request->input('cut_fingerprint') !== $recording->cutFingerprint()
+            && $this->skipsChanged($request, $recording)
         ) {
-            Toast::flashError(
+            Toast::flashDanger(
                 'The cut changed while you were editing',
                 'Somebody has re-cut this recording, so the skip points you marked no longer line up. Reload and mark them against the new cut.',
             );
@@ -244,7 +245,7 @@ class RecordingController extends Controller
         // what makes trimming repeatable and non-destructive, months after the fact.
         if ($recording->hasCut()) {
             if (! app(ArchivePlaylistService::class)->rebuild($recording->fresh())) {
-                Toast::flashError('Playlist not built', $recording->fresh()->build_error);
+                Toast::flashDanger('Playlist not built', $recording->fresh()->build_error);
 
                 return back();
             }
@@ -253,6 +254,23 @@ class RecordingController extends Controller
         Toast::flashSuccess('Recording updated');
 
         return back();
+    }
+
+    /**
+     * Whether this save carries different skip points than the record holds. A
+     * stale fingerprint only matters when it does: a save that leaves the skips
+     * alone - ticking Published, fixing a title - has nothing to misalign, and
+     * refusing it because a job filled the duration in behind the form is a wall
+     * with nothing behind it.
+     */
+    private function skipsChanged(RecordingRequest $request, Recording $recording): bool
+    {
+        if (! $request->has('skip_segments')) {
+            return false;
+        }
+
+        return SkipSegments::normalise($request->input('skip_segments'), $recording->duration)
+            !== $recording->skips();
     }
 
     /**
@@ -301,13 +319,13 @@ class RecordingController extends Controller
         $this->authorize('create', Recording::class);
 
         if (! $show->source) {
-            Toast::flashError('No source', 'That show has no source, so there is no archive to cut from.');
+            Toast::flashDanger('No source', 'That show has no source, so there is no archive to cut from.');
 
             return back();
         }
 
         if (! $show->actual_start) {
-            Toast::flashError('Not started', 'That show has not gone live yet, so there is nothing to cut.');
+            Toast::flashDanger('Not started', 'That show has not gone live yet, so there is nothing to cut.');
 
             return back();
         }
@@ -317,7 +335,7 @@ class RecordingController extends Controller
             : $show->actual_end;
 
         if (! $endsAt) {
-            Toast::flashError(
+            Toast::flashDanger(
                 'End marker needed',
                 'That show is still live. Set an end marker to cut a recording from it.'
             );
@@ -344,7 +362,7 @@ class RecordingController extends Controller
         $built = app(ArchivePlaylistService::class)->rebuild($recording);
 
         if (! $built) {
-            Toast::flashError('Draft created, playlist not built', $recording->fresh()->build_error);
+            Toast::flashDanger('Draft created, playlist not built', $recording->fresh()->build_error);
         } else {
             Toast::flashSuccess('Recording drafted', "Cut from '{$show->title}'. Adjust the markers before publishing.");
         }
@@ -364,13 +382,13 @@ class RecordingController extends Controller
         $this->authorize('update', $recording);
 
         if (! $recording->hasCut()) {
-            Toast::flashError('Nothing to rebuild', 'This recording has no cut markers.');
+            Toast::flashDanger('Nothing to rebuild', 'This recording has no cut markers.');
 
             return back();
         }
 
         if (! app(ArchivePlaylistService::class)->rebuild($recording)) {
-            Toast::flashError('Playlist not built', $recording->fresh()->build_error);
+            Toast::flashDanger('Playlist not built', $recording->fresh()->build_error);
 
             return back();
         }
