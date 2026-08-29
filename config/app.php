@@ -6,6 +6,7 @@ use App\Providers\BroadcastServiceProvider;
 use App\Providers\EventServiceProvider;
 use App\Providers\HorizonServiceProvider;
 use App\Providers\RouteServiceProvider;
+use App\Providers\RuntimeConfigServiceProvider;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\ServiceProvider;
 
@@ -169,6 +170,7 @@ return [
         /*
          * Application Service Providers...
          */
+        RuntimeConfigServiceProvider::class,
         AppServiceProvider::class,
         AuthServiceProvider::class,
         BroadcastServiceProvider::class,

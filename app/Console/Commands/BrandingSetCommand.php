@@ -40,7 +40,7 @@ class BrandingSetCommand extends Command
                 ['Key', 'Current', 'Default'],
                 $fields->map(fn (array $field) => [
                     $field['key'],
-                    $this->truncate($field['value']),
+                    $this->show($field),
                     $this->truncate($field['default']),
                 ])->values()->all(),
             );
@@ -114,6 +114,21 @@ class BrandingSetCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * A field's current value, except for one stored encrypted: a secret is written
+     * from here, never read back out of it.
+     *
+     * @param  array<string, mixed>  $field
+     */
+    private function show(array $field): string
+    {
+        if (($field['secure'] ?? false) && ($field['hasValue'] ?? false)) {
+            return Settings::MASK_SECRET;
+        }
+
+        return $this->truncate($field['value']);
     }
 
     private function truncate(mixed $value): string

@@ -5,6 +5,7 @@ namespace App\Support\Manage;
 use App\Models\BrandingSetting;
 use App\Support\ColorPresets;
 use App\Support\ImportCli;
+use App\Support\RuntimeConfig;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -29,6 +30,64 @@ final class Settings
      * that something is saved; posting it back unchanged means "keep it".
      */
     public const MASK_SECRET = '••••••••';
+
+    /**
+     * The config path a field overrides at runtime. Named by the field when it
+     * overrides something outside its own store, otherwise `{store}.{key}`.
+     *
+     * @param  array<string, mixed>  $field
+     */
+    public static function configPath(array $field): string
+    {
+        if (isset($field['config'])) {
+            return $field['config'];
+        }
+
+        $store = $field['store'] ?? config('settings.store', 'branding');
+
+        return "{$store}.{$field['key']}";
+    }
+
+    /**
+     * A field's shipped default, which is whatever stands at the path it overrides.
+     *
+     * One path for both directions, so a key whose flat name differs from its real
+     * config name does not have to duplicate its default into a second config file
+     * for the panel to read. Everything that decides "is this the default" - the page,
+     * the save, the command - has to come through here or a value equal to the default
+     * would be written by one path and deleted by another.
+     *
+     * @param  array<string, mixed>  $field
+     */
+    public static function defaultOf(array $field): mixed
+    {
+        return RuntimeConfig::shipped(self::configPath($field));
+    }
+
+    /**
+     * How a field's stored string becomes a config value. Toggles and repeaters
+     * carry their own answer; everything else is a string unless it says otherwise.
+     *
+     * @param  array<string, mixed>  $field
+     */
+    public static function castOf(array $field): string
+    {
+        return $field['cast'] ?? match ($field['type'] ?? null) {
+            'toggle' => 'bool',
+            'links' => 'array',
+            default => 'string',
+        };
+    }
+
+    /**
+     * Whether a field is stored encrypted at rest.
+     *
+     * @param  array<string, mixed>  $field
+     */
+    public static function isSecure(array $field): bool
+    {
+        return (bool) ($field['secure'] ?? false);
+    }
 
     /**
      * Groups with every field resolved to its current value, default and preview URL.
@@ -263,7 +322,7 @@ final class Settings
             if (($field['type'] ?? null) === 'toggle') {
                 $value = (bool) $value;
 
-                if ($value === (bool) config(($field['store'] ?? config('settings.store', 'branding')).'.'.$field['key'])) {
+                if ($value === (bool) self::defaultOf($field)) {
                     BrandingSetting::where('key', $field['key'])->get()->each->delete();
 
                     continue;
@@ -274,9 +333,7 @@ final class Settings
                 continue;
             }
 
-            $store = $field['store'] ?? config('settings.store', 'branding');
-
-            if ($this->matchesDefault($value, config("{$store}.{$field['key']}"))) {
+            if ($this->matchesDefault($value, self::defaultOf($field))) {
                 BrandingSetting::where('key', $field['key'])->get()->each->delete();
 
                 continue;
@@ -286,6 +343,7 @@ final class Settings
                 $field['key'],
                 is_array($value) ? json_encode($value) : $value,
                 $field['helper'] ?? null,
+                self::isSecure($field),
             );
         }
     }
@@ -309,7 +367,7 @@ final class Settings
             return;
         }
 
-        BrandingSetting::setValue($field['key'], $value, $field['helper'] ?? null);
+        BrandingSetting::setValue($field['key'], $value, $field['helper'] ?? null, self::isSecure($field));
     }
 
     /**
@@ -398,8 +456,7 @@ final class Settings
      */
     private function field(array $field): array
     {
-        $store = $field['store'] ?? config('settings.store', 'branding');
-        $default = config("{$store}.{$field['key']}");
+        $default = self::defaultOf($field);
         $value = BrandingSetting::getValue($field['key'], $default);
 
         // Repeaters are stored as JSON but edited as rows.
@@ -426,6 +483,7 @@ final class Settings
                 'label' => $field['label'],
                 'type' => 'password',
                 'helper' => $field['helper'] ?? null,
+                'secure' => self::isSecure($field),
                 'purpose' => null,
                 'accept' => null,
                 'previewFit' => 'cover',
@@ -447,6 +505,9 @@ final class Settings
             'label' => $field['label'],
             'type' => $field['type'],
             'helper' => $field['helper'] ?? null,
+            // Whether the stored value is encrypted at rest, which is also the cue
+            // not to print it back on the command line.
+            'secure' => self::isSecure($field),
             'purpose' => $field['purpose'] ?? null,
             // What the file picker offers. Field-driven for the few uploads whose
             // types are narrower than the whole of image/*.
