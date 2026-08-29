@@ -5,7 +5,6 @@ use App\Http\Controllers\Api\CommandController;
 use App\Http\Controllers\Api\CompanionController;
 use App\Http\Controllers\Api\HlsSessionController;
 use App\Http\Controllers\Api\RecordingApiController;
-use App\Http\Controllers\Api\ServerFileController;
 use App\Http\Controllers\Api\ServerProvisionController;
 use App\Http\Controllers\Api\SrsCallbackController;
 use App\Http\Controllers\Api\StreamController;
@@ -17,6 +16,7 @@ use App\Http\Middleware\CheckSharedSecretMiddleware;
 use App\Http\Middleware\CheckSrsCallbackMiddleware;
 use App\Http\Middleware\CheckTelegramWebhookMiddleware;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -43,18 +43,27 @@ Route::middleware(['web', 'auth', 'chat.enabled', 'throttle:60,60'])->prefix('co
     Route::get('/help', [CommandController::class, 'help'])->name('api.command.help');
 });
 
-Route::middleware([CheckSharedSecretMiddleware::class])->group(function () {
-    Route::post('stream/play', [StreamController::class, 'play'])->name('api.stream.play');
-    Route::post('stream/stop', [StreamController::class, 'stop'])->name('api.stream.stop');
+// Everything a streaming server asks the app for. The server is in the path on every one
+// of them, which is what lets CheckSharedSecretMiddleware resolve the row first and check
+// the presented credential against that row - see the middleware for why the reverse was
+// a hole. Header only; a credential in a query string is a credential in an access log.
+// The throttle sits in front of the check rather than behind it, so a wrong credential
+// is counted too - otherwise guessing at one would be the one thing not rate limited.
+// Route binding is off here on purpose: it answers 404 for an id that does not exist,
+// and these endpoints serve credentials, so every refusal is the same 401 instead. The
+// middleware resolves the row itself.
+Route::middleware(['throttle:server-api', CheckSharedSecretMiddleware::class])
+    ->withoutMiddleware(SubstituteBindings::class)
+    ->prefix('server/{server}')
+    ->group(function () {
+        Route::get('config/{type}', [ServerProvisionController::class, 'config'])->name('api.server.config');
+        Route::get('scripts/{script}', [ServerProvisionController::class, 'script'])->name('api.server.script');
+        Route::post('register', [ServerProvisionController::class, 'register'])->name('api.server.register');
+        Route::post('heartbeat', [ServerProvisionController::class, 'heartbeat'])->name('api.server.heartbeat');
 
-    Route::get('file/{file}', ServerFileController::class)->name('server.file');
-
-    // Server provisioning endpoints
-    Route::get('server/config/{type}', [ServerProvisionController::class, 'config'])->name('api.server.config');
-    Route::get('server/scripts/{script}', [ServerProvisionController::class, 'script'])->name('api.server.script');
-    Route::post('server/register', [ServerProvisionController::class, 'register'])->name('api.server.register');
-    Route::post('server/{server}/heartbeat', [ServerProvisionController::class, 'heartbeat'])->name('api.server.heartbeat');
-});
+        Route::post('stream/play', [StreamController::class, 'play'])->name('api.stream.play');
+        Route::post('stream/stop', [StreamController::class, 'stop'])->name('api.stream.stop');
+    });
 
 // Control surface (Bitfocus Companion and anything else that can send an HTTP request).
 // One key for the installation, the source in the path; see docs/admin/companion.md.

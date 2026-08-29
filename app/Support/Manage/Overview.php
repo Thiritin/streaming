@@ -237,6 +237,21 @@ final class Overview
                 continue;
             }
 
+            // Its own key, not the stale one: a rotation that fixes a box has to post a
+            // cleared line of its own rather than being folded into the heartbeat's.
+            if ($server->credential_rejected_at) {
+                $alerts[] = [
+                    'key' => "server:{$server->id}:credentials",
+                    'sourceId' => null,
+                    'tone' => Status::DANGER,
+                    'title' => "Server {$name} credentials rejected",
+                    'detail' => 'Since '.$server->credential_rejected_at->diffForHumans(),
+                    'url' => Route::has('manage.servers.show') ? route('manage.servers.show', $server) : null,
+                ];
+
+                continue;
+            }
+
             if ($this->isStale($server)) {
                 $alerts[] = [
                     'key' => "server:{$server->id}:stale",

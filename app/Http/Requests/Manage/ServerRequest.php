@@ -10,9 +10,12 @@ use Illuminate\Validation\Rule;
 /**
  * Validation for creating and updating a manually managed server.
  *
- * `hetzner_id`, `type` and `shared_secret` are immutable after creation, exactly as the
- * Filament form disabled them on edit. They are dropped from the payload rather than
- * rejected, so a stale form cannot fail a save it was never allowed to change.
+ * `hetzner_id` and `type` are immutable after creation, exactly as the Filament form
+ * disabled them on edit. They are dropped from the payload rather than rejected, so a
+ * stale form cannot fail a save it was never allowed to change.
+ *
+ * Credentials are not a field here at all: only their hashes are stored, they are minted
+ * by the model, and the plaintext is shown once on the install script page.
  */
 class ServerRequest extends FormRequest
 {
@@ -40,7 +43,6 @@ class ServerRequest extends FormRequest
         if ($this->isCreating()) {
             $rules['hetzner_id'] = ['nullable', 'string', 'max:255'];
             $rules['type'] = ['required', Rule::enum(ServerTypeEnum::class)];
-            $rules['shared_secret'] = ['required', 'string', 'min:16', 'max:255'];
         }
 
         return $rules;

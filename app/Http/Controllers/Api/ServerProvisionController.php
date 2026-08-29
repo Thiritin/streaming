@@ -21,18 +21,15 @@ class ServerProvisionController extends Controller
     }
 
     /**
-     * Get configuration file for server
+     * Get configuration file for server.
+     *
+     * The server comes from the path and CheckSharedSecretMiddleware has already checked
+     * the presented credential against that row, so a box can only ever fetch its own
+     * config. It used to be found by the secret instead, which let any edge ask for the
+     * origin's - and the origin's carries the DVR credentials.
      */
-    public function config(Request $request, string $type)
+    public function config(Server $server, string $type)
     {
-        $sharedSecret = $request->header('X-Shared-Secret') ?: $request->query('shared_secret');
-
-        // Find server by shared secret
-        $server = Server::where('shared_secret', $sharedSecret)->first();
-        if (! $server) {
-            return response('Unauthorized', 401);
-        }
-
         $content = '';
         $contentType = 'text/plain';
 
@@ -85,16 +82,8 @@ class ServerProvisionController extends Controller
     /**
      * Get script file for server
      */
-    public function script(Request $request, string $script)
+    public function script(Server $server, string $script)
     {
-        $sharedSecret = $request->header('X-Shared-Secret') ?: $request->query('shared_secret');
-
-        // Find server by shared secret
-        $server = Server::where('shared_secret', $sharedSecret)->first();
-        if (! $server) {
-            return response('Unauthorized', 401);
-        }
-
         $content = '';
 
         switch ($script) {
@@ -115,23 +104,19 @@ class ServerProvisionController extends Controller
     }
 
     /**
-     * Register server after installation
+     * Register server after installation.
+     *
+     * `server_id` is gone from the body: the identity is the path, and a body field
+     * naming a different row than the credential belongs to is exactly the confusion
+     * this endpoint used to allow.
      */
-    public function register(Request $request)
+    public function register(Request $request, Server $server)
     {
-        $sharedSecret = $request->header('X-Shared-Secret');
-
         $data = $request->validate([
-            'server_id' => 'required|exists:servers,id',
             'hostname' => 'required|string',
             'ip' => 'required|ip',
             'status' => 'required|string',
         ]);
-
-        $server = Server::find($data['server_id']);
-        if (! $server || $server->shared_secret !== $sharedSecret) {
-            return response()->json(['error' => 'Unauthorized'], 401);
-        }
 
         // Check if this server can become origin (if it's an origin type)
         if ($server->type === ServerTypeEnum::ORIGIN &&
@@ -178,12 +163,6 @@ class ServerProvisionController extends Controller
      */
     public function heartbeat(Request $request, Server $server)
     {
-        $sharedSecret = $request->header('X-Shared-Secret');
-
-        if ($server->shared_secret !== $sharedSecret) {
-            return response()->json(['error' => 'Unauthorized'], 401);
-        }
-
         $updateData = [
             'last_heartbeat' => now(),
         ];

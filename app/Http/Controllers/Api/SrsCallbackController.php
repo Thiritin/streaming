@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enum\ServerStatusEnum;
 use App\Enum\SourceStatusEnum;
 use App\Events\SourceStatusChangedEvent;
 use App\Http\Controllers\Controller;
@@ -96,9 +95,7 @@ class SrsCallbackController extends Controller
 
         // First check if this is a server-to-server forward (edge to origin)
         if ($sharedSecret) {
-            $server = Server::where('shared_secret', $sharedSecret)
-                ->where('status', ServerStatusEnum::ACTIVE)
-                ->first();
+            $server = Server::activeByPresentedSecret($sharedSecret);
 
             if ($server) {
                 Log::info('Server-to-server auth successful', [
@@ -123,7 +120,7 @@ class SrsCallbackController extends Controller
                     'code' => 0,
                     'server' => [
                         'id' => (string) $server->id,
-                        'signature' => md5($server->id.':'.$server->shared_secret),
+                        'signature' => md5($server->id.':'.$server->shared_secret_hash),
                     ],
                 ]);
             }

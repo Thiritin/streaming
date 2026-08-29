@@ -23,6 +23,10 @@ class SrsCallbackControllerTest extends TestCase
 
     private Show $show;
 
+    private const ORIGIN_SECRET = 'origin_shared_secret_123';
+
+    private const EDGE_SECRET = 'edge_shared_secret_456';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -42,7 +46,7 @@ class SrsCallbackControllerTest extends TestCase
             'ip' => '192.168.1.100',
             'status' => ServerStatusEnum::ACTIVE,
             'type' => ServerTypeEnum::ORIGIN,
-            'shared_secret' => 'origin_shared_secret_123',
+            'shared_secret_hash' => Server::hashCredential(self::ORIGIN_SECRET),
             'max_clients' => 1000,
             'immutable' => false,
         ]);
@@ -53,7 +57,7 @@ class SrsCallbackControllerTest extends TestCase
             'ip' => '192.168.1.101',
             'status' => ServerStatusEnum::ACTIVE,
             'type' => ServerTypeEnum::EDGE,
-            'shared_secret' => 'edge_shared_secret_456',
+            'shared_secret_hash' => Server::hashCredential(self::EDGE_SECRET),
             'max_clients' => 500,
             'immutable' => false,
         ]);
@@ -208,7 +212,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
-            'param' => '?shared_secret='.$this->edgeServer->shared_secret,
+            'param' => '?shared_secret='.self::EDGE_SECRET,
         ]);
 
         $response->assertStatus(200)
@@ -257,7 +261,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
-            'param' => '?shared_secret='.$this->edgeServer->shared_secret,
+            'param' => '?shared_secret='.self::EDGE_SECRET,
         ]);
 
         $response->assertStatus(403)
@@ -273,7 +277,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
-            'param' => '?shared_secret='.$this->edgeServer->shared_secret.'&secret='.$this->source->stream_key,
+            'param' => '?shared_secret='.self::EDGE_SECRET.'&secret='.$this->source->stream_key,
         ]);
 
         // Should authenticate as server, not source
@@ -360,7 +364,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'ingress',
             'stream' => 'non-existent-stream',
             'tcUrl' => 'rtmp://localhost/ingress',
-            'param' => '?shared_secret='.$this->originServer->shared_secret,
+            'param' => '?shared_secret='.self::ORIGIN_SECRET,
         ]);
 
         // Should still return success but log a warning
@@ -607,7 +611,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'ingress',
             'stream' => 'test-source',
             'tcUrl' => 'rtmp://origin.server/live',
-            'param' => '?shared_secret='.$this->edgeServer->shared_secret,
+            'param' => '?shared_secret='.self::EDGE_SECRET,
         ]);
 
         $response->assertStatus(200);
@@ -619,7 +623,7 @@ class SrsCallbackControllerTest extends TestCase
         $this->assertEquals(32, strlen($data['server']['signature']));
 
         // Verify signature matches expected format
-        $expectedSignature = md5($this->edgeServer->id.':'.$this->edgeServer->shared_secret);
+        $expectedSignature = md5($this->edgeServer->id.':'.$this->edgeServer->shared_secret_hash);
         $this->assertEquals($expectedSignature, $data['server']['signature']);
     }
 
@@ -727,7 +731,7 @@ class SrsCallbackControllerTest extends TestCase
             'app' => 'ingress',
             'stream' => 'non-existent-stream',
             'tcUrl' => 'rtmp://origin.server/live',
-            'param' => '?shared_secret='.$this->edgeServer->shared_secret,
+            'param' => '?shared_secret='.self::EDGE_SECRET,
         ]);
 
         // Server auth should succeed even if source doesn't exist

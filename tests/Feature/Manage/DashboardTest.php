@@ -9,6 +9,7 @@ use App\Models\Server;
 use App\Models\ServerMetric;
 use App\Models\Show;
 use App\Models\Source;
+use App\Support\Manage\Overview;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\CreatesManageUsers;
@@ -98,6 +99,35 @@ class DashboardTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('alerts.0.tone', 'warn')
                 ->where('alerts.0.title', 'Server edge-quiet has not checked in'));
+    }
+
+    /**
+     * A refused credential and a crashed box both stop the heartbeat. This one is the
+     * more specific answer and the app knows it, so it replaces the stale line rather
+     * than sitting beside it - and it carries its own key, so a fix posts a cleared
+     * line of its own through HealthAlertDigest.
+     */
+    public function test_a_rejected_credential_replaces_the_stale_heartbeat_alert(): void
+    {
+        $server = Server::factory()->create([
+            'type' => ServerTypeEnum::EDGE,
+            'status' => ServerStatusEnum::ACTIVE,
+            'hostname' => 'edge-refused',
+            'health_status' => 'healthy',
+            'last_heartbeat' => now()->subMinutes(10),
+            'credential_rejected_at' => now()->subMinutes(9),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.home'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('alerts.0.tone', 'danger')
+                ->where('alerts.0.title', 'Server edge-refused credentials rejected')
+                ->where('alerts.0.key', "server:{$server->id}:credentials"));
+
+        $keys = collect(app(Overview::class)->alerts())->pluck('key');
+
+        $this->assertFalse($keys->contains("server:{$server->id}:stale"));
     }
 
     /**

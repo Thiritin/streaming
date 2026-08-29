@@ -7,8 +7,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Server;
 use App\Services\ServerProvisioningService;
 use App\Support\Manage\Toast;
+use App\Support\ServerCredentials;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -26,6 +26,12 @@ class ServerInstallScriptController extends Controller
     {
         $this->authorize('viewInstallScript', $server);
 
+        // A row that has never held a credential gets one now: there is nothing to
+        // invalidate, and the alternative is a page whose every script refuses to run.
+        if (! $server->shared_secret_hash) {
+            $server->issueCredentials();
+        }
+
         return inertia('Manage/Servers/InstallScript', [
             'server' => [
                 'id' => $server->id,
@@ -33,8 +39,10 @@ class ServerInstallScriptController extends Controller
                 'type' => $server->type?->value,
             ],
             'tabs' => $this->tabs($server, $provisioning),
+            'hasCredentials' => $this->credentials($server) !== null,
+            'rotatedAt' => $server->shared_secret_rotated_at?->diffForHumans(),
             'downloadUrl' => route('manage.servers.install-script.download', $server),
-            'regenerateUrl' => route('manage.servers.install-script.regenerate', $server),
+            'rotateUrl' => route('manage.servers.install-script.rotate', $server),
         ]);
     }
 
@@ -52,20 +60,33 @@ class ServerInstallScriptController extends Controller
     }
 
     /**
-     * Backfills a missing shared secret and re-renders. The scripts are generated on every
-     * request, so there is nothing else to invalidate.
+     * Mint a new pair of credentials and re-render the scripts around them.
+     *
+     * Only the hashes are stored, so this is the only way to get a script carrying
+     * plaintext for a server whose credentials were issued in some earlier session. It
+     * is destructive by design: the old pair stops being accepted the moment this runs,
+     * so a box already installed with it stops checking in until it is reinstalled.
      */
-    public function regenerate(Server $server): RedirectResponse
+    public function rotate(Server $server): RedirectResponse
     {
-        $this->authorize('viewInstallScript', $server);
+        $this->authorize('rotateCredentials', $server);
 
-        if (! $server->shared_secret) {
-            $server->update(['shared_secret' => Str::random(40)]);
-        }
+        $server->issueCredentials();
 
-        Toast::flashSuccess('Scripts Regenerated');
+        Toast::flashSuccess(
+            'Credentials rotated',
+            'The previous pair is no longer accepted. Reinstall this server with the new script.',
+        );
 
         return back();
+    }
+
+    /**
+     * The plaintext this request may show, if any.
+     */
+    private function credentials(Server $server): ?ServerCredentials
+    {
+        return $server->issuedCredentials ?? ServerCredentials::recall($server);
     }
 
     /**

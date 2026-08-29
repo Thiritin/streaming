@@ -6,7 +6,6 @@ use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Models\Server;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Str;
 
 /**
  * @extends Factory<Server>
@@ -30,11 +29,21 @@ class ServerFactory extends Factory
             'port' => 8080,
             'type' => ServerTypeEnum::EDGE,
             'status' => ServerStatusEnum::ACTIVE,
-            'shared_secret' => Str::random(40),
             'max_clients' => 100,
             'viewer_count' => 0,
             'immutable' => true,
         ];
+    }
+
+    /**
+     * A server whose shared secret is a known string, so a test can present it.
+     *
+     * Only the hash is stored, and the model mints one on create unless a hash is
+     * already set, so seeding the hash is how a fixture pins the plaintext.
+     */
+    public function credential(string $plaintext): self
+    {
+        return $this->state(['shared_secret_hash' => Server::hashCredential($plaintext)]);
     }
 
     public function edge(): self

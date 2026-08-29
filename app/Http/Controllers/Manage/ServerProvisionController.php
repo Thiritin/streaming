@@ -11,7 +11,6 @@ use App\Services\Hetzner;
 use App\Support\Manage\Toast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
@@ -65,7 +64,6 @@ class ServerProvisionController extends Controller
             'status' => ServerStatusEnum::PROVISIONING,
             'hostname' => 'pending',
             'port' => 443,
-            'shared_secret' => Str::random(40),
             'max_clients' => config("stream.server.max_clients.{$role}"),
         ]);
 

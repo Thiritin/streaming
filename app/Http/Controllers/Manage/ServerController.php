@@ -19,7 +19,6 @@ use App\Support\Manage\Toast;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Inertia\Response;
 
 class ServerController extends Controller
@@ -102,7 +101,6 @@ class ServerController extends Controller
                 'port' => 8080,
                 'type' => ServerTypeEnum::EDGE->value,
                 'status' => ServerStatusEnum::ACTIVE->value,
-                'shared_secret' => Str::random(40),
                 'max_clients' => 100,
                 'hetzner_id' => '',
             ],
@@ -165,9 +163,7 @@ class ServerController extends Controller
             'is_cloud' => $server->isHetznerServer(),
             'max_clients' => $server->max_clients,
             'viewer_count' => (int) $server->viewer_count,
-            'heartbeat' => $server->hasRecentHeartbeat()
-                ? Status::make('Recent', Status::OK, 'circle-check')
-                : Status::make('Stale', Status::DANGER, 'circle-x'),
+            'heartbeat' => $this->heartbeatStatus($server),
             'last_heartbeat' => $server->last_heartbeat?->diffForHumans() ?? 'Never',
             'last_heartbeat_exact' => $server->last_heartbeat?->format('M j, Y H:i:s'),
             'created_at' => $server->created_at?->format('M j, Y H:i') ?? '-',
@@ -189,7 +185,7 @@ class ServerController extends Controller
                 'port' => $server->port,
                 'type' => $server->type?->value,
                 'status' => $server->status?->value,
-                'shared_secret' => $server->shared_secret,
+                'credentials_rotated_at' => $server->shared_secret_rotated_at?->diffForHumans(),
                 'max_clients' => $server->max_clients,
                 'viewer_count' => $server->viewer_count,
                 'health_status' => $server->health_status,
@@ -317,19 +313,39 @@ class ServerController extends Controller
             'viewer_count' => $isEdge
                 ? ['display' => number_format($server->viewer_count, 0, '.', ' '), 'description' => $capacity]
                 : null,
-            'heartbeat' => $server->hasRecentHeartbeat()
-                ? Status::make('Recent', Status::OK, 'circle-check') + [
-                    'title' => 'Last heartbeat: '.$server->last_heartbeat->diffForHumans(),
-                ]
-                : Status::make('Stale', Status::DANGER, 'circle-x') + [
-                    'title' => $server->last_heartbeat
-                        ? 'Last heartbeat: '.$server->last_heartbeat->diffForHumans()
-                        : 'No heartbeat received',
-                ],
+            'heartbeat' => $this->heartbeatStatus($server),
             // Health checks only run against edge servers, so an origin shows nothing
             // rather than a misleading "unknown".
             'health_status' => $isEdge ? Status::health($server->health_status) : null,
             'max_clients' => $server->max_clients,
+        ];
+    }
+
+    /**
+     * A refused credential and a dead box both stop the heartbeat, so they would read
+     * the same. This one is knowable - the app is the side turning the request away -
+     * and it is the more specific answer, so it wins.
+     *
+     * @return array<string, mixed>
+     */
+    private function heartbeatStatus(Server $server): array
+    {
+        if ($server->credential_rejected_at) {
+            return Status::make('Credentials rejected', Status::DANGER, 'circle-x') + [
+                'title' => 'Credentials rejected '.$server->credential_rejected_at->diffForHumans(),
+            ];
+        }
+
+        if ($server->hasRecentHeartbeat()) {
+            return Status::make('Recent', Status::OK, 'circle-check') + [
+                'title' => 'Last heartbeat: '.$server->last_heartbeat->diffForHumans(),
+            ];
+        }
+
+        return Status::make('Stale', Status::DANGER, 'circle-x') + [
+            'title' => $server->last_heartbeat
+                ? 'Last heartbeat: '.$server->last_heartbeat->diffForHumans()
+                : 'No heartbeat received',
         ];
     }
 

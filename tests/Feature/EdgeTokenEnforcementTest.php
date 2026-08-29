@@ -35,10 +35,9 @@ class EdgeTokenEnforcementTest extends TestCase
         Config::set('stream.token.leeway', 60);
         Config::set('stream.system_streamkey', 'system-fixture-key');
 
-        $this->edge = Server::factory()->create([
+        $this->edge = Server::factory()->credential('edge-shared-secret')->create([
             'type' => ServerTypeEnum::EDGE,
             'status' => ServerStatusEnum::ACTIVE,
-            'shared_secret' => 'edge-shared-secret',
         ]);
 
         $this->provisioning = app(ServerProvisioningService::class);
@@ -174,16 +173,21 @@ class EdgeTokenEnforcementTest extends TestCase
     public function test_edge_files_are_downloadable_with_the_shared_secret(): void
     {
         foreach (['dockerfile-edge', 'hls-auth-js'] as $type) {
-            $this->getJson("/api/server/config/{$type}", ['X-Shared-Secret' => 'edge-shared-secret'])
-                ->assertOk();
+            $this->getJson(
+                "/api/server/{$this->edge->id}/config/{$type}",
+                ['X-Shared-Secret' => 'edge-shared-secret'],
+            )->assertOk();
         }
     }
 
     public function test_edge_files_are_not_downloadable_without_the_shared_secret(): void
     {
         foreach (['dockerfile-edge', 'hls-auth-js'] as $type) {
-            $this->getJson("/api/server/config/{$type}")->assertStatus(401);
-            $this->getJson("/api/server/config/{$type}?shared_secret=wrong")->assertStatus(401);
+            $this->getJson("/api/server/{$this->edge->id}/config/{$type}")->assertStatus(401);
+
+            // The query string is no longer a way in, right value or wrong.
+            $this->getJson("/api/server/{$this->edge->id}/config/{$type}?shared_secret=edge-shared-secret")
+                ->assertStatus(401);
         }
     }
 
@@ -202,7 +206,7 @@ class EdgeTokenEnforcementTest extends TestCase
      */
     public function test_an_unauthenticated_request_fails_rather_than_redirecting(): void
     {
-        $this->get('/api/server/config/hls-auth-js')->assertStatus(401);
+        $this->get("/api/server/{$this->edge->id}/config/hls-auth-js")->assertStatus(401);
 
         $this->assertStringContainsString(
             'Accept: application/json',
@@ -253,7 +257,7 @@ class EdgeTokenEnforcementTest extends TestCase
 
     public function test_the_origin_compose_references_those_images(): void
     {
-        $origin = Server::factory()->origin()->create(['shared_secret' => 'origin-secret']);
+        $origin = Server::factory()->origin()->credential('origin-secret')->create();
         $compose = $this->provisioning->generateConfig($origin, 'docker-compose');
 
         foreach (config('stream.images') as $reference) {
@@ -272,15 +276,23 @@ class EdgeTokenEnforcementTest extends TestCase
      */
     public function test_the_install_script_writes_the_heartbeat_script(): void
     {
+        $credentials = $this->edge->issueCredentials();
         $script = $this->provisioning->generateInstallScript($this->edge);
 
         $this->assertStringContainsString('cat > /opt/streaming/heartbeat.sh', $script);
         // Blade fills the identity in; the URL itself is assembled by the shell at
         // run time, so assert the parts rather than a joined string.
         $this->assertStringContainsString('SERVER_ID="'.$this->edge->id.'"', $script);
-        $this->assertStringContainsString('SHARED_SECRET="'.$this->edge->shared_secret.'"', $script);
+        $this->assertStringContainsString('SHARED_SECRET="'.$credentials->sharedSecret.'"', $script);
         $this->assertStringContainsString('/api/server/${SERVER_ID}/heartbeat', $script);
         $this->assertStringContainsString('X-Shared-Secret: ${SHARED_SECRET}', $script);
+
+        // The heartbeat reads the credential out of .env rather than carrying a second
+        // copy of it, so a rotation is one file on the box rather than two.
+        $this->assertStringContainsString(
+            "SHARED_SECRET=$(sed -n 's/^SHARED_SECRET=//p' /opt/streaming/.env)",
+            $script,
+        );
 
         // Cron alone was the bug; the file has to exist and be runnable.
         $this->assertStringContainsString('chmod 700 /opt/streaming/heartbeat.sh', $script);

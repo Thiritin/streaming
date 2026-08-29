@@ -18,6 +18,8 @@ class SrsWebhookAuthenticationTest extends TestCase
 
     private Source $source;
 
+    private const SERVER_SECRET = 'test_shared_secret_123';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -28,7 +30,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'ip' => 1,
             'status' => ServerStatusEnum::ACTIVE,
             'type' => ServerTypeEnum::EDGE,
-            'shared_secret' => 'test_shared_secret_123',
+            'shared_secret_hash' => Server::hashCredential(self::SERVER_SECRET),
             'max_clients' => 100,
             'immutable' => false,
         ]);
@@ -135,7 +137,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://origin.server/live',
             'pageUrl' => '',
-            'param' => '?shared_secret='.$this->server->shared_secret,
+            'param' => '?shared_secret='.self::SERVER_SECRET,
         ]);
 
         $response->assertStatus(200)
@@ -196,7 +198,7 @@ class SrsWebhookAuthenticationTest extends TestCase
             'stream' => 'livestream',
             'tcUrl' => 'rtmp://origin.server/live',
             'pageUrl' => '',
-            'param' => '?shared_secret='.$this->server->shared_secret.'&secret=some_streamkey',
+            'param' => '?shared_secret='.self::SERVER_SECRET.'&secret=some_streamkey',
         ]);
 
         // Should authenticate as server, not user

@@ -61,8 +61,8 @@ Route::prefix('servers/{server}')->name('servers.')->group(function () {
     Route::get('install-script', [ServerInstallScriptController::class, 'show'])->name('install-script');
     Route::get('install-script/download', [ServerInstallScriptController::class, 'download'])
         ->name('install-script.download');
-    Route::post('install-script/regenerate', [ServerInstallScriptController::class, 'regenerate'])
-        ->name('install-script.regenerate');
+    Route::post('install-script/rotate', [ServerInstallScriptController::class, 'rotate'])
+        ->name('install-script.rotate');
     Route::post('deprovision', [ServerController::class, 'deprovision'])->name('deprovision');
     Route::post('force-deprovision', [ServerController::class, 'forceDeprovision'])
         ->name('force-deprovision');

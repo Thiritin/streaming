@@ -17,9 +17,16 @@ class ServerMetricsTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const SECRET = 'heartbeat-shared-secret';
+
+    private function server(array $attributes = []): Server
+    {
+        return Server::factory()->credential(self::SECRET)->create($attributes);
+    }
+
     private function heartbeat(Server $server, array $payload, ?string $secret = null)
     {
-        return $this->withHeaders(['X-Shared-Secret' => $secret ?? $server->shared_secret])
+        return $this->withHeaders(['X-Shared-Secret' => $secret ?? self::SECRET])
             ->postJson(route('api.server.heartbeat', $server), $payload);
     }
 
@@ -41,7 +48,7 @@ class ServerMetricsTest extends TestCase
 
     public function test_a_heartbeat_stores_the_system_sample(): void
     {
-        $server = Server::factory()->create(['viewer_count' => 17]);
+        $server = $this->server(['viewer_count' => 17]);
 
         $this->heartbeat($server, ['health' => ['local' => 'healthy'], 'metrics' => $this->sample()])
             ->assertSuccessful();
@@ -63,7 +70,7 @@ class ServerMetricsTest extends TestCase
      */
     public function test_a_partial_sample_is_stored_with_the_missing_fields_null(): void
     {
-        $server = Server::factory()->create();
+        $server = $this->server();
 
         $this->heartbeat($server, ['metrics' => ['memory_used_bytes' => 100, 'memory_total_bytes' => 200]])
             ->assertSuccessful();
@@ -81,7 +88,7 @@ class ServerMetricsTest extends TestCase
      */
     public function test_impossible_values_are_dropped_rather_than_charted(): void
     {
-        $server = Server::factory()->create();
+        $server = $this->server();
 
         $this->heartbeat($server, ['metrics' => [
             'cpu_percent' => 4000,
@@ -98,7 +105,7 @@ class ServerMetricsTest extends TestCase
 
     public function test_a_heartbeat_without_metrics_still_marks_the_server_alive(): void
     {
-        $server = Server::factory()->create(['last_heartbeat' => null]);
+        $server = $this->server(['last_heartbeat' => null]);
 
         $this->heartbeat($server, ['health' => ['local' => 'healthy']])->assertSuccessful();
 
@@ -108,7 +115,7 @@ class ServerMetricsTest extends TestCase
 
     public function test_a_wrong_shared_secret_records_nothing(): void
     {
-        $server = Server::factory()->create();
+        $server = $this->server();
 
         $this->heartbeat($server, ['metrics' => $this->sample()], 'wrong')->assertUnauthorized();
 
@@ -119,7 +126,7 @@ class ServerMetricsTest extends TestCase
 
     public function test_the_service_reports_current_values_in_human_units(): void
     {
-        $server = Server::factory()->create(['viewer_count' => 25, 'max_clients' => 100]);
+        $server = $this->server(['viewer_count' => 25, 'max_clients' => 100]);
 
         ServerMetric::create(['server_id' => $server->id, 'recorded_at' => now()] + $this->sample());
 
@@ -139,7 +146,7 @@ class ServerMetricsTest extends TestCase
 
     public function test_a_server_that_has_never_reported_shows_dashes_not_zeroes(): void
     {
-        $server = Server::factory()->create();
+        $server = $this->server();
 
         $cards = collect(app(ServerMetricsService::class)->forServer($server)['cards'])->keyBy('key');
 
@@ -154,7 +161,7 @@ class ServerMetricsTest extends TestCase
      */
     public function test_gaps_in_the_window_stay_gaps(): void
     {
-        $server = Server::factory()->create();
+        $server = $this->server();
 
         foreach ([5, 6, 7] as $minutesAgo) {
             ServerMetric::create([
@@ -173,7 +180,7 @@ class ServerMetricsTest extends TestCase
 
     public function test_disk_free_is_charted_as_headroom_not_usage(): void
     {
-        $server = Server::factory()->create();
+        $server = $this->server();
 
         ServerMetric::create([
             'server_id' => $server->id,
@@ -212,7 +219,7 @@ class ServerMetricsTest extends TestCase
 
     public function test_an_unknown_range_falls_back_to_the_default(): void
     {
-        $server = Server::factory()->create();
+        $server = $this->server();
 
         $this->assertSame(
             ServerMetricsService::DEFAULT_RANGE,
@@ -226,7 +233,7 @@ class ServerMetricsTest extends TestCase
     {
         config(['stream.server.metrics_retention_days' => 7]);
 
-        $server = Server::factory()->create();
+        $server = $this->server();
 
         ServerMetric::create(['server_id' => $server->id, 'recorded_at' => now()->subDays(8), 'cpu_percent' => 1]);
         ServerMetric::create(['server_id' => $server->id, 'recorded_at' => now()->subDays(1), 'cpu_percent' => 2]);

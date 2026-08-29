@@ -33,7 +33,12 @@ class CreateVirtualMachineJob implements ShouldQueue
         $hetznerClient = Hetzner::client();
         $name = $this->server->type->value.'-'.$this->server->id.'-'.Str::random(12);
 
-        // Generate cloud-init script using the provisioning service
+        // Mint the credentials here rather than at row creation: the plaintext exists
+        // only for as long as this render, and this is the render that hands it to the
+        // box. Anything the row held before is invalidated, which is correct - no VM has
+        // booted with it yet.
+        $this->server->issueCredentials();
+
         $provisioningService = app(ServerProvisioningService::class);
         $cloudInitScript = $provisioningService->generateCloudInit($this->server);
 

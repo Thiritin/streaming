@@ -6,6 +6,14 @@
 # Hostname: {{ $server->hostname }}
 
 set -e
+@if(! $sharedSecret)
+
+# Only the hashes of a server's credentials are stored, so a script can only carry them
+# on the render that mints them. This one did not.
+echo "This script was rendered without credentials."
+echo "Rotate them on this server's install script page in /manage, then download it again."
+exit 1
+@endif
 
 echo "================================================"
 echo "Streaming Server Installation"
@@ -40,11 +48,19 @@ fi
 mkdir -p /opt/streaming
 cd /opt/streaming
 
+# The credentials, once. Everything below reads them from these variables or from .env,
+# so the plaintext is in one place in this file and one place on the box.
+SHARED_SECRET="{{ $sharedSecret }}"
+DEPLOY_TOKEN="{{ $deployToken }}"
+
 # Create environment file
+touch .env
+chmod 600 .env
 cat > .env <<EOF
 SERVER_ID={{ $server->id }}
 SERVER_TYPE={{ $server->type->value }}
-SHARED_SECRET={{ $sharedSecret }}
+SHARED_SECRET=${SHARED_SECRET}
+DEPLOY_TOKEN=${DEPLOY_TOKEN}
 APP_URL={{ $serverUrl }}
 
 # DVR S3 Storage Configuration
@@ -58,14 +74,26 @@ EOF
 # Download configuration files from server
 echo "Downloading configuration files..."
 
-# Base URL for config downloads
-CONFIG_URL="{{ $serverUrl }}/api/server/config"
+# Base URL for config downloads. The server is in the path: the app checks the credential
+# against that row, so this box can only ever fetch its own config.
+CONFIG_URL="{{ $serverUrl }}/api/server/{{ $server->id }}/config"
+
+# The credential goes in a header and nowhere else - a query string ends up in the app's
+# access logs and in every proxy on the path. No -L, because a redirect is how a header
+# gets replayed to another host. -f so a 401 fails the download rather than writing the
+# error page over the config, and "Accept: application/json" so the failure is a clean
+# 401 rather than an HTML page.
+fetch_config() {
+    curl -fsS \
+        -H "X-Shared-Secret: ${SHARED_SECRET}" \
+        -H "Accept: application/json" \
+        -o "$1" \
+        "${CONFIG_URL}/$2"
+}
 
 # Download Docker Compose configuration
 echo "Downloading docker-compose.yml..."
-curl -H "X-Shared-Secret: {{ $sharedSecret }}" \
-     -o docker-compose.yml \
-     "${CONFIG_URL}/docker-compose" || {
+fetch_config docker-compose.yml docker-compose || {
     echo "Failed to download docker-compose.yml"
     exit 1
 }
@@ -73,65 +101,46 @@ curl -H "X-Shared-Secret: {{ $sharedSecret }}" \
 @if($server->type === \App\Enum\ServerTypeEnum::ORIGIN)
 # Download Origin server configurations
 echo "Downloading SRS configuration..."
-curl -H "X-Shared-Secret: {{ $sharedSecret }}" \
-     -o srs.conf \
-     "${CONFIG_URL}/srs-origin" || {
+fetch_config srs.conf srs-origin || {
     echo "Failed to download srs.conf"
     exit 1
 }
 
 echo "Downloading Nginx configuration..."
-curl -H "X-Shared-Secret: {{ $sharedSecret }}" \
-     -o nginx.conf \
-     "${CONFIG_URL}/nginx-origin" || {
+fetch_config nginx.conf nginx-origin || {
     echo "Failed to download nginx.conf"
     exit 1
 }
 
 echo "Downloading Caddy configuration..."
-curl -H "X-Shared-Secret: {{ $sharedSecret }}" \
-     -o Caddyfile \
-     "${CONFIG_URL}/caddy-origin" || {
+fetch_config Caddyfile caddy-origin || {
     echo "Failed to download Caddyfile"
     exit 1
 }
 @else
 # Download Edge server configurations
 echo "Downloading Nginx configuration..."
-curl -H "X-Shared-Secret: {{ $sharedSecret }}" \
-     -o nginx.conf \
-     "${CONFIG_URL}/nginx-edge" || {
+fetch_config nginx.conf nginx-edge || {
     echo "Failed to download nginx.conf"
     exit 1
 }
 
 echo "Downloading Caddy configuration..."
-curl -H "X-Shared-Secret: {{ $sharedSecret }}" \
-     -o Caddyfile \
-     "${CONFIG_URL}/caddy-edge" || {
+fetch_config Caddyfile caddy-edge || {
     echo "Failed to download Caddyfile"
     exit 1
 }
 
 # The edge nginx image is built here because it needs the njs module, which
 # verifies playback tokens on this host instead of calling back into Laravel.
-#
-# -f and "Accept: application/json" matter: a bad shared secret otherwise
-# renders as a 302 to the login page, and the HTML would be saved as the config.
 echo "Downloading edge nginx Dockerfile..."
-curl -fsS -H "X-Shared-Secret: {{ $sharedSecret }}" \
-     -H "Accept: application/json" \
-     -o Dockerfile.edge-nginx \
-     "${CONFIG_URL}/dockerfile-edge" || {
+fetch_config Dockerfile.edge-nginx dockerfile-edge || {
     echo "Failed to download Dockerfile.edge-nginx"
     exit 1
 }
 
 echo "Downloading playback token verifier..."
-curl -fsS -H "X-Shared-Secret: {{ $sharedSecret }}" \
-     -H "Accept: application/json" \
-     -o hls-auth.js \
-     "${CONFIG_URL}/hls-auth-js" || {
+fetch_config hls-auth.js hls-auth-js || {
     echo "Failed to download hls-auth.js"
     exit 1
 }
@@ -185,11 +194,11 @@ echo "================================================"
 
 # Register server with main app (optional - may fail if network not ready)
 echo "Attempting to register server with main application..."
-curl -L -X POST "{{ $serverUrl }}/api/server/register" \
-     -H "X-Shared-Secret: {{ $sharedSecret }}" \
+curl -fsS -X POST "{{ $serverUrl }}/api/server/{{ $server->id }}/register" \
+     -H "X-Shared-Secret: ${SHARED_SECRET}" \
+     -H "Accept: application/json" \
      -H "Content-Type: application/json" \
      -d "{
-         \"server_id\": \"{{ $server->id }}\",
          \"hostname\": \"$HOSTNAME\",
          \"ip\": \"$PUBLIC_IP\",
          \"status\": \"active\"
@@ -220,8 +229,15 @@ set -u
 
 APP_URL="{{ $serverUrl }}"
 SERVER_ID="{{ $server->id }}"
-SHARED_SECRET="{{ $server->shared_secret }}"
 STATE="/opt/streaming/heartbeat.state"
+
+# Read out of .env rather than baked in again, so the credential lives in one file on
+# this box. Empty means a half-finished install or a rotation that was never applied;
+# stop rather than post an unauthenticated heartbeat every minute for ever.
+SHARED_SECRET=$(sed -n 's/^SHARED_SECRET=//p' /opt/streaming/.env)
+if [ -z "$SHARED_SECRET" ]; then
+    exit 1
+fi
 
 # Whether the local stack is actually serving, not merely whether the box is powered
 # on - a heartbeat that says "alive" while nginx is down is worse than none.

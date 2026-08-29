@@ -75,6 +75,15 @@ class ServerPolicy
         return $this->manages($user);
     }
 
+    /**
+     * Rotating stops the running box from checking in until it is reinstalled, so it is
+     * a mutation and gated as one.
+     */
+    public function rotateCredentials(User $user, Server $server): bool
+    {
+        return $this->manages($user);
+    }
+
     private function manages(User $user): bool
     {
         return $user->hasPermission('stream.manage') || $user->hasPermission('admin.access') || $user->isStaff();

@@ -10,14 +10,22 @@ const props = defineProps({
   server: { type: Object, required: true },
   tabs: { type: Array, required: true },
   downloadUrl: { type: String, required: true },
-  regenerateUrl: { type: String, required: true },
+  rotateUrl: { type: String, required: true },
+  hasCredentials: { type: Boolean, default: false },
+  rotatedAt: { type: String, default: null },
 });
 
 const active = ref(props.tabs[0]?.key ?? null);
 
 const current = () => props.tabs.find((tab) => tab.key === active.value) ?? props.tabs[0];
 
-const regenerate = () => router.post(props.regenerateUrl, {}, { preserveScroll: true });
+const rotate = () => {
+  if (!window.confirm('Rotate credentials? This server stops checking in until it is reinstalled with the new script.')) {
+    return;
+  }
+
+  router.post(props.rotateUrl, {}, { preserveScroll: true });
+};
 </script>
 
 <template>
@@ -39,15 +47,22 @@ const regenerate = () => router.post(props.regenerateUrl, {}, { preserveScroll: 
         <button
           type="button"
           class="inline-flex h-7 items-center gap-1.5 rounded border border-hairline px-2 text-[12px] text-fg-2 transition-colors hover:bg-surface-3"
-          @click="regenerate"
+          @click="rotate"
         >
           <ManageIcon name="refresh-cw" />
-          Regenerate
+          Rotate credentials
         </button>
       </template>
     </PageHeader>
 
     <div class="flex flex-col gap-3 p-4">
+      <p
+        v-if="!hasCredentials"
+        class="rounded border border-hairline bg-surface-2 px-3 py-2 text-[13px] text-fg-2"
+      >
+        Credentials were issued {{ rotatedAt ?? 'earlier' }} and are only shown once. Rotate them to get a script this server can install with.
+      </p>
+
       <nav class="flex flex-wrap gap-1" aria-label="Configuration files">
         <button
           v-for="tab in tabs"

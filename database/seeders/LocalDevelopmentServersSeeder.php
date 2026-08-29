@@ -6,7 +6,6 @@ use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Models\Server;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 class LocalDevelopmentServersSeeder extends Seeder
 {
@@ -35,7 +34,6 @@ class LocalDevelopmentServersSeeder extends Seeder
                 'hetzner_id' => null,
                 'ip' => null, // No DNS creation needed
                 'port' => 8080,
-                'shared_secret' => Str::random(40),
                 'status' => ServerStatusEnum::ACTIVE,
                 'max_clients' => 0, // Origin doesn't handle clients directly
                 'immutable' => true,
@@ -58,7 +56,6 @@ class LocalDevelopmentServersSeeder extends Seeder
             [
                 'hetzner_id' => null,
                 'ip' => '127.0.0.1',
-                'shared_secret' => Str::random(40),
                 'status' => ServerStatusEnum::ACTIVE,
                 'max_clients' => 100,
                 'immutable' => true,

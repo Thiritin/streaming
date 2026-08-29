@@ -40,7 +40,6 @@ class ServerDeprovisioningTest extends TestCase
             'status' => ServerStatusEnum::ACTIVE,
             'viewer_count' => $viewers,
             'max_clients' => 100,
-            'shared_secret' => 'test-secret',
         ]);
     }
 

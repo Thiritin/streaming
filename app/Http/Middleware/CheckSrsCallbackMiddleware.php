@@ -2,7 +2,6 @@
 
 namespace App\Http\Middleware;
 
-use App\Enum\ServerStatusEnum;
 use App\Models\Server;
 use App\Models\Source;
 use Closure;
@@ -73,15 +72,14 @@ class CheckSrsCallbackMiddleware
         return $params;
     }
 
+    /**
+     * The one credential check left that cannot go identity-first: an SRS callback names
+     * a stream, never a server. It matches the stored digest rather than the plaintext,
+     * so the column is an indexed lookup rather than a timing oracle over the secret.
+     */
     private function isActiveServer(mixed $secret): bool
     {
-        if (! is_string($secret) || $secret === '') {
-            return false;
-        }
-
-        return Server::where('shared_secret', $secret)
-            ->where('status', ServerStatusEnum::ACTIVE)
-            ->exists();
+        return Server::activeByPresentedSecret($secret) !== null;
     }
 
     /**

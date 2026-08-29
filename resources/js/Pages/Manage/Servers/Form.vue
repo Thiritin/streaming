@@ -142,23 +142,11 @@ const submit = () => {
 
         </FormSection>
 
-        <FormSection title="Authentication" :columns="1">
+        <FormSection v-if="isEdit" title="Authentication" :columns="1">
           <FormField
-            v-if="!isEdit"
-            v-model="form.shared_secret"
-            label="Shared secret"
-            mono
-            required
-            :error="form.errors.shared_secret"
-            helper="Used for server-to-server authentication. Generated for you; it cannot be changed later."
-          />
-          <FormField
-            v-else
-            label="Shared secret"
-            :model-value="server.shared_secret"
+            label="Credentials rotated"
+            :model-value="server.credentials_rotated_at ?? 'Never'"
             readonly
-            mono
-            helper="Fixed after creation. Regenerate it from the install script page if it is missing."
           />
         </FormSection>
 

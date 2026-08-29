@@ -27,7 +27,6 @@ class ServerHealthCheckTest extends TestCase
             'port' => 8080,
             'type' => ServerTypeEnum::ORIGIN,
             'status' => ServerStatusEnum::ACTIVE,
-            'shared_secret' => 'test',
             'max_clients' => 0,
         ]);
 
@@ -55,7 +54,6 @@ class ServerHealthCheckTest extends TestCase
             'port' => 8080,
             'type' => ServerTypeEnum::EDGE,
             'status' => ServerStatusEnum::ACTIVE,
-            'shared_secret' => 'test',
             'max_clients' => 100,
             'health_status' => 'unknown',
         ]);
@@ -88,7 +86,6 @@ class ServerHealthCheckTest extends TestCase
             'port' => 8080,
             'type' => ServerTypeEnum::EDGE,
             'status' => ServerStatusEnum::ACTIVE,
-            'shared_secret' => 'test',
             'max_clients' => 100,
             'health_status' => 'healthy',
         ]);
@@ -121,7 +118,6 @@ class ServerHealthCheckTest extends TestCase
             'port' => 8080,
             'type' => ServerTypeEnum::EDGE,
             'status' => ServerStatusEnum::ACTIVE,
-            'shared_secret' => 'test',
             'max_clients' => 100,
         ]);
 
@@ -149,7 +145,6 @@ class ServerHealthCheckTest extends TestCase
             'port' => 8080,
             'type' => ServerTypeEnum::EDGE,
             'status' => ServerStatusEnum::ACTIVE,
-            'shared_secret' => 'test1',
             'max_clients' => 100,
         ]);
 
@@ -159,7 +154,6 @@ class ServerHealthCheckTest extends TestCase
             'port' => 8080,
             'type' => ServerTypeEnum::EDGE,
             'status' => ServerStatusEnum::ACTIVE,
-            'shared_secret' => 'test2',
             'max_clients' => 100,
         ]);
 
@@ -170,7 +164,6 @@ class ServerHealthCheckTest extends TestCase
             'port' => 8080,
             'type' => ServerTypeEnum::EDGE,
             'status' => ServerStatusEnum::PROVISIONING,
-            'shared_secret' => 'test3',
             'max_clients' => 100,
         ]);
 
@@ -199,7 +192,6 @@ class ServerHealthCheckTest extends TestCase
             'port' => 8080,
             'type' => ServerTypeEnum::EDGE,
             'status' => ServerStatusEnum::ACTIVE,
-            'shared_secret' => 'test',
             'max_clients' => 100,
         ]);
 
@@ -230,7 +222,6 @@ class ServerHealthCheckTest extends TestCase
             'port' => 443,
             'type' => ServerTypeEnum::EDGE,
             'status' => ServerStatusEnum::ACTIVE,
-            'shared_secret' => 'test',
             'max_clients' => 100,
         ]);
 

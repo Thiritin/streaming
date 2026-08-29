@@ -14,7 +14,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Str;
 
 class CreateServerJob implements ShouldQueue
 {
@@ -43,7 +42,6 @@ class CreateServerJob implements ShouldQueue
 
         $server = Server::create([
             'type' => $type,
-            'shared_secret' => Str::random(32),
             'status' => ServerStatusEnum::PROVISIONING,
         ]);
 

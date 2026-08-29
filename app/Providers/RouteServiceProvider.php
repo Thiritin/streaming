@@ -36,6 +36,18 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::none();
         });
 
+        // The server API, keyed by the server in the path rather than by address: a
+        // rack of edges leaves through one outbound IP, and what the limit is for is
+        // that a stolen credential cannot spin one server's endpoints. Well clear of
+        // a heartbeat a minute plus the handful of config fetches an install makes.
+        RateLimiter::for('server-api', function (Request $request) {
+            $server = $request->route('server');
+
+            return Limit::perMinute(120)->by(
+                'server-api:'.(is_object($server) ? $server->getKey() : (string) $server)
+            );
+        });
+
         $this->routes(function () {
             Route::middleware('api')
                 ->prefix('api')

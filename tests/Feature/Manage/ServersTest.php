@@ -253,7 +253,6 @@ class ServersTest extends TestCase
                 'port' => 8080,
                 'type' => ServerTypeEnum::EDGE->value,
                 'status' => ServerStatusEnum::ACTIVE->value,
-                'shared_secret' => str_repeat('a', 40),
                 'max_clients' => 250,
             ])
             ->assertRedirect();
@@ -274,7 +273,6 @@ class ServersTest extends TestCase
                 'port' => 443,
                 'type' => ServerTypeEnum::ORIGIN->value,
                 'status' => ServerStatusEnum::ACTIVE->value,
-                'shared_secret' => str_repeat('b', 40),
                 'max_clients' => 5,
             ])
             ->assertRedirect();
@@ -289,16 +287,15 @@ class ServersTest extends TestCase
     {
         $this->actingAs($this->admin)
             ->post(route('manage.servers.store'), ['port' => 70000])
-            ->assertSessionHasErrors(['hostname', 'port', 'type', 'status', 'shared_secret']);
+            ->assertSessionHasErrors(['hostname', 'port', 'type', 'status']);
 
         $this->assertSame(0, Server::count());
     }
 
     public function test_updating_a_server_cannot_change_its_type_secret_or_hetzner_id(): void
     {
-        $server = Server::factory()->cloud()->create([
+        $server = Server::factory()->cloud()->credential('the-known-secret')->create([
             'type' => ServerTypeEnum::EDGE,
-            'shared_secret' => str_repeat('c', 40),
             'hetzner_id' => '111111',
         ]);
 
@@ -323,7 +320,7 @@ class ServersTest extends TestCase
         $this->assertSame(ServerStatusEnum::ERROR, $server->status);
         $this->assertSame(10, $server->max_clients);
         $this->assertSame(ServerTypeEnum::EDGE, $server->type);
-        $this->assertSame(str_repeat('c', 40), $server->shared_secret);
+        $this->assertTrue($server->verifySharedSecret('the-known-secret'));
         $this->assertSame('111111', $server->hetzner_id);
     }
 
@@ -337,7 +334,6 @@ class ServersTest extends TestCase
                 'port' => 8080,
                 'type' => ServerTypeEnum::EDGE->value,
                 'status' => ServerStatusEnum::ACTIVE->value,
-                'shared_secret' => str_repeat('d', 40),
             ])
             ->assertForbidden();
 
@@ -470,7 +466,7 @@ class ServersTest extends TestCase
         $this->assertSame('pending', $server->hostname);
         $this->assertSame(443, $server->port);
         $this->assertSame(100, $server->max_clients);
-        $this->assertNotEmpty($server->shared_secret);
+        $this->assertNotEmpty($server->shared_secret_hash);
 
         Bus::assertDispatched(CreateVirtualMachineJob::class);
         $this->assertSame('Server Provisioning Started', $this->toast()['title']);
@@ -675,19 +671,68 @@ class ServersTest extends TestCase
         $response->assertDownload("install-{$server->id}.sh");
     }
 
-    public function test_regenerating_backfills_a_missing_shared_secret(): void
+    public function test_rotating_replaces_the_credentials(): void
     {
-        // The column is NOT NULL, so a "missing" secret in practice means an empty string.
-        $server = Server::factory()->create();
-        $server->forceFill(['shared_secret' => ''])->saveQuietly();
+        $server = Server::factory()->credential('the-old-secret')->create();
 
         $this->actingAs($this->admin)
             ->from(route('manage.servers.install-script', $server))
-            ->post(route('manage.servers.install-script.regenerate', $server))
+            ->post(route('manage.servers.install-script.rotate', $server))
             ->assertRedirect(route('manage.servers.install-script', $server));
 
-        $this->assertNotEmpty($server->fresh()->shared_secret);
-        $this->assertSame('Scripts Regenerated', $this->toast()['title']);
+        $server->refresh();
+
+        $this->assertFalse($server->verifySharedSecret('the-old-secret'));
+        $this->assertNotEmpty($server->shared_secret_hash);
+        $this->assertNotNull($server->shared_secret_rotated_at);
+        $this->assertSame('Credentials rotated', $this->toast()['title']);
+    }
+
+    /**
+     * The script an operator downloads has to be one the box can actually install with.
+     */
+    public function test_rotating_puts_the_plaintext_in_the_next_render(): void
+    {
+        $server = Server::factory()->credential('the-old-secret')->create();
+
+        $this->actingAs($this->admin)
+            ->from(route('manage.servers.install-script', $server))
+            ->post(route('manage.servers.install-script.rotate', $server));
+
+        $script = $this->actingAs($this->admin)
+            ->get(route('manage.servers.install-script.download', $server))
+            ->streamedContent();
+
+        $this->assertStringNotContainsString('the-old-secret', $script);
+        $this->assertStringNotContainsString('rendered without credentials', $script);
+        $this->assertMatchesRegularExpression('/SHARED_SECRET="[A-Za-z0-9]{48}"/', $script);
+    }
+
+    /**
+     * The badge has to name the specific thing, not the symptom it shares with a box
+     * that has crashed.
+     */
+    public function test_a_rejected_credential_shows_on_the_server_page_instead_of_stale(): void
+    {
+        $server = Server::factory()->create([
+            'last_heartbeat' => now()->subMinutes(10),
+            'credential_rejected_at' => now()->subMinutes(9),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.servers.show', $server))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('server.heartbeat.label', 'Credentials rejected')
+                ->where('server.heartbeat.tone', 'danger'));
+    }
+
+    public function test_a_moderator_cannot_rotate_the_credentials(): void
+    {
+        $server = Server::factory()->create();
+
+        $this->actingAs($this->moderator)
+            ->post(route('manage.servers.install-script.rotate', $server))
+            ->assertForbidden();
     }
 
     public function test_a_moderator_cannot_read_the_install_script(): void

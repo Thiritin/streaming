@@ -5,28 +5,28 @@ namespace App\Services;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Models\Server;
+use App\Support\ServerCredentials;
 use Illuminate\Support\Facades\View;
-use Illuminate\Support\Str;
 
 class ServerProvisioningService
 {
     /**
-     * Generate install script for a server using Blade templates
+     * Generate install script for a server using Blade templates.
+     *
+     * Only the hashes are stored, so the plaintext is whatever this request happens to
+     * hold: the pair just minted for a box about to boot, or the pair the operator's own
+     * rotate put on their session. With neither, the script renders without credentials
+     * and refuses to run rather than installing a box that cannot check in.
      */
     public function generateInstallScript(Server $server): string
     {
-        $serverUrl = config('app.url');
-        $sharedSecret = $server->shared_secret ?: Str::random(32);
-
-        // Update server with shared secret if not set
-        if (! $server->shared_secret) {
-            $server->update(['shared_secret' => $sharedSecret]);
-        }
+        $credentials = $this->credentials($server);
 
         return View::make('server-provisioning.install-script', [
             'server' => $server,
-            'serverUrl' => $serverUrl,
-            'sharedSecret' => $sharedSecret,
+            'serverUrl' => config('app.url'),
+            'sharedSecret' => $credentials?->sharedSecret,
+            'deployToken' => $credentials?->deployToken,
         ])->render();
     }
 
@@ -36,14 +36,13 @@ class ServerProvisioningService
     public function generateCloudInit(Server $server): string
     {
         $serverUrl = config('app.url');
-        $sharedSecret = $server->shared_secret ?: Str::random(32);
+        $sharedSecret = $this->credentials($server)?->sharedSecret ?? '';
+        $serverId = $server->id;
 
-        // Update server with shared secret if not set
-        if (! $server->shared_secret) {
-            $server->update(['shared_secret' => $sharedSecret]);
-        }
-
-        // Simple cloud-init that just downloads and runs the install script
+        // The credential goes in a header, never in the URL: cloud-init writes its whole
+        // runcmd to /var/log/streaming-install.log, and the query string would have been
+        // in the app's access logs on top of that. No -L either - a redirect is how a
+        // header gets replayed to another host.
         $cloudInit = <<<YAML
 #cloud-config
 package_upgrade: true
@@ -54,7 +53,7 @@ packages:
   - net-tools
 
 runcmd:
-  - curl -fsSL '{$serverUrl}/api/server/scripts/install?shared_secret={$sharedSecret}' -o /opt/install.sh
+  - curl -fsS -H 'X-Shared-Secret: {$sharedSecret}' -H 'Accept: application/json' '{$serverUrl}/api/server/{$serverId}/scripts/install' -o /opt/install.sh
   - chmod +x /opt/install.sh
   - /opt/install.sh > /var/log/streaming-install.log 2>&1
 
@@ -70,7 +69,6 @@ YAML;
     public function generateConfig(Server $server, string $type): string
     {
         $serverUrl = config('app.url');
-        $sharedSecret = $server->shared_secret ?: Str::random(32);
 
         // The edge token verifier and its Dockerfile are shipped verbatim from
         // docker/edge-nginx so there is a single source of truth: the file the
@@ -140,7 +138,6 @@ YAML;
         return View::make($viewName, [
             'server' => $server,
             'serverUrl' => $serverUrl,
-            'sharedSecret' => $sharedSecret,
             'nginxUpstream' => $nginxUpstream,
             'originUpstream' => $originUpstream,
             'originServer' => $originServer,
@@ -153,6 +150,14 @@ YAML;
             'hlsTokenLeeway' => (int) config('stream.token.leeway'),
             'systemStreamkey' => config('stream.system_streamkey') ?? '',
         ])->render();
+    }
+
+    /**
+     * The plaintext for this render, if this request holds any.
+     */
+    private function credentials(Server $server): ?ServerCredentials
+    {
+        return $server->issuedCredentials ?? ServerCredentials::recall($server);
     }
 
     /**
