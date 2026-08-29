@@ -220,12 +220,17 @@ const submit = () => {
         </FormSection>
 
         <FormSection title="Recording">
+          <!--
+            The same field the recording plan edits, and the same one the schedule's
+            "available later" badge reads. There used to be a separate announce flag
+            beside it and nothing kept the two in step.
+          -->
           <FormField
-            v-model="form.announce_recording"
-            label="Announce as available later"
-            type="checkbox"
-            :error="form.errors.announce_recording"
-            helper="Shows an 'Available later' badge on the schedule."
+            v-model="form.publish_plan"
+            label="Publish"
+            type="select"
+            :options="options.publish_plans"
+            :error="form.errors.publish_plan"
           />
           <FormField v-if="isEdit" label="Live thumbnail">
             <div class="flex items-center gap-3">

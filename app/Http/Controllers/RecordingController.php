@@ -21,6 +21,16 @@ class RecordingController extends Controller
     private const SHELF_SIZE = 12;
 
     /**
+     * How many a category rail carries before the rest goes behind See all.
+     *
+     * Lower than the Continue watching shelf on purpose: that one is a list of
+     * things the viewer already started, so its length is the whole answer. A
+     * category rail is a sample of a set that has a page of its own, and a cap
+     * so high it never overflows is a See all nobody is ever offered.
+     */
+    private const RAIL_SIZE = 8;
+
+    /**
      * Page size for the filtered grid. Deliberately a multiple of the widest
      * column count so a full page never ends on a ragged row.
      */
@@ -29,28 +39,110 @@ class RecordingController extends Controller
     /**
      * Archive landing page.
      *
-     * One grid, always, newest first until asked otherwise, paged in as it is
-     * scrolled. The archive is around twenty recordings a year, so a wall of
-     * shelves would show most of the same recordings three times over; chips and
-     * a sort narrow it in place instead.
+     * Unfiltered it is a shelf per category, most watched category first: "what
+     * kind of thing is this" is the question somebody arriving at an archive
+     * actually has, and a flat newest-first grid answers it by making them read
+     * every tile. Ask anything of it - a chip, a search, a sort - and it becomes
+     * the grid, newest first until asked otherwise, paged in as it is scrolled.
      *
-     * The one shelf left is Continue watching, and only on the unfiltered page:
-     * once a viewer has said what they are after, the grid is the answer.
+     * Continue watching leads either way, and only on the unfiltered page: once a
+     * viewer has said what they are after, the grid is the answer.
      */
     public function index(Request $request)
     {
         $user = Auth::user();
 
         $filters = $this->filters($request);
+        $shelved = ! $this->isFiltered($filters);
 
         return Inertia::render('Archive/Index', [
             'filters' => $filters,
             'chips' => $this->chips($user, $filters),
             'totalRecordings' => Recording::where('is_published', true)->accessibleBy($user)->count(),
-            'continueWatching' => $this->isFiltered($filters)
-                ? []
-                : $this->continueWatching($user),
-        ] + $this->gridProps($request, $user, $filters));
+            'continueWatching' => $shelved ? $this->continueWatching($user) : [],
+            'shelves' => $shelved ? $this->categoryShelves($user) : [],
+        ] + ($shelved ? $this->emptyGridProps() : $this->gridProps($request, $user, $filters)));
+    }
+
+    /**
+     * The grid's props, switched off. The page still declares them, so the client
+     * never has to ask whether it is on a shelved page before reading them.
+     */
+    private function emptyGridProps(): array
+    {
+        return [
+            'recordings' => [],
+            'pagination' => ['page' => 1, 'lastPage' => 1, 'total' => 0],
+            'groups' => [],
+            'pending' => [],
+        ];
+    }
+
+    /**
+     * One rail per category, most watched category first.
+     *
+     * The order is the category's mean views per recording, not its total: a
+     * category that ran twelve panels would otherwise outrank one that ran two
+     * packed theatre nights purely by having more rows to add up. The mean asks
+     * what a recording of this kind is worth to the audience, which is the thing
+     * being ranked.
+     *
+     * Recordings the audience was promised but which are not published yet ride
+     * their own category's rail at the front, where the grid used to put them.
+     * They have no views to their name, so they are kept out of the mean.
+     * Anything filed under no category is one rail at the end, never ranked.
+     */
+    private function categoryShelves($user): array
+    {
+        $recordings = $this->publishedRecordings($user, null)
+            ->with([
+                'source:id,name,slug',
+                'category:id,name,slug',
+                'event:id,name,slug',
+                'show:id,category_id,event_id',
+                'show.category:id,name,slug',
+                'show.event:id,name,slug',
+            ])
+            ->orderByDesc('date')
+            ->get();
+
+        $progress = $this->progressFor($user, $recordings->pluck('id'));
+
+        $entries = $this->pendingShows(null)
+            ->map(fn (Show $show) => [
+                'category' => $show->category,
+                'tile' => $this->pendingTile($show),
+                'views' => null,
+            ])
+            ->concat($recordings->map(fn (Recording $recording) => [
+                'category' => $recording->effectiveCategory(),
+                'tile' => $this->tile($recording, $progress),
+                'views' => (int) $recording->views,
+            ]));
+
+        return $entries
+            ->groupBy(fn (array $entry) => $entry['category']?->slug ?? '')
+            ->map(function (Collection $group, string $slug) {
+                $category = $group->first()['category'];
+                $views = $group->pluck('views')->filter(fn ($value) => $value !== null);
+
+                return [
+                    'key' => $slug === '' ? 'uncategorised' : $slug,
+                    'title' => $category?->name ?? 'Uncategorised',
+                    // Where the rail runs out. Null for the uncategorised one:
+                    // there is no chip that narrows to "no category".
+                    'href' => $category ? route('recordings.index', ['category' => $slug]) : null,
+                    'count' => $group->count(),
+                    'recordings' => $group->take(self::RAIL_SIZE)->pluck('tile')->values()->all(),
+                    // Uncategorised sorts below every real category, however well
+                    // watched it happens to be.
+                    'sort' => $category ? (float) ($views->avg() ?? 0) : -1.0,
+                ];
+            })
+            ->sortByDesc('sort')
+            ->map(fn (array $shelf) => Arr::except($shelf, 'sort'))
+            ->values()
+            ->all();
     }
 
     /**
@@ -441,7 +533,14 @@ class RecordingController extends Controller
 
         $rows = RecordingProgress::where('user_id', $user->id)
             ->where('completed', false)
-            ->with(['recording.source:id,name,slug', 'recording.category:id,name,slug', 'recording.show:id,category_id', 'recording.show.category:id,name,slug'])
+            ->with([
+                'recording.source:id,name,slug',
+                'recording.category:id,name,slug',
+                'recording.event:id,name,slug',
+                'recording.show:id,category_id,event_id',
+                'recording.show.category:id,name,slug',
+                'recording.show.event:id,name,slug',
+            ])
             ->orderByDesc('updated_at')
             ->limit(self::SHELF_SIZE * 2)
             ->get()
@@ -562,9 +661,9 @@ class RecordingController extends Controller
     private function pendingShows(?string $search)
     {
         // Shows the audience was promised would be available afterwards, but which have
-        // not been published yet. `announce_recording` is the promise; it says nothing
-        // about capture, which happens for every source unconditionally.
-        $query = Show::where('announce_recording', true)
+        // not been published yet. `publish_plan` is the promise; it says nothing about
+        // capture, which happens for every source unconditionally.
+        $query = Show::where('publish_plan', 'yes')
             ->where('status', 'ended')
             ->with(['source:id,name,slug', 'category:id,name,slug', 'event:id,name,slug'])
             ->whereDoesntHave('recordings', fn ($q) => $q->where('is_published', true));
@@ -594,24 +693,31 @@ class RecordingController extends Controller
             ->filter(fn (Show $show) => $filters['year'] === null
                 || ($show->actual_end ?? $show->scheduled_end)?->year === $filters['year'])
             ->filter(fn (Show $show) => $filters['category'] === null || $show->category?->slug === $filters['category'])
-            // Dates go out as ISO strings, matching how the models serialise theirs, so
-            // the merged list sorts on one comparable type.
-            ->map(fn (Show $show) => [
-                'id' => 'pending-'.$show->id,
-                'title' => $show->title,
-                'date' => ($show->actual_end ?? $show->scheduled_end)?->toJSON(),
-                'thumbnail_url' => null,
-                'duration' => null,
-                'views' => 0,
-                'source_name' => $show->source?->name,
-                'source_slug' => $show->source?->slug,
-                'category_name' => $show->category?->name,
-                'event_label' => $show->event?->name,
-                'preview_url' => null,
-                'progress' => null,
-                'is_pending' => true,
-            ])
+            ->map(fn (Show $show) => $this->pendingTile($show))
             ->values();
+    }
+
+    /**
+     * One pending show as a tile. Dates go out as ISO strings, matching how the
+     * models serialise theirs, so a merged list sorts on one comparable type.
+     */
+    private function pendingTile(Show $show): array
+    {
+        return [
+            'id' => 'pending-'.$show->id,
+            'title' => $show->title,
+            'date' => ($show->actual_end ?? $show->scheduled_end)?->toJSON(),
+            'thumbnail_url' => null,
+            'duration' => null,
+            'views' => 0,
+            'source_name' => $show->source?->name,
+            'source_slug' => $show->source?->slug,
+            'category_name' => $show->category?->name,
+            'event_label' => $show->event?->name,
+            'preview_url' => null,
+            'progress' => null,
+            'is_pending' => true,
+        ];
     }
 
     public function show(Request $request, Recording $recording)
@@ -631,7 +737,7 @@ class RecordingController extends Controller
         // One view per viewer per window, not one per render; see RecordingViews.
         RecordingViews::count($recording, $request);
 
-        $recording->load(['source:id,name,slug', 'category:id,name,slug', 'show:id,category_id', 'show.category:id,name,slug']);
+        $recording->load(['source:id,name,slug', 'category:id,name,slug', 'event:id,name,slug', 'show:id,category_id,event_id', 'show.category:id,name,slug', 'show.event:id,name,slug']);
 
         $upNext = $this->upNext($recording, $user);
 
@@ -715,7 +821,7 @@ class RecordingController extends Controller
 
         $sameSource = $recording->source_id
             ? $this->publishedRecordings($user, null)
-                ->with(['source:id,name,slug', 'category:id,name,slug', 'show:id,category_id', 'show.category:id,name,slug'])
+                ->with(['source:id,name,slug', 'category:id,name,slug', 'event:id,name,slug', 'show:id,category_id,event_id', 'show.category:id,name,slug', 'show.event:id,name,slug'])
                 ->where('id', '!=', $recording->id)
                 ->where('source_id', $recording->source_id)
                 ->orderByDesc('date')
@@ -727,7 +833,7 @@ class RecordingController extends Controller
 
         if ($sameSource->count() < $take && $recording->date) {
             $fill = $this->publishedRecordings($user, null)
-                ->with(['source:id,name,slug', 'category:id,name,slug', 'show:id,category_id', 'show.category:id,name,slug'])
+                ->with(['source:id,name,slug', 'category:id,name,slug', 'event:id,name,slug', 'show:id,category_id,event_id', 'show.category:id,name,slug', 'show.event:id,name,slug'])
                 ->where('id', '!=', $recording->id)
                 ->whereNotIn('id', $sameSource->pluck('id'))
                 ->whereYear('date', $recording->date->year)

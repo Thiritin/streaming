@@ -8,6 +8,10 @@
  * which is read down a column and typed across a row, so there is no inline-edit switch,
  * no pagination and no row click that navigates away.
  *
+ * Six things per row, and the page is built around one question: what was meant to go out
+ * and has not. Publish, who has it, how the two captures came back, whatever else this
+ * room tracks as tags, and what the recording actually is.
+ *
  * Each cell saves on its own the moment it changes, the same as inline editing elsewhere:
  * there is no form and no submit, so a half-filled row cannot sit unsaved next to a
  * finished one.
@@ -22,6 +26,7 @@ import ManageLayout from '@/Layouts/ManageLayout.vue';
 import PageHeader from '@/Components/Manage/PageHeader.vue';
 import ManageIcon from '@/Components/Manage/ManageIcon.vue';
 import StatusBadge from '@/Components/Manage/StatusBadge.vue';
+import UserAvatar from '@/Components/Manage/UserAvatar.vue';
 import { resolve, toneBadge, toneText } from '@/Components/Manage/tones.js';
 
 const props = defineProps({
@@ -107,14 +112,8 @@ const FIELDS = {
   publish_plan: 'publish_plan',
   recording_owner_id: 'owner_id',
   stream_condition: 'stream_condition',
-  onsite_status: 'onsite_status',
+  onsite_condition: 'onsite_condition',
   recording_note: 'note',
-};
-
-/** The same, for the two archive chips, which are their own control. */
-const ARCHIVE_FIELDS = {
-  archive_pgm: 'archive_pgm',
-  archive_iso: 'archive_iso',
 };
 
 /** Unsaved value per cell, so a refusal leaves what was typed on screen. */
@@ -139,6 +138,27 @@ const border = (row, field) =>
     error: 'border-state-danger/70',
   })[states[cellKey(row, field)]] ?? 'border-transparent hover:border-hairline';
 
+/** The one PATCH every cell goes through, so saving state is drawn the same way. */
+const patch = (row, field, payload) => {
+  const key = cellKey(row, field);
+
+  states[key] = 'saving';
+
+  // No `only`: a flashed toast rides on the shared props, and a partial reload would
+  // drop it.
+  router.patch(row.update_url, payload, {
+    preserveScroll: true,
+    preserveState: true,
+    onSuccess: () => {
+      states[key] = 'saved';
+      window.setTimeout(() => {
+        if (states[key] === 'saved') delete states[key];
+      }, 1200);
+    },
+    onError: () => (states[key] = 'error'),
+  });
+};
+
 const save = (row, field, value) => {
   const key = cellKey(row, field);
 
@@ -147,26 +167,10 @@ const save = (row, field, value) => {
   }
 
   drafts[key] = value;
-  states[key] = 'saving';
 
-  // No `only`: a flashed toast rides on the shared props, and a partial reload would
-  // drop it. '' is how the client says "nobody" and "not watched yet"; the server takes
-  // null for both. A note is genuinely blankable, so it is sent as it stands.
-  router.patch(
-    row.update_url,
-    { [field]: value === '' && field !== 'recording_note' ? null : value },
-    {
-      preserveScroll: true,
-      preserveState: true,
-      onSuccess: () => {
-        states[key] = 'saved';
-        window.setTimeout(() => {
-          if (states[key] === 'saved') delete states[key];
-        }, 1200);
-      },
-      onError: () => (states[key] = 'error'),
-    },
-  );
+  // '' is how the client says "nobody" and "not checked yet"; the server takes null for
+  // both. A note is genuinely blankable, so it is sent as it stands.
+  patch(row, field, { [field]: value === '' && field !== 'recording_note' ? null : value });
 };
 
 /**
@@ -184,16 +188,69 @@ watch(
   () => props.rows,
   (rows) => {
     rows.forEach((row) => {
-      Object.entries({ ...FIELDS, ...ARCHIVE_FIELDS }).forEach(([field, prop]) => {
+      Object.entries(FIELDS).forEach(([field, prop]) => {
         const key = cellKey(row, field);
 
         if (key in drafts && String(drafts[key] ?? '') === String(row[prop] ?? '')) {
           delete drafts[key];
         }
       });
+
+      // Tags are a list, so they compare as one rather than as a string.
+      const tagKey = cellKey(row, 'recording_tags');
+
+      if (tagKey in drafts && drafts[tagKey].join(' ') === (row.tags ?? []).join(' ')) {
+        delete drafts[tagKey];
+      }
     });
   },
 );
+
+/* ------------------------------------------------------------------- tags */
+
+/**
+ * Whatever else this room tracks - "saved to nas", "handed to editor". Free text on
+ * purpose: a room's process is its own, and the suggestion list is every tag anybody has
+ * already typed, which is what keeps thirty people's typing to one vocabulary.
+ */
+const tagsOf = (row) => {
+  const key = cellKey(row, 'recording_tags');
+
+  return key in drafts ? drafts[key] : (row.tags ?? []);
+};
+
+/** Which row's tag box is open. One at a time: a row of open text inputs reads as noise. */
+const tagging = ref(null);
+const tagDraft = ref('');
+
+const openTags = (row) => {
+  tagging.value = row.id;
+  tagDraft.value = '';
+  nextTick(() => document.querySelector(`[data-tag-input="${row.id}"]`)?.focus());
+};
+
+const writeTags = (row, tags) => {
+  drafts[cellKey(row, 'recording_tags')] = tags;
+  patch(row, 'recording_tags', { recording_tags: tags });
+};
+
+const commitTag = (row) => {
+  const tag = tagDraft.value.trim().toLowerCase();
+  tagDraft.value = '';
+
+  if (tag === '' || tagsOf(row).includes(tag)) {
+    return;
+  }
+
+  writeTags(row, [...tagsOf(row), tag]);
+};
+
+const dropTag = (row, tag) => writeTags(row, tagsOf(row).filter((item) => item !== tag));
+
+const closeTags = (row) => {
+  commitTag(row);
+  tagging.value = null;
+};
 
 /* --------------------------------------------------------------- keyboard */
 
@@ -237,7 +294,9 @@ const bulk = reactive({
   publish_plan: '',
   recording_owner_id: '',
   stream_condition: '',
-  onsite_status: '',
+  onsite_condition: '',
+  add_tag: '',
+  remove_tag: '',
 });
 
 // A reload can drop rows out from under the selection; keep only what is still on screen.
@@ -263,7 +322,7 @@ const toggleRow = (id) => {
     : [...selected.value, id];
 };
 
-const bulkReady = computed(() => Object.values(bulk).some(Boolean));
+const bulkReady = computed(() => Object.values(bulk).some((value) => String(value).trim() !== ''));
 
 const applyBulk = () => {
   const payload = { ids: selected.value };
@@ -281,8 +340,18 @@ const applyBulk = () => {
     payload.stream_condition = bulk.stream_condition === 'clear' ? null : bulk.stream_condition;
   }
 
-  if (bulk.onsite_status) {
-    payload.onsite_status = bulk.onsite_status === 'clear' ? null : bulk.onsite_status;
+  if (bulk.onsite_condition) {
+    payload.onsite_condition = bulk.onsite_condition === 'clear' ? null : bulk.onsite_condition;
+  }
+
+  // Added and removed rather than replaced: a selection spans rows carrying different
+  // tags, and one Apply must not flatten them all to the same list.
+  if (bulk.add_tag.trim()) {
+    payload.add_tag = bulk.add_tag.trim();
+  }
+
+  if (bulk.remove_tag) {
+    payload.remove_tag = bulk.remove_tag;
   }
 
   router.post(props.urls.bulk, payload, {
@@ -331,43 +400,6 @@ const groupSize = (row) =>
 
 const planLabel = (row) => props.options.plans.find((plan) => plan.value === row.publish_plan);
 
-/**
- * The archive chips are booleans on the wire and timestamps in the database, so they do
- * not go through `save()`: there is nothing to type and nothing to compare against. They
- * do hold a draft, for the same reason every other cell does - a reply describing the row
- * as it was a moment ago must not flip the chip back under the cursor.
- */
-const archiveOn = (row, which) => {
-  const key = cellKey(row, `archive_${which}`);
-
-  return key in drafts ? drafts[key] : row[`archive_${which}`];
-};
-
-const toggleArchive = (row, which) => {
-  const field = `archive_${which}`;
-  const key = cellKey(row, field);
-  const next = !archiveOn(row, which);
-
-  drafts[key] = next;
-  states[key] = 'saving';
-
-  router.patch(
-    row.update_url,
-    { [field]: next },
-    {
-      preserveScroll: true,
-      preserveState: true,
-      onSuccess: () => {
-        states[key] = 'saved';
-        window.setTimeout(() => {
-          if (states[key] === 'saved') delete states[key];
-        }, 1200);
-      },
-      onError: () => (states[key] = 'error'),
-    },
-  );
-};
-
 /** Put your own name on a row. The single most common edit on this page by a distance. */
 const claim = (row) => save(row, 'recording_owner_id', String(props.me.id));
 
@@ -375,6 +407,11 @@ const claimAll = () => {
   bulk.recording_owner_id = String(props.me.id);
   applyBulk();
 };
+
+const onsiteHint = (row) =>
+  row.needs_onsite
+    ? 'The stream capture is gone. Find the copy from the room.'
+    : 'Only needed if the stream capture fails.';
 
 const cell = 'border-b border-hairline px-2 py-1 align-middle';
 const control =
@@ -389,7 +426,7 @@ const filterControl =
 
     <PageHeader
       title="Recording Plan"
-      subtitle="What is being published, who is on it, what still needs the room's copy, and what has reached the archive"
+      subtitle="What is being published, who is on it, and whether usable material came back"
     >
       <template #actions>
         <Link
@@ -402,7 +439,10 @@ const filterControl =
       </template>
     </PageHeader>
 
-    <!-- The counts describe the rows on screen, so a filtered view is also a tally. -->
+    <!--
+      The counts describe the rows on screen, so a filtered view is also a tally. To
+      publish leads them because it is the question the page exists to answer.
+    -->
     <div class="flex flex-wrap gap-2 border-b border-hairline px-3 py-2 md:px-4">
       <button
         v-for="tile in summary"
@@ -478,18 +518,6 @@ const filterControl =
       </select>
 
       <select
-        :value="filters.plan ?? ''"
-        :class="filterControl"
-        aria-label="Publish plan"
-        @change="setFilter('plan', $event.target.value)"
-      >
-        <option value="">Publish: any</option>
-        <option v-for="plan in options.plans" :key="plan.value" :value="plan.value">
-          Publish: {{ plan.label }}
-        </option>
-      </select>
-
-      <select
         :value="filters.owner ?? ''"
         :class="filterControl"
         aria-label="Owner"
@@ -512,6 +540,18 @@ const filterControl =
         <option v-for="state in options.states" :key="state.value" :value="state.value">
           {{ state.label }}
         </option>
+      </select>
+
+      <!-- Only worth offering once somebody has typed one. -->
+      <select
+        v-if="options.tags.length > 0"
+        :value="filters.tag ?? ''"
+        :class="filterControl"
+        aria-label="Tag"
+        @change="setFilter('tag', $event.target.value)"
+      >
+        <option value="">Any tag</option>
+        <option v-for="tag in options.tags" :key="tag" :value="tag">{{ tag }}</option>
       </select>
 
       <select
@@ -542,21 +582,6 @@ const filterControl =
         <ManageIcon name="hand" :size="13" />
         Mine
       </button>
-
-      <!--
-        Done is a cut that is out - or a show nobody is publishing - with the programme
-        mix on the archive FTP. A published show whose deposit is still outstanding is not
-        done and stays; so does a write-off, which is the one row worth looking at twice.
-      -->
-      <label class="flex h-7 items-center gap-1.5 rounded border border-hairline px-2 text-[12px] text-fg-2">
-        <input
-          type="checkbox"
-          class="accent-state-live"
-          :checked="filters.hide_done"
-          @change="setFilter('hide_done', $event.target.checked ? 1 : null)"
-        />
-        Hide done
-      </label>
 
       <label class="flex h-7 items-center gap-1.5 rounded border border-hairline px-2 text-[12px] text-fg-2">
         <input
@@ -603,7 +628,7 @@ const filterControl =
 
       <select v-model="bulk.stream_condition" :class="filterControl" aria-label="Set stream condition for selection">
         <option value="">Stream…</option>
-        <option value="clear">Unchecked</option>
+        <option value="clear">Not checked</option>
         <option
           v-for="condition in options.streams.filter((item) => item.value)"
           :key="condition.value"
@@ -613,16 +638,35 @@ const filterControl =
         </option>
       </select>
 
-      <select v-model="bulk.onsite_status" :class="filterControl" aria-label="Set onsite status for selection">
+      <select v-model="bulk.onsite_condition" :class="filterControl" aria-label="Set onsite condition for selection">
         <option value="">Onsite…</option>
         <option value="clear">Not checked</option>
         <option
-          v-for="status in options.onsites.filter((item) => item.value)"
-          :key="status.value"
-          :value="status.value"
+          v-for="condition in options.onsites.filter((item) => item.value)"
+          :key="condition.value"
+          :value="condition.value"
         >
-          {{ status.label }}
+          {{ condition.label }}
         </option>
+      </select>
+
+      <input
+        v-model="bulk.add_tag"
+        type="text"
+        list="recording-tags"
+        placeholder="Add tag…"
+        class="h-7 w-32 rounded border border-hairline bg-surface-2 px-1.5 text-[12px] text-fg-1 outline-none"
+        aria-label="Add a tag to the selection"
+      />
+
+      <select
+        v-if="options.tags.length > 0"
+        v-model="bulk.remove_tag"
+        :class="filterControl"
+        aria-label="Remove a tag from the selection"
+      >
+        <option value="">Remove tag…</option>
+        <option v-for="tag in options.tags" :key="tag" :value="tag">{{ tag }}</option>
       </select>
 
       <button
@@ -661,8 +705,13 @@ const filterControl =
       Showing the first {{ limit }} shows. Narrow the filters to see the rest.
     </div>
 
+    <!-- Shared by every tag box on the page, so the vocabulary is offered everywhere. -->
+    <datalist id="recording-tags">
+      <option v-for="tag in options.tags" :key="tag" :value="tag" />
+    </datalist>
+
     <div class="min-h-0 flex-1 overflow-auto">
-      <table class="w-full min-w-[1354px] table-fixed border-separate border-spacing-0 text-[12px]">
+      <table class="w-full min-w-[1300px] table-fixed border-separate border-spacing-0 text-[12px]">
         <!--
           Explicit widths because the table is `table-fixed`: the first two columns are
           pinned, and a pinned column whose width the browser may reconsider on the next
@@ -670,16 +719,16 @@ const filterControl =
         -->
         <colgroup>
           <col style="width: 36px" />
-          <col style="width: 200px" />
-          <col style="width: 96px" />
+          <col style="width: 210px" />
+          <col style="width: 92px" />
           <col style="width: 104px" />
-          <col style="width: 96px" />
           <col style="width: 112px" />
-          <col style="width: 172px" />
-          <col style="width: 120px" />
-          <col style="width: 128px" />
+          <col style="width: 176px" />
+          <col style="width: 108px" />
+          <col style="width: 124px" />
+          <col style="width: 190px" />
           <col style="width: 160px" />
-          <col style="width: 130px" />
+          <col style="width: 128px" />
         </colgroup>
 
         <thead class="sticky top-0 z-30">
@@ -699,11 +748,11 @@ const filterControl =
             </th>
             <th class="border-b border-hairline bg-surface-1 px-2 py-1.5 font-medium">Time</th>
             <th class="border-b border-hairline bg-surface-1 px-2 py-1.5 font-medium">Source</th>
-            <th class="border-b border-hairline bg-surface-1 px-2 py-1.5 font-medium">Archive</th>
-            <th class="border-b border-hairline bg-surface-1 px-2 py-1.5 font-medium">Publish?</th>
+            <th class="border-b border-hairline bg-surface-1 px-2 py-1.5 font-medium">Publish</th>
             <th class="border-b border-hairline bg-surface-1 px-2 py-1.5 font-medium">Responsible</th>
             <th class="border-b border-hairline bg-surface-1 px-2 py-1.5 font-medium">Stream</th>
             <th class="border-b border-hairline bg-surface-1 px-2 py-1.5 font-medium">Onsite</th>
+            <th class="border-b border-hairline bg-surface-1 px-2 py-1.5 font-medium">Tags</th>
             <th class="border-b border-hairline bg-surface-1 px-2 py-1.5 font-medium">Note</th>
             <th class="border-b border-hairline bg-surface-1 px-2 py-1.5 font-medium">Recording</th>
           </tr>
@@ -721,13 +770,24 @@ const filterControl =
                 <span
                   class="sticky left-3 inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-fg-2"
                 >
+                  <UserAvatar v-if="filters.group === 'owner'" :name="row.owner" :size="16" />
                   {{ groupLabel(row) }}
                   <span class="text-fg-3 normal-case tabular-nums">{{ groupSize(row) }}</span>
                 </span>
               </td>
             </tr>
 
-            <tr :class="row.gap ? 'bg-state-danger/8' : 'hover:bg-surface-1/50'">
+            <!--
+              A gap is tinted: meant to go out, has aired, nothing cut and no reason
+              recorded. A row whose material is gone for good is dimmed instead - nothing
+              can be done about it, and it should not read as work.
+            -->
+            <tr
+              :class="[
+                row.gap ? 'bg-state-danger/8' : 'hover:bg-surface-1/50',
+                row.lost ? 'opacity-55' : '',
+              ]"
+            >
               <td class="sticky left-0 z-10 bg-surface-0 px-2 py-1 align-middle" :class="cell">
                 <input
                   v-if="can_edit"
@@ -753,42 +813,6 @@ const filterControl =
                 <span class="block truncate">{{ row.source ?? '—' }}</span>
               </td>
 
-              <!--
-                The deposit onto the archive FTP, which is a different question from
-                whether anyone is publishing the show: both files go up either way. The
-                programme mix is what "archived" turns on; the isolated feeds are extra
-                and not every show has them.
-              -->
-              <td class="whitespace-nowrap px-1" :class="cell">
-                <div class="flex items-center gap-1">
-                  <button
-                    v-for="which in ['pgm', 'iso']"
-                    :key="which"
-                    type="button"
-                    :disabled="!can_edit"
-                    class="rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors disabled:cursor-default"
-                    :class="[
-                      archiveOn(row, which)
-                        ? 'border-state-ok/40 bg-state-ok/12 text-state-ok'
-                        : which === 'pgm' && row.needs_archive
-                          ? 'border-state-warn/40 text-state-warn hover:bg-state-warn/12'
-                          : 'border-hairline text-fg-3 hover:bg-surface-3',
-                      states[`${row.id}:archive_${which}`] === 'error' ? 'border-state-danger/70' : '',
-                    ]"
-                    :title="
-                      row[`archive_${which}_at`]
-                        ? `Uploaded ${row[`archive_${which}_at`]}`
-                        : `Not on the archive FTP yet`
-                    "
-                    :aria-pressed="archiveOn(row, which)"
-                    :aria-label="`${which.toUpperCase()} of ${row.title} on the archive FTP`"
-                    @click="can_edit && toggleArchive(row, which)"
-                  >
-                    {{ which }}
-                  </button>
-                </div>
-              </td>
-
               <td class="px-1" :class="cell">
                 <select
                   v-if="can_edit"
@@ -812,8 +836,13 @@ const filterControl =
                 </span>
               </td>
 
+              <!--
+                The avatar rather than the name alone: the same person is always the same
+                colour, so a column of thirty rows can be scanned for whose is whose.
+              -->
               <td class="px-1" :class="cell">
                 <div v-if="can_edit" class="flex items-center gap-1">
+                  <UserAvatar :name="row.owner" />
                   <select
                     :data-cell="`${row.id}:recording_owner_id`"
                     :class="[control, border(row, 'recording_owner_id')]"
@@ -844,9 +873,16 @@ const filterControl =
                     Me
                   </button>
                 </div>
-                <span v-else class="text-fg-2">{{ row.owner ?? '—' }}</span>
+                <span v-else class="flex items-center gap-1 text-fg-2">
+                  <UserAvatar :name="row.owner" />
+                  {{ row.owner ?? '—' }}
+                </span>
               </td>
 
+              <!--
+                Two answers and no more: whatever went wrong with the stream capture, the
+                next move is the same - go and get the copy from the room.
+              -->
               <td class="px-1" :class="cell">
                 <select
                   v-if="can_edit"
@@ -855,9 +891,6 @@ const filterControl =
                     control,
                     border(row, 'stream_condition'),
                     row.stream_condition === 'lost' ? 'text-state-danger' : '',
-                    row.stream_condition && row.stream_condition !== 'lost' && row.stream_condition !== 'ok'
-                      ? 'text-state-warn'
-                      : '',
                   ]"
                   :value="valueOf(row, 'stream_condition')"
                   :aria-label="`Stream capture of ${row.title}`"
@@ -874,33 +907,83 @@ const filterControl =
               </td>
 
               <!--
-                The fallback column. It is dimmed for every show whose stream capture came
-                back clean, because there is nothing to chase there, and lit amber for the
-                ones where somebody has to go and find the card. That contrast is the
-                whole reason the two captures are separate columns rather than one.
+                The fallback column, and the one that keeps its detail: missing audio can
+                be lifted off the desk and a missing part is still worth publishing, so
+                only lost is red. Dimmed while the stream capture is fine, because there
+                is nothing to go and find.
               -->
               <td class="px-1" :class="cell">
                 <select
                   v-if="can_edit"
-                  :data-cell="`${row.id}:onsite_status`"
+                  :data-cell="`${row.id}:onsite_condition`"
                   :class="[
                     control,
-                    row.needs_onsite ? 'border-state-warn/60 text-state-warn' : border(row, 'onsite_status'),
-                    !row.needs_onsite && !row.onsite_status ? 'opacity-45' : '',
+                    row.needs_onsite && !row.onsite_condition
+                      ? 'border-state-warn/60 text-state-warn'
+                      : border(row, 'onsite_condition'),
+                    row.onsite_condition === 'lost' ? 'text-state-danger' : '',
+                    !row.needs_onsite && !row.onsite_condition ? 'opacity-45' : '',
                   ]"
-                  :value="valueOf(row, 'onsite_status')"
-                  :title="row.needs_onsite ? 'The stream capture failed; find the onsite copy.' : 'Only needed if the stream capture fails.'"
+                  :value="valueOf(row, 'onsite_condition')"
+                  :title="onsiteHint(row)"
                   :aria-label="`Onsite copy of ${row.title}`"
-                  @change="save(row, 'onsite_status', $event.target.value)"
-                  @keydown="onCellKey($event, row.index, 'onsite_status')"
+                  @change="save(row, 'onsite_condition', $event.target.value)"
+                  @keydown="onCellKey($event, row.index, 'onsite_condition')"
                 >
                   <option v-for="option in options.onsites" :key="option.value" :value="option.value">
                     {{ option.label }}
                   </option>
                 </select>
                 <span v-else class="text-fg-2" :class="row.needs_onsite ? 'text-state-warn' : ''">
-                  {{ options.onsites.find((item) => item.value === (row.onsite_status ?? ''))?.label }}
+                  {{ options.onsites.find((item) => item.value === (row.onsite_condition ?? ''))?.label }}
                 </span>
+              </td>
+
+              <!--
+                Whatever else this room tracks. The box only appears when it is asked for,
+                so a row that carries no tags is one chip wide rather than an empty input.
+              -->
+              <td class="px-1" :class="cell">
+                <div class="flex flex-wrap items-center gap-1">
+                  <span
+                    v-for="tag in tagsOf(row)"
+                    :key="tag"
+                    class="inline-flex items-center gap-1 rounded bg-surface-3 px-1.5 py-0.5 text-[11px] text-fg-2"
+                  >
+                    {{ tag }}
+                    <button
+                      v-if="can_edit"
+                      type="button"
+                      class="text-fg-3 hover:text-state-danger"
+                      :aria-label="`Remove ${tag} from ${row.title}`"
+                      @click="dropTag(row, tag)"
+                    >
+                      <ManageIcon name="x" :size="10" />
+                    </button>
+                  </span>
+
+                  <input
+                    v-if="can_edit && tagging === row.id"
+                    v-model="tagDraft"
+                    type="text"
+                    list="recording-tags"
+                    :data-tag-input="row.id"
+                    class="h-6 w-24 rounded border border-state-live/50 bg-surface-2 px-1 text-[11px] text-fg-1 outline-none"
+                    :aria-label="`Add a tag to ${row.title}`"
+                    @keydown.enter.prevent="commitTag(row)"
+                    @keydown.escape="tagging = null"
+                    @blur="closeTags(row)"
+                  />
+                  <button
+                    v-else-if="can_edit"
+                    type="button"
+                    class="rounded border border-hairline px-1 text-[11px] text-fg-3 transition-colors hover:border-state-live/50 hover:text-state-live"
+                    :aria-label="`Tag ${row.title}`"
+                    @click="openTags(row)"
+                  >
+                    +
+                  </button>
+                </div>
               </td>
 
               <td class="px-1" :class="cell">

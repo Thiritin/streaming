@@ -23,7 +23,7 @@ class RecordingApiController extends Controller
     public function shows()
     {
         $shows = Show::with('source')
-            ->where('announce_recording', true)
+            ->where('publish_plan', 'yes')
             ->whereNotNull('actual_start')
             ->whereNotNull('actual_end')
             ->whereDoesntHave('recordings', fn ($q) => $q->where('is_published', true))

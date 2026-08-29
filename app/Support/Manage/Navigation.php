@@ -129,29 +129,14 @@ final class Navigation
 
             /*
              * What is outstanding: shows meant to be published that have been on air and
-             * have nothing cut from them yet. A write-off is left out - both captures are
-             * gone and nobody can act on it - but a show whose onsite copy is still being
-             * chased is very much in, because someone has to go and find it.
+             * are still not out. A show whose material is gone for good is left out -
+             * nobody can act on it - and so is one nobody is publishing.
              */
-            $gaps = Show::whereNot('publish_plan', 'no')
+            $outstanding = Show::awaitingPublication()
                 // The run the plan page opens on and nothing else. A badge counting shows
                 // from three events ago is a number nobody will ever act on. An
                 // installation with no calendar counts the lot, as it did before events.
                 ->when(Event::mostRecent(), fn ($query, Event $event) => $query->where('event_id', $event->id))
-                ->whereIn('status', ['ended', 'live'])
-                ->whereDoesntHave('recordings')
-                // Spelled out rather than whereNot: `null != 'received'` is null in SQL,
-                // so a plain negation silently drops every row nobody has looked at yet.
-                ->where(fn ($inner) => $inner
-                    ->whereNull('onsite_status')
-                    ->orWhere('onsite_status', '!=', 'received'))
-                // Spelled out for the same reason as the line above: `NOT (a AND b)` is
-                // null when either side is, and both are null for an untouched row.
-                ->where(fn ($inner) => $inner
-                    ->whereNull('stream_condition')
-                    ->orWhere('stream_condition', '!=', 'lost')
-                    ->orWhereNull('onsite_status')
-                    ->orWhereNotIn('onsite_status', ['none', 'unusable']))
                 ->count();
             $roles = Role::count();
 
@@ -174,7 +159,7 @@ final class Navigation
                     default => null,
                 },
                 'sources' => $online > 0 ? ['label' => (string) $online, 'tone' => Status::OK] : null,
-                'recording_gaps' => $gaps > 0 ? ['label' => (string) $gaps, 'tone' => Status::DANGER] : null,
+                'recording_gaps' => $outstanding > 0 ? ['label' => (string) $outstanding, 'tone' => Status::DANGER] : null,
                 'emotes' => $pending > 0 ? ['label' => (string) $pending, 'tone' => Status::WARN] : null,
                 'feedback' => $unread > 0 ? ['label' => (string) $unread, 'tone' => Status::WARN] : null,
                 'comments' => $reported > 0 ? ['label' => (string) $reported, 'tone' => Status::DANGER] : null,

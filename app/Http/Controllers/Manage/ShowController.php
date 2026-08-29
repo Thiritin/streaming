@@ -135,7 +135,7 @@ class ShowController extends Controller
                 'actual_end' => null,
                 'auto_mode' => false,
                 'auto_stop_at' => null,
-                'announce_recording' => false,
+                'publish_plan' => 'undecided',
                 'visibility' => 'public',
                 'required_roles' => [],
             ],
@@ -173,7 +173,7 @@ class ShowController extends Controller
                 'actual_end' => $show->actual_end?->format('Y-m-d\TH:i:s'),
                 'auto_mode' => (bool) $show->auto_mode,
                 'auto_stop_at' => $show->auto_stop_at?->format('Y-m-d\TH:i'),
-                'announce_recording' => (bool) $show->announce_recording,
+                'publish_plan' => $show->publish_plan,
                 'visibility' => $show->isPrivate() ? 'private' : 'public',
                 'required_roles' => $show->required_roles ?? [],
                 // Captured off the stream while it runs; never set by hand here. A
@@ -901,6 +901,16 @@ class ShowController extends Controller
                 ShowRequest::STATUSES,
             ),
             'roles' => ShowRequest::roleOptions(),
+            // The one publishing decision, made here or on the recording plan. `yes` is
+            // also what puts the "available later" badge on the schedule, so the two
+            // cannot drift apart the way a separate announce flag did.
+            'publish_plans' => array_map(
+                fn (string $plan) => [
+                    'value' => $plan,
+                    'label' => Status::publishPlan($plan)['label'],
+                ],
+                Show::PUBLISH_PLANS,
+            ),
         ];
     }
 }

@@ -446,20 +446,32 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   poll and picks up a directed source the same way; see docs/admin/displays.md
 - Servers, including the generated install script
 - Recording Plan (`/manage/recordings/plan`): the grid the programme is divided up on and
-  accounted for, worked as a board by several people. Three axes on `shows`, deliberately
-  kept apart because they fail independently: `publish_plan` (undecided/yes/no); the two
-  captures, `stream_condition` (what the uploader mirrored) and `onsite_status` (the
-  room's copy, a fallback that is only chased when the stream one failed); and the archive
-  FTP deposit, `archive_pgm_at` / `archive_iso_at`. Plus `recording_owner_id` and
-  `recording_note`. None of them gate anything - the uploader still mirrors everything and
-  `is_published` still decides what a viewer sees. The Recording column is derived by
-  `Show::recordingState()`, so it cannot go stale, and nothing is written off until both
-  captures are gone: an outstanding list that never shrinks stops being read. Cells save
-  one at a time and concurrently, so a cell holds its draft until the rows read the saved
-  value back rather than dropping it when its own reply lands - several replies are in
-  flight and each carries a whole page of rows, so the last one to arrive is not the
-  newest. Hide done drops only what is finished on both axes (published or `no`, and the
-  PGM deposit made); a write-off stays. See docs/admin/recording-plan.md
+  accounted for, worked as a board by several people. It is built around one question -
+  what was meant to go out and has not - which is the first tile, the first status filter
+  and the rail badge, all off `Show::isAwaitingPublication()` and its scope twin.
+  `publish_plan` (undecided/yes/no) is the only publishing decision there is: it is also
+  the promise to the audience, read by the schedule badge, the archive's pending tiles and
+  the recording API through `Show::willBeAvailable()`. There is no separate announce flag
+  any more - `announce_recording` was a second column saying the same thing with nothing
+  keeping the two in step. Then the two captures, which are not equals: `stream_condition`
+  has exactly two answers (`ok`/`lost`) because whatever went wrong with it the next move
+  is the same, and `onsite_condition` (the room's HyperDeck copy, a fallback only chased
+  once the stream one is gone) keeps its detail - `no_audio` comes off the desk afterwards
+  and `incomplete` is still worth publishing, so only `lost` is terminal. `Show::isLost()`
+  needs both, and a lost row drops off every list of things still to do: marking both is
+  how a show that is genuinely gone stops being chased. Plus `recording_owner_id`,
+  `recording_note`, and `recording_tags` - free text, no vocabulary and no settings page,
+  because every convention runs its recordings differently and a column per process is
+  wrong again next year; a tag typed on a row joins the suggestion list every other box
+  offers (`App\Support\RecordingTags`, folded to lower case so one errand is not three).
+  The bulk bar adds and removes one tag rather than replacing the lists, since a selection
+  spans rows carrying different ones. None of it gates anything - the uploader still
+  mirrors everything and `is_published` still decides what a viewer sees. The Recording
+  column is derived by `Show::recordingState()`, so it cannot go stale. Cells save one at a
+  time and concurrently, so a cell holds its draft until the rows read the saved value back
+  rather than dropping it when its own reply lands - several replies are in flight and each
+  carries a whole page of rows, so the last one to arrive is not the newest. See
+  docs/admin/recording-plan.md
 - Users, Roles, Emotes and Recordings. An edit that never went out live is imported into
   the archive with `tools/streaming-archiver` rather than uploaded; see docs/admin/archive-import.md.
   It authenticates with the import key from Settings > Imports, read through

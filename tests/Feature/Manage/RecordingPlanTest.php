@@ -136,7 +136,9 @@ class RecordingPlanTest extends TestCase
 
     public function test_the_summary_counts_the_rows_on_screen(): void
     {
+        // Meant to go out, has aired, nothing published: the tile the page exists for.
         $this->show(['publish_plan' => 'yes', 'status' => 'ended']);
+        // Not aired yet, so nothing is owed.
         $this->show(['publish_plan' => 'yes', 'status' => 'scheduled', 'recording_owner_id' => $this->admin->id]);
         $this->show(['publish_plan' => 'undecided']);
         $this->show(['publish_plan' => 'no']);
@@ -148,26 +150,48 @@ class RecordingPlanTest extends TestCase
                     $tiles = collect($summary)->keyBy('key')->map(fn ($tile) => $tile['value']);
 
                     return $tiles['total'] === 4
-                        && $tiles['undecided'] === 1
-                        // One of the two shows meant for publication has nobody on it.
+                        && $tiles['to_publish'] === 1
                         && $tiles['unassigned'] === 1
-                        && $tiles['gaps'] === 1
-                        && $tiles['lost'] === 0;
+                        && $tiles['lost'] === 0
+                        && $tiles['published'] === 0;
                 }));
     }
 
-    public function test_the_gaps_filter_leaves_only_shows_that_produced_nothing(): void
+    public function test_the_to_publish_filter_is_what_is_still_owed(): void
     {
         $missing = $this->show(['title' => 'Missing one', 'publish_plan' => 'yes', 'status' => 'ended']);
-        $cut = $this->show(['title' => 'Has a cut', 'publish_plan' => 'yes', 'status' => 'ended']);
-        $this->recordingFor($cut);
+        $draft = $this->show(['title' => 'Cut but not out', 'publish_plan' => 'yes', 'status' => 'ended']);
+        $this->recordingFor($draft);
+
+        $out = $this->show(['title' => 'Already out', 'publish_plan' => 'yes', 'status' => 'ended']);
+        $this->recordingFor($out, ['is_published' => true]);
+
         $this->show(['title' => 'Still to come', 'publish_plan' => 'yes', 'status' => 'scheduled']);
+        $this->show(['title' => 'Nobody is publishing this', 'publish_plan' => 'no', 'status' => 'ended']);
 
         $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan', ['state' => 'gaps']))
-            ->assertInertia(fn (Assert $page) => $page
-                ->has('rows', 1)
-                ->where('rows.0.id', $missing->id));
+            ->get(route('manage.recordings.plan', ['state' => 'to_publish']))
+            ->assertInertia(function (Assert $page) use ($missing, $draft) {
+                $ids = collect($page->toArray()['props']['rows'])->pluck('id');
+
+                // A cut that exists but has not gone out is still owed, which is why this
+                // is broader than the red tint on a row with nothing at all.
+                $this->assertEqualsCanonicalizing([$missing->id, $draft->id], $ids->all());
+            });
+    }
+
+    public function test_a_row_whose_material_is_gone_is_not_still_owed(): void
+    {
+        $this->show([
+            'publish_plan' => 'yes',
+            'status' => 'ended',
+            'stream_condition' => 'lost',
+            'onsite_condition' => 'lost',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan', ['state' => 'to_publish']))
+            ->assertInertia(fn (Assert $page) => $page->has('rows', 0));
     }
 
     public function test_a_cell_saves_on_its_own(): void
@@ -282,168 +306,173 @@ class RecordingPlanTest extends TestCase
 
     public function test_a_clean_stream_capture_needs_no_onsite_copy(): void
     {
-        $this->show(['publish_plan' => 'yes', 'status' => 'ended', 'stream_condition' => 'ok']);
+        $this->show([
+            'status' => 'ended',
+            'publish_plan' => 'yes',
+            'stream_condition' => 'ok',
+        ]);
 
         $this->actingAs($this->admin)
             ->get(route('manage.recordings.plan'))
             ->assertInertia(fn (Assert $page) => $page
-                // The point of the redesign: nobody goes looking for a card they do not
-                // need. The onsite column stays dark for this row.
-                ->where('rows.0.needs_onsite', false));
+                ->where('rows.0.needs_onsite', false)
+                ->where('rows.0.state', 'missing'));
     }
 
-    public function test_a_failed_stream_capture_asks_for_the_onsite_copy(): void
+    public function test_a_lost_stream_capture_asks_for_the_copy_from_the_room(): void
     {
-        $show = $this->show([
-            'title' => 'Silent panel',
-            'publish_plan' => 'yes',
+        $this->show([
             'status' => 'ended',
-            'stream_condition' => 'no_audio',
+            'publish_plan' => 'yes',
+            'stream_condition' => 'lost',
         ]);
 
         $this->actingAs($this->admin)
             ->get(route('manage.recordings.plan'))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('rows.0.needs_onsite', true)
-                ->where('rows.0.state', 'needs_onsite')
-                // Not a gap: it is accounted for and someone is chasing it.
-                ->where('rows.0.gap', false));
-
-        $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan', ['state' => 'needs_onsite']))
-            ->assertInertia(fn (Assert $page) => $page->has('rows', 1)->where('rows.0.id', $show->id));
+                ->where('rows.0.lost', false)
+                // Nothing is written off while the room's copy has not been looked at.
+                ->where('rows.0.state', 'missing'));
     }
 
-    public function test_a_received_onsite_master_is_waiting_on_an_import(): void
+    public function test_a_usable_onsite_copy_is_what_the_cut_comes_from(): void
     {
         $this->show([
-            'publish_plan' => 'yes',
             'status' => 'ended',
+            'publish_plan' => 'yes',
             'stream_condition' => 'lost',
-            'onsite_status' => 'received',
+            'onsite_condition' => 'ok',
         ]);
 
         $this->actingAs($this->admin)
             ->get(route('manage.recordings.plan'))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('rows.0.state', 'onsite')
-                ->where('rows.0.needs_onsite', false)
-                ->where('rows.0.written_off', false));
+                ->where('rows.0.lost', false));
     }
 
-    public function test_nothing_is_written_off_until_both_captures_are_gone(): void
+    /**
+     * The reason the onsite column keeps the detail the stream column dropped: missing
+     * audio comes off the desk afterwards and a missing part is announced, so neither is
+     * a reason to give up on the show.
+     */
+    public function test_a_damaged_onsite_copy_is_still_something_to_publish(): void
     {
-        // Stream gone, but nobody has looked for the card yet: still a job, not a loss.
-        $chasing = $this->show(['publish_plan' => 'yes', 'status' => 'ended', 'stream_condition' => 'lost']);
+        foreach (['no_audio', 'no_video', 'incomplete'] as $condition) {
+            $show = $this->show([
+                'status' => 'ended',
+                'publish_plan' => 'yes',
+                'stream_condition' => 'lost',
+                'onsite_condition' => $condition,
+            ]);
 
-        $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan'))
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('rows.0.state', 'needs_onsite')
-                ->where('rows.0.written_off', false));
-
-        $chasing->update(['onsite_status' => 'none']);
-
-        $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan'))
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('rows.0.state', 'lost')
-                ->where('rows.0.written_off', true)
-                ->where('rows.0.gap', false));
+            $this->assertFalse($show->isLost(), $condition.' should not be a write-off');
+            $this->assertSame('onsite', $show->recordingState(), $condition.' should still be cuttable');
+            $this->assertTrue($show->isAwaitingPublication(), $condition.' is still owed');
+        }
     }
 
-    public function test_an_unusable_onsite_copy_writes_the_show_off_too(): void
+    public function test_nothing_is_lost_until_both_captures_are_gone(): void
     {
-        $this->show([
+        $streamOnly = $this->show([
+            'status' => 'ended',
             'publish_plan' => 'yes',
-            'status' => 'ended',
             'stream_condition' => 'lost',
-            'onsite_status' => 'unusable',
+            'onsite_condition' => null,
         ]);
 
-        $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan', ['state' => 'lost']))
-            ->assertInertia(fn (Assert $page) => $page->has('rows', 1)->where('rows.0.state', 'lost'));
+        $this->assertFalse($streamOnly->isLost());
+
+        $both = $this->show([
+            'status' => 'ended',
+            'publish_plan' => 'yes',
+            'stream_condition' => 'lost',
+            'onsite_condition' => 'lost',
+        ]);
+
+        $this->assertTrue($both->isLost());
+        $this->assertSame('lost', $both->recordingState());
     }
 
-    public function test_a_show_nobody_is_publishing_is_never_a_write_off(): void
+    public function test_a_show_nobody_is_publishing_is_never_lost(): void
     {
-        $this->show([
-            'publish_plan' => 'no',
+        $show = $this->show([
             'status' => 'ended',
+            'publish_plan' => 'no',
             'stream_condition' => 'lost',
-            'onsite_status' => 'none',
+            'onsite_condition' => 'lost',
         ]);
 
-        $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan'))
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('rows.0.state', 'skipped')
-                ->where('rows.0.needs_onsite', false));
+        $this->assertSame('skipped', $show->recordingState());
+        $this->assertFalse($show->isAwaitingPublication());
     }
 
     public function test_a_cut_that_exists_outranks_the_capture_notes(): void
     {
         $show = $this->show([
-            'publish_plan' => 'yes',
             'status' => 'ended',
+            'publish_plan' => 'yes',
             'stream_condition' => 'lost',
-            'onsite_status' => 'none',
+            'onsite_condition' => 'lost',
         ]);
+
         $this->recordingFor($show, ['is_published' => true]);
 
-        $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan'))
-            ->assertInertia(fn (Assert $page) => $page->where('rows.0.state', 'published'));
+        $this->assertSame('published', $show->fresh()->recordingState());
     }
 
-    public function test_an_unknown_capture_value_is_refused(): void
+    public function test_a_stream_condition_the_column_no_longer_carries_is_refused(): void
     {
         $show = $this->show(['stream_condition' => 'ok']);
 
+        // The stream column is down to two answers; the detail lives on the onsite one.
         $this->actingAs($this->admin)
-            ->patch(route('manage.shows.recording-plan', $show), ['stream_condition' => 'meh'])
+            ->patch(route('manage.shows.recording-plan', $show), ['stream_condition' => 'no_audio'])
             ->assertSessionHasErrors('stream_condition');
-
-        $this->actingAs($this->admin)
-            ->patch(route('manage.shows.recording-plan', $show), ['onsite_status' => 'maybe'])
-            ->assertSessionHasErrors('onsite_status');
 
         $this->assertSame('ok', $show->fresh()->stream_condition);
     }
 
+    public function test_an_unknown_onsite_condition_is_refused(): void
+    {
+        $show = $this->show(['onsite_condition' => 'ok']);
+
+        $this->actingAs($this->admin)
+            ->patch(route('manage.shows.recording-plan', $show), ['onsite_condition' => 'maybe'])
+            ->assertSessionHasErrors('onsite_condition');
+
+        $this->assertSame('ok', $show->fresh()->onsite_condition);
+    }
+
     public function test_a_capture_verdict_can_be_cleared(): void
     {
-        $show = $this->show(['stream_condition' => 'no_audio', 'onsite_status' => 'expected']);
+        $show = $this->show(['stream_condition' => 'lost', 'onsite_condition' => 'lost']);
 
         $this->actingAs($this->admin)
             ->patch(route('manage.shows.recording-plan', $show), ['stream_condition' => null]);
+
         $this->actingAs($this->admin)
-            ->patch(route('manage.shows.recording-plan', $show), ['onsite_status' => null]);
+            ->patch(route('manage.shows.recording-plan', $show), ['onsite_condition' => null]);
 
         $show->refresh();
 
         $this->assertNull($show->stream_condition);
-        $this->assertNull($show->onsite_status);
+        $this->assertNull($show->onsite_condition);
     }
 
     public function test_bulk_writes_off_a_whole_selection(): void
     {
-        $shows = collect([
-            $this->show(['publish_plan' => 'yes', 'status' => 'ended']),
-            $this->show(['publish_plan' => 'yes', 'status' => 'ended']),
-        ]);
+        $shows = collect([$this->show(['status' => 'ended']), $this->show(['status' => 'ended'])]);
 
         $this->actingAs($this->admin)
             ->post(route('manage.shows.recording-plan.bulk'), [
                 'ids' => $shows->pluck('id')->all(),
                 'stream_condition' => 'lost',
-                'onsite_status' => 'none',
+                'onsite_condition' => 'lost',
             ]);
 
-        $shows->each(function (Show $show) {
-            $this->assertTrue($show->fresh()->isWrittenOff());
-        });
+        $shows->each(fn (Show $show) => $this->assertTrue($show->fresh()->isLost()));
     }
 
     public function test_the_mine_filter_shows_only_your_own_rows(): void
@@ -495,149 +524,97 @@ class RecordingPlanTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('filters.group', 'day'));
     }
 
-    public function test_ticking_the_archive_chips_stamps_when_they_went_up(): void
+    public function test_a_tag_is_whatever_somebody_typed(): void
     {
-        $show = $this->show(['status' => 'ended']);
-
-        $this->assertTrue($show->needsMediaArchive());
+        $show = $this->show();
 
         $this->actingAs($this->admin)
-            ->patch(route('manage.shows.recording-plan', $show), ['archive_pgm' => true]);
+            ->patch(route('manage.shows.recording-plan', $show), [
+                'recording_tags' => ['Saved to NAS', 'handed to editor'],
+            ]);
 
-        $show->refresh();
-
-        $this->assertNotNull($show->archive_pgm_at);
-        $this->assertNull($show->archive_iso_at);
-        $this->assertTrue($show->isMediaArchived());
-        $this->assertFalse($show->needsMediaArchive());
+        // Folded to lower case on the way in, so "NAS" and "nas" are one errand rather
+        // than two entries in the suggestion list.
+        $this->assertSame(['saved to nas', 'handed to editor'], $show->fresh()->recordingTags());
     }
 
-    public function test_re_ticking_an_archive_chip_keeps_the_original_time(): void
+    public function test_a_tag_list_is_de_duplicated_and_capped(): void
     {
-        $show = $this->show(['status' => 'ended', 'archive_pgm_at' => now()->subDay()]);
-        $first = $show->archive_pgm_at;
+        $show = $this->show();
 
         $this->actingAs($this->admin)
-            ->patch(route('manage.shows.recording-plan', $show), ['archive_pgm' => true]);
+            ->patch(route('manage.shows.recording-plan', $show), [
+                'recording_tags' => ['  nas ', 'NAS', ''],
+            ]);
 
-        // When it first went up is the useful answer, not when someone last looked.
-        $this->assertTrue($first->equalTo($show->fresh()->archive_pgm_at));
+        $this->assertSame(['nas'], $show->fresh()->recordingTags());
     }
 
-    public function test_unticking_an_archive_chip_clears_the_time(): void
+    public function test_more_tags_than_a_row_may_carry_are_refused(): void
     {
-        $show = $this->show(['status' => 'ended', 'archive_iso_at' => now()]);
+        $show = $this->show();
 
         $this->actingAs($this->admin)
-            ->patch(route('manage.shows.recording-plan', $show), ['archive_iso' => false]);
-
-        $this->assertNull($show->fresh()->archive_iso_at);
+            ->patch(route('manage.shows.recording-plan', $show), [
+                'recording_tags' => array_map(fn (int $index) => 'tag '.$index, range(1, Show::MAX_TAGS + 1)),
+            ])
+            ->assertSessionHasErrors('recording_tags');
     }
 
-    public function test_the_archive_is_tracked_apart_from_publication(): void
+    public function test_the_tags_in_use_are_offered_back_as_the_vocabulary(): void
     {
-        // Nobody is publishing this one, but it still has to be deposited.
-        $show = $this->show(['publish_plan' => 'no', 'status' => 'ended']);
-
-        $this->assertTrue($show->needsMediaArchive());
+        $this->show(['recording_tags' => ['saved to nas']]);
+        $this->show(['recording_tags' => ['saved to nas', 'colour pass']]);
 
         $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan', ['state' => 'not_archived']))
+            ->get(route('manage.recordings.plan'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('options.tags', ['colour pass', 'saved to nas']));
+    }
+
+    public function test_the_tag_filter_narrows_to_the_rows_carrying_it(): void
+    {
+        $tagged = $this->show(['title' => 'On the NAS', 'recording_tags' => ['saved to nas']]);
+        $this->show(['title' => 'Not yet', 'recording_tags' => ['colour pass']]);
+        $this->show(['title' => 'No tags at all']);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan', ['tag' => 'saved to nas']))
             ->assertInertia(fn (Assert $page) => $page
                 ->has('rows', 1)
-                ->where('rows.0.id', $show->id)
-                ->where('rows.0.needs_archive', true)
-                ->where('rows.0.archive_pgm', false));
+                ->where('rows.0.id', $tagged->id));
     }
 
-    public function test_nothing_is_expected_on_the_archive_for_a_write_off(): void
+    /**
+     * A selection spans rows carrying different tags, so one Apply adds to each list
+     * rather than replacing every one of them with the same list.
+     */
+    public function test_bulk_adds_a_tag_without_flattening_what_is_already_there(): void
     {
-        $show = $this->show([
-            'publish_plan' => 'yes',
-            'status' => 'ended',
-            'stream_condition' => 'lost',
-            'onsite_status' => 'none',
-        ]);
-
-        // There is no file to send, so it is not on anyone's upload list.
-        $this->assertFalse($show->needsMediaArchive());
-
-        $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan', ['state' => 'not_archived']))
-            ->assertInertia(fn (Assert $page) => $page->has('rows', 0));
-    }
-
-    public function test_a_show_that_has_not_happened_is_not_waiting_on_an_upload(): void
-    {
-        $show = $this->show(['status' => 'scheduled']);
-
-        $this->assertFalse($show->needsMediaArchive());
-    }
-
-    public function test_bulk_can_mark_a_selection_as_uploaded(): void
-    {
-        $shows = collect([$this->show(['status' => 'ended']), $this->show(['status' => 'ended'])]);
+        $one = $this->show(['recording_tags' => ['colour pass']]);
+        $two = $this->show();
 
         $this->actingAs($this->admin)
             ->post(route('manage.shows.recording-plan.bulk'), [
-                'ids' => $shows->pluck('id')->all(),
-                'archive_pgm' => true,
-                'archive_iso' => true,
+                'ids' => [$one->id, $two->id],
+                'add_tag' => 'Saved to NAS',
             ]);
 
-        $shows->each(function (Show $show) {
-            $show->refresh();
-            $this->assertNotNull($show->archive_pgm_at);
-            $this->assertNotNull($show->archive_iso_at);
-        });
+        $this->assertSame(['colour pass', 'saved to nas'], $one->fresh()->recordingTags());
+        $this->assertSame(['saved to nas'], $two->fresh()->recordingTags());
     }
 
-    public function test_hide_done_drops_what_is_finished_with(): void
+    public function test_bulk_removes_a_tag_from_a_selection(): void
     {
-        $published = $this->show(['title' => 'Out and deposited', 'status' => 'ended', 'archive_pgm_at' => now()]);
-        $this->recordingFor($published, ['is_published' => true]);
-
-        // Published, but the programme mix is still owed: that is somebody's job, so the
-        // row stays.
-        $owing = $this->show(['title' => 'Out, not deposited', 'status' => 'ended']);
-        $this->recordingFor($owing, ['is_published' => true]);
-
-        $skipped = $this->show([
-            'title' => 'Nobody is publishing this',
-            'status' => 'ended',
-            'publish_plan' => 'no',
-            'archive_pgm_at' => now(),
-        ]);
-
-        $gap = $this->show(['title' => 'Nothing cut', 'status' => 'ended', 'publish_plan' => 'yes']);
-
-        // A write-off stays on screen: nothing can be done about it, but it is the row
-        // worth looking at twice.
-        $lost = $this->show([
-            'title' => 'Lost for good',
-            'status' => 'ended',
-            'publish_plan' => 'yes',
-            'stream_condition' => 'lost',
-            'onsite_status' => 'none',
-        ]);
+        $show = $this->show(['recording_tags' => ['saved to nas', 'colour pass']]);
 
         $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan', ['hide_done' => 1]))
-            ->assertInertia(function (Assert $page) use ($published, $skipped, $owing, $gap, $lost) {
-                $ids = collect($page->toArray()['props']['rows'])->pluck('id');
+            ->post(route('manage.shows.recording-plan.bulk'), [
+                'ids' => [$show->id],
+                'remove_tag' => 'saved to nas',
+            ]);
 
-                $this->assertFalse($ids->contains($published->id));
-                $this->assertFalse($ids->contains($skipped->id));
-                $this->assertTrue($ids->contains($owing->id));
-                $this->assertTrue($ids->contains($gap->id));
-                $this->assertTrue($ids->contains($lost->id));
-            });
-
-        // Off by default: the plan is an account of everything, and hiding rows is a
-        // thing you ask for.
-        $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan'))
-            ->assertInertia(fn (Assert $page) => $page->has('rows', 5));
+        $this->assertSame(['colour pass'], $show->fresh()->recordingTags());
     }
 
     public function test_the_plan_opens_on_the_latest_event(): void

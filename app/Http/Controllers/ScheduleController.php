@@ -70,7 +70,7 @@ class ScheduleController extends Controller
                                 // it. Purely a promise: capture happens for every source
                                 // regardless, and whether a recording actually appears is
                                 // decided by publishing it.
-                                'will_be_available' => (bool) $show->announce_recording,
+                                'will_be_available' => $show->willBeAvailable(),
                             ])
                             ->values(),
                     ])

@@ -79,7 +79,7 @@ class ShowsTest extends TestCase
             'actual_end' => null,
             'auto_mode' => false,
             'auto_stop_at' => null,
-            'announce_recording' => false,
+            'publish_plan' => 'undecided',
             'visibility' => 'public',
             'required_roles' => [],
         ], $overrides);

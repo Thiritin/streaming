@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Support\EventFilter;
 use App\Support\Manage\Status;
 use App\Support\Manage\Toast;
+use App\Support\RecordingTags;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -27,6 +28,19 @@ use Inertia\Response;
  * finished and produced nothing. This page keeps every row on screen at once, edits every
  * cell in place with no mode to switch on, and is read down a column rather than across a
  * row: who has what, and what nobody has.
+ *
+ * Four questions and no more, because a grid with a column nobody fills in is a grid
+ * nobody trusts:
+ *
+ * 1. **Is it being published?** `publish_plan`. The same decision the audience is told
+ *    about - the schedule badge reads it - so there is nothing to keep in step.
+ * 2. **Who has it?** `recording_owner_id`.
+ * 3. **Did usable material come back?** The two captures. The stream one carries almost
+ *    every show and has two answers; the room's copy is the fallback and keeps its
+ *    detail, because missing audio, a missing part and nothing at all lead three
+ *    different places.
+ * 4. **Whatever else this room tracks.** `recording_tags`, free text, suggested back from
+ *    what people have already typed. A process is modelled by using it.
  *
  * It is meant to be worked as a board by several people at once, which is why rows can be
  * grouped by whoever is responsible rather than by day, why there is a one-click way to
@@ -82,6 +96,9 @@ class RecordingPlanController extends Controller
                 'states' => $this->stateOptions(),
                 'events' => $this->eventOptions(),
                 'days' => $this->dayOptions($filters),
+                // Every tag anyone has typed on this installation. The vocabulary is
+                // whatever is in use, offered back so it stays one vocabulary.
+                'tags' => RecordingTags::inUse(),
                 'groups' => [
                     ['value' => 'day', 'label' => 'Group by day'],
                     ['value' => 'owner', 'label' => 'Group by person'],
@@ -114,8 +131,8 @@ class RecordingPlanController extends Controller
      *
      * Everything is `sometimes`, as on the shows inline endpoint: the client sends the
      * field that changed and nothing else, so a missing key means "leave it" rather than
-     * "clear it". An owner, a stream verdict and an onsite verdict are all clearable, so
-     * all three accept null.
+     * "clear it". An owner and either capture verdict are all clearable, so those accept
+     * null.
      */
     public function update(Request $request, Show $show): RedirectResponse
     {
@@ -123,10 +140,11 @@ class RecordingPlanController extends Controller
 
         $validated = $request->validate($this->rules());
 
-        $show->update(
-            array_diff_key($validated, array_flip(['archive_pgm', 'archive_iso']))
-            + $this->archiveChanges($validated, $show)
-        );
+        if (array_key_exists('recording_tags', $validated)) {
+            $validated['recording_tags'] = RecordingTags::clean($validated['recording_tags'] ?? []);
+        }
+
+        $show->update($validated);
 
         return back();
     }
@@ -146,13 +164,20 @@ class RecordingPlanController extends Controller
         $validated = $request->validate($this->rules() + [
             'ids' => ['required', 'array', 'min:1'],
             'ids.*' => ['integer'],
+            // Tags are added and removed rather than replaced in bulk: a selection spans
+            // rows that carry different tags, and one Apply must not flatten them.
+            'add_tag' => ['sometimes', 'nullable', 'string', 'max:'.Show::MAX_TAG_LENGTH],
+            'remove_tag' => ['sometimes', 'nullable', 'string', 'max:'.Show::MAX_TAG_LENGTH],
         ]);
 
         $changes = array_intersect_key($validated, array_flip([
-            'publish_plan', 'recording_owner_id', 'stream_condition', 'onsite_status',
-        ])) + $this->archiveChanges($validated);
+            'publish_plan', 'recording_owner_id', 'stream_condition', 'onsite_condition',
+        ]));
 
-        if ($changes === []) {
+        $addTag = RecordingTags::normalise($validated['add_tag'] ?? null);
+        $removeTag = RecordingTags::normalise($validated['remove_tag'] ?? null);
+
+        if ($changes === [] && $addTag === null && $removeTag === null) {
             Toast::flashDanger('Nothing to apply', 'Choose something to set first.');
 
             return back();
@@ -161,7 +186,27 @@ class RecordingPlanController extends Controller
         $shows = Show::whereIn('id', $validated['ids'])->get();
         $allowed = $shows->filter(fn (Show $show) => $request->user()->can('update', $show));
 
-        Show::whereIn('id', $allowed->pluck('id'))->update($changes);
+        if ($changes !== []) {
+            Show::whereIn('id', $allowed->pluck('id'))->update($changes);
+        }
+
+        // Read-modify-write per row: a tag list is this show's own, so there is no single
+        // statement that adds one to a selection without reading each row first.
+        if ($addTag !== null || $removeTag !== null) {
+            $allowed->each(function (Show $show) use ($addTag, $removeTag) {
+                $tags = $show->recordingTags();
+
+                if ($removeTag !== null) {
+                    $tags = array_filter($tags, fn (string $tag) => mb_strtolower($tag) !== mb_strtolower($removeTag));
+                }
+
+                if ($addTag !== null) {
+                    $tags[] = $addTag;
+                }
+
+                $show->update(['recording_tags' => RecordingTags::clean($tags)]);
+            });
+        }
 
         $skipped = $shows->count() - $allowed->count();
 
@@ -185,47 +230,13 @@ class RecordingPlanController extends Controller
             'publish_plan' => ['sometimes', 'required', Rule::in(Show::PUBLISH_PLANS)],
             'recording_owner_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
             'stream_condition' => ['sometimes', 'nullable', Rule::in(Show::STREAM_CONDITIONS)],
-            'onsite_status' => ['sometimes', 'nullable', Rule::in(Show::ONSITE_STATUSES)],
+            'onsite_condition' => ['sometimes', 'nullable', Rule::in(Show::ONSITE_CONDITIONS)],
             'recording_note' => ['sometimes', 'nullable', 'string', 'max:255'],
-            // Sent as booleans and stored as timestamps: the grid asks "is it up?", the
-            // column answers "when did it go up".
-            'archive_pgm' => ['sometimes', 'boolean'],
-            'archive_iso' => ['sometimes', 'boolean'],
+            'recording_tags' => ['sometimes', 'nullable', 'array', 'max:'.Show::MAX_TAGS],
+            // Nullable because ConvertEmptyStringsToNull turns a blank box into null, and
+            // one empty entry must drop out rather than refuse the whole list.
+            'recording_tags.*' => ['nullable', 'string', 'max:'.Show::MAX_TAG_LENGTH],
         ];
-    }
-
-    /**
-     * Turns the two archive toggles into the timestamps they are stored as. Re-ticking an
-     * already-ticked box leaves the original time alone: the useful answer is when it
-     * first went up, not when someone last looked at the row.
-     *
-     * @param  array<string, mixed>  $validated
-     * @return array<string, mixed>
-     */
-    private function archiveChanges(array $validated, ?Show $show = null): array
-    {
-        $changes = [];
-
-        foreach (Show::ARCHIVE_TRANSFERS as $transfer) {
-            if (! array_key_exists('archive_'.$transfer, $validated)) {
-                continue;
-            }
-
-            $column = 'archive_'.$transfer.'_at';
-            $on = (bool) $validated['archive_'.$transfer];
-
-            if (! $on) {
-                $changes[$column] = null;
-
-                continue;
-            }
-
-            if ($show === null || $show->{$column} === null) {
-                $changes[$column] = now();
-            }
-        }
-
-        return $changes;
     }
 
     /**
@@ -251,21 +262,17 @@ class RecordingPlanController extends Controller
             'owner_id' => $show->recording_owner_id,
             'owner' => $show->recordingOwner?->name,
             'stream_condition' => $show->stream_condition,
-            'onsite_status' => $show->onsite_status,
-            'archive_pgm' => $show->archive_pgm_at !== null,
-            'archive_iso' => $show->archive_iso_at !== null,
-            'archive_pgm_at' => $show->archive_pgm_at?->format('D j M, H:i'),
-            'archive_iso_at' => $show->archive_iso_at?->format('D j M, H:i'),
-            'needs_archive' => $show->needsMediaArchive(),
+            'onsite_condition' => $show->onsite_condition,
             'note' => $show->recording_note,
+            'tags' => $show->recordingTags(),
             'state' => $state,
             'state_status' => Status::recordingState($state),
             'gap' => $show->isRecordingGap(),
-            // Drives the amber on the onsite cell. The whole reason the two captures are
-            // separate columns: this is false for every show whose stream came back
-            // clean, so nobody goes looking for a card they do not need.
-            'needs_onsite' => $show->needsOnsite(),
-            'written_off' => $show->isWrittenOff(),
+            'awaiting' => $show->isAwaitingPublication(),
+            // Drives the onsite cell coming out of its dimmed state: nobody goes looking
+            // for a card whose stream capture came back clean.
+            'needs_onsite' => $show->stream_condition === 'lost',
+            'lost' => $show->isLost(),
             'recording_url' => $recording ? route('manage.recordings.edit', $recording) : null,
             'recording_count' => $show->recordings->count(),
             'update_url' => route('manage.shows.recording-plan', $show),
@@ -290,74 +297,47 @@ class RecordingPlanController extends Controller
     }
 
     /**
-     * The counts along the top. Taken from the rows on screen rather than from a second
+     * The counts along the top, taken from the rows on screen rather than from a second
      * set of queries, so the tiles always describe what is being looked at.
+     *
+     * Four of them, and the second one is the page. "Meant to go out and still not out"
+     * is the question this whole screen exists to answer; the rest are there so the tally
+     * adds up.
      *
      * @param  Collection<int, Show>  $shows
      * @return array<int, array<string, mixed>>
      */
     private function summary(Collection $shows): array
     {
-        $states = $shows->map(fn (Show $show) => $show->recordingState());
-        $planned = $shows->where('publish_plan', 'yes');
-
-        $count = fn (string $state) => $states->filter(fn (string $item) => $item === $state)->count();
+        $awaiting = $shows->filter(fn (Show $show) => $show->isAwaitingPublication());
 
         return [
             ['key' => 'total', 'label' => 'Shows', 'value' => $shows->count(), 'tone' => Status::IDLE],
             [
-                'key' => 'undecided',
-                'label' => 'Undecided',
-                'value' => $shows->where('publish_plan', 'undecided')->count(),
-                'tone' => Status::WARN,
-                'filter' => ['plan', 'undecided'],
+                'key' => 'to_publish',
+                'label' => 'To publish',
+                'value' => $awaiting->count(),
+                'tone' => Status::DANGER,
+                'filter' => ['state', 'to_publish'],
             ],
             [
                 'key' => 'unassigned',
                 'label' => 'No owner',
-                'value' => $planned->whereNull('recording_owner_id')->count(),
-                'tone' => Status::INFO,
-                'filter' => ['owner', 'none'],
-            ],
-            [
-                'key' => 'gaps',
-                'label' => 'Missing',
-                'value' => $shows->filter(fn (Show $show) => $show->isRecordingGap())->count(),
-                'tone' => Status::DANGER,
-                'filter' => ['state', 'gaps'],
-            ],
-            [
-                'key' => 'needs_onsite',
-                'label' => 'Needs onsite',
-                'value' => $count('needs_onsite'),
+                'value' => $awaiting->whereNull('recording_owner_id')->count(),
                 'tone' => Status::WARN,
-                'filter' => ['state', 'needs_onsite'],
-            ],
-            [
-                'key' => 'onsite',
-                'label' => 'To import',
-                'value' => $count('onsite'),
-                'tone' => Status::INFO,
-                'filter' => ['state', 'onsite'],
+                'filter' => ['owner', 'none'],
             ],
             [
                 'key' => 'lost',
                 'label' => 'Lost',
-                'value' => $count('lost'),
-                'tone' => Status::DANGER,
+                'value' => $shows->filter(fn (Show $show) => $show->isLost())->count(),
+                'tone' => Status::IDLE,
                 'filter' => ['state', 'lost'],
-            ],
-            [
-                'key' => 'to_archive',
-                'label' => 'To archive',
-                'value' => $shows->filter(fn (Show $show) => $show->needsMediaArchive())->count(),
-                'tone' => Status::WARN,
-                'filter' => ['state', 'not_archived'],
             ],
             [
                 'key' => 'published',
                 'label' => 'Published',
-                'value' => $count('published'),
+                'value' => $shows->filter(fn (Show $show) => $show->recordingState() === 'published')->count(),
                 'tone' => Status::OK,
                 'filter' => ['state', 'published'],
             ],
@@ -376,11 +356,10 @@ class RecordingPlanController extends Controller
             'search' => trim((string) $request->query('search', '')) ?: null,
             'source' => $request->query('source') ?: null,
             'day' => $request->query('day') ?: null,
-            'plan' => $request->query('plan') ?: null,
             'owner' => $request->query('owner') ?: null,
             'state' => $request->query('state') ?: null,
+            'tag' => $request->query('tag') ?: null,
             'mine' => $request->boolean('mine'),
-            'hide_done' => $request->boolean('hide_done'),
             'show_archived' => $request->boolean('show_archived'),
             'group' => in_array($group, ['day', 'owner', 'source', 'none'], true) ? $group : 'day',
         ];
@@ -418,10 +397,6 @@ class RecordingPlanController extends Controller
             $query->whereDate('scheduled_start', $filters['day']);
         }
 
-        if ($filters['plan']) {
-            $query->where('publish_plan', $filters['plan']);
-        }
-
         // Deliberately not the same as owner=<my id>: this one survives being sent to
         // someone else, which is what makes it a board rather than a report.
         if ($filters['mine']) {
@@ -429,45 +404,17 @@ class RecordingPlanController extends Controller
         }
 
         if ($filters['owner']) {
-            // 'none' is a real answer here, and the one the page is opened to find.
+            // 'none' is a real answer here, and one of the two the page is opened to find.
             $filters['owner'] === 'none'
                 ? $query->whereNull('recording_owner_id')
                 : $query->where('recording_owner_id', $filters['owner']);
         }
 
-        if ($filters['hide_done']) {
-            $this->hideDone($query);
+        if ($filters['tag']) {
+            RecordingTags::scope($query, $filters['tag']);
         }
 
         $this->applyStateFilter($query, $filters['state']);
-    }
-
-    /**
-     * Drops the rows nobody has anything left to do about, so what is left on screen is
-     * the work.
-     *
-     * Done is both axes at once: a cut is out - published, or never going to be published
-     * because the show is marked `no` - and the programme mix is on the archive FTP. A
-     * published show whose deposit is still outstanding stays, because the deposit is
-     * still somebody's job; that is the whole reason the two are tracked apart.
-     *
-     * A write-off is left on screen on purpose. Nothing can be done about it, but a row
-     * that lost both captures is the one thing on this page worth looking at twice.
-     *
-     * @param  Builder<Show>  $query
-     */
-    private function hideDone(Builder $query): void
-    {
-        $query->where(fn (Builder $inner) => $inner
-            ->whereNull('archive_pgm_at')
-            ->orWhere(fn (Builder $outstanding) => $outstanding
-                // Spelled out rather than a plain `!=`: `null != 'no'` is null in SQL, so
-                // a negation on its own drops every row nobody has decided about.
-                ->where(fn (Builder $plan) => $plan
-                    ->whereNull('publish_plan')
-                    ->orWhere('publish_plan', '!=', 'no'))
-                ->whereDoesntHave('recordings', fn (Builder $recording) => $recording
-                    ->where('is_published', true))));
     }
 
     /**
@@ -480,53 +427,12 @@ class RecordingPlanController extends Controller
      */
     private function applyStateFilter(Builder $query, ?string $state): void
     {
-        $writtenOff = fn (Builder $inner) => $inner
-            ->where('stream_condition', 'lost')
-            ->whereIn('onsite_status', ['none', 'unusable']);
-
-        /*
-         * The negation, spelled out rather than wrapped in whereNot. `NOT (a AND b)` is
-         * null whenever either side is null, and both sides are null for every row nobody
-         * has looked at yet - so the tidy version silently drops exactly the rows these
-         * filters exist to surface.
-         */
-        $notWrittenOff = fn (Builder $inner) => $inner
-            ->whereNull('stream_condition')
-            ->orWhere('stream_condition', '!=', 'lost')
-            ->orWhereNull('onsite_status')
-            ->orWhereNotIn('onsite_status', ['none', 'unusable']);
-
         match ($state) {
-            // Nothing to cut and no reason recorded for that. A write-off is excluded and
-            // so is a chase in progress: both are accounted for.
-            'gaps' => $query->where('publish_plan', 'yes')
-                ->whereIn('status', ['ended', 'live'])
-                ->whereDoesntHave('recordings')
-                ->where(fn (Builder $inner) => $inner
-                    ->whereNull('stream_condition')
-                    ->orWhere('stream_condition', 'ok'))
-                // `null != 'received'` is null in SQL, so a plain negation would drop
-                // every row nobody has looked at - which is most of them.
-                ->where(fn (Builder $inner) => $inner
-                    ->whereNull('onsite_status')
-                    ->orWhere('onsite_status', '!=', 'received')),
-            'needs_onsite' => $query->whereNot('publish_plan', 'no')
-                ->whereIn('stream_condition', Show::STREAM_FAILURES)
-                ->whereDoesntHave('recordings')
-                ->where(fn (Builder $inner) => $inner
-                    ->whereNull('onsite_status')
-                    ->orWhere('onsite_status', '!=', 'received'))
-                ->where($notWrittenOff),
-            'onsite' => $query->where('onsite_status', 'received')->whereDoesntHave('recordings'),
-            'lost' => $query->where($writtenOff)->whereDoesntHave('recordings'),
-            'not_archived' => $query->whereNull('archive_pgm_at')
-                ->whereIn('status', ['ended', 'live'])
-                ->where($notWrittenOff),
-            'unchecked' => $query->whereNull('stream_condition')->whereHas('recordings'),
-            'no_recording' => $query->whereDoesntHave('recordings'),
+            'to_publish' => $query->awaitingPublication(),
+            'undecided' => $query->where('publish_plan', 'undecided'),
+            'unchecked' => $query->whereNull('stream_condition')->whereIn('status', ['ended', 'live']),
+            'lost' => $query->where('stream_condition', 'lost')->where('onsite_condition', 'lost'),
             'published' => $query->whereHas('recordings', fn (Builder $inner) => $inner->where('is_published', true)),
-            'unpublished' => $query->whereHas('recordings')
-                ->whereDoesntHave('recordings', fn (Builder $inner) => $inner->where('is_published', true)),
             default => null,
         };
     }
@@ -594,9 +500,9 @@ class RecordingPlanController extends Controller
     }
 
     /**
-     * Unchecked is the empty option rather than a stored value: a row nobody has watched
+     * Not checked is the empty option rather than a stored value: a row nobody has watched
      * yet holds null, and having two ways to say that would only let them disagree. The
-     * same goes for an onsite copy nobody has looked for.
+     * same goes for a room's copy nobody has looked at.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -620,31 +526,31 @@ class RecordingPlanController extends Controller
     private function onsiteOptions(): array
     {
         return array_merge(
-            [['value' => '', 'label' => Status::onsiteStatus(null)['label']]],
+            [['value' => '', 'label' => Status::onsiteCondition(null)['label']]],
             array_map(
-                fn (string $status) => [
-                    'value' => $status,
-                    'label' => Status::onsiteStatus($status)['label'],
+                fn (string $condition) => [
+                    'value' => $condition,
+                    'label' => Status::onsiteCondition($condition)['label'],
                 ],
-                Show::ONSITE_STATUSES,
+                Show::ONSITE_CONDITIONS,
             ),
         );
     }
 
     /**
+     * Five, and the first is the page. There were nine, most of which answered a question
+     * nobody was asking: a filter list long enough to read down is one more thing between
+     * somebody and the work.
+     *
      * @return array<int, array<string, mixed>>
      */
     private function stateOptions(): array
     {
         return [
-            ['value' => 'gaps', 'label' => 'Missing, no reason recorded'],
-            ['value' => 'needs_onsite', 'label' => 'Needs the onsite copy'],
-            ['value' => 'onsite', 'label' => 'Onsite master to import'],
-            ['value' => 'lost', 'label' => 'Lost for good'],
-            ['value' => 'not_archived', 'label' => 'Not on the archive FTP yet'],
-            ['value' => 'unchecked', 'label' => 'Cut but not watched yet'],
-            ['value' => 'no_recording', 'label' => 'Nothing cut yet'],
-            ['value' => 'unpublished', 'label' => 'Cut but unpublished'],
+            ['value' => 'to_publish', 'label' => 'To publish'],
+            ['value' => 'undecided', 'label' => 'Publish undecided'],
+            ['value' => 'unchecked', 'label' => 'Captures not checked'],
+            ['value' => 'lost', 'label' => 'Lost'],
             ['value' => 'published', 'label' => 'Published'],
         ];
     }

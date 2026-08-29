@@ -10,6 +10,7 @@ use App\Models\Show;
 use App\Models\Source;
 use App\Models\TelegramMessage;
 use App\Support\Features;
+use App\Support\RecordingTags;
 use Illuminate\Support\Facades\Log;
 
 class ShowObserver
@@ -20,6 +21,12 @@ class ShowObserver
      */
     public function updated(Show $show): void
     {
+        // The suggestion list is every tag in use, so a tag typed for the first time has
+        // to reach the next person's box rather than waiting out the cache.
+        if ($show->wasChanged('recording_tags')) {
+            RecordingTags::forget();
+        }
+
         // Check if status was changed
         if ($show->wasChanged('status')) {
             $previousStatus = $show->getOriginal('status');
@@ -103,6 +110,7 @@ class ShowObserver
     public function deleted(Show $show): void
     {
         $this->forgetPlayable($show);
+        RecordingTags::forget();
     }
 
     private function forgetPlayable(Show $show): void

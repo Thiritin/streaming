@@ -55,6 +55,40 @@ class ScheduleTest extends TestCase
         );
     }
 
+    /**
+     * The publishing decision and the promise to the audience are one column. There used
+     * to be a separate announce flag beside it and nothing kept the two in step, so a
+     * show could be planned for publication and never announced.
+     */
+    public function test_the_available_later_badge_reads_the_publish_plan(): void
+    {
+        Show::create([
+            'title' => 'Promised',
+            'slug' => 'promised',
+            'source_id' => $this->primary->id,
+            'status' => 'scheduled',
+            'publish_plan' => 'yes',
+            'scheduled_start' => now()->addHour(),
+            'scheduled_end' => now()->addHours(2),
+        ]);
+
+        Show::create([
+            'title' => 'Not promised',
+            'slug' => 'not-promised',
+            'source_id' => $this->primary->id,
+            'status' => 'scheduled',
+            'publish_plan' => 'undecided',
+            'scheduled_start' => now()->addHours(3),
+            'scheduled_end' => now()->addHours(4),
+        ]);
+
+        $this->actingAs($this->user)
+            ->get(route('schedule.index'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('days.0.channels.0.shows.0.will_be_available', true)
+                ->where('days.0.channels.0.shows.1.will_be_available', false));
+    }
+
     public function test_cancelled_shows_stay_on_the_guide_with_their_reason(): void
     {
         Show::create([

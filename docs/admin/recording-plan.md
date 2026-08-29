@@ -1,10 +1,17 @@
 # Recording plan
 
-What is meant to be published, who is looking after it, whether the material came back
-usable, and whether it has reached long-term storage.
+What is meant to be published, who is looking after it, and whether usable material came
+back.
 
 At `/manage` > Recording Plan. Reading is open to anyone past the `access-manage` gate;
 changing a cell needs `stream.manage`.
+
+## The one question
+
+**What was meant to go out and has not.** Everything on the page is arranged around that:
+it is the first tile, the first status filter, and the number on the rail badge. A show is
+on that list when it is marked for publication, has been on air, still has no published
+recording, and its material is not gone for good.
 
 ## Why it is not the Shows table
 
@@ -17,55 +24,67 @@ every cell in place with no mode to switch on. It is read down a column - who ha
 and what nobody has - rather than across a row, and it is meant to be worked by several
 people at once.
 
-## Three questions, kept apart
+## Publish
 
-Every show is tracked along three axes that are deliberately not merged, because they fail
-independently and each one has a different person fixing it.
+`shows.publish_plan`: undecided, yes, no.
 
-1. **Is it being published?** `publish_plan` - undecided, yes, no.
-2. **Did usable material come back?** The two captures, below.
-3. **Has it been deposited?** The archive FTP, below.
+One column, and it is also the promise to the audience. `yes` is what puts the "available
+later" badge on the schedule, what lists the show as pending in the archive, and what the
+recording API answers with. There used to be a separate announce flag beside it, and
+nothing kept the two in step.
 
-A show can be published and never archived, archived and never published, or perfectly
-captured and still undecided. One column for all three would let whichever is least urgent
-go quietly untracked.
+Editable here, in bulk from the toolbar, and on the show's own form under Recording.
 
 ## The two captures
 
 There are always two, and they are **not equals**.
 
 The **stream** capture is what the archive uploader mirrored off the source. It happens
-whether anyone asks for it or not, and it is the one that carries almost every show.
+whether anyone asks for it or not, and it carries almost every show.
 
-The **onsite** capture is a local recording made in the room. It exists as a **fallback**.
-If the stream came back clean, nobody needs to go and find the card - so the Onsite column
-is dimmed for those rows and nobody wastes an afternoon on them. It lights amber only when
-the stream capture failed.
+The **onsite** capture is the room's own recording, off the HyperDeck. It exists as a
+**fallback**: if the stream came back clean, nobody needs to go and find the card, so the
+Onsite column is dimmed for those rows. It lights amber only when the stream capture is
+gone.
 
 | Column | Column on `shows` | Values |
 | --- | --- | --- |
-| Stream | `stream_condition` | empty, `ok`, `no_audio`, `no_video`, `incomplete`, `lost` |
-| Onsite | `onsite_status` | empty, `none`, `expected`, `received`, `unusable` |
+| Stream | `stream_condition` | empty, `ok`, `lost` |
+| Onsite | `onsite_condition` | empty, `ok`, `no_audio`, `no_video`, `incomplete`, `lost` |
 
-That relationship is why **nothing is written off until both have failed**. `lost` on the
-stream alone is a job - go and find the card. It only becomes a write-off once the onsite
-copy is recorded as `none` (there wasn't one) or `unusable`. A show whose master is
-genuinely gone is not an outstanding job, and leaving it in the missing pile forever is how
-the missing pile stops being read.
+**The stream column has two answers and no more.** Whatever went wrong with it - silence,
+black, half of it missing - the next move is the same: go and get the room's copy. Naming
+the fault only asked somebody to classify something nobody would read back.
 
-## The archive FTP
+**The onsite column keeps its detail**, because there each answer leads somewhere
+different. Missing audio can be lifted off the desk afterwards. A missing part is still
+worth publishing, announced as it stands. Only `lost` means there is nothing.
 
-Separate from all of the above: the programme mix and the isolated feeds are uploaded to
-the archive FTP for keeping, whether or not the show is ever published.
+So everything short of `lost` is still publishable, and only `lost` is red.
 
-Two chips per row, `PGM` and `ISO`, backed by `archive_pgm_at` and `archive_iso_at`.
-Timestamps rather than flags, because *when did that go up* is asked more often than
-*did it*; the chip's tooltip shows the time. Re-ticking a chip that is already on leaves
-the original time alone.
+## Lost
 
-**PGM** is what "archived" turns on - the isolated feeds are extra and not every show has
-them. A row's PGM chip goes amber when the show has happened, has not been written off, and
-has nothing on the FTP yet. That is the **To archive** tile.
+`stream_condition` **and** `onsite_condition` both `lost`. That is the only terminal answer
+on the page, and it takes two verdicts to reach.
+
+A lost row is dimmed and drops off every list of things still to do: it is not in To
+publish, not on the rail badge, not a gap. Marking both captures lost *is* how a show that
+is genuinely gone stops being chased. It stays visible, because the row is worth looking
+at twice - and the Lost tile is how to find them all.
+
+## Tags
+
+`shows.recording_tags`: free text, whatever this room tracks. "saved to nas", "handed to
+editor", "colour pass".
+
+There is no vocabulary and no settings page for it, on purpose - every convention runs its
+recordings slightly differently, and a column per process is wrong again next year. Type a
+tag on a row and it joins the suggestion list every other box on the page offers, which is
+what keeps thirty people's typing to one vocabulary without anyone defining it first.
+
+Tags are folded to lower case, capped at eight per show, and filterable from the toolbar.
+The bulk bar **adds** and **removes** one tag across a selection rather than replacing the
+lists, since a selection spans rows carrying different tags.
 
 ## The Recording column
 
@@ -75,110 +94,27 @@ it cannot go stale. The order is the argument:
 | Reads | When |
 | --- | --- |
 | Published / Ready / Draft / Failed | A cut exists. Ends the story whatever the capture notes say |
-| Not published | Publish? is `no` |
-| Onsite master | The room's copy is in hand, waiting to be imported |
+| Not published | Publish is `no` |
 | Lost | Both captures are gone |
-| Needs onsite | The stream capture failed and the room's copy has not turned up |
+| From onsite | The stream is gone but the room's copy is usable: cut it from that |
 | Missing | Nothing cut, the show has aired, and no reason is recorded |
 | Pending | Nothing cut, and the show has not started |
 
-A row is a **gap** when Publish? is `yes` and it reads `Missing` - nothing to cut and no
-explanation. Gaps are tinted red. The rail badge next to Recording Plan counts everything
-still needing a human: gaps plus the shows whose onsite copy is being chased. Write-offs
-are left out, because nobody can act on them.
+A row is tinted red when it is on the To publish list with nothing cut at all and no
+reason recorded. The rail badge next to Recording Plan counts the whole To publish list for
+the run on screen.
 
 ## Working it as a board
 
 - **Me** on any row puts your name on it. Hunting for yourself in a list of thirty names is
-  a poor way to claim work, so the button is there until the row is already yours.
+  a poor way to claim work, so the button is there until the row is already yours. Each
+  person carries an initials chip in a colour that is always theirs, so a column of rows
+  can be scanned for whose is whose.
 - **Mine** filters to your own rows. It is a query-string filter, not a client-side toggle,
   so "here is what is left on your plate" is a link you can send someone.
 - **Group by** day, person or source. Grouping by person turns the grid into per-person work
   lists with a count on each band; unassigned rows sort last, because that is the pile still
   to be handed out.
-- Tick rows for the bulk bar: set the publish plan, the owner, either capture verdict, or the
-  archive chips, for everything ticked at once. **Take these** claims a whole selection.
-
-This is what the page is for on the day the programme lands: two hundred imported slots
-arrive `undecided`, and marking a stage's worth one at a time is the thing that does not get
-done. It is also how a whole morning is written off after a card failure.
-
-Rows you may not change are skipped rather than failing the batch, and the toast says how
-many were written.
-
-## Editing
-
-Each cell saves on its own the moment it changes, to
-`PATCH /manage/shows/{show}/recording-plan`. There is no form and no submit button, so a
-half-filled row cannot sit unsaved next to a finished one. The cell's border reports where
-the save got to: amber saving, green saved, red refused. A refusal leaves what you typed on
-screen.
-
-Several cells can be saving at once, and each reply carries a whole page of rows with it. A
-cell keeps what you put in it until the rows read that value back, so a reply describing the
-row as it was a moment ago cannot put the old value back under your cursor - which is what
-used to make a note look like it reset itself.
-
-Arrow up and arrow down move between the same cell of neighbouring rows, which is how a
-column gets filled in quickly. Enter does the same from a note, Escape drops it.
-
-**None of this gates anything.** The archive uploader mirrors every segment of every source
-whatever `publish_plan` says, `recordings.is_published` still decides what a viewer sees, and
-cutting a show marked `no` is not blocked anywhere. `shows.recordable`, which the archive
-migration dropped, was a gate; this is not a revival of it.
-
-## Filters
-
-Search, event, day, source, publish plan, owner, recording status, Mine, Hide done and
-grouping, all in the query string, so any view of the work is a link. Anything sitting at its default is left
-out of the URL, so a shared link carries only what was actually chosen.
-
-**The event defaults to the latest run.** That is the one that is on, or - since most of this
-accounting happens after the doors close - the one that just finished. An installation
-accumulates a run of shows per event, so opening the page on every show that ever ran would
-bury this run's under the last five. Pick another run from the list, **All events** to switch
-the filter off, or **No event** for the shows filed under no run at all, which is what a
-programme imported before the calendar existed looks like. A day chosen explicitly wins over
-the event, so a link to a date in a past run still resolves.
-
-An installation that has never set the calendar up gets **All events** and sees everything,
-exactly as it did before events existed.
-
-**Hide done** drops the rows with nothing left on them: a cut that is out - or a show
-marked **no**, which nobody is publishing - *and* the programme mix deposited on the archive
-FTP. A published show whose deposit is still owed stays, because the deposit is still
-somebody's job; that is the whole reason the two are tracked apart. A write-off stays too:
-nothing can be done about it, but a show that lost both captures is the one row here worth
-looking at twice. Off by default - the plan is an account of everything, and hiding rows is
-something you ask for.
-
-The rail badge is scoped the same way: a count of shows from three events ago is a number
-nobody will ever act on.
-
-One thing to know: a past run is usually filed away in its entirety, so picking one without
-turning **Archived** on comes back empty. The empty state says so.
-
-- **Any owner > Nobody** - unassigned work
-- **Missing, no reason recorded** - the end-of-event sweep
-- **Needs the onsite copy** - what to go and collect
-- **Onsite master to import** - files in hand, waiting on `tools/streaming-archiver`
-- **Not on the archive FTP yet** - the upload queue
-- **Lost for good** - the write-offs, for the report nobody enjoys writing
-
-Archived shows are off unless you ask for them.
-
-The counts along the top describe the rows on screen rather than the whole database, so a
-filtered view is also a tally. Each tile is a shortcut to the rows it counted; clicking it
-again undoes that.
-
-## Owners
-
-The list offers anyone who could act on it: the same permission set the panel itself lets
-in. It also keeps anyone already holding a row, qualified or not - a volunteer who loses the
-role keeps the shows they were given, and dropping them would make those cells read as
-unassigned when they are not.
-
-## Limits
-
-The grid renders at most 600 rows and says so when it has more; narrow the filters. This is
-deliberately not pagination: a plan that is paginated cannot be read down a column.
+- Tick rows for the bulk bar: set the publish plan, the owner, either capture verdict, or
+  add and remove a tag, for everything ticked at once. **Take these** claims a whole
+  selection.

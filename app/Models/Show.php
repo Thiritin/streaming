@@ -30,14 +30,12 @@ class Show extends Model
         'cancellation_reason',
         'auto_mode',
         'auto_stop_at',
-        'announce_recording',
         'publish_plan',
         'recording_owner_id',
         'stream_condition',
-        'onsite_status',
-        'archive_pgm_at',
-        'archive_iso_at',
+        'onsite_condition',
         'recording_note',
+        'recording_tags',
         'thumbnail_path',
         'thumbnail_updated_at',
         'thumbnail_capture_error',
@@ -61,10 +59,8 @@ class Show extends Model
         'thumbnail_updated_at' => 'datetime',
         'archived_at' => 'datetime',
         'auto_stop_at' => 'datetime',
-        'archive_pgm_at' => 'datetime',
-        'archive_iso_at' => 'datetime',
         'auto_mode' => 'boolean',
-        'announce_recording' => 'boolean',
+        'recording_tags' => 'array',
         'tags' => 'array',
         'metadata' => 'array',
         'required_roles' => 'array',
@@ -73,28 +69,39 @@ class Show extends Model
     /**
      * Whether this show is meant to end up as a published recording.
      *
-     * Gates nothing - see the migration. `undecided` is the default an imported slot
-     * arrives with, and is what the plan counts as still to be decided.
+     * The one publishing decision there is. It gates nothing - the uploader still mirrors
+     * every source and `recordings.is_published` still decides what a viewer sees - but it
+     * is what the audience is told: the schedule's "available later" badge, the archive's
+     * pending tile and the recording API all read `yes` off this and nothing else.
      */
     public const PUBLISH_PLANS = ['undecided', 'yes', 'no'];
 
     /**
      * How the stream capture came back: what the archive uploader mirrored off the
      * source, which happens whether anyone asked for it or not.
+     *
+     * Two answers, because there is no third move. Whatever went wrong - silence, black,
+     * half of it missing - the job is the same: go and get the copy from the room. Naming
+     * the fault only asked somebody to classify a thing nobody would ever read back.
      */
-    public const STREAM_CONDITIONS = ['ok', 'no_audio', 'no_video', 'incomplete', 'lost'];
+    public const STREAM_CONDITIONS = ['ok', 'lost'];
 
     /**
-     * The onsite capture - a local recording made in the room. A fallback, not a second
-     * deliverable: it is only worth chasing for the shows whose stream capture failed.
+     * The onsite capture - the room's own recording, off the HyperDeck.
+     *
+     * This one keeps its detail, because here each answer leads somewhere different.
+     * Missing audio can be lifted off the desk afterwards; a missing part is still worth
+     * publishing as it stands; only `lost` means there is nothing to cut from.
      */
-    public const ONSITE_STATUSES = ['none', 'expected', 'received', 'unusable'];
+    public const ONSITE_CONDITIONS = ['ok', 'no_audio', 'no_video', 'incomplete', 'lost'];
 
     /**
-     * The stream conditions that mean the stream capture cannot carry the show on its
-     * own. `ok` is the only one that does not.
+     * How many tags one show may carry, and how long each may be. A cap rather than a
+     * vocabulary: the point of the field is that a room writes its own process into it.
      */
-    public const STREAM_FAILURES = ['no_audio', 'no_video', 'incomplete', 'lost'];
+    public const MAX_TAGS = 8;
+
+    public const MAX_TAG_LENGTH = 32;
 
     protected static function boot()
     {
@@ -225,9 +232,9 @@ class Show extends Model
      * answer, so nothing can go stale.
      *
      * The order is the argument. A cut that exists ends the story whatever the capture
-     * notes say. Below that, the two captures are read as a fallback chain, not as two
-     * parallel jobs: the onsite copy only enters the picture once the stream one has
-     * failed, and only once *both* have failed is anything written off.
+     * notes say. Below that, the two captures are read as a fallback chain rather than as
+     * two parallel jobs: the room's copy only matters once the stream one is gone, and
+     * only when both are gone is there nothing left to publish.
      */
     public function recordingState(): string
     {
@@ -253,112 +260,116 @@ class Show extends Model
 
         // Nobody is publishing this, so how the captures came back is not a verdict on
         // anything. Above the capture chain on purpose: a show marked `no` must never
-        // read as a write-off.
+        // read as lost.
         if ($this->publish_plan === 'no') {
             return 'skipped';
         }
 
-        // The master is in hand and someone has to import it. Not a gap, and not done.
-        if ($this->onsite_status === 'received') {
-            return 'onsite';
-        }
-
-        if ($this->isWrittenOff()) {
+        if ($this->isLost()) {
             return 'lost';
         }
 
-        if ($this->needsOnsite()) {
-            return 'needs_onsite';
+        // The stream is gone but the room's copy is not, so the cut has to come off the
+        // HyperDeck file rather than out of the archive.
+        if ($this->stream_condition === 'lost' && $this->onsiteUsable()) {
+            return 'onsite';
         }
 
         return in_array($this->status, ['ended', 'live'], true) ? 'missing' : 'pending';
     }
 
     /**
-     * The stream capture cannot carry the show on its own.
-     */
-    public function streamFailed(): bool
-    {
-        return in_array($this->stream_condition, self::STREAM_FAILURES, true);
-    }
-
-    /**
-     * Somebody has to go and find the card.
+     * Whether the room's copy is something anybody can cut from.
      *
-     * Only ever true when the stream capture failed - which is the point of keeping the
-     * two apart. A show whose stream came back clean does not need an onsite copy, so it
-     * never appears on anyone's list of things to chase.
+     * Everything short of `lost` is: half a show, or a show with no audio on it, is still
+     * a show - the audio comes off the desk and the missing part is announced. This is
+     * the whole reason the onsite column keeps the detail the stream column dropped.
      */
-    public function needsOnsite(): bool
+    public function onsiteUsable(): bool
     {
-        return $this->publish_plan !== 'no'
-            && $this->streamFailed()
-            && $this->onsite_status !== 'received'
-            && ! $this->isWrittenOff();
+        return $this->onsite_condition !== null && $this->onsite_condition !== 'lost';
     }
 
     /**
-     * Both captures are gone. This is the only route to a write-off, and it is why
-     * "lost" is not a box anyone can tick on a whim: the stream has to be lost *and* the
-     * onsite copy has to be missing or unusable.
-     */
-    public function isWrittenOff(): bool
-    {
-        return $this->stream_condition === 'lost'
-            && in_array($this->onsite_status, ['none', 'unusable'], true);
-    }
-
-    /**
-     * A show that was meant to be published, has been on air, and has nothing to show for
-     * it and no reason recorded for that. This is what the plan is for.
+     * Both captures are gone, so there is nothing to publish and never will be.
      *
-     * A write-off is not a gap, and neither is a show whose onsite copy is being chased:
-     * both are accounted for, and counting them as unexplained forever is how the
-     * unexplained list stops being read.
+     * The only terminal answer on this page, and it takes two verdicts to reach: the
+     * stream lost *and* the room's copy lost. A row that says so is off every list of
+     * things still to do, which is what marking it is for.
+     */
+    public function isLost(): bool
+    {
+        return $this->stream_condition === 'lost' && $this->onsite_condition === 'lost';
+    }
+
+    /**
+     * The one question the recording plan exists to answer: this was meant to go out, it
+     * has been on air, there is material for it, and it is still not published.
+     *
+     * Everything the page counts, badges and defaults to is this. A show nobody is
+     * publishing is not on it, nor is one whose material is gone, nor one that has not
+     * happened yet - none of those are anybody's outstanding work.
+     */
+    public function isAwaitingPublication(): bool
+    {
+        if ($this->publish_plan !== 'yes' || $this->isLost()) {
+            return false;
+        }
+
+        if (! in_array($this->status, ['ended', 'live'], true)) {
+            return false;
+        }
+
+        $recordings = $this->relationLoaded('recordings')
+            ? $this->recordings
+            : $this->recordings()->get();
+
+        return ! $recordings->contains(fn ($recording) => $recording->is_published);
+    }
+
+    /**
+     * Awaiting publication with nothing cut at all and no reason recorded for that. The
+     * subset worth tinting a row over: everything else on the list is in progress.
      */
     public function isRecordingGap(): bool
     {
-        return $this->publish_plan === 'yes' && $this->recordingState() === 'missing';
+        if (! $this->isAwaitingPublication()) {
+            return false;
+        }
+
+        $recordings = $this->relationLoaded('recordings')
+            ? $this->recordings
+            : $this->recordings()->get();
+
+        return $recordings->isEmpty() && $this->stream_condition !== 'lost';
     }
 
     /**
-     * Something came back, but not something anyone can publish as it stands.
+     * Whether the audience is being told this will be available afterwards. One decision,
+     * read in three places: the schedule badge, the archive's pending tiles and the
+     * recording API.
      */
-    public function hasRecordingProblem(): bool
+    public function willBeAvailable(): bool
     {
-        return $this->streamFailed();
+        return $this->publish_plan === 'yes';
     }
 
     /**
-     * The two files that go up to the archive FTP: the programme mix and the isolated
-     * feeds. Deliberately tracked apart from publication - a show can be published and
-     * not archived, or archived and never published, and one column for both would let
-     * whichever is less urgent quietly go untracked.
-     */
-    public const ARCHIVE_TRANSFERS = ['pgm', 'iso'];
-
-    /**
-     * The programme mix is the one that has to be deposited; the isolated feeds are extra
-     * and not every show has them, so "archived" turns on the PGM alone.
-     */
-    public function isMediaArchived(): bool
-    {
-        return $this->archive_pgm_at !== null;
-    }
-
-    /**
-     * Whether the deposit is still outstanding.
+     * The tags on this show, always an array and always strings.
      *
-     * A show that nobody is publishing still gets archived - that is what the FTP is
-     * for - so this is not gated on `publish_plan`. What it is gated on is the show
-     * having happened and there being something to send: nothing is expected from a slot
-     * that was cancelled, or one whose material is gone for good.
+     * @return array<int, string>
      */
-    public function needsMediaArchive(): bool
+    public function recordingTags(): array
     {
-        return ! $this->isMediaArchived()
-            && in_array($this->status, ['ended', 'live'], true)
-            && ! $this->isWrittenOff();
+        return array_values(array_filter(
+            array_map('strval', $this->recording_tags ?? []),
+            fn (string $tag) => $tag !== '',
+        ));
+    }
+
+    public function hasRecordingTag(string $tag): bool
+    {
+        return in_array(mb_strtolower($tag), array_map('mb_strtolower', $this->recordingTags()), true);
     }
 
     /**
@@ -367,6 +378,25 @@ class Show extends Model
     public function scopeUndecidedPublishing($query)
     {
         return $query->where('publish_plan', 'undecided');
+    }
+
+    /**
+     * The query-side twin of isAwaitingPublication(): what is still owed to the audience.
+     *
+     * Spelled out rather than negated, because `null != 'lost'` is null in SQL and a
+     * plain negation would silently drop every row nobody has looked at - which is most
+     * of them, and exactly the rows this scope exists to surface.
+     */
+    public function scopeAwaitingPublication($query)
+    {
+        return $query->where('publish_plan', 'yes')
+            ->whereIn('status', ['ended', 'live'])
+            ->where(fn ($inner) => $inner
+                ->whereNull('stream_condition')
+                ->orWhere('stream_condition', '!=', 'lost')
+                ->orWhereNull('onsite_condition')
+                ->orWhere('onsite_condition', '!=', 'lost'))
+            ->whereDoesntHave('recordings', fn ($inner) => $inner->where('is_published', true));
     }
 
     /**

@@ -93,7 +93,7 @@ class DevStreamChannelsSeeder extends Seeder
                 'actual_start' => $status === 'live' ? $start : null,
                 'status' => $status,
                 'viewer_count' => $viewers,
-                'announce_recording' => true,
+                'publish_plan' => 'yes',
             ]
         );
     }
