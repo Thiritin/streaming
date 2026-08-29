@@ -4,11 +4,13 @@ namespace Tests\Feature;
 
 use App\Enum\SourceStatusEnum;
 use App\Jobs\Telegram\NotifyUpcomingShowsJob;
+use App\Jobs\Telegram\SendHealthAlertsJob;
 use App\Models\BrandingSetting;
 use App\Models\FeedbackReport;
 use App\Models\Recording;
 use App\Models\RecordingComment;
 use App\Models\Role;
+use App\Models\Server;
 use App\Models\Show;
 use App\Models\Source;
 use App\Models\TelegramChat;
@@ -17,6 +19,7 @@ use App\Models\TelegramMessage;
 use App\Models\User;
 use App\Services\Telegram\TelegramClient;
 use App\Services\Telegram\TelegramNotifier;
+use App\Support\HealthAlertDigest;
 use App\Support\TelegramSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -787,5 +790,96 @@ class TelegramBotTest extends TestCase
             1,
             TelegramMessage::where('kind', TelegramMessage::KIND_COMMENT)->count(),
         );
+    }
+
+    /**
+     * One tick of the scheduled job, run inline so a test can decide how many minutes
+     * have passed.
+     */
+    private function healthTick(): void
+    {
+        app()->call([new SendHealthAlertsJob, 'handle']);
+    }
+
+    private function sentMessages(): int
+    {
+        return count(Http::recorded(fn ($request) => str_contains($request->url(), '/sendMessage')));
+    }
+
+    public function test_a_health_alert_waits_a_tick_before_it_is_posted(): void
+    {
+        $this->chat(['notify_health' => true]);
+        Server::factory()->create([
+            'last_heartbeat' => now(),
+            'max_clients' => 100,
+            'viewer_count' => 95,
+        ]);
+
+        // A condition seen once is a flap, not an outage.
+        $this->healthTick();
+        Http::assertNothingSent();
+
+        $this->healthTick();
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/sendMessage')
+            && str_contains($request['text'], 'Edge capacity is nearly full'));
+
+        // Still wrong is not news.
+        $sent = $this->sentMessages();
+        $this->healthTick();
+        $this->assertSame($sent, $this->sentMessages());
+    }
+
+    public function test_an_alert_that_goes_away_is_said_so(): void
+    {
+        $this->chat(['notify_health' => true]);
+        $server = Server::factory()->create([
+            'last_heartbeat' => now(),
+            'max_clients' => 100,
+            'viewer_count' => 95,
+        ]);
+
+        $this->healthTick();
+        $this->healthTick();
+
+        $server->forceFill(['viewer_count' => 10])->save();
+        $this->healthTick();
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/sendMessage')
+            && str_contains($request['text'], 'Cleared')
+            && str_contains($request['text'], 'Edge capacity is nearly full'));
+    }
+
+    public function test_nothing_is_tracked_while_no_chat_asked_for_health(): void
+    {
+        $this->chat(['notify_health' => false]);
+        Server::factory()->create([
+            'last_heartbeat' => now(),
+            'max_clients' => 100,
+            'viewer_count' => 95,
+        ]);
+
+        $this->healthTick();
+        $this->healthTick();
+
+        Http::assertNothingSent();
+        $this->assertNull(cache()->get(HealthAlertDigest::CACHE_KEY));
+    }
+
+    public function test_a_chat_narrowed_to_a_source_still_hears_about_the_servers(): void
+    {
+        $source = Source::factory()->create();
+        $this->chat(['notify_health' => true, 'source_ids' => [$source->id]]);
+        Server::factory()->create([
+            'hostname' => 'edge-7.test',
+            'last_heartbeat' => now()->subHour(),
+        ]);
+
+        $this->healthTick();
+        $this->healthTick();
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/sendMessage')
+            && str_contains($request['text'], 'edge-7.test')
+            && str_contains($request['text'], 'has not checked in'));
     }
 }

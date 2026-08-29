@@ -29,6 +29,7 @@ const form = useForm({
   notify_sources: props.chat.notify_sources,
   notify_feedback: props.chat.notify_feedback,
   notify_comments: props.chat.notify_comments,
+  notify_health: props.chat.notify_health,
   source_ids: [...props.chat.source_ids],
 });
 
@@ -110,6 +111,13 @@ const submit = () => form.put(route('manage.telegram.update', props.chat.id));
           type="checkbox"
           label="Reported comments"
           helper="A comment a report has taken down, with what was said about it. An interactive chat can approve it, delete it or ban its author from here."
+        />
+
+        <FormField
+          v-model="form.notify_health"
+          type="checkbox"
+          label="Health alerts"
+          helper="What the dashboard's alert list says: a server failing its health check or running out of disk, an edge nearly full, a live show whose source is not online. One message when a condition appears and one when it clears."
         />
 
         <FormField label="Sources" helper="Nothing ticked means every source. Tick some to make this a single room's chat.">

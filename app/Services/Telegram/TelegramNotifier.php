@@ -10,6 +10,7 @@ use App\Models\Show;
 use App\Models\Source;
 use App\Models\TelegramChat;
 use App\Models\TelegramMessage;
+use App\Support\Manage\Status;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
@@ -510,6 +511,101 @@ class TelegramNotifier
     }
 
     /**
+     * What broke and what came back, as one message per tick.
+     *
+     * Batched rather than one message per alert, because infrastructure fails in
+     * clumps: a box that goes away raises its health check, its heartbeat and, a
+     * minute later, its disk. Six lines in one message is a state of the world; six
+     * messages is a chat nobody stays in.
+     *
+     * Posted and never edited, like a source alert - it is a moment, and the clear is
+     * its own line rather than a rewrite of the one that raised it, so the record of
+     * how long something was down stays in the chat.
+     *
+     * A chat narrowed to some sources still hears the installation-wide ones: a full
+     * edge or a filling disk is not one room's business, and the chat that was told
+     * about a hall is often the only chat there is.
+     *
+     * @param  array<int, array<string, mixed>>  $raised
+     * @param  array<int, array<string, mixed>>  $cleared
+     */
+    public function healthAlerts(array $raised, array $cleared): void
+    {
+        if (! $this->client->enabled() || ($raised === [] && $cleared === [])) {
+            return;
+        }
+
+        foreach (TelegramChat::active()->where('notify_health', true)->get() as $chat) {
+            $mine = $this->coveredBy($chat, $raised);
+            $gone = $this->coveredBy($chat, $cleared);
+
+            if ($mine === [] && $gone === []) {
+                continue;
+            }
+
+            $this->client->send($chat, $this->healthText($mine, $gone), [[
+                ['text' => 'Open dashboard', 'url' => route('manage.home')],
+            ]]);
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $raised
+     * @param  array<int, array<string, mixed>>  $cleared
+     */
+    public function healthText(array $raised, array $cleared): string
+    {
+        $lines = [];
+
+        if ($raised !== []) {
+            $worst = collect($raised)->contains(fn (array $alert) => ($alert['tone'] ?? null) === Status::DANGER);
+
+            $lines[] = ($worst ? '🔴' : '⚠️').' <b>'.(count($raised) === 1 ? 'Health alert' : 'Health alerts').'</b>';
+
+            foreach ($raised as $alert) {
+                $lines[] = (($alert['tone'] ?? null) === Status::DANGER ? '🔴 ' : '⚠️ ')
+                    .$this->escape((string) $alert['title']);
+
+                if (! empty($alert['detail'])) {
+                    $lines[] = '<i>'.$this->escape((string) $alert['detail']).'</i>';
+                }
+            }
+        }
+
+        if ($cleared !== []) {
+            if ($lines !== []) {
+                $lines[] = '';
+            }
+
+            $lines[] = '✅ <b>Cleared</b>';
+
+            foreach ($cleared as $alert) {
+                $lines[] = '· '.$this->escape((string) $alert['title']);
+            }
+        }
+
+        $lines[] = now()->timezone(config('app.timezone'))->format('D d M, H:i');
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * The alerts this chat is meant to hear: everything about the installation, plus
+     * the ones naming a source it covers.
+     *
+     * @param  array<int, array<string, mixed>>  $alerts
+     * @return array<int, array<string, mixed>>
+     */
+    private function coveredBy(TelegramChat $chat, array $alerts): array
+    {
+        return array_values(array_filter(
+            $alerts,
+            fn (array $alert) => ($alert['sourceId'] ?? null) === null
+                || $chat->coversSource((int) $alert['sourceId']),
+        ));
+    }
+
+    /**
      * Put one message into a chat, so an operator can prove the bot can write there
      * before a show depends on it.
      */
@@ -676,6 +772,14 @@ class TelegramNotifier
 
         if ($chat->notify_feedback) {
             $parts[] = 'feedback';
+        }
+
+        if ($chat->notify_comments) {
+            $parts[] = 'reported comments';
+        }
+
+        if ($chat->notify_health) {
+            $parts[] = 'health alerts';
         }
 
         $what = $parts === [] ? 'nothing yet' : implode(' and ', $parts);

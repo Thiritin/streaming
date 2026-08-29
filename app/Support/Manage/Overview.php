@@ -184,7 +184,12 @@ final class Overview
      * Everything currently wrong, worst first, so the maintainer reads one list
      * instead of inferring problems from four tables.
      *
-     * @return array<int, array{tone: string, title: string, detail: string|null, url: string|null}>
+     * Each carries a `key` that names the condition rather than its wording, so the
+     * Telegram digest can tell an alert that is still standing from a new one, and a
+     * `sourceId` where the condition is about one room's feed rather than the
+     * installation.
+     *
+     * @return array<int, array{key: string, sourceId: int|null, tone: string, title: string, detail: string|null, url: string|null}>
      */
     public function alerts(): array
     {
@@ -192,6 +197,8 @@ final class Overview
 
         foreach (Source::where('status', SourceStatusEnum::ERROR)->get() as $source) {
             $alerts[] = [
+                'key' => "source:{$source->id}:error",
+                'sourceId' => $source->id,
                 'tone' => Status::DANGER,
                 'title' => "Source '{$source->name}' is in error",
                 'detail' => 'The encoder connection failed or was rejected.',
@@ -206,6 +213,8 @@ final class Overview
 
             if ($server->status === ServerStatusEnum::ERROR) {
                 $alerts[] = [
+                    'key' => "server:{$server->id}:error",
+                    'sourceId' => null,
                     'tone' => Status::DANGER,
                     'title' => "Server {$name} is in error",
                     'detail' => $server->health_check_message,
@@ -217,6 +226,8 @@ final class Overview
 
             if ($server->health_status === 'unhealthy') {
                 $alerts[] = [
+                    'key' => "server:{$server->id}:unhealthy",
+                    'sourceId' => null,
                     'tone' => Status::DANGER,
                     'title' => "Server {$name} is failing its health check",
                     'detail' => $server->health_check_message,
@@ -228,6 +239,8 @@ final class Overview
 
             if ($this->isStale($server)) {
                 $alerts[] = [
+                    'key' => "server:{$server->id}:stale",
+                    'sourceId' => null,
                     'tone' => Status::WARN,
                     'title' => "Server {$name} has not checked in",
                     'detail' => 'Last heartbeat '.($server->last_heartbeat?->diffForHumans() ?? 'never'),
@@ -247,6 +260,8 @@ final class Overview
         foreach (Show::live()->with('source')->get() as $show) {
             if ($show->source && $show->source->status !== SourceStatusEnum::ONLINE) {
                 $alerts[] = [
+                    'key' => "show:{$show->id}:source",
+                    'sourceId' => $show->source->id,
                     'tone' => Status::DANGER,
                     'title' => "'{$show->title}' is live but its source is not online",
                     'detail' => "Source '{$show->source->name}' is ".($show->source->status?->value ?? 'unknown').'.',
@@ -261,6 +276,8 @@ final class Overview
 
         if ($capacity > 0 && $viewers / $capacity >= 0.9) {
             $alerts[] = [
+                'key' => 'capacity:edge',
+                'sourceId' => null,
                 'tone' => Status::WARN,
                 'title' => 'Edge capacity is nearly full',
                 'detail' => round($viewers / $capacity * 100)."% of {$capacity} slots in use.",
@@ -275,6 +292,8 @@ final class Overview
 
         if ($waiting > 0 && $viewers > 0) {
             $alerts[] = [
+                'key' => 'capacity:waiting',
+                'sourceId' => null,
                 'tone' => Status::WARN,
                 'title' => "{$waiting} viewers have no server assigned",
                 'detail' => 'They are waiting for an edge server to come up.',
@@ -372,6 +391,8 @@ final class Overview
             $name = $server->hostname ?? "server #{$server->id}";
 
             $alerts[] = [
+                'key' => "server:{$server->id}:disk",
+                'sourceId' => null,
                 'tone' => $share < 5 ? Status::DANGER : Status::WARN,
                 'title' => "Server {$name} is running out of disk",
                 'detail' => ServerMetricsService::bytes($free).' free of '

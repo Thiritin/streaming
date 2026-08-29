@@ -4,12 +4,14 @@ namespace App\Console;
 
 use App\Jobs\CleanupStaleViewerSessionsJob;
 use App\Jobs\FlushShowBoopsJob;
+use App\Jobs\Notifications\DispatchRecordingNotificationsJob;
 use App\Jobs\PruneDisplayScreensJob;
 use App\Jobs\PruneServerMetricsJob;
 use App\Jobs\SaveViewCountJob;
 use App\Jobs\ScanArchiveStorageJob;
 use App\Jobs\Server\ServerHealthCheckJob;
 use App\Jobs\Telegram\NotifyUpcomingShowsJob;
+use App\Jobs\Telegram\SendHealthAlertsJob;
 use App\Jobs\UpdateListenerCountJob;
 use App\Jobs\UpdateServerViewerCountsJob;
 use Illuminate\Console\Scheduling\Schedule;
@@ -54,6 +56,17 @@ class Kernel extends ConsoleKernel
         // started from a phone. A show already announced is skipped, so this is safe to
         // run every minute.
         $schedule->job(new NotifyUpcomingShowsJob)->everyMinute();
+
+        // The dashboard's alert list, posted to the chats that asked for health alerts.
+        // It reports changes rather than the list, so a standing alert is one message;
+        // with no chat listening it does nothing. See App\Support\HealthAlertDigest.
+        $schedule->job(new SendHealthAlertsJob)->everyMinute();
+
+        // Viewer notifications for recordings whose delay window has run out. The scan
+        // is what enforces the window: nothing is queued at publish time, so a recording
+        // taken down again inside it is simply never picked up. See
+        // App\Jobs\Notifications\DispatchRecordingNotificationsJob.
+        $schedule->job(new DispatchRecordingNotificationsJob)->everyFiveMinutes();
 
         // Totals for the archive bucket, which the recordings page reads from the cache.
         // A full listing of a con-long archive is hundreds of requests and minutes of

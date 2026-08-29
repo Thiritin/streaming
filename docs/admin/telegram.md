@@ -66,6 +66,15 @@ to it, so send the bot a `/start` first, then use **Send test post** on the row 
   two. Processing - duration, thumbnails, playlist rebuilds - never touches the chat.
 - **Source alerts** - a line whenever a source goes online, offline or into error.
 - **Feedback** - every report a viewer sends in, with the browser and the stream it happened on.
+- **Health alerts** - the dashboard's alert list, as it changes: a server in error or failing
+  its health check, a box that stopped checking in or is running out of disk, the edges
+  nearly full, viewers waiting for a server, a live show whose source is not online. One
+  message when a condition appears and one when it clears, so a fault standing all night is
+  two lines rather than six hundred. A condition has to still be there a minute later before
+  it is posted, which is what keeps a single failed health check out of the chat, and a
+  warning that turns into a danger - a disk at 9% free reaching 4% - is posted again.
+  Infrastructure is not one room's business, so a chat narrowed to some sources still hears
+  these; only the alerts naming a source are filtered by that list.
 - **Sources** - nothing ticked means every source. Tick some to make it a single room's chat.
 - **Allow actions from this chat** - whether the messages carry buttons at all.
 
