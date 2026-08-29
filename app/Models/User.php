@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Notifications\ResetPassword;
+use App\Notifications\VerifyEmail;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -238,6 +240,22 @@ class User extends Authenticatable implements MustVerifyEmail
         }
 
         \Log::info('After sync - User '.$this->id.' roles: ', $this->roles()->pluck('slug')->toArray());
+    }
+
+    /**
+     * Both sign-in mails go out on a queue rather than inside the request that asked
+     * for them: the row - a reset token, an account - is already written by the time
+     * the message is built, so an installation whose mail is down should not answer
+     * 500 on a request that half succeeded.
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ResetPassword($token));
+    }
+
+    public function sendEmailVerificationNotification(): void
+    {
+        $this->notify(new VerifyEmail);
     }
 
     /**
