@@ -39,6 +39,33 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Sign-in modes
+    |--------------------------------------------------------------------------
+    |
+    | The ways in. Independent of each other and of `required` above, which only
+    | decides whether a guest may browse without any of them. Every combination is
+    | valid, including all of them at once.
+    |
+    | These are the shipped defaults; the live answers are edited at /manage >
+    | Settings > Sign-in and laid back over this file by App\Support\RuntimeConfig.
+    | Read them through App\Support\AuthModes, never straight off config: `oidc` on
+    | its own is only a switch, and a provider with no endpoint behind it is a button
+    | that fails.
+    |
+    | `oidc` ships on so an installation that has only ever used the identity
+    | provider keeps the shape it had; with no provider URL configured AuthModes
+    | answers false for it anyway.
+    |
+    */
+
+    'modes' => [
+        'oidc' => true,
+        'local' => false,
+        'registration' => false,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Authentication Guards
     |--------------------------------------------------------------------------
     |

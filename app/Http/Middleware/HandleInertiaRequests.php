@@ -81,6 +81,9 @@ class HandleInertiaRequests extends Middleware
                 $user->only('id', 'name', 'avatar', 'role'),
                 [
                     'is_staff' => $user->isStaff(),
+                    // Which way this account signs out: a local one posts to /logout,
+                    // one the identity provider owns leaves through its front channel.
+                    'is_local' => $user->isLocal(),
                     'chat_color' => $user->chat_color,
                     'badges' => $user->chatBadges(),
                 ]

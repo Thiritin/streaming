@@ -15,11 +15,7 @@ defineProps({
   <ManageLayout>
     <Head title="Users" />
 
-    <PageHeader
-      title="Users"
-      subtitle="Everyone who has signed in. Identity fields come from the provider and cannot be edited here."
-      :actions="table.pageActions"
-    />
+    <PageHeader title="Users" :actions="table.pageActions" />
 
     <FilterBar :table="table" />
 

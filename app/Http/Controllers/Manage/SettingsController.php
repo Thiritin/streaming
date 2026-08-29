@@ -3,13 +3,17 @@
 namespace App\Http\Controllers\Manage;
 
 use App\Http\Controllers\Controller;
+use App\Models\BrandingSetting;
 use App\Services\PretalxService;
 use App\Services\Telegram\TelegramClient;
+use App\Support\AuthModes;
 use App\Support\Manage\Settings;
 use App\Support\Manage\Toast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Response;
 
 /**
@@ -55,6 +59,28 @@ class SettingsController extends Controller
             [],
             $settings->attributes($group),
         );
+
+        /*
+         * The sign-in modes are checked and written under one lock. Two administrators
+         * saving at once - one switching the provider off, one switching password
+         * accounts off - each passed their own check against a state the other was
+         * about to change, and the installation ended with no way in.
+         */
+        if ($group === 'auth') {
+            DB::transaction(function () use ($settings, $validated) {
+                BrandingSetting::whereIn('key', AuthModes::settingKeys())->lockForUpdate()->get();
+
+                if ($errors = AuthModes::lockoutErrors($validated['values'])) {
+                    throw ValidationException::withMessages($errors);
+                }
+
+                $settings->save($validated['values']);
+            });
+
+            Toast::flashSuccess('Settings saved', 'The public site picks the change up immediately.');
+
+            return back();
+        }
 
         $settings->save($validated['values']);
 
@@ -108,6 +134,12 @@ class SettingsController extends Controller
     public function reset(Settings $settings): RedirectResponse
     {
         $this->authorizeSettings();
+
+        if ($reason = AuthModes::resetLockout()) {
+            Toast::flashDanger('Settings not reset', $reason);
+
+            return back();
+        }
 
         $settings->reset();
 

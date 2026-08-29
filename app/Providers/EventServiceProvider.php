@@ -5,11 +5,12 @@ namespace App\Providers;
 use App\Events\SourceStatusChangedEvent;
 use App\Events\StreamListenerChangeEvent;
 use App\Events\StreamStatusEvent;
+use App\Listeners\AssignBaselineRole;
 use App\Listeners\HandleAutoModeShowsListener;
 use App\Listeners\SaveListenerCountListener;
 use App\Listeners\SetCacheStatusListener;
-use App\Listeners\StreamScalingListener;
 use Illuminate\Auth\Events\Registered;
+use Illuminate\Auth\Events\Verified;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
 
@@ -24,9 +25,11 @@ class EventServiceProvider extends ServiceProvider
         Registered::class => [
             SendEmailVerificationNotification::class,
         ],
+        Verified::class => [
+            AssignBaselineRole::class,
+        ],
         StreamStatusEvent::class => [
             SetCacheStatusListener::class,
-            StreamScalingListener::class,
         ],
         StreamListenerChangeEvent::class => [
             SaveListenerCountListener::class,

@@ -8,9 +8,9 @@ use App\Models\User;
  * Who may look at and edit attendee records.
  *
  * Same shape as the other /manage policies: reading is open to anyone past the
- * `access-manage` gate, mutating needs `user.manage`. There is no create: users
- * arrive through OIDC, and every identity field on the form is read-only because
- * the identity provider owns it.
+ * `access-manage` gate, mutating needs `user.manage`. Creating an account and
+ * setting a password on one are held to `admin.access` instead, the same bar as
+ * the pane that switches the sign-in modes: both hand out a way in.
  */
 class UserPolicy
 {
@@ -24,9 +24,35 @@ class UserPolicy
         return true;
     }
 
+    /**
+     * An account this installation holds itself, rather than one the identity
+     * provider owns.
+     */
+    public function create(User $user): bool
+    {
+        return $user->hasPermission('admin.access');
+    }
+
+    /**
+     * Confirming an address by hand, for an installation that cannot send mail.
+     * Held at the same bar as setting a password: both decide who is a full account.
+     */
+    public function verifyEmail(User $user, User $subject): bool
+    {
+        return $user->hasPermission('admin.access');
+    }
+
     public function update(User $user, User $subject): bool
     {
         return $this->manages($user);
+    }
+
+    /**
+     * Setting or clearing a password on an existing account.
+     */
+    public function managePassword(User $user, User $subject): bool
+    {
+        return $user->hasPermission('admin.access');
     }
 
     /**

@@ -42,7 +42,19 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+        /*
+         * Scoped to accounts that hold a password. `email` is nullable and not unique -
+         * the identity provider rewrites it from the claim on every sign-in - so an
+         * unscoped lookup could hand back an OIDC row and try to check a hash that
+         * is not there. The closure is what EloquentUserProvider passes the query.
+         */
+        $credentials = [
+            'email' => $this->input('email'),
+            'password' => $this->input('password'),
+            fn ($query) => $query->whereNotNull('password'),
+        ];
+
+        if (! Auth::attempt($credentials, $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([

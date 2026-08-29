@@ -30,6 +30,7 @@ use App\Policies\ShowPolicy;
 use App\Policies\SourcePolicy;
 use App\Policies\TelegramChatPolicy;
 use App\Policies\UserPolicy;
+use App\Support\ManageAccess;
 use Illuminate\Auth\SessionGuard;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Auth;
@@ -75,11 +76,9 @@ class AuthServiceProvider extends ServiceProvider
             }
         });
 
-        // Entry gate for the /manage panel. `filament.access` is kept because it is the
-        // string stored on existing role rows in production; renaming it would need a
-        // data migration and buys nothing.
-        Gate::define('access-manage', fn (User $user) => $user->hasPermission('admin.access')
-            || $user->hasPermission('filament.access')
-            || $user->isStaff());
+        // Entry gate for the /manage panel. Defined in App\Support\ManageAccess, which
+        // the sign-in safeguard asks the same question of: it has to know whether any
+        // administrator is left, and the two answers must not drift.
+        Gate::define('access-manage', fn (User $user) => ManageAccess::allows($user));
     }
 }

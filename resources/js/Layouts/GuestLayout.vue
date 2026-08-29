@@ -11,7 +11,7 @@ const login = computed(() => branding.value.login ?? {});
 // schedule; otherwise the flat primary wash carries the column on its own.
 const backgroundImage = computed(() => login.value.backgroundImage || null);
 
-// What is on now plus what is coming up, supplied by LoginController. The rail
+// What is on now plus what is coming up, supplied by AuthenticatedSessionController. The rail
 // is skipped entirely when nothing is scheduled.
 const schedule = computed(() => page.props.schedule ?? []);
 

@@ -1,9 +1,15 @@
 <?php
 
 use App\Http\Controllers\AnnouncementController;
+use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\EmailVerificationNotificationController;
+use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\FrontChannelLogoutController;
-use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\OidcClientController;
+use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\BoopController;
 use App\Http\Controllers\Chat\ChatUserController;
 use App\Http\Controllers\Chat\ModerationController;
@@ -37,14 +43,74 @@ Route::get('/up', function () {
     return response('OK', 200);
 });
 
+/*
+ * Signing in. Three modes, switched independently in /manage > Settings > Sign-in
+ * and read through App\Support\AuthModes: the identity provider, password accounts
+ * this installation holds, and public registration on top of those.
+ *
+ * The sign-in screen itself carries no switch - it renders whatever is on, down to
+ * nothing - while every form behind it does, and a mode that is off answers 404 the
+ * same way a switched-off feature does.
+ */
 Route::middleware('guest')->group(function () {
     Route::get('/auth/login', [OidcClientController::class, 'login'])->name('auth.login');
     Route::get('/auth/callback', [
         OidcClientController::class,
         'callback',
     ])->name('auth.callback');
-    Route::get('/login', LoginController::class)->name('login');
+
+    Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
+
+    Route::middleware('auth.local')->group(function () {
+        Route::post('/login', [AuthenticatedSessionController::class, 'store'])
+            ->middleware('throttle:auth')
+            ->name('login.store');
+
+        Route::get('/forgot-password', [PasswordResetLinkController::class, 'create'])
+            ->name('password.request');
+        Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])
+            ->middleware('throttle:auth')
+            ->name('password.email');
+        Route::get('/reset-password/{token}', [NewPasswordController::class, 'create'])
+            ->name('password.reset');
+        Route::post('/reset-password', [NewPasswordController::class, 'store'])
+            ->middleware('throttle:auth')
+            ->name('password.store');
+
+        Route::middleware('auth.register')->group(function () {
+            Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
+            Route::post('/register', [RegisteredUserController::class, 'store'])
+                ->middleware('throttle:auth')
+                ->name('register.store');
+        });
+    });
 });
+
+/*
+ * Confirming an address. Deliberately outside the sign-in mode switches: a link
+ * already in somebody's inbox has to keep working whatever is turned off after it
+ * was sent. Nothing is gated on being verified - what it decides is whether an
+ * account that registered itself gets the baseline role; see App\Listeners\AssignBaselineRole.
+ */
+Route::middleware('auth:web')->group(function () {
+    Route::get('/verify-email', EmailVerificationPromptController::class)->name('verification.notice');
+
+    Route::get('/verify-email/{id}/{hash}', VerifyEmailController::class)
+        ->middleware(['signed', 'throttle:6,1'])
+        ->name('verification.verify');
+
+    Route::post('/email/verification-notification', [EmailVerificationNotificationController::class, 'store'])
+        ->middleware('throttle:6,1')
+        ->name('verification.send');
+});
+
+/*
+ * Signing out. A local session ends here; an account the identity provider owns
+ * leaves through the front channel below, so the provider hears about it too.
+ */
+Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])
+    ->middleware('auth:web')
+    ->name('logout');
 
 Route::get('/auth/frontchannel-logout', FrontChannelLogoutController::class)->name('auth.frontchannel-logout');
 

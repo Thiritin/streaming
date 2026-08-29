@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -10,7 +10,7 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmail
 {
     use HasApiTokens, HasFactory, Notifiable;
 
@@ -238,6 +238,38 @@ class User extends Authenticatable
         }
 
         \Log::info('After sync - User '.$this->id.' roles: ', $this->roles()->pluck('slug')->toArray());
+    }
+
+    /**
+     * An account this installation holds itself, rather than one the identity
+     * provider owns. Local accounts have no subject; that is the whole difference.
+     */
+    public function isLocal(): bool
+    {
+        return $this->sub === null;
+    }
+
+    /**
+     * Give this account the baseline role, if the installation declares one.
+     *
+     * An OIDC sign-in gets it from the mapping in OidcClientController, which appends
+     * Role::BASELINE_EXTERNAL_ID to every successful sign-in. A local account has no
+     * provider to hand it one, so it is attached as the account is created and the two
+     * kinds end up the same citizen. Nothing else is granted automatically: any further
+     * role is an administrator's decision, in /manage > Users.
+     */
+    public function assignBaselineRole(): void
+    {
+        // Not before the address is confirmed: the baseline is what makes an account
+        // an attendee, and self-registration is open to anybody with a mail client.
+        if (! $this->hasVerifiedEmail()) {
+            return;
+        }
+
+        Role::query()
+            ->where('external_id', Role::BASELINE_EXTERNAL_ID)
+            ->first()
+            ?->assignTo($this, null);
     }
 
     /**

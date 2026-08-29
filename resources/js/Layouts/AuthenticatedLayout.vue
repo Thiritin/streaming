@@ -20,12 +20,17 @@ const hasLogo = computed(() => !!branding.value.logoUrl);
 const footerLinks = computed(() => branding.value.links ?? []);
 // The project credit, or null when the installation has turned it off.
 const source = computed(() => branding.value.source ?? null);
-const logoutUrl = computed(() => branding.value.identity?.logoutUrl ?? '#');
-
 // A signed-out visitor only reaches this layout where login is optional, so the
 // user block becomes a sign-in button and the emote library, which only exists
 // for chat, drops out along with chat itself.
 const user = computed(() => page.props.auth?.user ?? null);
+
+// A local session ends here with a post; an account the identity provider owns
+// leaves through the provider, so it hears about it too.
+const isLocal = computed(() => user.value?.is_local === true);
+const logoutUrl = computed(() => (isLocal.value
+  ? route('logout')
+  : branding.value.identity?.logoutUrl ?? '#'));
 const loginUrl = computed(() => page.props.features?.loginUrl ?? '/login');
 const chatEnabled = computed(() => page.props.features?.chat !== false);
 const emotesEnabled = computed(() => page.props.features?.emotes !== false);
@@ -165,7 +170,12 @@ const initial = computed(() => user.value?.name?.charAt(0)?.toUpperCase() || 'U'
                     </svg>
                     GitHub
                   </DropdownLink>
-                  <DropdownLink as="a" :href="logoutUrl" class="text-red-400 hover:text-red-300">
+                  <DropdownLink
+                    :as="isLocal ? 'button' : 'a'"
+                    :method="isLocal ? 'post' : 'get'"
+                    :href="logoutUrl"
+                    class="text-red-400 hover:text-red-300"
+                  >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                     </svg>
@@ -272,7 +282,12 @@ const initial = computed(() => user.value?.name?.charAt(0)?.toUpperCase() || 'U'
                 <ResponsiveNavLink v-if="source" :href="source.url" as="a">
                   GitHub
                 </ResponsiveNavLink>
-                <ResponsiveNavLink :href="logoutUrl" as="a" class="text-red-400">
+                <ResponsiveNavLink
+                  :href="logoutUrl"
+                  :as="isLocal ? 'button' : 'a'"
+                  :method="isLocal ? 'post' : 'get'"
+                  class="text-red-400"
+                >
                   Log Out
                 </ResponsiveNavLink>
               </div>

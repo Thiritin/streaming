@@ -69,9 +69,13 @@ const submit = () => {
       <CommentComposer :form="form" :author="viewer" @submit="submit" />
     </div>
 
-    <p v-else class="mt-4 rounded-lg border border-white/10 bg-primary-950/40 px-4 py-3 text-sm text-primary-300">
-      <Link v-if="loginUrl" :href="loginUrl" class="font-semibold text-white hover:underline">Sign in</Link>
-      <span v-else class="font-semibold text-white">Sign in</span>
+    <!-- Nothing at all without somewhere to send them: naming the action is only
+         worth doing where it can be taken. -->
+    <p
+      v-else-if="loginUrl"
+      class="mt-4 rounded-lg border border-white/10 bg-primary-950/40 px-4 py-3 text-sm text-primary-300"
+    >
+      <Link :href="loginUrl" class="font-semibold text-white hover:underline">Sign in</Link>
       to join the conversation.
     </p>
 

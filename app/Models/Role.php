@@ -10,6 +10,14 @@ class Role extends Model
 {
     use HasFactory;
 
+    /**
+     * The external id a role claims to be the baseline: what an account gets for
+     * having signed in at all, whichever way it signed in. Handed out by the OIDC
+     * callback's mapping and by every local account as it is created, so the two
+     * kinds of account are not different citizens.
+     */
+    public const BASELINE_EXTERNAL_ID = 'attendee';
+
     protected $fillable = [
         'name',
         'slug',

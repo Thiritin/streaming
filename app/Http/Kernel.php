@@ -9,6 +9,8 @@ use App\Http\Middleware\EnsureChatIsEnabled;
 use App\Http\Middleware\EnsureCommentsAreEnabled;
 use App\Http\Middleware\EnsureEmotesAreEnabled;
 use App\Http\Middleware\EnsureFeedbackIsEnabled;
+use App\Http\Middleware\EnsureLocalAuthIsEnabled;
+use App\Http\Middleware\EnsureRegistrationIsEnabled;
 use App\Http\Middleware\EnsureScreensAreEnabled;
 use App\Http\Middleware\EnsureTelegramIsEnabled;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -68,6 +70,13 @@ class Kernel extends HttpKernel
             ShareErrorsFromSession::class,
             VerifyCsrfToken::class,
             SubstituteBindings::class,
+            /*
+             * Ends an account's other sessions when its password changes, which is
+             * what makes a password reset actually turn the old one away rather than
+             * only rotating the remember cookie. It returns early for anyone with no
+             * password, so every account the identity provider owns is untouched.
+             */
+            AuthenticateSession::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ],
@@ -106,6 +115,9 @@ class Kernel extends HttpKernel
         'auth' => Authenticate::class,
         // Authenticates only when config('auth.required') is on; see config/auth.php.
         'auth.optional' => AuthenticateIfRequired::class,
+        // Password accounts, and public registration on top of them; see App\Support\AuthModes.
+        'auth.local' => EnsureLocalAuthIsEnabled::class,
+        'auth.register' => EnsureRegistrationIsEnabled::class,
         'auth.basic' => AuthenticateWithBasicAuth::class,
         'chat.enabled' => EnsureChatIsEnabled::class,
         'emotes.enabled' => EnsureEmotesAreEnabled::class,

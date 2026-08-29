@@ -26,6 +26,7 @@ use App\Http\Controllers\Manage\TableColumnController;
 use App\Http\Controllers\Manage\TelegramController;
 use App\Http\Controllers\Manage\UploadController;
 use App\Http\Controllers\Manage\UserController;
+use App\Http\Controllers\Manage\UserVerificationController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -175,12 +176,18 @@ Route::put('servers/{server}', [ServerController::class, 'update'])->name('serve
 Route::delete('servers/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
 
 /*
- * Users arrive through OIDC, so there is no create route: an operator can change
- * the edge assignment and the attached roles, nothing else.
+ * Most users arrive through OIDC, and everything the provider owns is read-only.
+ * The create route is for the accounts this installation holds itself: a name, an
+ * address and a password, which is also all the password routes below touch.
  */
 Route::get('users', [UserController::class, 'index'])->name('users.index');
+Route::get('users/create', [UserController::class, 'create'])->name('users.create');
+Route::post('users', [UserController::class, 'store'])->name('users.store');
 Route::get('users/{user}', [UserController::class, 'edit'])->name('users.edit');
 Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
+Route::put('users/{user}/password', [UserController::class, 'updatePassword'])->name('users.password.update');
+Route::delete('users/{user}/password', [UserController::class, 'destroyPassword'])->name('users.password.destroy');
+Route::post('users/{user}/verify', [UserVerificationController::class, 'store'])->name('users.verify');
 Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
 
 /*

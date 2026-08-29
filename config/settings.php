@@ -106,6 +106,65 @@ return [
         ],
 
         [
+            'key' => 'auth',
+            'blurb' => 'How people get in',
+            'icon' => 'key',
+            'label' => 'Sign-in',
+            'fields' => [
+                [
+                    'key' => 'auth_required',
+                    'label' => 'Require sign-in to watch',
+                    'type' => 'toggle',
+                    'config' => 'auth.required',
+                    'rules' => ['boolean'],
+                ],
+                [
+                    'key' => 'auth_local',
+                    'label' => 'Password accounts',
+                    'type' => 'toggle',
+                    'config' => 'auth.modes.local',
+                    'rules' => ['boolean'],
+                ],
+                [
+                    'key' => 'auth_registration',
+                    'label' => 'Public registration',
+                    'type' => 'toggle',
+                    'config' => 'auth.modes.registration',
+                    'rules' => ['boolean'],
+                ],
+                [
+                    'key' => 'auth_oidc',
+                    'label' => 'Identity provider',
+                    'type' => 'toggle',
+                    'config' => 'auth.modes.oidc',
+                    'rules' => ['boolean'],
+                ],
+                [
+                    'key' => 'oidc_url',
+                    'label' => 'Provider URL',
+                    'type' => 'url',
+                    'config' => 'services.oidc.url',
+                    'rules' => ['nullable', 'url', 'max:2048'],
+                ],
+                [
+                    'key' => 'oidc_client_id',
+                    'label' => 'Client ID',
+                    'type' => 'text',
+                    'config' => 'services.oidc.client_id',
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+                [
+                    'key' => 'oidc_secret',
+                    'label' => 'Client secret',
+                    'type' => 'password',
+                    'config' => 'services.oidc.secret',
+                    'secure' => true,
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+            ],
+        ],
+
+        [
             'key' => 'login',
             'blurb' => 'Sign-in copy',
             'icon' => 'lock',

@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import ManageLayout from '@/Layouts/ManageLayout.vue';
 import ActionButton from '@/Components/Manage/ActionButton.vue';
@@ -9,29 +10,69 @@ import FormSection from '@/Components/Manage/FormSection.vue';
 import PageHeader from '@/Components/Manage/PageHeader.vue';
 
 const props = defineProps({
-  user: { type: Object, required: true },
+  /** null while creating an account this installation holds itself */
+  user: { type: Object, default: null },
   options: { type: Object, required: true },
+  defaults: { type: Object, default: () => ({}) },
+  can: { type: Object, default: () => ({}) },
   actions: { type: Array, default: () => [] },
   messages: { type: Array, default: () => [] },
 });
 
+const isEdit = computed(() => Boolean(props.user));
+
 /*
- * Roles are the only thing an operator owns here. `sub`, `name` and `reg_id` belong to
- * the identity provider and are rendered read-only below. An edge is not an account
- * setting: it is chosen per viewing session, on the session row.
+ * Roles are the only thing an operator owns on an existing record. `sub`, `name` and
+ * `reg_id` belong to the identity provider and are rendered read-only below. An edge is
+ * not an account setting: it is chosen per viewing session, on the session row.
  */
-const form = useForm({
-  roles: [...props.user.roles],
+const form = useForm(
+  props.user
+    ? { roles: [...props.user.roles] }
+    : {
+        name: '',
+        email: '',
+        password: '',
+        password_confirmation: '',
+        roles: [],
+        ...props.defaults,
+      },
+);
+
+const submit = () => {
+  if (isEdit.value) {
+    form.put(route('manage.users.update', props.user.id), { preserveScroll: true });
+
+    return;
+  }
+
+  form.post(route('manage.users.store'));
+};
+
+/*
+ * The password saves on its own rather than with the roles: it is the one field here
+ * that hands somebody a way in, and it is not something to change by accident while
+ * ticking a role. Clearing it is the header action.
+ */
+const passwordForm = useForm({
+  password: '',
+  password_confirmation: '',
 });
 
-const submit = () => form.put(route('manage.users.update', props.user.id), { preserveScroll: true });
+const setPassword = () => passwordForm.put(route('manage.users.password.update', props.user.id), {
+  preserveScroll: true,
+  onSuccess: () => passwordForm.reset(),
+});
 </script>
 
 <template>
   <ManageLayout>
-    <Head :title="`User ${user.name}`" />
+    <Head :title="isEdit ? `User ${user.name}` : 'New account'" />
 
-    <PageHeader :title="user.name" :subtitle="`First seen ${user.created_at}`">
+    <PageHeader
+      :title="isEdit ? user.name : 'New account'"
+      :subtitle="isEdit ? `First seen ${user.created_at}` : 'An account this installation holds itself'"
+    >
       <template #actions>
         <ActionButton v-for="action in actions" :key="action.name" :action="action" />
       </template>
@@ -40,13 +81,75 @@ const submit = () => form.put(route('manage.users.update', props.user.id), { pre
     <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="submit">
       <div class="flex flex-col gap-4 p-4">
         <FormSection
-          title="Identity"
-          description="Owned by the identity provider and refreshed at each sign-in."
+          v-if="!isEdit"
+          title="Account"
         >
-          <FormField :model-value="user.sub" label="Subject" mono disabled />
+          <FormField v-model="form.name" label="Name" required :error="form.errors.name" />
+          <FormField v-model="form.email" label="Email" type="email" required :error="form.errors.email" />
+          <FormField
+            v-model="form.password"
+            label="Password"
+            type="password"
+            required
+            :error="form.errors.password"
+          />
+          <FormField
+            v-model="form.password_confirmation"
+            label="Confirm password"
+            type="password"
+            required
+            :error="form.errors.password_confirmation"
+          />
+        </FormSection>
+
+        <FormSection
+          v-if="isEdit"
+          title="Identity"
+          :description="user.sub ? 'Owned by the identity provider and refreshed at each sign-in.' : null"
+        >
+          <FormField v-if="user.sub" :model-value="user.sub" label="Subject" mono disabled />
           <FormField :model-value="user.name" label="Name" disabled />
+          <FormField :model-value="user.email ?? '—'" label="Email" disabled />
+          <FormField
+            v-if="user.has_password"
+            :model-value="user.email_verified ? 'Yes' : 'No'"
+            label="Address confirmed"
+            disabled
+          />
           <FormField :model-value="user.reg_id ?? '—'" label="Registration ID" disabled />
           <FormField :model-value="user.updated_at" label="Last updated" disabled />
+        </FormSection>
+
+        <FormSection
+          v-if="isEdit && can.password"
+          title="Password"
+          :description="user.has_password ? 'Set' : 'Not set'"
+        >
+          <div class="contents" @keydown.enter.prevent="setPassword">
+            <FormField
+              v-model="passwordForm.password"
+              label="New password"
+              type="password"
+              :error="passwordForm.errors.password"
+            />
+            <FormField
+              v-model="passwordForm.password_confirmation"
+              label="Confirm password"
+              type="password"
+              :error="passwordForm.errors.password_confirmation"
+            />
+          </div>
+
+          <div class="flex justify-end pt-1">
+            <button
+              type="button"
+              class="h-8 rounded border border-hairline px-3 text-[13px] font-medium text-fg-1 transition-colors hover:border-state-live/50 disabled:opacity-50"
+              :disabled="passwordForm.processing"
+              @click="setPassword"
+            >
+              {{ user.has_password ? 'Replace password' : 'Set password' }}
+            </button>
+          </div>
         </FormSection>
 
         <FormSection
@@ -63,7 +166,7 @@ const submit = () => form.put(route('manage.users.update', props.user.id), { pre
           </FormField>
         </FormSection>
 
-        <FormSection v-if="messages.length" title="Recent chat messages" :columns="1">
+        <FormSection v-if="isEdit && messages.length" title="Recent chat messages" :columns="1">
           <div class="overflow-x-auto rounded border border-hairline">
             <table class="w-full text-[13px]">
               <thead>
@@ -90,7 +193,7 @@ const submit = () => form.put(route('manage.users.update', props.user.id), { pre
       <FormActions
         :processing="form.processing"
         :dirty="form.isDirty"
-        submit-label="Save changes"
+        :submit-label="isEdit ? 'Save changes' : 'Create account'"
       />
     </form>
   </ManageLayout>

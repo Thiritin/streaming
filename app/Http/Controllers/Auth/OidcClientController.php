@@ -95,6 +95,9 @@ class OidcClientController extends Controller
             'name' => $userinfo['name'],
             // Remote URL served by the identity provider, refreshed on every sign-in.
             'avatar' => $userinfo['avatar'] ?? null,
+            // The provider owns the address, so it arrives confirmed. Only an account
+            // this installation holds itself has anything to prove.
+            'email_verified_at' => now(),
         ]);
         $user = $user->fresh();
 
@@ -311,7 +314,7 @@ class OidcClientController extends Controller
          * Everyone who got this far signed in successfully, so a role that
          * declares itself the baseline gets handed out unconditionally.
          */
-        $identifiers[] = 'attendee';
+        $identifiers[] = Role::BASELINE_EXTERNAL_ID;
 
         $identifiers = array_values(array_unique($identifiers));
 

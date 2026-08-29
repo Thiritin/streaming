@@ -10,6 +10,7 @@ use Illuminate\Foundation\Support\Providers\RouteServiceProvider as ServiceProvi
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 
 class RouteServiceProvider extends ServiceProvider
 {
@@ -29,6 +30,24 @@ class RouteServiceProvider extends ServiceProvider
     {
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
+
+        /*
+         * The sign-in, registration and password-reset endpoints. Keyed by address and
+         * address alone would let one attacker lock a known account out, and by IP
+         * alone would give a whole convention venue behind one NAT a handful of
+         * attempts a minute between them - so both, address first with a per-address
+         * ceiling and the IP as the wider bound that stops an attacker rotating
+         * addresses. LoginRequest's own five-in-a-row lock is the sharp limit and this
+         * is what stands behind it.
+         */
+        RateLimiter::for('auth', function (Request $request) {
+            $email = Str::transliterate(Str::lower((string) $request->input('email')));
+
+            return [
+                Limit::perMinute(20)->by('auth:'.$email.'|'.$request->ip()),
+                Limit::perMinute(60)->by('auth:'.$request->ip()),
+            ];
         });
 
         // No rate limit for HLS endpoints - they need to handle many requests
