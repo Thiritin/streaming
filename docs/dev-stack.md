@@ -115,8 +115,11 @@ well.
 The edge is built from `docker/edge-nginx`, so it carries njs and
 `hls-auth.js` and verifies `?t=<token>` locally with an HMAC, exactly as
 production does. It reads `HLS_VIEWER_SECRET`, `HLS_EMBED_SECRET`,
-`HLS_TOKEN_LEEWAY` and `STREAM_SYSTEM_STREAMKEY` from your `.env`. Without a
-viewer secret every tokenised request answers 403:
+`HLS_TOKEN_LEEWAY` and `STREAM_SYSTEM_STREAMKEY` from your `.env` - a container is
+not a Laravel process, so it never sees the settings table. A deployed installation
+edits the same four at `/manage` > Settings > Playback security, and `.env` is the
+fallback there; locally, set them here or the edge has nothing to verify against.
+Without a viewer secret every tokenised request answers 403:
 
 ```bash
 openssl rand -hex 32   # HLS_VIEWER_SECRET

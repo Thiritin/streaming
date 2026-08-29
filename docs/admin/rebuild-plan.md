@@ -166,7 +166,7 @@ Unify:
 - Add real policies: `ShowPolicy`, `SourcePolicy`, `ServerPolicy`, `UserPolicy`, `RolePolicy`, `EmotePolicy`, `RecordingPolicy`. The guarded deletes move here (`ShowPolicy::delete` false while live; `SourcePolicy::delete` false with live shows; `RolePolicy::delete` false with users) so both the UI and the tests read the same rule.
 - Fine-grained action permissions map to the existing strings: `stream.manage` for go-live / end / stream status / provisioning / autoscaler, `user.manage` for users and roles, `chat.moderate` for emotes.
 - Rename the shared prop to `auth.can_access_manage` and keep `can_access_filament` as an alias until `/admin` is gone.
-- No `/manage/login`. Guests are redirected into the existing OIDC flow at `/login`; a signed-in user without the gate gets 403. This is a deliberate change from Filament's second login screen.
+- No `/manage/login`. Guests are redirected to `/login`; a signed-in user without the gate gets 403. This is a deliberate change from Filament's second login screen. (`/login` was the OIDC flow when this was written; it now renders whichever sign-in modes are switched on.)
 
 ### 2.3 List pages: one prop contract
 
@@ -251,7 +251,7 @@ Server-declared sections, client-rendered fields; validation via Form Requests s
 - Live slugging (`title` -> `slug`, create-only for Shows and Recordings, always for Sources and Roles) is a client watcher plus a `unique` rule server-side.
 - Shows: `scheduled_end` must be `after:scheduled_start`; `status` select disabled while live; the Statistics section only renders on edit.
 - Recordings: selecting a show prefills title, description, date and duration. Ship the candidate shows as a prop with `actual_start`/`actual_end` so the prefill happens client-side without an extra request.
-- Servers: `hetzner_id`, `shared_secret` and `type` are disabled on edit; `max_clients` and `immutable` only render for edge.
+- Servers: `hetzner_id`, `shared_secret` and `type` are disabled on edit; `max_clients` and `immutable` only render for edge. (Superseded since: `shared_secret` is not a field on the form at all. Credentials are minted by the model, stored hashed, and rotated from the install script page — see [server-credentials.md](server-credentials.md).)
 - Emotes: `name` regex `^[a-z0-9_]+$`, max 20, unique; the approver/timestamp stamping stays server-side in the controller (mirroring `CreateEmote`/`EditEmote`).
 - Branding: same four sections, helper text still sourced from `BrandingService::EDITABLE`, plus the reset-to-defaults confirm.
 
@@ -275,14 +275,14 @@ One `ManageNavigation` service returns the rail structure with live badge counts
 
 Not parity gaps - decisions. Each needs a line in the cutover PR description.
 
-1. `/admin/login` disappears; authentication is OIDC only.
+1. `/admin/login` disappears; authentication is OIDC only. Superseded since: OIDC is one of four independently switchable sign-in modes, all through the app's own `/login`. See [authentication.md](authentication.md).
 2. `ViewCountChart`'s hardcoded September-2023 dates are replaced by a selectable range (default: last 7 days, plus a per-show mode on the statistics page). Porting the hardcoded dates would ship a known-broken widget.
 3. `ServerResource`'s unregistered `UserRelationManager` is not ported (dead code). Instead, the server detail page gets an "Assigned users" tab, which is what it was clearly for.
 4. The Users module gains a real messages tab (read-only list with a delete action gated on `chat.moderate`); today's relation manager is unreachable.
 5. Filament's global search (only `User.name`) becomes a rail search across shows, sources, servers and users - cheaper to do well than to deliberately restrict.
 6. `ViewInstallScript`'s regex-extraction of config blocks out of a generated shell script is replaced by asking `ServerProvisioningService` for each config directly. The FFmpeg placeholder tabs are dropped rather than shipped as `# not available in current implementation`.
 7. Server mutations require `stream.manage` (or admin). The Filament panel let anyone holding only `filament.access` - a chat moderator, say - edit, delete and deprovision infrastructure, because panel access was the only check. Reading the list is still open to every `access-manage` holder. `ServerPolicy` is the single place this lives.
-8. **Autoscaling is removed, not ported.** The feature is gone from the product: capacity is provisioned by hand behind an nginx reverse proxy. Deleted with it: `AutoscalerService`, `AutoscalerAction`, `ScalingJob` and its every-minute schedule entry, the `stream.autoscale` config block, both Filament header actions, and the status-strip segment. The `servers.immutable` column only ever protected a server from autoscaler deletion, so the panel no longer offers it (the column stays; dropping it needs a migration and buys nothing). `StreamScalingListener` is *not* autoscaling and stays: it is what Stream Control's "start servers" and "delete servers" actions drive.
+8. **Autoscaling is removed, not ported.** The feature is gone from the product: capacity is provisioned by hand behind an nginx reverse proxy. Deleted with it: `AutoscalerService`, `AutoscalerAction`, `ScalingJob` and its every-minute schedule entry, the `stream.autoscale` config block, both Filament header actions, and the status-strip segment. The `servers.immutable` column only ever protected a server from autoscaler deletion, so the panel no longer offers it (the column stays; dropping it needs a migration and buys nothing). `StreamScalingListener` went with it. It was believed to be what Stream Control's "start servers" and "delete servers" actions drove; it was not, and never had been. It acted on `StreamStatusEvent` carrying `OFFLINE` or `STARTING_SOON`, and nothing in the application ever dispatched either - the only two dispatch sites emit `ONLINE` and `TECHNICAL_ISSUE` - so both of its branches were dead. Servers are provisioned and deleted by hand from `/manage` > Servers, and the jobs under `app/Jobs/Server/` handle the lifecycle once asked.
 9. **No dashboard.** The status strip carries the numbers a dashboard would have shown, so `/manage` redirects to the first module. `Overview::edgeServerCards()` and `capacityCards()` are kept for the Stream Control page (phase 6); the view-count chart is deferred with the dashboard rather than ported with its hardcoded 2023 dates.
 10. **Shows lost tags, metadata and server pinning**, at the operator's request. All three columns stay in the database; nothing in the panel reads or writes them. A live show's slug is also frozen server-side, not just disabled in the form: it is the URL people are watching.
 11. **`ShowStatisticsService::getHourlyStats()` was MySQL-only.** `DATE_FORMAT` does not exist on Postgres or SQLite, so the statistics page 500'd everywhere except production. Bucketing now happens in PHP. This fixed the Filament page too.

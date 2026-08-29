@@ -21,7 +21,7 @@ Nothing about any one convention is baked in. Names, copy, links, logo, login ba
 
 **Infrastructure.** Edge servers are provisioned on Hetzner Cloud from the panel, get their DNS record, run a generated install script, and are handed viewers by the assignment job. Health checks, viewer counts, capacity and alerts sit on one dashboard.
 
-**Access.** Sign-in goes through OpenID Connect. Roles carry permissions, and shows and recordings can require one. With `AUTH_REQUIRED=false` the public pages are open to guests and only chat stays behind sign-in.
+**Access.** Four switches, composing freely: whether watching needs an account at all, OpenID Connect, password accounts this installation holds, and public registration on top of those. Roles carry permissions, and shows and recordings can require one. See [docs/admin/authentication.md](docs/admin/authentication.md).
 
 ## Screenshots
 
@@ -92,22 +92,30 @@ php artisan db:seed --class=DevStreamChannelsSeeder
 
 ## Configuration
 
-The settings that matter live in `.env`:
+Almost everything is edited at `/manage` > Settings and stored in the database: the convention's name and copy, the identity provider, the sign-in modes, chat limits, the archive bucket, the playback token secrets, the container images the provisioning scripts pull. No deploy, no rebuild, no restart. See [docs/admin/settings.md](docs/admin/settings.md).
+
+`.env` is the shipped fallback for each of those, so an existing deployment keeps working and a saved row always wins. What has to stay there is the bootstrap - app, database, cache, queue, session, Redis, log, mail, Reverb, broadcasting - plus the handful of values the local video stack's containers read out of the file directly:
 
 | Variable | What it controls |
 |---|---|
-| `OIDC_URL`, `OIDC_CLIENT_ID`, `OIDC_SECRET` | Identity provider |
-| `AUTH_REQUIRED` | Whether guests can watch |
-| `CHAT_ENABLED`, `CHAT_*` | Chat rate limits, slow mode, link handling. `CHAT_ENABLED` is only the initial default now; chat, emotes and boops are switched from /manage > Settings > Features, and each viewer can switch them off again for themselves at /settings |
-| `HLS_VIEWER_SECRET`, `HLS_EMBED_SECRET` | Playback tokens the edges verify |
-| `AWS_*`, `DVR_AWS_*` | Archive and DVR buckets |
+| `AWS_*` | The general bucket: emotes, thumbnails, the branding logo |
+| `DVR_AWS_*` | The archive bucket. Also in /manage > Settings > Archive storage |
+| `HLS_VIEWER_SECRET`, `HLS_EMBED_SECRET`, `HLS_TOKEN_LEEWAY` | Playback tokens the edges verify. Also in /manage > Settings > Playback security |
+| `STREAM_SYSTEM_STREAMKEY` | Shared secret between the app and the video stack. Same pane |
 | `HETZNER_TOKEN`, `DNS_*` | Server provisioning and DNS records |
-| `STREAM_SYSTEM_STREAMKEY` | Shared secret between the app and the video stack |
+| `REVERB_*`, `VITE_REVERB_*` | Websockets. The `VITE_` half is baked into the bundle at build time |
 
-Branding is not an env var. Convention name, copy, footer links, logo, login background and accent colour are stored in the `branding_settings` table and edited at `/manage` > Settings, or scripted:
+For a deploy that wants to arrive already configured, the panel's write is also a command. It covers every field in every pane, not only branding:
 
 ```bash
 php artisan branding:set convention_name="Example Con" primary_color="#7c5cff"
+php artisan branding:set --list
+```
+
+A fresh install has nobody who can reach the panel yet, so make an administrator first:
+
+```bash
+php artisan auth:local-admin you@example.org
 ```
 
 The accent colour is applied as CSS custom properties at runtime, so changing it takes effect without a rebuild.
@@ -119,6 +127,9 @@ The root `Dockerfile` builds the app image. `docker/` holds the images for the v
 ## Documentation
 
 - [docs/dev-stack.md](docs/dev-stack.md): the local video stack
+- [docs/admin/settings.md](docs/admin/settings.md): what lives in the database and what stays in `.env`
+- [docs/admin/authentication.md](docs/admin/authentication.md): the sign-in modes, accounts and recovery
+- [docs/admin/server-credentials.md](docs/admin/server-credentials.md): how servers authenticate, and rotating their credentials
 - [docs/admin/pretalx-import.md](docs/admin/pretalx-import.md): importing the programme
 - [docs/admin/auto-mode.md](docs/admin/auto-mode.md): starting and stopping shows without a human
 - [docs/dvr-archive-plan.md](docs/dvr-archive-plan.md): how the archive and cutting work

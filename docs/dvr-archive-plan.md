@@ -564,7 +564,8 @@ and minutes of wall clock, so it never runs on a page load: `ScanArchiveStorageJ
 hourly, the result is cached, and the panel shows what was measured and when. A scan that
 hits its page cap reports itself as partial rather than presenting a floor as a total.
 
-Free space needs a denominator nobody can discover, so it comes from `ARCHIVE_QUOTA_BYTES`.
+Free space needs a denominator nobody can discover, so it comes from the quota at
+`/manage` > Settings > Archive storage (`ARCHIVE_QUOTA_BYTES` is its shipped fallback).
 Unset, the panel reports what is used and says the capacity is not configured, which is
 better than inventing a limit.
 
@@ -666,10 +667,13 @@ blades under `server-provisioning/common/`, `RecordingService::getFirstSegmentUr
 the unread `stream.qualities` config, and `User::getUserStreamUrls()` with the
 `hlsUrls` payload on `ServerAssignmentChanged`.
 
-Still standing, and worth a decision: `Api\ServerFileController` (`/api/file/{file}`)
-is a second, older provisioning path that is still routed. The `origin-conf` view it
-serves configures SRS-side transcoding and RTMP fan-out, which contradicts the
-passthrough + FFmpeg-ladder design this document describes.
+Decided since: `Api\ServerFileController` (`/api/file/{file}`) is gone, with the five
+blade views it served. It was a second, older provisioning path, and its `origin-conf`
+view configured SRS-side transcoding and RTMP fan-out, contradicting the passthrough +
+FFmpeg-ladder design this document describes. It also served any config to any caller
+holding any valid server secret. Everything a server needs now comes from
+`/api/server/{server}/config/{type}`, checked against that server's own credential; see
+[admin/server-credentials.md](admin/server-credentials.md).
 
 ### PDT drift: measured, then designed around
 

@@ -143,7 +143,7 @@ DELETE /manage/users/{user}/roles/{role}    manage.users.roles.detach
 DELETE /manage/users/{user}/messages/{message}  manage.users.messages.destroy
 ```
 
-No create route. Users arrive through OIDC; the Filament create form could only produce a broken row (`sub` is disabled and required). **CHANGED** — record it in rebuild-plan 2.9.
+No create route at the time of the audit: users arrived through OIDC, and the Filament create form could only produce a broken row (`sub` is disabled and required). **CHANGED** — record it in rebuild-plan 2.9. Superseded since: password accounts exist, so `GET manage/users/create` and `POST manage/users` are real, along with the two password routes and `POST manage/users/{user}/verify`. All four need `admin.access` rather than `user.manage`. See [authentication.md](authentication.md).
 
 ### List
 
@@ -291,7 +291,7 @@ Copy is verbatim from the audit — these are the buttons someone presses under 
 | Set Stream Technical Issue | `TECHNICAL_ISSUE` | warn | "Set this if you have technical issues with the stream. Will automatically activate upon stream disconnect." |
 | Set Stream Offline (Delete Servers) | `OFFLINE` | danger | "This sets the stream fully offline and deletes ALL Servers." |
 
-Each fires `StreamStatusEvent`, each confirms first. The offline one deletes every server through `StreamScalingListener` — its confirm should say so in the body, not just the tooltip.
+Each fires `StreamStatusEvent`, each confirms first. The tooltips are what the audit found, and two of them describe something that never happened: `StreamScalingListener` was supposed to start and delete servers off this event, but it only acted on `OFFLINE` and `STARTING_SOON` and nothing ever dispatched either of those, so both branches were dead. It has been deleted. These actions set the status and nothing else; servers are provisioned and deleted by hand from `/manage` > Servers. The two tooltips need rewriting to say so.
 
 The page also shows the current status prominently (it is what the status strip reads) plus `Overview::edgeServerCards()` and `capacityCards()`, which have been waiting for exactly this page.
 

@@ -85,6 +85,12 @@ Actions
 
 All covered by `tests/Feature/Manage/ServersTest.php` unless noted.
 
+Two of the ticks below record parity with Filament and no longer describe current
+behaviour: `shared_secret` is not a form field at all any more, and "Regenerate" is
+"Rotate credentials", which mints a new pair rather than backfilling a missing one. See
+[server-credentials.md](server-credentials.md). Ticks are not edited to keep up - they
+record what the cutover shipped.
+
 Form
 - [x] hetzner_id disabled on edit — `updating_a_server_cannot_change_its_type_secret_or_hetzner_id`
 - [x] hostname required, ip, port 1..65535 default 8080 — `the_create_form_rejects_an_incomplete_payload`
