@@ -583,6 +583,21 @@ const filterControl =
         Mine
       </button>
 
+      <!--
+        A show marked "Skip" is off the page: the decision is made, there is nothing left
+        to do about the row, and it is already out of every tile and status filter. This
+        is how to get back to one that was marked by mistake.
+      -->
+      <label class="flex h-7 items-center gap-1.5 rounded border border-hairline px-2 text-[12px] text-fg-2">
+        <input
+          type="checkbox"
+          class="accent-state-live"
+          :checked="filters.show_skipped"
+          @change="setFilter('show_skipped', $event.target.checked ? 1 : null)"
+        />
+        Skipped
+      </label>
+
       <label class="flex h-7 items-center gap-1.5 rounded border border-hairline px-2 text-[12px] text-fg-2">
         <input
           type="checkbox"
@@ -1027,6 +1042,9 @@ const filterControl =
               <span v-if="!filters.show_archived && filters.event !== defaults.event" class="block text-[12px]">
                 {{ filters.event === 'all' ? 'Earlier events are' : 'That event is' }}
                 probably archived. Turn on Archived to see it.
+              </span>
+              <span v-else-if="!filters.show_skipped" class="block text-[12px]">
+                Shows marked Skip are hidden. Turn on Skipped to see them.
               </span>
             </td>
           </tr>

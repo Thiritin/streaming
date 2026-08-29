@@ -115,10 +115,72 @@ class RecordingPlanTest extends TestCase
         $this->show(['publish_plan' => 'no', 'status' => 'ended']);
 
         $this->actingAs($this->admin)
-            ->get(route('manage.recordings.plan'))
+            ->get(route('manage.recordings.plan', ['show_skipped' => 1]))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('rows.0.state', 'skipped')
                 ->where('rows.0.gap', false));
+    }
+
+    /**
+     * `no` is a decision, not a state of ignorance. Once it is made there is nothing left
+     * to do about the row, so it comes off the page rather than sitting in it - which is
+     * also what makes marking a run of unrecorded shows `no` in one bulk action actually
+     * clear them out of the way.
+     */
+    public function test_a_show_nobody_is_publishing_is_off_the_page(): void
+    {
+        $kept = $this->show(['title' => 'Still to decide', 'publish_plan' => 'undecided']);
+        $skipped = $this->show(['title' => 'Not publishing this', 'publish_plan' => 'no']);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('rows', 1)
+                ->where('rows.0.id', $kept->id));
+
+        // Somebody has to be able to undo a `no` set by mistake, so it is a switch rather
+        // than a one-way door.
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan', ['show_skipped' => 1]))
+            ->assertInertia(function (Assert $page) use ($kept, $skipped) {
+                $ids = collect($page->toArray()['props']['rows'])->pluck('id');
+
+                $this->assertEqualsCanonicalizing([$kept->id, $skipped->id], $ids->all());
+            });
+    }
+
+    public function test_marking_a_show_skip_takes_it_out_of_every_count(): void
+    {
+        $this->show(['publish_plan' => 'yes', 'status' => 'ended']);
+        $this->show([
+            'publish_plan' => 'no',
+            'status' => 'ended',
+            'stream_condition' => 'lost',
+            'onsite_condition' => 'lost',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('summary', function ($summary) {
+                    $tiles = collect($summary)->keyBy('key')->map(fn ($tile) => $tile['value']);
+
+                    // Not in the total, and its two lost captures are not in Lost either.
+                    return $tiles['total'] === 1
+                        && $tiles['to_publish'] === 1
+                        && $tiles['lost'] === 0;
+                }));
+    }
+
+    public function test_the_day_list_leaves_out_a_day_holding_only_skipped_shows(): void
+    {
+        $this->show(['publish_plan' => 'yes', 'scheduled_start' => '2026-08-01 10:00:00']);
+        $this->show(['publish_plan' => 'no', 'scheduled_start' => '2026-08-02 10:00:00']);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('options.days', fn ($days) => collect($days)->pluck('value')->all() === ['2026-08-01']));
     }
 
     public function test_a_published_recording_wins_over_a_draft_one(): void
@@ -141,6 +203,7 @@ class RecordingPlanTest extends TestCase
         // Not aired yet, so nothing is owed.
         $this->show(['publish_plan' => 'yes', 'status' => 'scheduled', 'recording_owner_id' => $this->admin->id]);
         $this->show(['publish_plan' => 'undecided']);
+        // Off the page entirely, so it is not in the total either.
         $this->show(['publish_plan' => 'no']);
 
         $this->actingAs($this->admin)
@@ -149,7 +212,7 @@ class RecordingPlanTest extends TestCase
                 ->where('summary', function ($summary) {
                     $tiles = collect($summary)->keyBy('key')->map(fn ($tile) => $tile['value']);
 
-                    return $tiles['total'] === 4
+                    return $tiles['total'] === 3
                         && $tiles['to_publish'] === 1
                         && $tiles['unassigned'] === 1
                         && $tiles['lost'] === 0

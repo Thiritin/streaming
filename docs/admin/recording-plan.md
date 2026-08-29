@@ -35,6 +35,15 @@ nothing kept the two in step.
 
 Editable here, in bulk from the toolbar, and on the show's own form under Recording.
 
+**A show marked `no` comes off the page.** It is a decision, not a state of ignorance:
+once it is made there is nothing left to do about the row, and it is already out of every
+tile, off the rail badge and out of every status filter. Leaving it in the grid only made
+the grid longer. This is also what makes marking a run of unrecorded shows `no` in one
+bulk action actually clear them out of the way.
+
+Not gone for good - **Skipped** in the toolbar brings them back, which is how a `no` set by
+mistake gets undone. Like every filter here, it lives in the query string.
+
 ## The two captures
 
 There are always two, and they are **not equals**.
@@ -117,4 +126,4 @@ the run on screen.
   to be handed out.
 - Tick rows for the bulk bar: set the publish plan, the owner, either capture verdict, or
   add and remove a tag, for everything ticked at once. **Take these** claims a whole
-  selection.
+  selection. Setting a selection to Skip takes those rows off the page.

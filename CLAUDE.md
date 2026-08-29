@@ -451,7 +451,12 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   and the rail badge, all off `Show::isAwaitingPublication()` and its scope twin.
   `publish_plan` (undecided/yes/no) is the only publishing decision there is: it is also
   the promise to the audience, read by the schedule badge, the archive's pending tiles and
-  the recording API through `Show::willBeAvailable()`. There is no separate announce flag
+  the recording API through `Show::willBeAvailable()`. A row marked `no` is off the page
+  entirely - a decision, not a state of ignorance, and already out of every tile and
+  filter - which is what makes writing off a run of unrecorded shows in one bulk action
+  actually clear them away; the toolbar's Skipped switch is how a `no` set by mistake is
+  undone, and it narrows the day list too so a day holding only skipped shows is not
+  offered and then empty. There is no separate announce flag
   any more - `announce_recording` was a second column saying the same thing with nothing
   keeping the two in step. Then the two captures, which are not equals: `stream_condition`
   has exactly two answers (`ok`/`lost`) because whatever went wrong with it the next move

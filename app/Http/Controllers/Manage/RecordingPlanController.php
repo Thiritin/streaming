@@ -73,6 +73,7 @@ class RecordingPlanController extends Controller
             $query->notArchived();
         }
 
+        $this->hideSkipped($query, $filters);
         $this->applyFilters($query, $filters, $request->user());
 
         $shows = $query->limit(self::ROW_LIMIT + 1)->get();
@@ -361,8 +362,34 @@ class RecordingPlanController extends Controller
             'tag' => $request->query('tag') ?: null,
             'mine' => $request->boolean('mine'),
             'show_archived' => $request->boolean('show_archived'),
+            'show_skipped' => $request->boolean('show_skipped'),
             'group' => in_array($group, ['day', 'owner', 'source', 'none'], true) ? $group : 'day',
         ];
+    }
+
+    /**
+     * Shows nobody is publishing are off the page unless they are asked for.
+     *
+     * `no` is a decision, not a state of ignorance, and once it is made there is nothing
+     * left to do about the row: it is out of every tile, off the rail badge and out of
+     * every status filter already. Leaving it in the grid only made the grid longer.
+     *
+     * It is also how a run of shows whose stream never recorded gets cleared out of the
+     * way in one bulk action, which only works if the rows then actually go away.
+     *
+     * Not gone for good, though - somebody has to be able to undo a `no` they set by
+     * mistake, so the toolbar carries a switch and it lives in the query string like
+     * every other filter. `publish_plan` is not nullable and defaults to `undecided`, so
+     * this needs none of the spelled-out null handling the capture columns do.
+     *
+     * @param  Builder<Show>  $query
+     * @param  array<string, mixed>  $filters
+     */
+    private function hideSkipped(Builder $query, array $filters): void
+    {
+        if (! $filters['show_skipped']) {
+            $query->where('publish_plan', '!=', 'no');
+        }
     }
 
     /**
@@ -613,6 +640,10 @@ class RecordingPlanController extends Controller
         if (! $filters['show_archived']) {
             $query->notArchived();
         }
+
+        // Or a day holding nothing but shows nobody is publishing would be offered and
+        // then come back empty.
+        $this->hideSkipped($query, $filters);
 
         // Scoped to the run on screen, so the day list is that event's dates rather than
         // every date the installation has ever run.
