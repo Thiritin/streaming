@@ -22,6 +22,10 @@ class ScheduleTest extends TestCase
     {
         parent::setUp();
 
+        // Shows are placed hours from now and grouped into days, so a run late in the
+        // evening pushes them over midnight and onto the next day's list.
+        $this->travelTo(today()->addHours(10));
+
         $this->user = User::factory()->create();
 
         $this->primary = Source::create([
