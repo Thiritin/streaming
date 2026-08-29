@@ -8,10 +8,19 @@ changing a cell needs `stream.manage`.
 
 ## The one question
 
-**What was meant to go out and has not.** Everything on the page is arranged around that:
+**What has gone out and what has not.** Everything on the page is arranged around that:
 it is the first tile, the first status filter, and the number on the rail badge. A show is
-on that list when it is marked for publication, has been on air, still has no published
-recording, and its material is not gone for good.
+on that list when it has been on air, still has no published recording, and its material
+is not gone for good.
+
+Not gated on the publish decision being an explicit `yes`. `no` is the only opt-out there
+is, and a row marked `no` is off the page altogether, so anything still on the page is
+still on the table. Requiring a `yes` meant a show whose material came back perfectly well
+sat outside the outstanding list purely because nobody had got round to ticking a box,
+which is the opposite of what an outstanding list is for.
+
+Only three things take a row off it: the material is gone for both captures, the show has
+not happened yet, or somebody marked it `no`.
 
 ## Why it is not the Shows table
 
@@ -110,8 +119,13 @@ it cannot go stale. The order is the argument:
 | Pending | Nothing cut, and the show has not started |
 
 A row is tinted red when it is on the To publish list with nothing cut at all and no
-reason recorded. The rail badge next to Recording Plan counts the whole To publish list for
-the run on screen.
+reason recorded, **and** somebody has explicitly marked it `yes`. The tint is narrower than
+the list on purpose: somebody committed to that one and there is nothing to show for it.
+Tinting every undecided row that has not been cut yet would paint most of a running
+convention red by the second afternoon, and a grid that is all red says nothing.
+
+The rail badge next to Recording Plan counts the whole To publish list for the run on
+screen.
 
 ## Working it as a board
 

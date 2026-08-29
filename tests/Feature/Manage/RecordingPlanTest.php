@@ -243,6 +243,74 @@ class RecordingPlanTest extends TestCase
             });
     }
 
+    /**
+     * `no` is the only opt-out, and a row marked `no` is off the page altogether - so
+     * anything still on the page is still on the table. A show whose material came back
+     * perfectly well must not sit outside the outstanding list purely because nobody has
+     * got round to ticking a box.
+     */
+    public function test_an_undecided_show_that_has_aired_is_still_owed(): void
+    {
+        $undecided = $this->show([
+            'title' => 'Nobody has said either way',
+            'publish_plan' => 'undecided',
+            'status' => 'ended',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan', ['state' => 'to_publish']))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('rows', 1)
+                ->where('rows.0.id', $undecided->id)
+                // The red tint is narrower than the list: it wants an explicit yes, or a
+                // running convention is all red by the second afternoon.
+                ->where('rows.0.gap', false));
+    }
+
+    /**
+     * The whole point of keeping the onsite detail: everything short of both captures
+     * being gone is still something somebody owes the audience.
+     */
+    public function test_every_capture_short_of_both_gone_is_still_owed(): void
+    {
+        $cases = [
+            'stream ok' => ['stream_condition' => 'ok', 'onsite_condition' => null],
+            'nothing checked' => ['stream_condition' => null, 'onsite_condition' => null],
+            'from onsite' => ['stream_condition' => 'lost', 'onsite_condition' => 'ok'],
+            'onsite without audio' => ['stream_condition' => 'lost', 'onsite_condition' => 'no_audio'],
+            'onsite without video' => ['stream_condition' => 'lost', 'onsite_condition' => 'no_video'],
+            'onsite half there' => ['stream_condition' => 'lost', 'onsite_condition' => 'incomplete'],
+            'stream gone, room not looked at' => ['stream_condition' => 'lost', 'onsite_condition' => null],
+        ];
+
+        $expected = [];
+
+        foreach ($cases as $title => $captures) {
+            $expected[] = $this->show($captures + [
+                'title' => $title,
+                'status' => 'ended',
+                'publish_plan' => 'undecided',
+            ])->id;
+        }
+
+        // The one that is not: both captures gone.
+        $this->show([
+            'title' => 'Gone for good',
+            'status' => 'ended',
+            'publish_plan' => 'undecided',
+            'stream_condition' => 'lost',
+            'onsite_condition' => 'lost',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan', ['state' => 'to_publish']))
+            ->assertInertia(function (Assert $page) use ($expected) {
+                $ids = collect($page->toArray()['props']['rows'])->pluck('id');
+
+                $this->assertEqualsCanonicalizing($expected, $ids->all());
+            });
+    }
+
     public function test_a_row_whose_material_is_gone_is_not_still_owed(): void
     {
         $this->show([

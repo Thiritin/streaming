@@ -447,8 +447,14 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
 - Servers, including the generated install script
 - Recording Plan (`/manage/recordings/plan`): the grid the programme is divided up on and
   accounted for, worked as a board by several people. It is built around one question -
-  what was meant to go out and has not - which is the first tile, the first status filter
-  and the rail badge, all off `Show::isAwaitingPublication()` and its scope twin.
+  what has gone out and what has not - which is the first tile, the first status filter
+  and the rail badge, all off `Show::isAwaitingPublication()` and its scope twin. That is
+  not gated on an explicit `yes`: `no` is the only opt-out and a `no` row is off the page,
+  so anything still on the page is still on the table - requiring a `yes` left a show
+  whose material came back fine outside the outstanding list purely because nobody had
+  ticked a box. Only three things take a row off it: both captures gone, not aired yet, or
+  marked `no`. `Show::isRecordingGap()` (the red tint) is deliberately narrower and does
+  want the explicit `yes`, or a running convention is all red by the second afternoon.
   `publish_plan` (undecided/yes/no) is the only publishing decision there is: it is also
   the promise to the audience, read by the schedule badge, the archive's pending tiles and
   the recording API through `Show::willBeAvailable()`. A row marked `no` is off the page

@@ -303,16 +303,22 @@ class Show extends Model
     }
 
     /**
-     * The one question the recording plan exists to answer: this was meant to go out, it
-     * has been on air, there is material for it, and it is still not published.
+     * The one question the recording plan exists to answer: this has been on air, there is
+     * material for it, and it is still not published.
      *
-     * Everything the page counts, badges and defaults to is this. A show nobody is
-     * publishing is not on it, nor is one whose material is gone, nor one that has not
-     * happened yet - none of those are anybody's outstanding work.
+     * Everything the page counts, badges and defaults to is this. Three things take a row
+     * off it, and `undecided` is not one of them: `no` is the only opt-out there is, and
+     * a row marked `no` is off the page altogether, so anything still on the page is
+     * still on the table. Gating this on `yes` meant a show whose material came back
+     * perfectly well sat outside the outstanding list purely because nobody had got round
+     * to ticking a box - which is the opposite of what an outstanding list is for.
+     *
+     * The other two are a write-off, which nobody can act on, and a show that has not
+     * happened yet, which is not late.
      */
     public function isAwaitingPublication(): bool
     {
-        if ($this->publish_plan !== 'yes' || $this->isLost()) {
+        if ($this->publish_plan === 'no' || $this->isLost()) {
             return false;
         }
 
@@ -330,10 +336,16 @@ class Show extends Model
     /**
      * Awaiting publication with nothing cut at all and no reason recorded for that. The
      * subset worth tinting a row over: everything else on the list is in progress.
+     *
+     * Deliberately narrower than the list it is drawn from - it wants an explicit `yes`,
+     * where the list settles for anything not marked `no`. Somebody committed to this one
+     * and there is nothing to show for it. Tinting every undecided row that has not been
+     * cut yet would paint most of a running convention red by the second afternoon, and a
+     * grid that is all red says nothing.
      */
     public function isRecordingGap(): bool
     {
-        if (! $this->isAwaitingPublication()) {
+        if ($this->publish_plan !== 'yes' || ! $this->isAwaitingPublication()) {
             return false;
         }
 
@@ -389,7 +401,7 @@ class Show extends Model
      */
     public function scopeAwaitingPublication($query)
     {
-        return $query->where('publish_plan', 'yes')
+        return $query->where('publish_plan', '!=', 'no')
             ->whereIn('status', ['ended', 'live'])
             ->where(fn ($inner) => $inner
                 ->whereNull('stream_condition')
