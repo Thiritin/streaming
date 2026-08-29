@@ -24,6 +24,28 @@ return [
     | saved, and `key` is the flat key written to the settings table. Both together
     | mean a field can be moved to another config file without touching saved data.
     |
+    | A saved value is laid back over the config repository at boot by
+    | App\Support\RuntimeConfig, so every call site keeps reading config() and the
+    | table wins. `config` names the dotted path a field overrides when that is not
+    | its own `{store}.{key}`, for example services.oidc.client_id. `cast` says how
+    | the stored string becomes a config value (int, bool, float, string, array);
+    | toggles and link repeaters already answer for themselves. `secure` stores the
+    | value encrypted at rest, for anything an operator would not want read back off
+    | the table.
+    |
+    | The overlay only reaches a call site that reads config() when it is called. A
+    | value read during a service provider's boot, or otherwise captured into something
+    | built once, is fixed for the life of the process: under Octane and on a queue
+    | worker the re-apply happens after that boot, so the field will look like it does
+    | nothing. Making such a key settable means moving its read to call time first.
+    | Anything resolved and memoised by a manager needs dropping as well, which is why
+    | RuntimeConfig forgets the disks it overrides.
+    |
+    | The overlay is re-applied between jobs and never inside one, so a job already
+    | running finishes on the values it started with. A change is a change for the next
+    | job, not for the one in flight, which is what a long-running import or archive
+    | scan wants anyway.
+    |
     | Types: text, textarea, url, color, image, video, toggle, select, links,
     | password, secret. Uploads name a purpose from config/manage.php, which owns the
     | disk, directory and size limits. `password` is write-only; `secret` is a value
@@ -367,6 +389,65 @@ return [
         ],
 
         [
+            'key' => 'chat',
+            'blurb' => 'Limits and links',
+            'icon' => 'message-square',
+            'label' => 'Chat',
+            'description' => 'The limits every chat room runs under. Whether chat exists at all is in Features, and slow mode can be overridden per source from the mod tools.',
+            'fields' => [
+                [
+                    'key' => 'chat_max_tries',
+                    'label' => 'Messages per rate window',
+                    'type' => 'text',
+                    'store' => 'chat',
+                    'config' => 'chat.default.maxTries',
+                    'cast' => 'int',
+                    'rules' => ['nullable', 'integer', 'min:1', 'max:100'],
+                ],
+                [
+                    'key' => 'chat_rate_decay',
+                    'label' => 'Rate window',
+                    'type' => 'text',
+                    'store' => 'chat',
+                    'config' => 'chat.default.rateDecay',
+                    'cast' => 'int',
+                    'helper' => 'Seconds.',
+                    'rules' => ['nullable', 'integer', 'min:1', 'max:3600'],
+                ],
+                [
+                    'key' => 'chat_slow_mode_seconds',
+                    'label' => 'Slow mode gap',
+                    'type' => 'text',
+                    'store' => 'chat',
+                    'config' => 'chat.default.slowModeSeconds',
+                    'cast' => 'int',
+                    'helper' => 'Seconds. Zero switches it off.',
+                    'rules' => ['nullable', 'integer', 'min:0', 'max:3600'],
+                ],
+                [
+                    'key' => 'chat_max_message_length',
+                    'label' => 'Message length limit',
+                    'type' => 'text',
+                    'store' => 'chat',
+                    'config' => 'chat.default.maxMessageLength',
+                    'cast' => 'int',
+                    'helper' => 'Characters.',
+                    'rules' => ['nullable', 'integer', 'min:1', 'max:2000'],
+                ],
+                [
+                    'key' => 'chat_allowed_domains',
+                    'label' => 'Allowed link domains',
+                    'type' => 'textarea',
+                    'store' => 'chat',
+                    'config' => 'chat.allowed_domains',
+                    'full' => true,
+                    'helper' => 'One per line. Empty strips every link.',
+                    'rules' => ['nullable', 'string', 'max:2000'],
+                ],
+            ],
+        ],
+
+        [
             'key' => 'pretalx',
             'blurb' => 'Programme import',
             'icon' => 'calendar',
@@ -455,6 +536,315 @@ return [
         ],
 
         [
+            'key' => 'storage',
+            'blurb' => 'Bucket and quota',
+            'icon' => 'database',
+            'label' => 'Archive storage',
+            'description' => 'The bucket recordings are cut from, and how a player is handed their segments.',
+            'fields' => [
+                [
+                    'key' => 'archive_s3_endpoint',
+                    'label' => 'Endpoint',
+                    'type' => 'url',
+                    'config' => 'filesystems.disks.dvr.endpoint',
+                    'rules' => ['nullable', 'url', 'max:2048'],
+                ],
+                [
+                    'key' => 'archive_s3_bucket',
+                    'label' => 'Bucket',
+                    'type' => 'text',
+                    'config' => 'filesystems.disks.dvr.bucket',
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+                [
+                    'key' => 'archive_s3_region',
+                    'label' => 'Region',
+                    'type' => 'text',
+                    'config' => 'filesystems.disks.dvr.region',
+                    'rules' => ['nullable', 'string', 'max:64'],
+                ],
+                [
+                    'key' => 'archive_s3_key',
+                    'label' => 'Access key ID',
+                    'type' => 'password',
+                    'config' => 'filesystems.disks.dvr.key',
+                    'secure' => true,
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+                [
+                    'key' => 'archive_s3_secret',
+                    'label' => 'Secret access key',
+                    'type' => 'password',
+                    'config' => 'filesystems.disks.dvr.secret',
+                    'secure' => true,
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+                [
+                    'key' => 'archive_s3_url',
+                    'label' => 'Public base URL',
+                    'type' => 'url',
+                    'config' => 'filesystems.disks.dvr.url',
+                    'rules' => ['nullable', 'url', 'max:2048'],
+                ],
+                [
+                    'key' => 'archive_s3_path_style',
+                    'label' => 'Path-style addressing',
+                    'type' => 'toggle',
+                    'config' => 'filesystems.disks.dvr.use_path_style_endpoint',
+                    'rules' => ['boolean'],
+                ],
+                [
+                    'key' => 'archive_disk',
+                    'label' => 'Disk',
+                    'type' => 'select',
+                    'store' => 'stream',
+                    'config' => 'stream.archive_disk',
+                    'options' => [
+                        'dvr' => 'dvr - dedicated archive bucket',
+                        's3' => 's3 - one bucket for everything',
+                    ],
+                    'rules' => ['nullable', 'string', 'in:dvr,s3'],
+                ],
+                [
+                    'key' => 'archive_quota_bytes',
+                    'label' => 'Quota',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.archive_quota_bytes',
+                    'cast' => 'int',
+                    'helper' => 'Bytes. Zero for no quota.',
+                    'rules' => ['nullable', 'integer', 'min:0'],
+                ],
+                [
+                    'key' => 'archive_url_mode',
+                    'label' => 'Segment URLs',
+                    'type' => 'select',
+                    'store' => 'stream',
+                    'config' => 'stream.archive_url_mode',
+                    'options' => [
+                        'signed' => 'Signed URLs',
+                        'proxy' => 'Proxy through this app',
+                    ],
+                    'rules' => ['required', 'string', 'in:signed,proxy'],
+                ],
+                [
+                    'key' => 'archive_url_ttl',
+                    'label' => 'Signed URL lifetime',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.archive_url_ttl',
+                    'cast' => 'int',
+                    'helper' => 'Seconds.',
+                    'rules' => ['nullable', 'integer', 'min:300', 'max:604800'],
+                ],
+                [
+                    'key' => 'archive_source_in_master',
+                    'label' => 'Advertise the source rendition',
+                    'type' => 'toggle',
+                    'store' => 'stream',
+                    'config' => 'stream.archive_source_in_master',
+                    'helper' => 'Adds the archived original to a recording\'s master playlist.',
+                    'rules' => ['boolean'],
+                ],
+            ],
+        ],
+
+        [
+            'key' => 'streaming',
+            'blurb' => 'Origin and edges',
+            'icon' => 'radio-tower',
+            'label' => 'Streaming',
+            'description' => 'What the generated provisioning scripts are built from, and the overrides for viewers on the venue\'s own network.',
+            'fields' => [
+                [
+                    'key' => 'image_ffmpeg_hls',
+                    'label' => 'Transcoder image',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.images.ffmpeg_hls',
+                    'helper' => 'Fully qualified, registry included.',
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+                [
+                    'key' => 'image_archive_uploader',
+                    'label' => 'Archive uploader image',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.images.archive_uploader',
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+                [
+                    'key' => 'srs_username',
+                    'label' => 'SRS console username',
+                    'type' => 'text',
+                    'config' => 'services.srs.username',
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+                [
+                    'key' => 'srs_password',
+                    'label' => 'SRS console password',
+                    'type' => 'password',
+                    'config' => 'services.srs.password',
+                    'secure' => true,
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+                [
+                    'key' => 'rtmp_forward_url',
+                    'label' => 'RTMP forward target',
+                    'type' => 'text',
+                    'config' => 'services.forward.url',
+                    'rules' => ['nullable', 'string', 'max:2048'],
+                ],
+                [
+                    'key' => 'rtmp_forward_vrchat_url',
+                    'label' => 'Second RTMP forward target',
+                    'type' => 'text',
+                    'config' => 'services.forward.vrchaturl',
+                    'rules' => ['nullable', 'string', 'max:2048'],
+                ],
+                [
+                    'key' => 'origin_ip',
+                    'label' => 'Origin IP',
+                    'type' => 'text',
+                    'config' => 'services.stream.origin_ip',
+                    'helper' => 'Address SRS callbacks are accepted from. Empty accepts any known server.',
+                    'rules' => ['nullable', 'ip'],
+                ],
+                [
+                    'key' => 'server_metrics_retention_days',
+                    'label' => 'Keep server metrics for',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.server.metrics_retention_days',
+                    'cast' => 'int',
+                    'helper' => 'Days.',
+                    'rules' => ['nullable', 'integer', 'min:1', 'max:365'],
+                ],
+                [
+                    'key' => 'local_streaming_ipv4_subnet',
+                    'label' => 'Local IPv4 subnet',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.local_streaming_ipv4_subnet',
+                    'helper' => 'CIDR.',
+                    'rules' => ['nullable', 'string', 'max:64'],
+                ],
+                [
+                    'key' => 'local_streaming_ipv6_subnet',
+                    'label' => 'Local IPv6 subnet',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.local_streaming_ipv6_subnet',
+                    'helper' => 'CIDR.',
+                    'rules' => ['nullable', 'string', 'max:64'],
+                ],
+                [
+                    'key' => 'local_streaming_hostname',
+                    'label' => 'Local streaming hostname',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.local_streaming_hostname',
+                    'helper' => 'Where viewers inside those subnets are sent instead of an edge.',
+                    'rules' => ['nullable', 'string', 'max:255'],
+                ],
+            ],
+        ],
+
+        [
+            'key' => 'playback',
+            'blurb' => 'Tokens and keys',
+            'icon' => 'shield-check',
+            'label' => 'Playback security',
+            'description' => 'The secrets a viewer\'s access is signed with, and the keys this installation\'s own tools authenticate with.',
+            'fields' => [
+                [
+                    'key' => 'hls_viewer_secret',
+                    'label' => 'Viewer token secret',
+                    'type' => 'password',
+                    'store' => 'stream',
+                    'config' => 'stream.token.viewer_secret',
+                    'secure' => true,
+                    'full' => true,
+                    'rules' => ['nullable', 'string', 'min:32', 'max:255'],
+                ],
+                [
+                    'key' => 'hls_embed_secret',
+                    'label' => 'Embed token secret',
+                    'type' => 'password',
+                    'store' => 'stream',
+                    'config' => 'stream.token.embed_secret',
+                    'secure' => true,
+                    'full' => true,
+                    'rules' => ['nullable', 'string', 'min:32', 'max:255'],
+                ],
+                [
+                    'key' => 'hls_token_ttl',
+                    'label' => 'Viewer token lifetime',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.token.ttl',
+                    'cast' => 'int',
+                    'helper' => 'Seconds.',
+                    'rules' => ['nullable', 'integer', 'min:60', 'max:86400'],
+                ],
+                [
+                    'key' => 'hls_token_leeway',
+                    'label' => 'Expiry leeway',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.token.leeway',
+                    'cast' => 'int',
+                    'helper' => 'Seconds a token is still accepted past expiry.',
+                    'rules' => ['nullable', 'integer', 'min:0', 'max:600'],
+                ],
+                [
+                    'key' => 'hls_token_bucket',
+                    'label' => 'Segment token reuse window',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.token.bucket',
+                    'cast' => 'int',
+                    'helper' => 'Seconds.',
+                    'rules' => ['nullable', 'integer', 'min:1', 'max:600'],
+                ],
+                [
+                    'key' => 'hls_token_refresh_margin',
+                    'label' => 'Token refresh margin',
+                    'type' => 'text',
+                    'store' => 'stream',
+                    'config' => 'stream.token.refresh_margin',
+                    'cast' => 'int',
+                    'helper' => 'Seconds before expiry.',
+                    'rules' => ['nullable', 'integer', 'min:30', 'max:3600'],
+                ],
+                [
+                    'key' => 'system_streamkey',
+                    'label' => 'System streamkey',
+                    'type' => 'secret',
+                    'store' => 'stream',
+                    'config' => 'stream.system_streamkey',
+                    'secure' => true,
+                    'full' => true,
+                    'helper' => 'What the thumbnailer, the archive uploader and the operator preview authenticate with.',
+                    'rules' => ['nullable', 'string', 'min:16', 'max:255'],
+                ],
+                [
+                    'key' => 'recording_api_key',
+                    'label' => 'Recording API key',
+                    'type' => 'secret',
+                    'store' => 'app',
+                    'config' => 'app.recording_api_key',
+                    'secure' => true,
+                    'full' => true,
+                    'helper' => 'Sent by the recording API as X-Recording-Api-Key. Generating a new one rotates it.',
+                    'rules' => ['nullable', 'string', 'min:16', 'max:255'],
+                    'empty_note' => 'Nothing set: the recording API answers every request with 401.',
+                    'dirty_note' => 'Not in effect until you save, and every caller has to be given the new key.',
+                ],
+            ],
+        ],
+
+        [
             'key' => 'telegram',
             'blurb' => 'Bot and chats',
             'icon' => 'send',
@@ -467,6 +857,7 @@ return [
                     'label' => 'Bot token',
                     'type' => 'password',
                     'store' => 'telegram',
+                    'config' => 'telegram.bot_token',
                     'full' => true,
                     'helper' => 'From @BotFather, of the form 123456:ABC-DEF. Saving one registers the webhook; clearing it takes the bot off the air and leaves the linked chats alone.',
                     'rules' => ['nullable', 'string', 'max:255'],
@@ -476,7 +867,9 @@ return [
                     'label' => 'Announce shows this early',
                     'type' => 'text',
                     'store' => 'telegram',
-                    'helper' => 'Minutes before a scheduled start. The message carries the Start button, so this is also how early a show can be started from a chat.',
+                    'config' => 'telegram.show_lead_minutes',
+                    'cast' => 'int',
+                    'helper' => 'Minutes before a scheduled start.',
                     'rules' => ['nullable', 'integer', 'min:1', 'max:120'],
                 ],
             ],

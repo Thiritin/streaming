@@ -37,7 +37,7 @@ class ThumbnailService
         }
 
         // Add system streamkey for authentication
-        $systemStreamkey = config('stream.system_streamkey') ?: env('STREAM_KEY');
+        $systemStreamkey = config('stream.system_streamkey');
         if ($systemStreamkey) {
             $separator = str_contains($streamUrl, '?') ? '&' : '?';
             $streamUrl .= $separator.'streamkey='.$systemStreamkey;

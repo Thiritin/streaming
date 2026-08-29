@@ -161,8 +161,11 @@ return [
     // which is the path for pulling a master for editing.
     'archive_source_in_master' => (bool) env('ARCHIVE_SOURCE_IN_MASTER', false),
 
-    // System streamkey for internal operations (thumbnails, monitoring, etc.)
-    'system_streamkey' => env('STREAM_SYSTEM_STREAMKEY', ''),
+    // System streamkey for internal operations (thumbnails, monitoring, etc.). Edited at
+    // /manage > Settings > Playback security; the env vars are the shipped fallback.
+    // STREAM_KEY is the older name for the same key and is read here so an existing
+    // deployment keeps working, rather than in a second config entry of its own.
+    'system_streamkey' => env('STREAM_SYSTEM_STREAMKEY') ?: env('STREAM_KEY', ''),
 
     // Playback tokens. Short-lived HMAC-signed capabilities that replace the
     // permanent per-user streamkey, verified locally on the edges so PHP stays

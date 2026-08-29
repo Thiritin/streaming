@@ -4,9 +4,12 @@ namespace Tests\Feature\Manage;
 
 use App\Models\BrandingSetting;
 use App\Services\BrandingService;
+use App\Services\ChatMessageSanitizer;
 use App\Support\ControlKey;
 use App\Support\Manage\Settings;
+use App\Support\RuntimeConfig;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -291,6 +294,18 @@ class SettingsTest extends TestCase
 
     public function test_resetting_drops_every_saved_value(): void
     {
+        /*
+         * Reset is refused when it would leave no administrator a way in, so the
+         * installation has to be one that still has one afterwards: the identity
+         * provider configured in the environment rather than in the pane, which is
+         * what the reset cannot take away. See App\Support\AuthModes::resetLockout().
+         */
+        config([
+            'services.oidc.url' => 'https://identity.example.org',
+            'services.oidc.client_id' => 'streaming',
+            'services.oidc.secret' => 'a-client-secret',
+        ]);
+
         BrandingSetting::setValue('site_name', 'Something else');
 
         $this->actingAs($this->admin)
@@ -479,6 +494,179 @@ class SettingsTest extends TestCase
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'show_source_link']);
         $this->assertTrue(app(BrandingService::class)->showSourceLink());
+    }
+
+    /**
+     * A password is write-only, so nothing the page receives may carry the stored value.
+     */
+    private function assertSecretIsNotOnThePage(string $group, string $key, string $value): void
+    {
+        BrandingSetting::setValue($key, $value, null, true);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings.group', $group))
+            ->assertSuccessful()
+            ->assertDontSee($value)
+            ->assertInertia(function (Assert $page) use ($key) {
+                $field = $this->field($page, $key);
+
+                $this->assertSame(Settings::MASK_SECRET, $field['value']);
+                $this->assertTrue($field['hasValue']);
+            });
+
+        // And it is not sitting in the table in the clear either.
+        $stored = DB::table('branding_settings')->where('key', $key)->first();
+
+        $this->assertTrue((bool) $stored->encrypted);
+        $this->assertStringNotContainsString($value, $stored->value);
+    }
+
+    public function test_a_saved_chat_limit_reaches_its_config_path_as_an_integer(): void
+    {
+        $this->save('chat', [
+            'chat_max_tries' => '12',
+            'chat_rate_decay' => '45',
+            'chat_slow_mode_seconds' => '5',
+            'chat_max_message_length' => '240',
+        ]);
+
+        RuntimeConfig::apply();
+
+        $this->assertSame(12, config('chat.default.maxTries'));
+        $this->assertSame(45, config('chat.default.rateDecay'));
+        $this->assertSame(5, config('chat.default.slowModeSeconds'));
+        $this->assertSame(240, config('chat.default.maxMessageLength'));
+    }
+
+    public function test_allowed_domains_are_written_one_per_line_and_read_as_a_list(): void
+    {
+        $this->save('chat', ['chat_allowed_domains' => "example.org\nexample.test\n"]);
+
+        RuntimeConfig::apply();
+
+        $this->assertSame(
+            ['example.org', 'example.test'],
+            app(ChatMessageSanitizer::class)->getAllowedDomains(),
+        );
+    }
+
+    public function test_a_chat_limit_outside_its_range_is_rejected(): void
+    {
+        $this->save('chat', ['chat_max_message_length' => '0'])
+            ->assertSessionHasErrors('values.chat_max_message_length');
+    }
+
+    public function test_a_saved_archive_setting_reaches_the_disk_and_the_stream_config(): void
+    {
+        $this->save('storage', [
+            'archive_s3_bucket' => 'recordings-2026',
+            'archive_s3_region' => 'eu-central-1',
+            'archive_disk' => 'dvr',
+            'archive_url_ttl' => '3600',
+            'archive_source_in_master' => true,
+        ]);
+
+        RuntimeConfig::apply();
+
+        $this->assertSame('recordings-2026', config('filesystems.disks.dvr.bucket'));
+        $this->assertSame('eu-central-1', config('filesystems.disks.dvr.region'));
+        // The surrounding disk is merged into, not replaced.
+        $this->assertSame('s3', config('filesystems.disks.dvr.driver'));
+        $this->assertSame('dvr', config('stream.archive_disk'));
+        $this->assertSame(3600, config('stream.archive_url_ttl'));
+        $this->assertTrue(config('stream.archive_source_in_master'));
+    }
+
+    public function test_the_archive_credentials_are_never_sent_to_the_browser(): void
+    {
+        $this->assertSecretIsNotOnThePage('storage', 'archive_s3_secret', 'dvr-secret-access-key');
+    }
+
+    public function test_a_saved_streaming_setting_reaches_its_config_path(): void
+    {
+        $this->save('streaming', [
+            'image_ffmpeg_hls' => 'ghcr.io/example/ffmpeg-hls:v2',
+            'origin_ip' => '198.51.100.7',
+            'server_metrics_retention_days' => '14',
+            'local_streaming_hostname' => 'stream.venue.test',
+        ]);
+
+        RuntimeConfig::apply();
+
+        $this->assertSame('ghcr.io/example/ffmpeg-hls:v2', config('stream.images.ffmpeg_hls'));
+        $this->assertSame('198.51.100.7', config('services.stream.origin_ip'));
+        $this->assertSame(14, config('stream.server.metrics_retention_days'));
+        $this->assertSame('stream.venue.test', config('stream.local_streaming_hostname'));
+    }
+
+    public function test_the_origin_ip_has_to_be_an_address(): void
+    {
+        $this->save('streaming', ['origin_ip' => 'the-origin'])
+            ->assertSessionHasErrors('values.origin_ip');
+    }
+
+    public function test_the_srs_console_password_is_never_sent_to_the_browser(): void
+    {
+        $this->assertSecretIsNotOnThePage('streaming', 'srs_password', 'srs-console-password');
+    }
+
+    public function test_a_saved_playback_setting_reaches_its_config_path(): void
+    {
+        $this->save('playback', [
+            'hls_token_ttl' => '600',
+            'hls_token_leeway' => '30',
+            'system_streamkey' => 'a-system-streamkey-value',
+        ]);
+
+        RuntimeConfig::apply();
+
+        $this->assertSame(600, config('stream.token.ttl'));
+        $this->assertSame(30, config('stream.token.leeway'));
+        $this->assertSame('a-system-streamkey-value', config('stream.system_streamkey'));
+    }
+
+    /**
+     * A secret is readable on the page by design - this installation hands it out - but
+     * it still has to be encrypted at rest, and the recording API has to accept it.
+     */
+    public function test_the_recording_api_key_is_stored_encrypted_and_reaches_the_api(): void
+    {
+        $this->save('playback', ['recording_api_key' => 'a-recording-api-key']);
+
+        $stored = DB::table('branding_settings')->where('key', 'recording_api_key')->first();
+
+        $this->assertTrue((bool) $stored->encrypted);
+        $this->assertStringNotContainsString('a-recording-api-key', $stored->value);
+
+        RuntimeConfig::apply();
+
+        $this->assertSame('a-recording-api-key', config('app.recording_api_key'));
+    }
+
+    public function test_the_token_secrets_are_never_sent_to_the_browser(): void
+    {
+        // Provisioning puts these on the edges; nobody copies them off the page, so the
+        // page never receives them.
+        $this->assertSecretIsNotOnThePage('playback', 'hls_viewer_secret', str_repeat('v', 64));
+        $this->assertSecretIsNotOnThePage('playback', 'hls_embed_secret', str_repeat('e', 64));
+    }
+
+    public function test_a_short_playback_secret_is_rejected(): void
+    {
+        $this->save('playback', ['hls_viewer_secret' => 'too-short'])
+            ->assertSessionHasErrors('values.hls_viewer_secret');
+
+        $this->assertDatabaseMissing('branding_settings', ['key' => 'hls_viewer_secret']);
+    }
+
+    public function test_every_new_pane_renders(): void
+    {
+        foreach (['chat', 'storage', 'streaming', 'playback'] as $group) {
+            $this->actingAs($this->admin)
+                ->get(route('manage.settings.group', $group))
+                ->assertSuccessful()
+                ->assertInertia(fn (Assert $page) => $page->where('group.key', $group));
+        }
     }
 
     public function test_only_administrators_can_read_or_change_the_settings(): void

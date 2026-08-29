@@ -20,7 +20,7 @@ class StreamController extends Controller
         if (! isset($result['streamkey'])) {
             return new Response(null, 419);
         }
-        if ($result['streamkey'] === config('app.stream_key')) {
+        if ($result['streamkey'] === config('stream.system_streamkey')) {
             if ($cacheStatus === StreamStatusEnum::TECHNICAL_ISSUE) {
                 event(new StreamStatusEvent(StreamStatusEnum::ONLINE));
             }
@@ -39,7 +39,7 @@ class StreamController extends Controller
         if (! isset($result['streamkey'])) {
             return new Response(null, 419);
         }
-        if ($result['streamkey'] === config('app.stream_key')) {
+        if ($result['streamkey'] === config('stream.system_streamkey')) {
             if ($cacheStatus === StreamStatusEnum::ONLINE) {
                 event(new StreamStatusEvent(StreamStatusEnum::TECHNICAL_ISSUE));
             }

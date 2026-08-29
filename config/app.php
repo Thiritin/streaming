@@ -194,6 +194,14 @@ return [
         // 'Example' => App\Facades\Example::class,
     ])->toArray(),
 
-    'stream_key' => env('STREAM_KEY'),
+    /*
+     | The key the recording API accepts, sent as X-Recording-Api-Key. Edited at
+     | /manage > Settings > Playback security; the env var is the shipped fallback for a
+     | deployment that set one before the panel existed.
+     |
+     | The system streamkey used to have a second name here, 'stream_key'. It is
+     | config('stream.system_streamkey') and nothing else now, so the two cannot disagree.
+     */
+    'recording_api_key' => env('RECORDING_API_KEY'),
 
 ];

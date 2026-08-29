@@ -18,8 +18,9 @@ class CheckRecordingApiKeyMiddleware
         // Check for API key in header first, then fall back to request parameter
         $apiKey = $request->header('X-Recording-Api-Key') ?: $request->get('api_key');
 
-        // Get the expected API key from environment
-        $expectedApiKey = config('app.recording_api_key', env('RECORDING_API_KEY'));
+        // Set at /manage > Settings > Playback security, so it is read at call time
+        // rather than off the environment.
+        $expectedApiKey = config('app.recording_api_key');
 
         // Check if API key matches
         if (empty($expectedApiKey) || $apiKey !== $expectedApiKey) {

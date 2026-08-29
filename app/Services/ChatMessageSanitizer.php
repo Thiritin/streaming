@@ -91,10 +91,22 @@ class ChatMessageSanitizer
     }
 
     /**
+     * Domains whose links survive sanitising.
+     *
+     * Written one per line in the settings pane and held as one string, so it is split
+     * here. A list is still accepted, which is how config/chat.php was read before and
+     * how a test sets it.
+     *
      * @return array<int, string>
      */
     public function getAllowedDomains(): array
     {
-        return config('chat.allowed_domains', []);
+        $domains = config('chat.allowed_domains', []);
+
+        if (! is_array($domains)) {
+            $domains = preg_split('/[\s,]+/', (string) $domains) ?: [];
+        }
+
+        return array_values(array_filter(array_map('trim', $domains)));
     }
 }

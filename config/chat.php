@@ -23,14 +23,16 @@ return [
     ],
 
     /*
-     * Links to these domains stay clickable in chat, everything else is
-     * stripped. Comma separated in CHAT_ALLOWED_DOMAINS; empty by default, so a
-     * fresh install strips every link until an operator opts domains in.
+     * Links to these domains stay clickable in chat, everything else is stripped.
+     * Empty by default, so a fresh install strips every link until an operator opts
+     * domains in.
+     *
+     * Held as written rather than as a list: /manage > Settings > Chat edits it as one
+     * per line and the settings table holds strings, so splitting is the reader's job.
+     * App\Services\ChatMessageSanitizer::getAllowedDomains does it, and still accepts a
+     * list for anything that sets this in config directly.
      */
-    'allowed_domains' => array_values(array_filter(array_map(
-        'trim',
-        explode(',', (string) env('CHAT_ALLOWED_DOMAINS', ''))
-    ))),
+    'allowed_domains' => (string) env('CHAT_ALLOWED_DOMAINS', ''),
 
     /*
      * How many messages the client keeps in memory / the backlog endpoints return.
