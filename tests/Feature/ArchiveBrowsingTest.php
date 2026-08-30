@@ -48,7 +48,7 @@ class ArchiveBrowsingTest extends TestCase
         ], $overrides));
     }
 
-    public function test_the_unfiltered_archive_is_one_grid_of_everything(): void
+    public function test_the_unfiltered_archive_is_a_shelf_per_category(): void
     {
         $this->recording(['title' => 'Opening ceremony', 'views' => 500]);
         $this->recording(['title' => 'Closing ceremony', 'date' => now()->subYears(2)]);
@@ -58,9 +58,64 @@ class ArchiveBrowsingTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('Archive/Index')
                 ->where('totalRecordings', 2)
-                ->has('recordings', 2)
+                // Nothing is categorised, so there is one rail and it is the
+                // uncategorised one. The grid is off.
+                ->has('shelves', 1)
+                ->where('shelves.0.key', 'uncategorised')
+                ->where('shelves.0.href', null)
+                ->has('shelves.0.recordings', 2)
+                ->where('recordings', [])
                 ->has('chips.collections', 2)
                 ->where('continueWatching', [])
+            );
+    }
+
+    public function test_the_shelves_are_ordered_by_mean_views_and_uncategorised_sinks(): void
+    {
+        $theatre = Category::create(['name' => 'Theater', 'slug' => 'theater']);
+        $panels = Category::create(['name' => 'Panels', 'slug' => 'panels']);
+
+        // Panels win on the total and lose on the mean, which is the whole point:
+        // ten quiet panels are not worth more than two packed theatre nights.
+        $this->recording(['title' => 'Theatre one', 'category_id' => $theatre->id, 'views' => 900]);
+        $this->recording(['title' => 'Theatre two', 'category_id' => $theatre->id, 'views' => 700]);
+
+        foreach (range(1, 10) as $index) {
+            $this->recording(['title' => "Panel {$index}", 'category_id' => $panels->id, 'views' => 100]);
+        }
+
+        $this->recording(['title' => 'Filed nowhere', 'views' => 5000]);
+
+        $this->get(route('recordings.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('shelves', 3)
+                ->where('shelves.0.title', 'Theater')
+                ->where('shelves.1.title', 'Panels')
+                // However well watched, it never outranks a real category.
+                ->where('shelves.2.key', 'uncategorised')
+                // The rail is capped; See all is what the rest is behind.
+                ->where('shelves.1.count', 10)
+                ->has('shelves.1.recordings', 8)
+                ->where('shelves.0.href', route('recordings.index', ['category' => 'theater']))
+            );
+    }
+
+    public function test_a_category_shelf_carries_its_shows_recordings_too(): void
+    {
+        $dance = Category::create(['name' => 'Dance', 'slug' => 'dance']);
+        $show = Show::factory()->create(['category_id' => $dance->id]);
+
+        // No category of its own: it has one through its show, which is the usual
+        // case and the one a shelf built off `category_id` alone would miss.
+        $this->recording(['title' => 'Dance comp', 'show_id' => $show->id]);
+
+        $this->get(route('recordings.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('shelves', 1)
+                ->where('shelves.0.title', 'Dance')
+                ->where('shelves.0.recordings.0.title', 'Dance comp')
             );
     }
 
@@ -258,23 +313,29 @@ class ArchiveBrowsingTest extends TestCase
     {
         // The older cut has had a year longer to collect views, so views-first put it
         // above the one somebody typing the name is actually looking for.
+        // Derived from one anchor so the two runs are a year apart whatever day the
+        // suite runs on. Read separately, subDay and subYear name the same year every
+        // 1 January and the assertion stops telling the two cuts apart.
+        $newer = now()->subDay();
+        $older = $newer->copy()->subYear();
+
         $this->recording([
             'title' => 'Paw Pet Show',
             'slug' => 'paw-pet-show-2025',
-            'date' => now()->subYear(),
+            'date' => $older,
             'views' => 900,
         ]);
         $this->recording([
             'title' => 'Paw Pet Show',
             'slug' => 'paw-pet-show-2026',
-            'date' => now()->subDay(),
+            'date' => $newer,
             'views' => 12,
         ]);
 
         $response = $this->getJson(route('recordings.suggest', ['q' => 'paw pet']))->assertOk();
 
         $this->assertSame(
-            [now()->subDay()->year, now()->subYear()->year],
+            [$newer->year, $older->year],
             array_column($response->json('suggestions'), 'year'),
         );
     }

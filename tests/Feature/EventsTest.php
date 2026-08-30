@@ -58,14 +58,16 @@ class EventsTest extends TestCase
 
     public function test_the_window_runs_to_the_end_of_the_closing_day(): void
     {
+        $closingDay = today();
+
         $event = $this->event([
-            'starts_on' => now()->subDays(3)->toDateString(),
-            'ends_on' => now()->toDateString(),
+            'starts_on' => $closingDay->copy()->subDays(3)->toDateString(),
+            'ends_on' => $closingDay->toDateString(),
         ]);
 
         // Not over on the closing morning, which is the off-by-one this exists to stop.
-        $this->assertTrue($event->covers(now()->startOfDay()));
-        $this->assertTrue($event->covers(now()->endOfDay()));
+        $this->assertTrue($event->covers($closingDay->copy()->startOfDay()));
+        $this->assertTrue($event->covers($closingDay->copy()->endOfDay()));
         $this->assertFalse($event->hasEnded());
         $this->assertTrue(Event::isLive());
     }

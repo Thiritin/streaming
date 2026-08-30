@@ -269,13 +269,17 @@ class CheckAutoModeShowsTest extends TestCase
             'status' => SourceStatusEnum::ONLINE,
         ]);
 
+        // Read once: the value written and the value asserted have to be the same
+        // instant, not two readings of the clock with a command run between them.
+        $startedAt = now()->subHour();
+
         $liveShow = Show::factory()->create([
             'source_id' => $source->id,
             'auto_mode' => true,
             'status' => 'live', // Already live
             'scheduled_start' => now()->subHour(),
             'scheduled_end' => now()->addHour(),
-            'actual_start' => now()->subHour(),
+            'actual_start' => $startedAt,
         ]);
 
         // Act: Run the command
@@ -284,7 +288,7 @@ class CheckAutoModeShowsTest extends TestCase
         // Assert: Show remains unchanged
         $liveShow->refresh();
         $this->assertEquals('live', $liveShow->status);
-        $this->assertEquals(now()->subHour()->format('Y-m-d H:i'), $liveShow->actual_start->format('Y-m-d H:i'));
+        $this->assertEquals($startedAt->format('Y-m-d H:i'), $liveShow->actual_start->format('Y-m-d H:i'));
     }
 
     /**

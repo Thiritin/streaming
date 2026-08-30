@@ -26,10 +26,6 @@ class ShowPlannerTest extends TestCase
     {
         parent::setUp();
 
-        // The planner draws one day, so blocks placed hours from now fall off it
-        // entirely when the run happens late enough to push them over midnight.
-        $this->travelTo(today()->addHours(10));
-
         $this->createManageUsers();
 
         $this->main = Source::factory()->create(['name' => 'Main Stage', 'priority' => 100]);
