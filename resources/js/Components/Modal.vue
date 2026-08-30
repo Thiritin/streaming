@@ -1,6 +1,6 @@
 <script setup>
 import { computed, watch } from 'vue';
-import { Dialog, DialogContent, DialogOverlay } from '@/Components/ui/dialog';
+import { Dialog, DialogContent } from '@/Components/ui/dialog';
 
 const props = defineProps({
     show: {
@@ -41,7 +41,10 @@ const maxWidthClass = computed(() => {
 
 <template>
     <Dialog v-model:open="isOpen">
-        <DialogContent :class="maxWidthClass" :closeable="closeable">
+        <DialogContent
+            :class="[maxWidthClass, 'border-primary-800 bg-primary-950 text-primary-100']"
+            :closeable="closeable"
+        >
             <slot />
         </DialogContent>
     </Dialog>
