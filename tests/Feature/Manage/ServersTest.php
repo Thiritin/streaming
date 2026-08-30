@@ -12,7 +12,8 @@ use App\Models\ServerMetric;
 use App\Models\Source;
 use App\Models\SourceUser;
 use App\Models\User;
-use App\Services\Hetzner;
+use App\Services\Cloud\CloudManager;
+use App\Services\Cloud\ServerProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
@@ -79,10 +80,11 @@ class ServersTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where(
                 'table.columns',
                 fn ($columns) => collect($columns)->pluck('key')->all() === [
-                    'hetzner_id',
+                    'external_id',
+                    'provider',
                     'type',
-                    // Not a Filament column: the Hetzner instance size, which is now
-                    // chosen per server when provisioning rather than hardcoded.
+                    // Not a Filament column: the instance size, which is now chosen per
+                    // server when provisioning rather than hardcoded.
                     'server_type',
                     'hostname',
                     'ip',
@@ -145,10 +147,14 @@ class ServersTest extends TestCase
             ));
     }
 
-    public function test_search_matches_hostname_and_hetzner_id(): void
+    public function test_search_matches_hostname_and_provider_id(): void
     {
         Server::factory()->create(['hostname' => 'edge-berlin.test']);
-        Server::factory()->cloud()->create(['hostname' => 'edge-falkenstein.test', 'hetzner_id' => '4242424']);
+        Server::factory()->cloud()->create([
+            'hostname' => 'edge-falkenstein.test',
+            'external_id' => '4242424',
+            'hetzner_id' => '4242424',
+        ]);
 
         $this->actingAs($this->admin)
             ->get(route('manage.servers.index', ['search' => 'berlin']))
@@ -261,7 +267,7 @@ class ServersTest extends TestCase
 
         $this->assertSame(ServerTypeEnum::EDGE, $server->type);
         $this->assertSame(250, $server->max_clients);
-        $this->assertNull($server->hetzner_id);
+        $this->assertNull($server->external_id);
         $this->assertSame('Server created', $this->toast()['title']);
     }
 
@@ -292,11 +298,11 @@ class ServersTest extends TestCase
         $this->assertSame(0, Server::count());
     }
 
-    public function test_updating_a_server_cannot_change_its_type_secret_or_hetzner_id(): void
+    public function test_updating_a_server_cannot_change_its_type_secret_or_provider_id(): void
     {
         $server = Server::factory()->cloud()->credential('the-known-secret')->create([
             'type' => ServerTypeEnum::EDGE,
-            'hetzner_id' => '111111',
+            'external_id' => '111111',
         ]);
 
         $this->actingAs($this->admin)
@@ -310,7 +316,7 @@ class ServersTest extends TestCase
                 // All three should be ignored rather than applied.
                 'type' => ServerTypeEnum::ORIGIN->value,
                 'shared_secret' => 'hijacked',
-                'hetzner_id' => '999999',
+                'external_id' => '999999',
             ])
             ->assertRedirect(route('manage.servers.edit', $server));
 
@@ -321,7 +327,7 @@ class ServersTest extends TestCase
         $this->assertSame(10, $server->max_clients);
         $this->assertSame(ServerTypeEnum::EDGE, $server->type);
         $this->assertTrue($server->verifySharedSecret('the-known-secret'));
-        $this->assertSame('111111', $server->hetzner_id);
+        $this->assertSame('111111', $server->external_id);
     }
 
     public function test_a_moderator_cannot_create_or_update_a_server(): void
@@ -852,7 +858,7 @@ class ServersTest extends TestCase
             ]]),
         ]);
 
-        $types = Hetzner::availableServerTypes();
+        $types = $this->hetznerDriver()->sizes();
 
         $this->assertArrayHasKey('cx23', $types);
         $this->assertArrayHasKey('ccx33', $types);
@@ -877,7 +883,7 @@ class ServersTest extends TestCase
 
         // A stale list beats an empty dropdown when someone is provisioning under
         // pressure.
-        $this->assertSame(config('stream.server.types'), Hetzner::availableServerTypes());
+        $this->assertSame(config('stream.server.types'), $this->hetznerDriver()->sizes());
     }
 
     public function test_no_token_means_no_api_call(): void
@@ -886,8 +892,16 @@ class ServersTest extends TestCase
         Cache::forget('hetzner.server_types');
         Http::fake();
 
-        $this->assertSame(config('stream.server.types'), Hetzner::availableServerTypes());
+        $this->assertSame(config('stream.server.types'), $this->hetznerDriver()->sizes());
 
         Http::assertNothingSent();
+    }
+
+    /**
+     * The catalogue moved onto the driver with the rest of the provider's vocabulary.
+     */
+    private function hetznerDriver(): ServerProvider
+    {
+        return app(CloudManager::class)->driver('hetzner');
     }
 }

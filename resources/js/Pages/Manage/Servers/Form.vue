@@ -90,16 +90,16 @@ const submit = () => {
           />
           <FormField
             v-if="!isEdit"
-            v-model="form.hetzner_id"
-            label="Hetzner ID"
+            v-model="form.external_id"
+            label="Provider ID"
             mono
-            :error="form.errors.hetzner_id"
+            :error="form.errors.external_id"
             helper="Leave empty for a manually managed server. Cloud servers fill this in themselves."
           />
           <FormField
             v-else
-            label="Hetzner ID"
-            :model-value="server.hetzner_id"
+            label="Provider ID"
+            :model-value="server.external_id"
             readonly
             mono
             helper="Fixed after creation"

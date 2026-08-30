@@ -3,9 +3,11 @@
 use App\Http\Controllers\Manage\ArchiveStorageTestController;
 use App\Http\Controllers\Manage\AuthProviderController;
 use App\Http\Controllers\Manage\CategoryController;
+use App\Http\Controllers\Manage\CloudConnectionTestController;
 use App\Http\Controllers\Manage\CommentController;
 use App\Http\Controllers\Manage\DashboardController;
 use App\Http\Controllers\Manage\DisplayScreenController;
+use App\Http\Controllers\Manage\DnsConnectionTestController;
 use App\Http\Controllers\Manage\EmbedKeyController;
 use App\Http\Controllers\Manage\EmoteController;
 use App\Http\Controllers\Manage\EventController;
@@ -338,6 +340,14 @@ Route::post('settings/pretalx/test', PretalxConnectionController::class)->name('
 Route::post('settings/storage/test', ArchiveStorageTestController::class)
     ->middleware('throttle:10,1')
     ->name('settings.storage.test');
+// Both reach a third party on request, and both are pressed before a driver switch
+// rather than after, which is the point of them.
+Route::post('settings/dns/test', DnsConnectionTestController::class)
+    ->middleware('throttle:10,1')
+    ->name('settings.dns.test');
+Route::post('settings/cloud/test', CloudConnectionTestController::class)
+    ->middleware('throttle:10,1')
+    ->name('settings.cloud.test');
 Route::get('settings', [SettingsController::class, 'edit'])->name('settings');
 // One pane per registry group; the bare /manage/settings above is the first of them.
 Route::get('settings/{group}', [SettingsController::class, 'edit'])->name('settings.group');

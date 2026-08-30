@@ -10,7 +10,7 @@ use Illuminate\Validation\Rule;
 /**
  * Validation for creating and updating a manually managed server.
  *
- * `hetzner_id` and `type` are immutable after creation, exactly as the Filament form
+ * `external_id` and `type` are immutable after creation, exactly as the Filament form
  * disabled them on edit. They are dropped from the payload rather than rejected, so a
  * stale form cannot fail a save it was never allowed to change.
  *
@@ -41,7 +41,7 @@ class ServerRequest extends FormRequest
         ];
 
         if ($this->isCreating()) {
-            $rules['hetzner_id'] = ['nullable', 'string', 'max:255'];
+            $rules['external_id'] = ['nullable', 'string', 'max:255'];
             $rules['type'] = ['required', Rule::enum(ServerTypeEnum::class)];
         }
 
@@ -54,7 +54,7 @@ class ServerRequest extends FormRequest
     public function attributes(): array
     {
         return [
-            'hetzner_id' => 'Hetzner ID',
+            'external_id' => 'provider ID',
             'ip' => 'IP address',
             'max_clients' => 'max clients',
         ];

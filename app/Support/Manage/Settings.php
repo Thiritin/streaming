@@ -413,12 +413,18 @@ final class Settings
             $visible['is'],
         );
 
-        return array_map(
+        $rules = array_map(
             fn (mixed $rule) => $rule === 'required'
                 ? 'required_if:values.'.$visible['field'].','.implode(',', $values)
                 : $rule,
             $rules,
         );
+
+        // Nullable with it, because the same field is empty whenever it is off screen and
+        // ConvertEmptyStringsToNull has already turned that into null. Without this the
+        // `string` beside the old `required` fails on every credential belonging to a
+        // driver nobody chose, which is the failure the rewrite exists to prevent.
+        return in_array('nullable', $rules, true) ? $rules : ['nullable', ...$rules];
     }
 
     /**
@@ -454,6 +460,14 @@ final class Settings
     {
         foreach ($this->fields() as $field) {
             if (! array_key_exists($field['key'], $values)) {
+                continue;
+            }
+
+            // A field the pane did not show is not a field anybody cleared. A blank one
+            // otherwise deletes its stored row, so switching a driver and saving wiped
+            // every credential belonging to the driver being switched away from - the
+            // same reasoning fieldRules() already applies to `required`.
+            if (! self::isVisibleIn($field, $values)) {
                 continue;
             }
 
@@ -505,6 +519,71 @@ final class Settings
                 self::isSecure($field),
             );
         }
+    }
+
+    /**
+     * Whether this field is on screen for the values being saved.
+     *
+     * The posted value of the controlling field wins, because switching a driver and
+     * filling in its credentials is one save and the answer has to follow the request.
+     * A payload that leaves the controlling field out falls back to what is stored
+     * rather than assuming visible: assuming would let a hand-crafted partial PUT clear
+     * a hidden field's row, and "every controlling field carries `required`, so group
+     * validation rejects that payload first" is an invariant nothing states and nothing
+     * enforces.
+     *
+     * @param  array<string, mixed>  $field
+     * @param  array<string, mixed>  $values
+     */
+    private static function isVisibleIn(array $field, array $values): bool
+    {
+        $visible = self::visibleWhen($field);
+
+        if ($visible === null) {
+            return true;
+        }
+
+        $current = array_key_exists($visible['field'], $values)
+            ? $values[$visible['field']]
+            : self::storedValueOf($visible['field']);
+
+        foreach ($visible['is'] as $expected) {
+            if (is_bool($expected) ? self::toBool($current) === $expected : (string) $current === (string) $expected) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * What a field holds right now, in the same terms the page would post it.
+     *
+     * Only for resolving a `visible_when` whose controlling field was not sent. An
+     * inverted toggle is flipped back, because the page posts what it showed and this
+     * reads what was stored.
+     */
+    private static function storedValueOf(string $key): mixed
+    {
+        foreach (config('settings.groups', []) as $group) {
+            foreach (self::declaredFields($group) as $field) {
+                if ($field['key'] !== $key) {
+                    continue;
+                }
+
+                $value = BrandingSetting::getValue($key, self::defaultOf($field));
+
+                if (($field['type'] ?? null) === 'toggle') {
+                    $value = self::toBool($value);
+
+                    return self::isInverted($field) ? ! $value : $value;
+                }
+
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**

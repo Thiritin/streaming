@@ -8,7 +8,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Manage\ServerRequest;
 use App\Models\Server;
 use App\Models\SourceUser;
-use App\Services\Hetzner;
+use App\Services\Cloud\CloudManager;
+use App\Services\Cloud\ServerProvider;
 use App\Services\ServerMetricsService;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
@@ -47,7 +48,8 @@ class ServerController extends Controller
         $table = Table::make(Server::query())
             ->name('servers')
             ->columns([
-                Column::text('hetzner_id', 'Server ID')->searchable()->fallback('-'),
+                Column::text('external_id', 'Provider ID')->searchable()->fallback('-'),
+                Column::text('provider', 'Provider')->toggleable()->fallback('-'),
                 Column::badge('type', 'Type'),
                 Column::text('server_type', 'Size')->toggleable()->fallback('-'),
                 Column::copyable('hostname', 'Hostname')->searchable()->sortable(),
@@ -102,7 +104,7 @@ class ServerController extends Controller
                 'type' => ServerTypeEnum::EDGE->value,
                 'status' => ServerStatusEnum::ACTIVE->value,
                 'max_clients' => 100,
-                'hetzner_id' => '',
+                'external_id' => '',
             ],
         ]);
     }
@@ -152,7 +154,8 @@ class ServerController extends Controller
             'hostname' => $server->hostname ?: 'Unnamed server',
             'ip' => $server->ip,
             'port' => $server->port,
-            'hetzner_id' => $server->hetzner_id,
+            'external_id' => $server->externalId(),
+            'provider' => $server->provider,
             'server_type' => $server->server_type,
             'type' => Status::serverType($server->type),
             'status' => Status::server($server->status),
@@ -160,7 +163,7 @@ class ServerController extends Controller
             'health_check_message' => $server->health_check_message,
             'last_health_check' => $server->last_health_check?->diffForHumans(),
             'is_edge' => $isEdge,
-            'is_cloud' => $server->isHetznerServer(),
+            'is_cloud' => $server->isCloud(),
             'max_clients' => $server->max_clients,
             'viewer_count' => (int) $server->viewer_count,
             'heartbeat' => $this->heartbeatStatus($server),
@@ -179,7 +182,8 @@ class ServerController extends Controller
         return inertia('Manage/Servers/Form', [
             'server' => [
                 'id' => $server->id,
-                'hetzner_id' => $server->hetzner_id,
+                'external_id' => $server->externalId(),
+                'provider' => $server->provider,
                 'hostname' => $server->hostname,
                 'ip' => $server->ip,
                 'port' => $server->port,
@@ -192,7 +196,7 @@ class ServerController extends Controller
                 'health_check_message' => $server->health_check_message,
                 'created_at' => $server->created_at?->diffForHumans() ?? '-',
                 'updated_at' => $server->updated_at?->diffForHumans() ?? '-',
-                'is_cloud' => $server->isHetznerServer(),
+                'is_cloud' => $server->isCloud(),
                 'is_edge' => $server->type === ServerTypeEnum::EDGE,
                 'show_url' => route('manage.servers.show', $server),
             ],
@@ -243,7 +247,8 @@ class ServerController extends Controller
     }
 
     /**
-     * Only for manually managed servers; the policy blocks anything with a hetzner_id.
+     * Only for a server with nothing to tear down; the policy blocks anything a
+     * provider owns and anything holding a DNS record.
      * Server::delete() unassigns its users first.
      */
     public function destroy(Server $server): RedirectResponse
@@ -266,7 +271,7 @@ class ServerController extends Controller
 
         Toast::flashSuccess(
             'Deprovisioning started',
-            "'{$server->hostname}' is being torn down on Hetzner Cloud.",
+            "'{$server->hostname}' is being torn down.",
         );
 
         return back();
@@ -284,7 +289,7 @@ class ServerController extends Controller
 
         Toast::flashSuccess(
             'Teardown restarted',
-            "Deleting '{$server->hostname}' on Hetzner Cloud and removing its DNS record.",
+            "Deleting '{$server->hostname}' and removing its DNS record.",
         );
 
         return back();
@@ -301,7 +306,8 @@ class ServerController extends Controller
             : null;
 
         return [
-            'hetzner_id' => $server->hetzner_id,
+            'external_id' => $server->externalId(),
+            'provider' => $server->provider,
             'type' => Status::serverType($server->type),
             // Null for anything provisioned before the size was recorded; the fallback
             // renders '-' rather than implying a size nobody chose.
@@ -359,7 +365,7 @@ class ServerController extends Controller
 
     /**
      * Deprovision and Delete are mutually exclusive by design: a cloud server has to go
-     * through Hetzner teardown, a manual one is just a row.
+     * through provider teardown, a manual one is just a row.
      *
      * @return array<int, Action>
      */
@@ -384,7 +390,9 @@ class ServerController extends Controller
                 ->tone(Status::DANGER)
                 ->confirm(
                     'Deprovision server',
-                    'The Hetzner server and its DNS record are deleted. Viewers on it are moved away.',
+                    $server->isCloud()
+                        ? 'The machine and its DNS record are deleted. Viewers on it are moved away.'
+                        : 'The DNS record is deleted and viewers on it are moved away. The machine is left alone.',
                     'Deprovision',
                 );
         }
@@ -396,7 +404,7 @@ class ServerController extends Controller
                 ->confirm(
                     'Force teardown',
                     'This server is already being deprovisioned but has not finished. '
-                        .'Deletes the Hetzner server and its DNS record now, and ignores a DNS failure.',
+                        .'Deletes the machine and its DNS record now, and ignores a DNS failure.',
                     'Force teardown',
                 );
         }
@@ -429,46 +437,98 @@ class ServerController extends Controller
         }
 
         if ($user->can('provision', Server::class)) {
-            $actions[] = Action::post('provision', 'Provision Cloud Server', route('manage.servers.provision'))
-                ->icon('cloud')
-                ->tone(Status::INFO)
-                ->confirm(
-                    'Provision New Cloud Server',
-                    'Select the type of server to provision on Hetzner Cloud.',
-                    'Start Provisioning',
-                )
-                ->fields([
-                    [
-                        'key' => 'type',
-                        'label' => 'Role',
-                        'type' => 'select',
-                        'default' => ServerTypeEnum::EDGE->value,
-                        'required' => true,
-                        'helper' => 'Origin servers handle stream ingestion and transcoding. Edge servers cache and distribute content.',
-                        'options' => [
-                            ['value' => ServerTypeEnum::ORIGIN->value, 'label' => 'Origin Server'],
-                            ['value' => ServerTypeEnum::EDGE->value, 'label' => 'Edge Server'],
-                        ],
-                    ],
-                    [
-                        'key' => 'server_type',
-                        'label' => 'Instance Size',
-                        'type' => 'select',
-                        // Defaults to the edge size because the role above does, and the
-                        // two are chosen together. Picking Origin without changing this
-                        // is caught by the mismatch note in the helper rather than by
-                        // silently overriding the operator.
-                        'default' => config('stream.server.defaults.edge'),
-                        'required' => true,
-                        'helper' => 'Hetzner bills hourly, so this is the main cost lever: over a two week event the '
-                            .'gap between ccx33 and ccx43 is roughly EUR 70. Origins need dedicated (ccx) cores for the '
-                            .'x264 ladder - three encodes per live source. Edges are bandwidth-bound, so shared (cpx) is fine.',
-                        'options' => $this->serverTypeOptions(),
-                    ],
-                ]);
+            $provider = app(CloudManager::class)->driver();
+
+            $actions[] = $provider->supportsProvisioning()
+                ? $this->cloudProvisionAction($provider)
+                : $this->manualProvisionAction();
         }
 
         return $actions;
+    }
+
+    /**
+     * Provisioning through a provider that builds the machine: role and instance size.
+     */
+    private function cloudProvisionAction(ServerProvider $provider): Action
+    {
+        return Action::post('provision', 'Provision Cloud Server', route('manage.servers.provision'))
+            ->icon('cloud')
+            ->tone(Status::INFO)
+            ->confirm(
+                'Provision New Cloud Server',
+                'Select the type of server to provision.',
+                'Start Provisioning',
+            )
+            ->fields([
+                $this->roleField(),
+                [
+                    'key' => 'server_type',
+                    'label' => 'Instance Size',
+                    'type' => 'select',
+                    // Defaults to the edge size because the role above does, and the
+                    // two are chosen together. Picking Origin without changing this
+                    // is caught by the mismatch note in the helper rather than by
+                    // silently overriding the operator.
+                    'default' => config('stream.server.defaults.edge'),
+                    'required' => true,
+                    'helper' => 'Billed hourly, so this is the main cost lever: over a two week event the '
+                        .'gap between ccx33 and ccx43 is roughly EUR 70. Origins need dedicated (ccx) cores for the '
+                        .'x264 ladder - three encodes per live source. Edges are bandwidth-bound, so shared (cpx) is fine.',
+                    'options' => $this->serverTypeOptions($provider),
+                ],
+            ]);
+    }
+
+    /**
+     * Provisioning against a provider that builds nothing: the operator supplies the
+     * address, and a second action rather than a conditional field on the first, since
+     * the two ask different questions entirely.
+     */
+    private function manualProvisionAction(): Action
+    {
+        return Action::post('provision', 'Register Server', route('manage.servers.provision'))
+            ->icon('server')
+            ->tone(Status::INFO)
+            ->confirm(
+                'Register a Server',
+                'The DNS record is written and the install script is generated. Run it on the machine.',
+                'Register',
+            )
+            ->fields([
+                $this->roleField(),
+                [
+                    'key' => 'hostname',
+                    'label' => 'Hostname',
+                    'type' => 'text',
+                    'required' => true,
+                ],
+                [
+                    'key' => 'ip',
+                    'label' => 'IP',
+                    'type' => 'text',
+                    'required' => true,
+                ],
+            ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function roleField(): array
+    {
+        return [
+            'key' => 'type',
+            'label' => 'Role',
+            'type' => 'select',
+            'default' => ServerTypeEnum::EDGE->value,
+            'required' => true,
+            'helper' => 'Origin servers handle stream ingestion and transcoding. Edge servers cache and distribute content.',
+            'options' => [
+                ['value' => ServerTypeEnum::ORIGIN->value, 'label' => 'Origin Server'],
+                ['value' => ServerTypeEnum::EDGE->value, 'label' => 'Edge Server'],
+            ],
+        ];
     }
 
     /**
@@ -477,11 +537,11 @@ class ServerController extends Controller
      *
      * @return array<int, array{value: string, label: string}>
      */
-    private function serverTypeOptions(): array
+    private function serverTypeOptions(ServerProvider $provider): array
     {
         $defaults = array_flip(config('stream.server.defaults', []));
 
-        return collect(Hetzner::availableServerTypes())
+        return collect($provider->sizes())
             ->map(fn (string $label, string $value) => [
                 'value' => $value,
                 'label' => isset($defaults[$value])

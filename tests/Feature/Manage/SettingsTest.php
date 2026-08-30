@@ -108,7 +108,7 @@ class SettingsTest extends TestCase
                     [
                         ['Sign-in', 'Branding', 'Announcement', 'Features', 'Chat'],
                         ['Events', 'Categories', 'Pretalx'],
-                        ['Streaming', 'Archive storage', 'Tokens and keys', 'Notifications'],
+                        ['Streaming', 'Servers', 'Archive storage', 'Tokens and keys', 'Notifications'],
                     ],
                     collect($navigation['sections'])
                         ->map(fn (array $section) => collect($section['items'])->pluck('label')->all())
@@ -867,7 +867,7 @@ class SettingsTest extends TestCase
 
     public function test_every_new_pane_renders(): void
     {
-        foreach (['chat', 'storage', 'streaming', 'playback'] as $group) {
+        foreach (['chat', 'storage', 'streaming', 'infrastructure', 'playback'] as $group) {
             $this->actingAs($this->admin)
                 ->get(route('manage.settings.group', $group))
                 ->assertSuccessful()

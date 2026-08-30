@@ -249,6 +249,61 @@ const testStorage = () => {
     );
 };
 
+// Same shape again: the values on screen, saved or not, and the answer as a toast. A
+// driver is worth proving before the switch is saved, not after.
+const testingDns = ref(false);
+
+const testDns = () => {
+    testingDns.value = true;
+
+    router.post(
+        route("manage.settings.dns.test"),
+        {
+            driver: form.values.dns_driver,
+            zone: form.values.dns_zone,
+            server: form.values.dns_server,
+            key_name: form.values.dns_key_name,
+            key_algorithm: form.values.dns_key_algorithm,
+            key_secret: form.values.dns_key_secret,
+            cloudflare_token: form.values.dns_cloudflare_token,
+            cloudflare_zone_id: form.values.dns_cloudflare_zone_id,
+            hetzner_token: form.values.dns_hetzner_token,
+            hetzner_zone_id: form.values.dns_hetzner_zone_id,
+        },
+        {
+            preserveScroll: true,
+            preserveState: true,
+            only: ["flash", "errors"],
+            onFinish: () => {
+                testingDns.value = false;
+            },
+        },
+    );
+};
+
+const testingCloud = ref(false);
+
+const testCloud = () => {
+    testingCloud.value = true;
+
+    router.post(
+        route("manage.settings.cloud.test"),
+        {
+            driver: form.values.cloud_driver,
+            token: form.values.hetzner_token,
+            location: form.values.hetzner_location,
+        },
+        {
+            preserveScroll: true,
+            preserveState: true,
+            only: ["flash", "errors"],
+            onFinish: () => {
+                testingCloud.value = false;
+            },
+        },
+    );
+};
+
 const testPretalx = () => {
     testing.value = true;
 
@@ -802,6 +857,28 @@ onBeforeUnmount(clearAccentPreview);
                                 @click="testStorage"
                             >
                                 {{ testingStorage ? "Testing…" : "Test" }}
+                            </button>
+                        </div>
+
+                        <div v-if="block.render === 'dns_test'" class="py-2">
+                            <button
+                                type="button"
+                                class="h-8 rounded border border-hairline px-3 text-[13px] text-fg-1 transition-colors hover:bg-surface-3 disabled:opacity-40"
+                                :disabled="testingDns || !form.values.dns_zone"
+                                @click="testDns"
+                            >
+                                {{ testingDns ? "Testing…" : "Test" }}
+                            </button>
+                        </div>
+
+                        <div v-if="block.render === 'cloud_test'" class="py-2">
+                            <button
+                                type="button"
+                                class="h-8 rounded border border-hairline px-3 text-[13px] text-fg-1 transition-colors hover:bg-surface-3 disabled:opacity-40"
+                                :disabled="testingCloud"
+                                @click="testCloud"
+                            >
+                                {{ testingCloud ? "Testing…" : "Test" }}
                             </button>
                         </div>
 

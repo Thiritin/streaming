@@ -59,7 +59,7 @@ class TestDnsRecord extends Command
 
                 // Test with dig
                 $this->info("\nVerifying with dig command:");
-                $digCommand = "dig +short $hostname @".config('dns.server');
+                $digCommand = 'dig +short '.escapeshellarg($hostname).' @'.escapeshellarg((string) config('dns.server'));
                 $this->info("Running: $digCommand");
 
                 $digResult = shell_exec($digCommand);
@@ -95,7 +95,7 @@ class TestDnsRecord extends Command
                 sleep(2);
 
                 $this->info("\nVerifying deletion with dig command:");
-                $digCommand = "dig +short $hostname @".config('dns.server');
+                $digCommand = 'dig +short '.escapeshellarg($hostname).' @'.escapeshellarg((string) config('dns.server'));
                 $digResult = shell_exec($digCommand);
 
                 if (! $digResult || trim($digResult) === '') {

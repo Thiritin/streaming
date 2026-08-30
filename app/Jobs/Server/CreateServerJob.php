@@ -4,16 +4,13 @@ namespace App\Jobs\Server;
 
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
-use App\Jobs\Server\Provision\CreateDnsRecordJob;
 use App\Jobs\Server\Provision\CreateVirtualMachineJob;
-use App\Jobs\Server\Provision\WaitUntilServerIsReadyJob;
 use App\Models\Server;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Bus;
 
 class CreateServerJob implements ShouldQueue
 {
@@ -34,7 +31,7 @@ class CreateServerJob implements ShouldQueue
 
         if ($type === ServerTypeEnum::EDGE) {
             if (Server::where('type', ServerTypeEnum::ORIGIN)->whereIn('status', [ServerStatusEnum::PROVISIONING->value])->exists()) {
-                self::dispatch($type)->delay(now()->addMinutes(1));
+                self::dispatch()->delay(now()->addMinutes(1));
 
                 return;
             }
@@ -45,10 +42,8 @@ class CreateServerJob implements ShouldQueue
             'status' => ServerStatusEnum::PROVISIONING,
         ]);
 
-        Bus::chain([
-            new CreateVirtualMachineJob($server),
-            new CreateDnsRecordJob($server),
-            new WaitUntilServerIsReadyJob($server),
-        ])->dispatch();
+        // CreateVirtualMachineJob owns the rest of the chain. Chaining the DNS and
+        // readiness jobs here as well ran both twice per provision.
+        CreateVirtualMachineJob::dispatch($server);
     }
 }

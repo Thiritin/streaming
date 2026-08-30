@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Models\Server;
+use App\Support\CloudSettings;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -15,14 +16,16 @@ class ServerFactory extends Factory
     protected $model = Server::class;
 
     /**
-     * Default is a manually managed edge server: no hetzner_id, which is the
-     * distinction the panel keys "Delete" versus "Deprovision" off.
+     * Default is a manually managed edge server, which is the distinction the panel
+     * keys "Delete" versus "Deprovision" off.
      *
      * @return array<string, mixed>
      */
     public function definition(): array
     {
         return [
+            'provider' => CloudSettings::MANUAL,
+            'external_id' => null,
             'hetzner_id' => null,
             'hostname' => $this->faker->unique()->domainWord().'.edge.test',
             'ip' => $this->faker->ipv4(),
@@ -62,11 +65,18 @@ class ServerFactory extends Factory
     }
 
     /**
-     * A Hetzner-managed server, which is what makes "Deprovision" the offered action.
+     * A provider-managed server, which is what makes "Deprovision" the offered action.
      */
     public function cloud(): self
     {
-        return $this->state(['hetzner_id' => (string) $this->faker->unique()->numberBetween(1000000, 9999999)]);
+        $id = (string) $this->faker->unique()->numberBetween(1000000, 9999999);
+
+        return $this->state([
+            'provider' => CloudSettings::HETZNER,
+            'external_id' => $id,
+            // Written in parallel for one release; edges in the field still POST it.
+            'hetzner_id' => $id,
+        ]);
     }
 
     public function status(ServerStatusEnum $status): self

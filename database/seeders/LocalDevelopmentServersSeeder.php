@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Models\Server;
+use App\Support\CloudSettings;
 use Illuminate\Database\Seeder;
 
 class LocalDevelopmentServersSeeder extends Seeder
@@ -31,6 +32,7 @@ class LocalDevelopmentServersSeeder extends Seeder
                 'type' => ServerTypeEnum::ORIGIN,
             ],
             [
+                'provider' => CloudSettings::MANUAL,
                 'hetzner_id' => null,
                 'ip' => null, // No DNS creation needed
                 'port' => 8080,
@@ -54,6 +56,7 @@ class LocalDevelopmentServersSeeder extends Seeder
                 'port' => 8085,
             ],
             [
+                'provider' => CloudSettings::MANUAL,
                 'hetzner_id' => null,
                 'ip' => '127.0.0.1',
                 'status' => ServerStatusEnum::ACTIVE,

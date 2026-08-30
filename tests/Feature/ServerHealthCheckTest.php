@@ -252,7 +252,8 @@ class ServerHealthCheckTest extends TestCase
         $origin = Server::factory()->origin()->create([
             'hostname' => 'origin-1.example.test',
             'ip' => '203.0.113.10',
-            'hetzner_id' => '12345',
+            'provider' => 'hetzner',
+            'external_id' => '12345',
         ]);
 
         $this->assertTrue($origin->isReady());
@@ -270,7 +271,8 @@ class ServerHealthCheckTest extends TestCase
 
         $edge = Server::factory()->create([
             'hostname' => 'edge-1.example.test',
-            'hetzner_id' => '12346',
+            'provider' => 'hetzner',
+            'external_id' => '12346',
         ]);
 
         $this->assertTrue($edge->isReady());
@@ -282,7 +284,7 @@ class ServerHealthCheckTest extends TestCase
     {
         Http::fake(['*' => Http::response('', 502)]);
 
-        $origin = Server::factory()->origin()->create(['hetzner_id' => '12347']);
+        $origin = Server::factory()->origin()->cloud()->create();
 
         $this->assertFalse($origin->isReady());
     }
@@ -295,7 +297,7 @@ class ServerHealthCheckTest extends TestCase
     {
         Http::fake(['*' => Http::response('<html>hello</html>', 200)]);
 
-        $origin = Server::factory()->origin()->create(['hetzner_id' => '12348']);
+        $origin = Server::factory()->origin()->cloud()->create();
 
         $this->assertFalse($origin->isReady());
     }

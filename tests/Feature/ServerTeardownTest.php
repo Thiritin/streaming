@@ -6,9 +6,14 @@ use App\Enum\ServerStatusEnum;
 use App\Jobs\Server\Deprovision\DeleteDnsRecordJob;
 use App\Jobs\Server\Deprovision\DeleteVirtualMachineJob;
 use App\Models\Server;
+use App\Services\Cloud\CloudManager;
+use App\Services\Dns\DnsManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Tests\Concerns\CreatesManageUsers;
 use Tests\TestCase;
 
 /**
@@ -20,6 +25,7 @@ use Tests\TestCase;
  */
 class ServerTeardownTest extends TestCase
 {
+    use CreatesManageUsers;
     use RefreshDatabase;
 
     /**
@@ -30,63 +36,157 @@ class ServerTeardownTest extends TestCase
      * resolved to 91.99.165.14 eleven months later - an address Hetzner had long since
      * handed to another customer. A name inside our zone pointing at a stranger's server
      * is a subdomain takeover waiting to be noticed.
-     *
-     * Asserted structurally rather than by running nsupdate: the job shells out, so the
-     * thing worth pinning is that origins are not skipped.
      */
     public function test_the_dns_delete_job_does_not_skip_origins(): void
     {
-        $source = file_get_contents(app_path('Jobs/Server/Deprovision/DeleteDnsRecordJob.php'));
+        Config::set('dns.driver', 'cloudflare');
+        Config::set('dns.zone', 'stream.example.org');
+        Config::set('dns.cloudflare.token', 'cf-token');
+        Config::set('dns.cloudflare.zone_id', 'zone-1');
 
-        $this->assertStringNotContainsString(
-            'ServerTypeEnum::ORIGIN',
-            $source,
-            'DeleteDnsRecordJob must not special-case origins. CreateDnsRecordJob creates '
-            .'a record for them, so skipping the delete leaks the hostname forever.'
-        );
+        Http::fake([
+            'api.cloudflare.com/*/dns_records?*' => Http::response(['result' => [['id' => 'rec-origin']]]),
+            'api.cloudflare.com/*' => Http::response(['result' => []]),
+        ]);
+
+        $origin = Server::factory()->origin()->create(['status' => ServerStatusEnum::DEPROVISIONING]);
+
+        (new DeleteDnsRecordJob($origin))->handle(app(DnsManager::class));
+
+        Http::assertSent(fn ($request) => $request->method() === 'DELETE'
+            && str_contains($request->url(), '/dns_records/rec-origin'));
     }
 
     /**
-     * The job is a no-op without a Hetzner id, which is the one branch reachable without
-     * talking to the API. Included so the guard itself cannot regress into an exception.
+     * A manually managed server calls no API and still finishes.
+     *
+     * It used to return early without touching the status, which left the row sitting in
+     * `deprovisioning` for good with nothing to retry and no error to read. There is
+     * nothing to delete, which is not the same as nothing to do.
      */
-    public function test_a_server_with_no_hetzner_id_is_left_alone(): void
+    public function test_a_manual_server_completes_without_an_api_call(): void
     {
-        $server = Server::factory()->create([
-            'hetzner_id' => null,
-            'status' => ServerStatusEnum::DEPROVISIONING,
-        ]);
+        Http::fake();
 
-        (new DeleteVirtualMachineJob($server))->handle();
+        $server = Server::factory()->create(['status' => ServerStatusEnum::DEPROVISIONING]);
 
-        // Manually managed servers are not ours to mark deleted.
-        $this->assertSame(ServerStatusEnum::DEPROVISIONING, $server->fresh()->status);
+        (new DeleteVirtualMachineJob($server))->handle(app(CloudManager::class));
+
+        Http::assertNothingSent();
+        $this->assertSame(ServerStatusEnum::DELETED, $server->fresh()->status);
     }
 
     /**
      * A VM that is already gone is the state the job exists to reach.
      *
-     * `getById()` throws on 404, so an operator deleting a server in the Hetzner console
-     * left the row in `deprovisioning` forever with a failed job behind it. That happened
-     * twice in September 2025 and again this month. 404 now completes the teardown;
-     * anything else still throws.
+     * A 404 used to be an exception, so an operator deleting a server in the provider's
+     * console left the row in `deprovisioning` forever with a failed job behind it. That
+     * happened twice in September 2025 and again this month.
      */
     public function test_an_already_deleted_vm_completes_the_teardown(): void
     {
-        $source = file_get_contents(app_path('Jobs/Server/Deprovision/DeleteVirtualMachineJob.php'));
+        Config::set('services.hetzner.token', 'token');
 
-        $this->assertStringContainsString('ClientException', $source);
-        $this->assertStringContainsString('404', $source);
-        $this->assertStringContainsString('ServerStatusEnum::DELETED', $source);
+        Http::fake(['api.hetzner.cloud/*' => Http::response(['error' => []], 404)]);
+
+        $server = Server::factory()->cloud()->create(['status' => ServerStatusEnum::DEPROVISIONING]);
+
+        (new DeleteVirtualMachineJob($server))->handle(app(CloudManager::class));
+
+        $this->assertSame(ServerStatusEnum::DELETED, $server->fresh()->status);
     }
 
-    public function test_the_dns_job_is_still_a_no_op_locally(): void
+    /**
+     * Anything that is not a 404 still throws: a rate limit or a refused token means the
+     * machine is very much still running, and marking the row deleted would hide it.
+     */
+    public function test_a_refused_delete_still_fails(): void
     {
-        // Local development has no zone to update, and shelling out to nsupdate there
-        // would fail on every teardown.
-        $source = file_get_contents(app_path('Jobs/Server/Deprovision/DeleteDnsRecordJob.php'));
+        Config::set('services.hetzner.token', 'token');
 
-        $this->assertStringContainsString('isLocal()', $source);
+        Http::fake(['api.hetzner.cloud/*' => Http::response(['error' => []], 403)]);
+
+        $server = Server::factory()->cloud()->create(['status' => ServerStatusEnum::DEPROVISIONING]);
+
+        $this->expectException(RequestException::class);
+
+        (new DeleteVirtualMachineJob($server))->handle(app(CloudManager::class));
+    }
+
+    /**
+     * Local development has no zone to update, and shelling out to nsupdate there would
+     * fail on every teardown. That used to be an `App::isLocal()` branch inside the job,
+     * which is a driver choice made in the wrong place: it is the `none` driver now, and
+     * the job no longer knows what environment it is in.
+     */
+    public function test_no_driver_means_nothing_is_written(): void
+    {
+        Config::set('dns.driver', 'none');
+
+        Http::fake();
+
+        $server = Server::factory()->create(['status' => ServerStatusEnum::DEPROVISIONING]);
+
+        (new DeleteDnsRecordJob($server))->handle(app(DnsManager::class));
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * A manually managed server still gets an A record in our zone, so the only action
+     * the panel offered - Delete - dropped the row and left the name resolving to an
+     * address the operator no longer controls. That is origin-1 again, and it does not
+     * care who owned the machine.
+     */
+    public function test_a_manual_server_with_a_record_is_deprovisioned_not_deleted(): void
+    {
+        $this->createManageUsers();
+
+        $user = $this->admin;
+
+        $withRecord = Server::factory()->create([
+            'metadata' => ['dns_provider' => 'cloudflare', 'dns_zone' => 'stream.example.org'],
+        ]);
+
+        $this->assertTrue($user->can('deprovision', $withRecord));
+        $this->assertFalse($user->can('delete', $withRecord));
+
+        // Nothing was ever written for this one, so there is genuinely nothing to tear
+        // down and Delete stays the honest action.
+        $withoutRecord = Server::factory()->create();
+
+        $this->assertFalse($user->can('deprovision', $withoutRecord));
+        $this->assertTrue($user->can('delete', $withoutRecord));
+    }
+
+    /**
+     * And the chain it now reaches actually removes the record, with the driver named on
+     * the row, before the no-op machine delete carries it to DELETED.
+     */
+    public function test_deprovisioning_a_manual_server_removes_its_record(): void
+    {
+        Config::set('dns.driver', 'none');
+        Config::set('dns.zone', 'stream.example.org');
+        Config::set('dns.cloudflare.token', 'cf-token');
+        Config::set('dns.cloudflare.zone_id', 'zone-1');
+
+        Http::fake([
+            'api.cloudflare.com/*/dns_records?*' => Http::response(['result' => [['id' => 'rec-1']]]),
+            'api.cloudflare.com/*' => Http::response(['result' => []]),
+        ]);
+
+        $server = Server::factory()->create([
+            'status' => ServerStatusEnum::DEPROVISIONING,
+            'metadata' => ['dns_provider' => 'cloudflare', 'dns_zone' => 'stream.example.org'],
+        ]);
+
+        (new DeleteDnsRecordJob($server))->handle(app(DnsManager::class));
+        (new DeleteVirtualMachineJob($server))->handle(app(CloudManager::class));
+
+        Http::assertSent(fn ($request) => $request->method() === 'DELETE'
+            && str_contains($request->url(), '/dns_records/rec-1'));
+
+        $this->assertSame(ServerStatusEnum::DELETED, $server->fresh()->status);
     }
 
     public function test_the_teardown_deletes_dns_before_the_machine(): void
@@ -113,15 +213,19 @@ class ServerTeardownTest extends TestCase
      */
     public function test_a_dns_failure_does_not_abort_the_teardown(): void
     {
-        Config::set('app.env', 'production');
+        Config::set('dns.driver', 'cloudflare');
+        Config::set('dns.zone', 'stream.example.org');
+        Config::set('dns.cloudflare.token', 'cf-token');
+        Config::set('dns.cloudflare.zone_id', 'zone-1');
 
         Log::shouldReceive('error')->atLeast()->once();
         Log::shouldReceive('info')->zeroOrMoreTimes();
 
+        Http::fake(['api.cloudflare.com/*' => Http::response([], 500)]);
+
         $server = Server::factory()->create(['status' => ServerStatusEnum::DEPROVISIONING]);
 
-        // No DNS key is configured under the test environment, so the service throws.
-        (new DeleteDnsRecordJob($server))->handle();
+        (new DeleteDnsRecordJob($server))->handle(app(DnsManager::class));
 
         // Reaching here at all is the assertion: a throw would have broken the chain.
         $this->assertTrue(true);

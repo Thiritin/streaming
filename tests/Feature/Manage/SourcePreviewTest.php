@@ -56,6 +56,35 @@ class SourcePreviewTest extends TestCase
 
     // ---------------------------------------------------------------- access
 
+    /**
+     * Preview is a mode of the Sources list rather than a section of its own: it is
+     * reached from a button on that page and has no rail entry, the same way the
+     * planner is reached from Shows.
+     *
+     * The button carries no condition. Previewing exists to check what an encoder is
+     * pushing before a show is put live, which is exactly when nothing is live.
+     */
+    public function test_it_is_reached_from_the_sources_page_and_not_from_the_rail(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('manage.sources.index'))
+            ->assertSuccessful()
+            ->assertInertia(function (Assert $page) {
+                $props = $page->toArray()['props'];
+
+                $preview = collect($props['table']['pageActions'])->firstWhere('name', 'preview');
+
+                $this->assertNotNull($preview, 'The Sources page offers no Preview action.');
+                $this->assertSame(route('manage.sources.preview'), $preview['url']);
+
+                $routes = collect($props['manageNav'])
+                    ->flatMap(fn (array $group) => $group['items'])
+                    ->pluck('route');
+
+                $this->assertNotContains('manage.sources.preview', $routes);
+            });
+    }
+
     public function test_guests_do_not_see_the_page_at_all(): void
     {
         $this->get(route('manage.sources.preview'))->assertNotFound();

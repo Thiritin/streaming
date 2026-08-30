@@ -42,7 +42,8 @@ const rangeClass = (value) =>
 const details = [
   ['IP address', 'ip'],
   ['Port', 'port'],
-  ['Hetzner ID', 'hetzner_id'],
+  ['Provider', 'provider'],
+  ['Provider ID', 'external_id'],
   ['Instance size', 'server_type'],
   ['Max clients', 'max_clients'],
   ['Created', 'created_at'],

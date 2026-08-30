@@ -38,17 +38,27 @@ class ServerPolicy
     }
 
     /**
-     * Only manually managed servers are deleted outright. A Hetzner server has to go
-     * through deprovisioning so the cloud resource and its DNS record are cleaned up.
+     * Deleted outright only when there is genuinely nothing to tear down: no machine a
+     * provider owns, and no DNS record anybody wrote.
+     *
+     * A manually managed server still gets an A record in our zone, so dropping its row
+     * leaves the name resolving to an address the operator no longer controls. That is
+     * the subdomain takeover this project already lived through with origin-1, and it
+     * does not care who owned the machine.
      */
     public function delete(User $user, Server $server): bool
     {
-        return $this->manages($user) && ! $server->isHetznerServer();
+        return $this->manages($user) && ! $server->isCloud() && $server->dnsProvider() === null;
     }
 
+    /**
+     * Anything with something to remove: a machine, a record, or both. The manual
+     * driver's delete is a no-op, so a bring-your-own server runs the same chain and
+     * reaches DELETED with its record gone.
+     */
     public function deprovision(User $user, Server $server): bool
     {
-        return $this->manages($user) && $server->isHetznerServer();
+        return $this->manages($user) && ($server->isCloud() || $server->dnsProvider() !== null);
     }
 
     /**

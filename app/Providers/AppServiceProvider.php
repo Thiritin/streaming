@@ -11,6 +11,10 @@ use App\Observers\RecordingObserver;
 use App\Observers\ShowObserver;
 use App\Observers\SourceObserver;
 use App\Observers\UserObserver;
+use App\Services\Cloud\CloudManager;
+use App\Services\Cloud\ServerProvider;
+use App\Services\Dns\DnsManager;
+use App\Services\Dns\DnsProvider;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Session;
@@ -23,7 +27,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // One instance per driver name, so the delete path can resolve the driver a row
+        // was written by while the create path resolves the one that is selected now.
+        $this->app->singleton(DnsManager::class);
+        $this->app->singleton(CloudManager::class);
+
+        $this->app->bind(DnsProvider::class, fn ($app) => $app->make(DnsManager::class)->driver());
+        $this->app->bind(ServerProvider::class, fn ($app) => $app->make(CloudManager::class)->driver());
     }
 
     /**

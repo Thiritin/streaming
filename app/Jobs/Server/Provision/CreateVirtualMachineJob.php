@@ -5,9 +5,9 @@ namespace App\Jobs\Server\Provision;
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
 use App\Models\Server;
-use App\Services\Hetzner;
+use App\Services\Cloud\CloudManager;
+use App\Services\Cloud\ServerSpec;
 use App\Services\ServerProvisioningService;
-use GuzzleHttp\Client;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -24,13 +24,12 @@ class CreateVirtualMachineJob implements ShouldQueue
 
     public function __construct(public readonly Server $server) {}
 
-    public function handle(): void
+    public function handle(CloudManager $cloud): void
     {
-        // Chosen per server when provisioning from /manage, falling back to the
-        // per-role default in config/stream.php. It used to be hardcoded here, which
-        // made instance size a deploy-time decision for something billed by the hour.
-        $hetznerServerType = $this->server->hetznerServerType();
-        $hetznerClient = Hetzner::client();
+        // The provider the installation is set to now. Everything downstream reads it
+        // off the row instead, so a change here never reaches a machine that exists.
+        $provider = $cloud->driver();
+
         $name = $this->server->type->value.'-'.$this->server->id.'-'.Str::random(12);
 
         // Mint the credentials here rather than at row creation: the plaintext exists
@@ -39,104 +38,56 @@ class CreateVirtualMachineJob implements ShouldQueue
         // booted with it yet.
         $this->server->issueCredentials();
 
-        $provisioningService = app(ServerProvisioningService::class);
-        $cloudInitScript = $provisioningService->generateCloudInit($this->server);
+        $role = $this->server->type === ServerTypeEnum::EDGE ? 'edge' : 'origin';
 
-        // Prepare SSH keys array - only add if available
-        $sshKeys = [];
-        try {
-            $sshKey = $hetznerClient->sshKeys()->getByName('Martin Becker 2023');
-            if ($sshKey) {
-                $sshKeys[] = $sshKey->id;
-            }
-        } catch (\Exception $e) {
-            // SSH key not found, continue without it
-            \Log::warning('SSH key "Martin Becker 2023" not found, provisioning without SSH key');
-        }
+        $spec = new ServerSpec(
+            role: $this->server->type->value,
+            name: $name,
+            // Chosen per server when provisioning from /manage, falling back to the
+            // per-role default. It used to be hardcoded here, which made instance size a
+            // deploy-time decision for something billed by the hour.
+            size: $this->server->size(),
+            location: config('stream.server.location'),
+            userData: app(ServerProvisioningService::class)->generateCloudInit($this->server),
+            hostname: $this->server->hostname,
+            ip: $this->server->ip,
+        );
 
-        // Prepare networks array - only add if available
-        $networks = [];
-        try {
-            $network = $hetznerClient->networks()->getByName('stream');
-            if ($network) {
-                $networks[] = $network->id;
-            }
-        } catch (\Exception $e) {
-            // Network not found, continue without it
-            \Log::warning('Network "stream" not found, provisioning without specific network');
-        }
+        /*
+         * The row learns its provider before the machine exists, not after. `tries = 1`,
+         * so a crash between the API call and the write would otherwise leave a billing
+         * machine nothing points at - and with the id column no longer a convention,
+         * nothing to find it by either. The provider's own label carries the row id for
+         * the same reason, so an orphan is identifiable in the provider's console.
+         */
+        $this->server->update(['provider' => $provider->name()]);
 
-        // Build request payload directly due to SDK issues
-        $serverType = $hetznerClient->serverTypes()->getByName($hetznerServerType);
-        $image = $hetznerClient->images()->getByName('ubuntu-22.04');
-        $location = $hetznerClient->locations()->getByName(config('stream.server.location', 'nbg1'));
-
-        $payload = [
-            'name' => $name,
-            'server_type' => $serverType->id,
-            'image' => $image->id,
-            'location' => $location->id,
-            'ssh_keys' => $sshKeys,
-            'networks' => $networks,
-            'user_data' => $cloudInitScript,
-            'start_after_create' => true,
-            'labels' => [
-                'type' => $this->server->type->value,
-            ],
-        ];
-
-        // Make direct API call using Guzzle
-        $httpClient = new Client;
-        $response = $httpClient->post('https://api.hetzner.cloud/v1/servers', [
-            'headers' => [
-                'Authorization' => 'Bearer '.config('services.hetzner.token'),
-                'Content-Type' => 'application/json',
-            ],
-            'json' => $payload,
-        ]);
-
-        $responseBody = json_decode($response->getBody()->getContents());
-        $server = $responseBody->server;
-
-        // Wait for server to be ready with network info
-        $maxAttempts = 12; // 2 minutes max wait
-        $attempts = 0;
-        while ($attempts < $maxAttempts) {
-            sleep(10);
-
-            // Fetch updated server info
-            $getResponse = $httpClient->get("https://api.hetzner.cloud/v1/servers/{$server->id}", [
-                'headers' => [
-                    'Authorization' => 'Bearer '.config('services.hetzner.token'),
-                ],
-            ]);
-            $server = json_decode($getResponse->getBody()->getContents())->server;
-
-            // Check if we have the public IP (always required)
-            if (isset($server->public_net->ipv4->ip)) {
-                break;
-            }
-            $attempts++;
-        }
-
-        // Get the internal IP if available (might not exist without private network)
-        $internalIp = isset($server->private_net[0]->ip) ? $server->private_net[0]->ip : null;
+        $created = $provider->create($this->server, $spec);
 
         $this->server->update([
-            'hetzner_id' => $server->id,
-            'hostname' => trim($name.'.'.config('dns.zone'), '.'),
-            'ip' => $server->public_net->ipv4->ip,
-            'internal_ip' => $internalIp,
+            'provider' => $provider->name(),
+            'external_id' => $created->externalId,
+            // Kept in step for one release: edges already in the field POST against it
+            // and the manage table still searches it. Only for a machine a provider
+            // actually built - writing `manual:{id}` into it would poison the column the
+            // provider backfill reads, which treats a non-empty value as "this is cloud".
+            'hetzner_id' => $provider->supportsProvisioning() ? $created->externalId : null,
+            'hostname' => $spec->hostname && ! $provider->supportsProvisioning()
+                ? $spec->hostname
+                : trim($name.'.'.config('dns.zone'), '.'),
+            'ip' => $created->ip ?: $this->server->ip,
+            'internal_ip' => $created->internalIp,
             'port' => 443,
-            'max_clients' => config(
-                'stream.server.max_clients.'.($this->server->type === ServerTypeEnum::EDGE ? 'edge' : 'origin'),
-                $this->server->type === ServerTypeEnum::EDGE ? 100 : 1000,
-            ),
+            'max_clients' => config("stream.server.max_clients.{$role}", $role === 'edge' ? 100 : 1000),
             'status' => ServerStatusEnum::PROVISIONING,
         ]);
 
-        // Chain the DNS creation and wait for ready jobs
+        // One chain, declared here. CreateServerJob used to chain the same two jobs on
+        // top of these, so a provision through it created the DNS record twice - which,
+        // while the record was written with a bare `update add`, left two A records for
+        // one hostname.
         Bus::chain([
+            new AwaitPublicAddressJob($this->server),
             new CreateDnsRecordJob($this->server),
             new WaitUntilServerIsReadyJob($this->server),
         ])->dispatch();

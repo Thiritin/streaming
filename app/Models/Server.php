@@ -7,6 +7,8 @@ use App\Enum\ServerTypeEnum;
 use App\Enum\SourceStatusEnum;
 use App\Jobs\Server\DeleteServerJob;
 use App\Jobs\Server\Deprovision\RemovalConditionCheckerJob;
+use App\Services\Cloud\Drivers\ManualServerDriver;
+use App\Support\CloudSettings;
 use App\Support\ServerCredentials;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ServerException;
@@ -255,14 +257,14 @@ class Server extends Model
     }
 
     /**
-     * The Hetzner instance size this server is, or should be provisioned as.
+     * The instance size this server is, or should be provisioned as.
      *
      * Falls back to the per-role default for servers created before `server_type`
      * existed, and for anything provisioned outside the /manage action. The size is a
-     * money decision - Hetzner bills hourly - so it is config plus a per-server
+     * money decision - a cloud bills hourly - so it is config plus a per-server
      * override rather than a constant in the provisioning job.
      */
-    public function hetznerServerType(): string
+    public function size(): string
     {
         if ($this->server_type) {
             return $this->server_type;
@@ -272,6 +274,49 @@ class Server extends Model
 
         return config("stream.server.defaults.{$role}")
             ?? ($role === 'origin' ? 'ccx33' : 'cpx21');
+    }
+
+    /**
+     * @deprecated Use size(). Kept for one release; the provisioning path no longer
+     * names a provider.
+     */
+    public function hetznerServerType(): string
+    {
+        return $this->size();
+    }
+
+    /**
+     * The DNS provider that wrote this server's A record, and the zone it wrote it
+     * into. Null for a row provisioned before the provider was recorded, which the
+     * delete path reads as "whatever is selected now" - the only guess available and
+     * the right one for every row that predates a driver switch.
+     */
+    public function dnsProvider(): ?string
+    {
+        $provider = $this->metadata['dns_provider'] ?? null;
+
+        return is_string($provider) && $provider !== '' ? $provider : null;
+    }
+
+    public function dnsZone(): ?string
+    {
+        $zone = $this->metadata['dns_zone'] ?? null;
+
+        return is_string($zone) && $zone !== '' ? $zone : null;
+    }
+
+    /**
+     * Merged rather than assigned: `metadata` is a scratchpad several things write to,
+     * and replacing it would drop whatever else is in there.
+     */
+    public function rememberDnsProvider(string $provider, string $zone): void
+    {
+        $this->update([
+            'metadata' => array_merge($this->metadata ?? [], [
+                'dns_provider' => $provider,
+                'dns_zone' => $zone,
+            ]),
+        ]);
     }
 
     /**
@@ -442,11 +487,64 @@ class Server extends Model
     }
 
     /**
-     * Check if this is a Hetzner cloud server
+     * Whether a provider API owns this machine.
+     *
+     * The single predicate the panel keys "Delete" versus "Deprovision" off. It used to
+     * be "has a hetzner_id", which made one column carry both the id and the answer to
+     * which provider built it; now the row says so.
+     */
+    public function isCloud(): bool
+    {
+        if ($this->provider !== null && $this->provider !== '' && $this->provider !== CloudSettings::MANUAL) {
+            return true;
+        }
+
+        /*
+         * A row whose column says manual but whose id says otherwise. The column
+         * defaults to manual - a row nobody claimed is nobody's to delete through an API
+         * - but during a rolling deploy the old code inserts rows that never set it, and
+         * calling one of those manual would offer no Deprovision, no-op its teardown and
+         * leave the machine billing. The id is what used to carry this answer, so it
+         * still gets to.
+         */
+        $id = (string) ($this->external_id ?: $this->hetzner_id);
+
+        return $id !== '' && ! str_starts_with($id, ManualServerDriver::PREFIX);
+    }
+
+    /**
+     * The driver name to act on this row with, or null to mean "whatever the
+     * installation is set to".
+     *
+     * Null only for the deploy-window row above: it is cloud by its id and says nothing
+     * about which provider, and the installation's own is the single guess available.
+     */
+    public function cloudProvider(): ?string
+    {
+        if ($this->provider !== null && $this->provider !== '' && $this->provider !== CloudSettings::MANUAL) {
+            return $this->provider;
+        }
+
+        return $this->isCloud() ? null : CloudSettings::MANUAL;
+    }
+
+    /**
+     * @deprecated Use isCloud().
      */
     public function isHetznerServer(): bool
     {
-        return ! empty($this->hetzner_id);
+        return $this->isCloud();
+    }
+
+    /**
+     * What a provider calls this machine, falling back to the column that used to be
+     * the only place it was written. Edges in the field still POST the old one.
+     */
+    public function externalId(): ?string
+    {
+        $id = $this->external_id ?: $this->hetzner_id;
+
+        return $id === null || $id === '' ? null : (string) $id;
     }
 
     /**
@@ -458,8 +556,9 @@ class Server extends Model
             return false;
         }
 
-        // Both servers must be Hetzner servers
-        if (! $this->isHetznerServer() || ! $otherServer->isHetznerServer()) {
+        // Both machines have to be on the same provider's private network, so both must
+        // be cloud servers and both the same provider.
+        if (! $this->isCloud() || ! $otherServer->isCloud() || $this->provider !== $otherServer->provider) {
             return false;
         }
 
@@ -496,15 +595,16 @@ class Server extends Model
      */
     public function isReady(): bool
     {
-        // For manual/local servers (null hetzner_id), assume they're ready if active
-        if (! $this->hetzner_id && $this->status === ServerStatusEnum::ACTIVE) {
+        // A manually managed server is somebody else's to make ready; if it says it is
+        // active, it is.
+        if (! $this->isCloud() && $this->status === ServerStatusEnum::ACTIVE) {
             return true;
         }
 
         $url = 'https://'.$this->hostname.'/health';
 
         // Local Docker containers have no TLS and no public hostname.
-        if (! $this->hetzner_id) {
+        if (! $this->isCloud()) {
             $url = 'http://'.$this->hostname.':'.$this->port.'/health';
         }
 

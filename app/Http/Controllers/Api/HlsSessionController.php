@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enum\ServerTypeEnum;
 use App\Http\Controllers\Controller;
 use App\Models\Server;
+use App\Support\CloudSettings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -33,15 +34,21 @@ class HlsSessionController extends Controller
             'streams' => $streams,
         ]);
 
-        // Find server by hostname or hetzner_id
+        // By hostname or by whatever its provider calls it. `hetzner_id` is still read
+        // because edges already in the field POST the id they were installed with.
         $server = Server::where('hostname', $serverId)
+            ->orWhere('external_id', $serverId)
             ->orWhere('hetzner_id', $serverId)
             ->first();
 
         if (! $server) {
-            // Try to find by container name for local development
-            if (str_contains($serverId, 'docker')) {
-                $server = Server::where('hetzner_id', 'manual')
+            // Local development only: the container reports a name nothing was
+            // provisioned under, so the one manually managed edge answers for it. It
+            // used to key off a `hetzner_id = 'manual'` sentinel; matching every
+            // hand-registered server instead would attach a stray heartbeat from
+            // anywhere to whichever manual edge happens to sort first.
+            if (\App::isLocal() && str_contains($serverId, 'docker')) {
+                $server = Server::where('provider', CloudSettings::MANUAL)
                     ->where('type', ServerTypeEnum::EDGE)
                     ->first();
             }

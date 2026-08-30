@@ -20,9 +20,26 @@ return [
     | uplink allows.
     */
     'server' => [
+        // Who creates the machine. `manual` calls no API at all: the operator supplies
+        // an address and a hostname and runs the install script themselves, which also
+        // means every secret the generated config bakes in lands on hardware this
+        // installation does not own and cannot wipe.
+        'provider' => env('CLOUD_DRIVER', 'hetzner'),
+
         // Where servers are created. Capacity is per location, and a size can be
         // unplaceable in one while fine in another.
         'location' => env('HETZNER_LOCATION', 'nbg1'),
+
+        // What a new machine boots. The transcoder and uploader images are x86 only.
+        'image' => env('HETZNER_IMAGE', 'ubuntu-22.04'),
+
+        // Looked up by name in the cloud project. Empty skips the lookup, which
+        // provisions a machine nobody can log into by hand.
+        'ssh_key' => env('HETZNER_SSH_KEY'),
+
+        // The private network edges reach the origin over. Empty skips the lookup and
+        // they use the public address instead.
+        'network' => env('HETZNER_NETWORK', 'stream'),
 
         // Fallback only. The dropdown asks Hetzner what it can actually place right
         // now (see Hetzner::availableServerTypes) - a static list goes stale both when

@@ -47,7 +47,8 @@ final class Navigation
             ]],
             ['label' => 'Streaming', 'items' => [
                 $this->item('Sources', 'video', 'manage.sources.index', $badges['sources'] ?? null),
-                $this->item('Preview', 'eye', 'manage.sources.preview'),
+                // Preview has no rail entry: it is a mode of the Sources list, reached
+                // from a button on it, the same way the planner is reached from Shows.
                 $this->item('Shows', 'play-circle', 'manage.shows.index', $badges['shows'] ?? null),
                 // Import has no rail entry on purpose: it is reached from the Shows
                 // table, next to the programme it adds to.

@@ -43,7 +43,13 @@ class ShowDnsDetails extends Command
         $this->info("\n2. Generated DNS Key File Contents:");
         $this->info("   File Path: $keyFile");
         $this->info('   Contents:');
-        $this->line(file_get_contents($keyFile));
+        // Masked the way dns:test already masks it. The secret is stored encrypted, so
+        // reading the row is deliberately not the same as reading the value; printing it
+        // to stdout would put it in shell history and any captured terminal output.
+        // Both shapes: the quoted one this service writes, and the bare `secret abc;`
+        // BIND accepts - which is the likely shape of a hand-written dns.key, the one
+        // file still read whole.
+        $this->line(preg_replace('/secret\s+[^;]+/', 'secret "***HIDDEN***"', file_get_contents($keyFile)));
 
         // Show an example nsupdate command against the configured zone
         $hostname = trim('test222.'.config('dns.zone'), '.');
@@ -64,7 +70,8 @@ class ShowDnsDetails extends Command
 
         // Test current connectivity
         $this->info("\n5. Current Connectivity Test:");
-        $pingResult = shell_exec('ping -c 1 -W 1 '.config('dns.server').' 2>&1');
+        // The name server is a setting now, so it reaches the shell as untrusted input.
+        $pingResult = shell_exec('ping -c 1 -W 1 '.escapeshellarg((string) config('dns.server')).' 2>&1');
         if (strpos($pingResult, '1 received') !== false) {
             $this->info('   ✓ DNS server is reachable');
         } else {
