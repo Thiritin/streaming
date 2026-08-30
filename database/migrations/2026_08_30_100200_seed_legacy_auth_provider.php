@@ -31,7 +31,7 @@ return new class extends Migration
 
         $switch = $saved['auth_oidc'] ?? null;
         $enabled = $switch === null
-            ? (bool) config('auth.modes.oidc')
+            ? (bool) config('auth.modes.oauth2')
             : in_array($switch, ['1', 'true', 'on', 'yes'], true);
 
         $id = DB::table('auth_providers')->insertGetId([

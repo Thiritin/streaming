@@ -92,6 +92,28 @@ class IdentityBackfillTest extends TestCase
     }
 
     /**
+     * The shape every installation that predates the settings pane is in: the provider
+     * set in the environment and no `auth_oidc` row to read, because the pane that wrote
+     * one never shipped to it. The switch defaults to `auth.modes.oauth2`, which ships
+     * on, so the row comes out enabled and signing in survives the deploy.
+     */
+    public function test_a_provider_set_only_in_the_environment_is_seeded_enabled(): void
+    {
+        config([
+            'services.oidc.url' => 'https://identity.example.org',
+            'services.oidc.client_id' => 'the-client',
+            'services.oidc.secret' => 'the-secret',
+        ]);
+
+        $this->rerun();
+
+        $provider = AuthProvider::legacy();
+
+        $this->assertTrue($provider->enabled);
+        $this->assertSame('https://identity.example.org', $provider->issuer_url);
+    }
+
+    /**
      * A switch that was on with nothing behind it is a button that fails on the second
      * page, so the row comes out off rather than on-and-broken.
      */
