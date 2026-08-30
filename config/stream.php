@@ -3,27 +3,6 @@
 return [
     /*
     |--------------------------------------------------------------------------
-    | Streaming Configuration
-    |--------------------------------------------------------------------------
-    |
-    | Configuration for the streaming infrastructure including RTMP, HLS,
-    | and server provisioning settings.
-    |
-    */
-
-    // RTMP server configuration
-    'rtmp_host' => env('STREAM_RTMP_HOST', 'localhost:1935'),
-    'rtmp_port' => env('STREAM_RTMP_PORT', 1935),
-
-    // Session validation
-    'validate_session_ip' => env('STREAM_VALIDATE_SESSION_IP', false),
-    'session_timeout' => env('STREAM_SESSION_TIMEOUT', 60), // seconds
-
-    // HLS tracker API key
-    'hls_tracker_api_key' => env('STREAM_HLS_TRACKER_API_KEY', ''),
-
-    /*
-    |--------------------------------------------------------------------------
     | Server provisioning
     |--------------------------------------------------------------------------
     |
@@ -236,10 +215,4 @@ return [
     // scripts/dev-streams.sh writes into public/dev-streams/<slug> instead of
     // being proxied to an edge server that does not exist on a laptop.
     'dev_streams' => env('DEV_STREAMS', false),
-
-    // Local streaming server override configuration
-    // When client IPs match these subnets, force use of the specified hostname
-    'local_streaming_ipv4_subnet' => env('LOCAL_STREAMING_IPV4_SUBNET', ''),
-    'local_streaming_ipv6_subnet' => env('LOCAL_STREAMING_IPV6_SUBNET', ''),
-    'local_streaming_hostname' => env('LOCAL_STREAMING_HOSTNAME', ''),
 ];

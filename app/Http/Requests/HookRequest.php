@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Models\Server;
 use Illuminate\Foundation\Http\FormRequest;
 
 class HookRequest extends FormRequest
@@ -23,13 +22,10 @@ class HookRequest extends FormRequest
         ];
     }
 
+    // The route is behind CheckSharedSecretMiddleware, which resolves the server
+    // and its credential before anything reaches here.
     public function authorize(): bool
     {
         return true;
-        if (app()->environment('local')) {
-            return true;
-        }
-
-        return config('services.stream.origin_ip') ?? Server::where('ip', $this->ip())->exists();
     }
 }

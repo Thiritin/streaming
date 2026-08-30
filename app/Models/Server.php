@@ -92,13 +92,7 @@ class Server extends Model
         // database (HlsController::activeEdges), so a deprovisioned edge has to be
         // taken out of that list the moment it changes - otherwise viewers keep being
         // pinned to a box that is going away.
-        $forgetEdgeCaches = function ($server) {
-            Cache::forget('hls_active_edges');
-
-            if ($server->hostname) {
-                Cache::forget('hls_local_edge:'.$server->hostname);
-            }
-        };
+        $forgetEdgeCaches = fn () => Cache::forget('hls_active_edges');
 
         static::saved($forgetEdgeCaches);
         static::deleted($forgetEdgeCaches);

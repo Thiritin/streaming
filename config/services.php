@@ -31,39 +31,23 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    /*
+     | Read once, by the migration that seeded the convention's provider row, and by
+     | nothing else. The ways in are rows in `auth_providers` now, edited at /manage >
+     | Settings > Sign-in providers; these entries survive only so an installation that
+     | still sets them in its environment came out of that migration configured.
+     */
     'oidc' => [
         'url' => env('OIDC_URL'),
         'client_id' => env('OIDC_CLIENT_ID'),
         'secret' => env('OIDC_SECRET'),
-
-        /*
-         | Which provider group maps to which role is not configured here: a role
-         | claims a group ID (or a registration package) through its
-         | `external_id`, editable under Administration > Roles.
-         */
-    ],
-
-    'stream' => [
-        'origin_ip' => env('ORIGIN_IP'),
     ],
 
     'attsrv' => [
         'url' => env('ATTSRV_URL'),
     ],
 
-    'srs' => [
-        'username' => env('SRS_USERNAME'),
-        'password' => env('SRS_PASSWORD'),
-        'origin' => env('SRS_ORIGIN'),
-    ],
-
     'hetzner' => [
         'token' => env('HETZNER_TOKEN'),
-    ],
-
-    // This is the URL of the origin server, where a low res version is being pushed to via rtmp.
-    'forward' => [
-        'url' => env('RTMP_FORWARD'),
-        'vrchaturl' => env('RTMP_VRCHAT_URL'),
     ],
 ];

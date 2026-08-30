@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Enum\ServerStatusEnum;
 use App\Enum\ServerTypeEnum;
-use App\Helpers\IpSubnetHelper;
 use App\Models\EmbedKey;
 use App\Models\Server;
 use App\Models\Source;
@@ -538,12 +537,10 @@ class HlsController extends Controller
      */
     private function placeViewer(Request $request, Source $source, ?User $user, bool $preview = false): ?Server
     {
-        $override = $this->localOverrideEdge($request);
-
         // Internal callers (thumbnail capture, monitoring) are not viewers and get
         // no session row. Neither is an operator previewing the source from /manage.
         if ($preview || ($user && $user->id === 0)) {
-            return $override ?? $this->activeEdges()->first();
+            return $this->activeEdges()->first();
         }
 
         // Resolved once and handed down: guestKey() issues the cookie on first sight,
@@ -554,7 +551,7 @@ class HlsController extends Controller
         $cached = Cache::get($cacheKey);
 
         if (is_array($cached)) {
-            $pinned = $override ?? $this->activeEdges()->get($cached['server_id']);
+            $pinned = $this->activeEdges()->get($cached['server_id']);
 
             // A pinned edge that has gone away falls through to a fresh pick, which
             // is what moves viewers off an edge being deprovisioned.
@@ -564,7 +561,7 @@ class HlsController extends Controller
         }
 
         $session = $this->trackUserAccess($source, $user, $request, $guestKey);
-        $server = $override ?? $this->getServerForRequest($user, $session);
+        $server = $this->getServerForRequest($user, $session);
 
         if (! $server) {
             return null;
@@ -574,7 +571,7 @@ class HlsController extends Controller
 
         Cache::put(
             $cacheKey,
-            ['server_id' => $server->exists ? $server->getKey() : null],
+            ['server_id' => $server->getKey()],
             self::RESOLUTION_TTL,
         );
 
@@ -597,37 +594,6 @@ class HlsController extends Controller
                 ->get()
                 ->keyBy('id'),
         );
-    }
-
-    /**
-     * The appliance on the venue network, when the caller is sitting behind it.
-     */
-    private function localOverrideEdge(Request $request): ?Server
-    {
-        $localHostname = config('stream.local_streaming_hostname');
-
-        if (! $localHostname) {
-            return null;
-        }
-
-        $clientIp = $request->ip();
-        $ipv4 = config('stream.local_streaming_ipv4_subnet');
-        $ipv6 = config('stream.local_streaming_ipv6_subnet');
-
-        $inSubnet = ($ipv4 && IpSubnetHelper::isIpInSubnet($clientIp, $ipv4))
-            || ($ipv6 && IpSubnetHelper::isIpInSubnet($clientIp, $ipv6));
-
-        if (! $inSubnet) {
-            return null;
-        }
-
-        $server = Cache::remember(
-            'hls_local_edge:'.$localHostname,
-            self::EDGE_CACHE_TTL,
-            fn () => Server::where('hostname', $localHostname)->first() ?? false,
-        );
-
-        return $server ?: null;
     }
 
     /**
@@ -958,9 +924,7 @@ class HlsController extends Controller
      */
     private function stampSession(?SourceUser $session, $server): void
     {
-        // The subnet override hands back an unsaved Server standing in for an
-        // appliance on the venue network. It has no id and nothing to attribute to.
-        if (! $session || ! $server || ! $server->exists) {
+        if (! $session || ! $server) {
             return;
         }
 
@@ -971,9 +935,6 @@ class HlsController extends Controller
 
     /**
      * The cold-path edge pick: what to do when nothing is pinned yet.
-     *
-     * The subnet override is applied by placeViewer before this is reached, so a
-     * venue appliance never depends on getting this far.
      */
     private function getServerForRequest($user, ?SourceUser $session = null)
     {
