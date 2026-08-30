@@ -7,6 +7,7 @@ use App\Models\RecordingProgress;
 use App\Models\Show;
 use App\Support\Features;
 use App\Support\RecordingViews;
+use App\Support\Search;
 use App\Support\SkipSegments;
 use App\Support\ViewerNotificationProps;
 use Illuminate\Http\Request;
@@ -208,9 +209,9 @@ class RecordingController extends Controller
 
         $user = Auth::user();
 
-        $recordings = Recording::where('is_published', true)
-            ->accessibleBy($user)
-            ->where('title', 'like', '%'.$term.'%')
+        $query = Recording::where('is_published', true)->accessibleBy($user);
+
+        $recordings = Search::any($query, ['title'], $term)
             ->with('source:id,name')
             /*
              * Newest first, views only to break a tie. A show that runs every year is
@@ -680,12 +681,7 @@ class RecordingController extends Controller
     {
         $query = Recording::where('is_published', true)->accessibleBy($user);
 
-        if ($search) {
-            $query->where(function ($query) use ($search) {
-                $query->where('title', 'like', '%'.$search.'%')
-                    ->orWhere('description', 'like', '%'.$search.'%');
-            });
-        }
+        Search::any($query, ['title', 'description'], $search);
 
         return $query;
     }
@@ -700,12 +696,7 @@ class RecordingController extends Controller
             ->with(['source:id,name,slug', 'category:id,name,slug', 'event:id,name,slug'])
             ->whereDoesntHave('recordings', fn ($q) => $q->where('is_published', true));
 
-        if ($search) {
-            $query->where(function ($query) use ($search) {
-                $query->where('title', 'like', '%'.$search.'%')
-                    ->orWhere('description', 'like', '%'.$search.'%');
-            });
-        }
+        Search::any($query, ['title', 'description'], $search);
 
         return $query
             ->orderBy('actual_end', 'desc')

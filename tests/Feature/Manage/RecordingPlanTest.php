@@ -99,6 +99,27 @@ class RecordingPlanTest extends TestCase
                 ->where('rows.0.gap', true));
     }
 
+    /**
+     * The board is searched by title and by room, and neither is case-sensitive:
+     * Postgres does not fold case in LIKE, so the operator has to.
+     */
+    public function test_the_search_ignores_case_on_the_title_and_the_room(): void
+    {
+        $this->show(['title' => 'Opening Ceremony', 'publish_plan' => 'yes']);
+
+        foreach (['opening', 'CEREMONY', 'main stage'] as $term) {
+            $this->actingAs($this->admin)
+                ->get(route('manage.recordings.plan', ['search' => $term]))
+                ->assertInertia(fn (Assert $page) => $page
+                    ->has('rows', 1)
+                    ->where('rows.0.title', 'Opening Ceremony'));
+        }
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.recordings.plan', ['search' => 'closing']))
+            ->assertInertia(fn (Assert $page) => $page->has('rows', 0));
+    }
+
     public function test_a_show_still_to_come_is_pending_rather_than_missing(): void
     {
         $this->show(['publish_plan' => 'yes', 'status' => 'scheduled']);

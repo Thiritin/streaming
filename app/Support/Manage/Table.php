@@ -2,6 +2,7 @@
 
 namespace App\Support\Manage;
 
+use App\Support\Search;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -297,23 +298,11 @@ final class Table
             return;
         }
 
-        $operator = $this->query->getConnection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
-        $term = '%'.$search.'%';
-
-        $this->query->where(function (Builder $query) use ($searchable, $operator, $term) {
-            foreach ($searchable as $column) {
-                $key = $column->resolvedSearchKey();
-
-                if (str_contains($key, '.')) {
-                    [$relation, $attribute] = explode('.', $key, 2);
-                    $query->orWhereHas($relation, fn (Builder $q) => $q->where($attribute, $operator, $term));
-
-                    continue;
-                }
-
-                $query->orWhere($query->qualifyColumn($key), $operator, $term);
-            }
-        });
+        Search::any(
+            $this->query,
+            array_map(fn (Column $column) => $column->resolvedSearchKey(), array_values($searchable)),
+            $search,
+        );
     }
 
     /**

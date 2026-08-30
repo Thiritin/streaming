@@ -11,6 +11,7 @@ use App\Support\EventFilter;
 use App\Support\Manage\Status;
 use App\Support\Manage\Toast;
 use App\Support\RecordingTags;
+use App\Support\Search;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -409,12 +410,7 @@ class RecordingPlanController extends Controller
                 : $query->where('event_id', $filters['event']);
         }
 
-        if ($filters['search']) {
-            $term = '%'.$filters['search'].'%';
-            $query->where(fn (Builder $inner) => $inner
-                ->where('title', 'like', $term)
-                ->orWhereHas('source', fn (Builder $source) => $source->where('name', 'like', $term)));
-        }
+        Search::any($query, ['title', 'source.name'], $filters['search']);
 
         if ($filters['source']) {
             $query->where('source_id', $filters['source']);

@@ -176,6 +176,39 @@ class ArchiveBrowsingTest extends TestCase
             ->assertJsonPath('suggestions', []);
     }
 
+    /**
+     * Case folding is the engine's, not ours, unless we ask for it.
+     *
+     * Postgres does not fold case in LIKE; SQLite and MySQL's default collation do,
+     * which is why searching "furs" found nothing in local development and
+     * everything everywhere anyone looked. Run this file against Postgres to see it
+     * fail without `ilike`.
+     */
+    public function test_search_ignores_case_in_the_grid_and_the_suggestions(): void
+    {
+        $this->recording(['title' => 'Fursuit Parade', 'description' => 'Down the MAIN hall']);
+
+        foreach (['fursuit', 'FURSUIT', 'parade'] as $term) {
+            $this->get(route('recordings.index', ['search' => $term]))
+                ->assertOk()
+                ->assertInertia(fn (AssertableInertia $page) => $page
+                    ->has('recordings', 1, fn (AssertableInertia $tile) => $tile
+                        ->where('title', 'Fursuit Parade')
+                        ->etc()
+                    )
+                );
+        }
+
+        // The description is searched the same way, and misses for the same reason.
+        $this->get(route('recordings.index', ['search' => 'main hall']))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page->has('recordings', 1));
+
+        $this->getJson(route('recordings.suggest', ['q' => 'FURS']))
+            ->assertOk()
+            ->assertJsonPath('suggestions.0.title', 'Fursuit Parade');
+    }
+
     public function test_progress_is_recorded_for_a_signed_in_viewer_and_feeds_continue_watching(): void
     {
         $user = User::factory()->create();
