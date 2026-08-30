@@ -48,18 +48,20 @@ return [
     |
     | These are the shipped defaults; the live answers are edited at /manage >
     | Settings > Sign-in and laid back over this file by App\Support\RuntimeConfig.
-    | Read them through App\Support\AuthModes, never straight off config: `oidc` on
+    | Read them through App\Support\AuthModes, never straight off config: `oauth2` on
     | its own is only a switch, and a provider with no endpoint behind it is a button
     | that fails.
     |
-    | `oidc` ships on so an installation that has only ever used the identity
-    | provider keeps the shape it had; with no provider URL configured AuthModes
-    | answers false for it anyway.
+    | `oauth2` is the master switch over every row in `auth_providers`, which is a
+    | different question from a row's own `enabled`: that says whether one provider is
+    | set up and wanted, this says whether the whole way in is open. It ships on so an
+    | installation that has only ever used the identity provider keeps the shape it
+    | had; with no provider configured AuthModes answers false for it anyway.
     |
     */
 
     'modes' => [
-        'oidc' => true,
+        'oauth2' => true,
         'local' => false,
         'registration' => false,
     ],

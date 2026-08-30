@@ -6,17 +6,20 @@ use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\FrontChannelLogoutController;
 use App\Http\Controllers\Auth\NewPasswordController;
-use App\Http\Controllers\Auth\OidcClientController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\ProviderCallbackController;
+use App\Http\Controllers\Auth\ProviderRedirectController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\BoopController;
 use App\Http\Controllers\Chat\ChatUserController;
 use App\Http\Controllers\Chat\ModerationController;
+use App\Http\Controllers\ConnectionsController;
 use App\Http\Controllers\DisplayController;
 use App\Http\Controllers\EmoteController;
 use App\Http\Controllers\FeedbackController;
 use App\Http\Controllers\MessageController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecordingCommentController;
 use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\RecordingPlaylistController;
@@ -52,13 +55,22 @@ Route::get('/up', function () {
  * nothing - while every form behind it does, and a mode that is off answers 404 the
  * same way a switched-off feature does.
  */
-Route::middleware('guest')->group(function () {
-    Route::get('/auth/login', [OidcClientController::class, 'login'])->name('auth.login');
-    Route::get('/auth/callback', [
-        OidcClientController::class,
-        'callback',
-    ])->name('auth.callback');
+/*
+ * The providers, one pair of routes for all of them. Deliberately outside the guest
+ * group: connecting a second provider to an account is the same redirect and the same
+ * callback, and that half of the flow needs somebody signed in.
+ *
+ * The literal paths are declared first. `/auth/callback` is the URI the convention's
+ * provider already has registered - changing it is a change on somebody else's system,
+ * on their schedule - so it stays, and the row is resolved by the path it claims.
+ * `/auth/login` stays for every link already in the wild.
+ */
+Route::get('/auth/login', [ProviderRedirectController::class, 'legacy'])->name('auth.login');
+Route::get('/auth/callback', [ProviderCallbackController::class, 'legacy'])->name('auth.callback');
+Route::get('/auth/{provider:key}/redirect', ProviderRedirectController::class)->name('auth.provider.redirect');
+Route::get('/auth/{provider:key}/callback', ProviderCallbackController::class)->name('auth.provider.callback');
 
+Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
 
     Route::middleware('auth.local')->group(function () {
@@ -264,8 +276,37 @@ Route::middleware(['auth.optional:web'])->group(function () {
  * on.
  */
 Route::middleware('auth:web')->group(function () {
-    Route::get('/settings', [UserSettingsController::class, 'edit'])->name('settings.edit');
+    /*
+     * One page per section, so every one of them is linkable. The bare /settings is
+     * the first section rather than a redirect, the same shape /manage > Settings has.
+     */
+    Route::get('/settings/{section?}', [UserSettingsController::class, 'edit'])
+        ->whereAlpha('section')
+        ->name('settings.edit');
     Route::patch('/settings', [UserSettingsController::class, 'update'])->name('settings.update');
+
+    /*
+     * The ways into this account. Connecting hands over to the same provider redirect
+     * the sign-in button uses, with the intent in the session, so there is one OAuth
+     * path and one place the collision rule lives.
+     *
+     * Disconnect is bound by id rather than by key, because a provider an administrator
+     * has since switched off still has to be removable.
+     */
+    Route::get('/settings/connections/{provider:key}/connect', [ConnectionsController::class, 'connect'])
+        ->name('settings.connections.connect');
+    Route::delete('/settings/connections/{provider}', [ConnectionsController::class, 'destroy'])
+        ->name('settings.connections.destroy');
+
+    /*
+     * Setting a password on an account that has none. Behind the same switch as the
+     * sign-in form, because a password nobody is allowed to use is not a way in - and
+     * without it a one-identity account can never satisfy "never disconnect the last
+     * way in" from its own settings.
+     */
+    Route::put('/settings/password', [ProfileController::class, 'updatePassword'])
+        ->middleware(['auth.local', 'throttle:auth'])
+        ->name('settings.password.update');
 });
 
 /*

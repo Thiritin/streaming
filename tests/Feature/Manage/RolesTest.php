@@ -2,16 +2,20 @@
 
 namespace Tests\Feature\Manage;
 
+use App\Models\AuthProvider;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\Auth\ProviderRoles;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Concerns\ConfiguresAuthProviders;
 use Tests\Concerns\CreatesManageUsers;
 use Tests\TestCase;
 
 class RolesTest extends TestCase
 {
+    use ConfiguresAuthProviders;
     use CreatesManageUsers;
     use RefreshDatabase;
 
@@ -185,7 +189,12 @@ class RolesTest extends TestCase
             ->assertRedirect(route('manage.roles.index'));
     }
 
-    public function test_login_sync_only_touches_roles_carrying_an_external_id(): void
+    /**
+     * A role a provider's map does not name is never touched, however it was assigned.
+     * The ownership rule moved from `Role.external_id` onto the provider's map, but it
+     * is the same rule.
+     */
+    public function test_login_sync_only_touches_roles_a_provider_can_grant(): void
     {
         $synced = Role::create($this->payload(['external_id' => 'GROUP-STAFF']));
         $manual = Role::create($this->payload([
@@ -194,20 +203,70 @@ class RolesTest extends TestCase
             'external_id' => null,
         ]));
 
+        $provider = AuthProvider::factory()->create([
+            'grants_baseline' => false,
+            'role_map' => [
+                ['claim' => 'groups', 'match' => 'exact', 'value' => 'GROUP-STAFF', 'role_id' => $synced->id],
+            ],
+        ]);
+
         $user = User::factory()->create();
+        $identity = $this->connect($user, $provider);
         $user->roles()->attach([$synced->id, $manual->id]);
 
-        // Signs in without that group: the synced role goes, the manual one stays.
-        $user->syncRolesFromLogin([]);
+        // Signs in without that group: the mapped role goes, the manual one stays.
+        ProviderRoles::apply($identity, $provider, ['groups' => []]);
 
         $slugs = $user->fresh()->roles->pluck('slug');
-        $this->assertFalse($slugs->contains('sponsor'));
+        $this->assertFalse($slugs->contains($synced->slug));
         $this->assertTrue($slugs->contains('manual'));
 
         // Signs in with it again and it comes back.
-        $user->syncRolesFromLogin(['GROUP-STAFF']);
+        ProviderRoles::apply($identity->fresh(), $provider, ['groups' => ['GROUP-STAFF']]);
 
-        $this->assertTrue($user->fresh()->roles->pluck('slug')->contains('sponsor'));
+        $this->assertTrue($user->fresh()->roles->pluck('slug')->contains($synced->slug));
+    }
+
+    /**
+     * Two providers releasing a group of the same name grant whatever each of their own
+     * maps says and nothing else. Under the old matcher a second provider naming a
+     * group `GROUP-STAFF` would have granted this installation's role for it.
+     */
+    public function test_two_providers_releasing_the_same_group_do_not_grant_each_others_roles(): void
+    {
+        $ours = Role::create($this->payload(['name' => 'Ours', 'slug' => 'ours', 'external_id' => 'GROUP-STAFF']));
+        $theirs = Role::create($this->payload(['name' => 'Theirs', 'slug' => 'theirs', 'external_id' => null]));
+
+        $first = AuthProvider::factory()->create([
+            'key' => 'first',
+            'grants_baseline' => false,
+            'role_map' => [
+                ['claim' => 'groups', 'match' => 'exact', 'value' => 'GROUP-STAFF', 'role_id' => $ours->id],
+            ],
+        ]);
+
+        $second = AuthProvider::factory()->create([
+            'key' => 'second',
+            'grants_baseline' => false,
+            'role_map' => [
+                ['claim' => 'groups', 'match' => 'exact', 'value' => 'GROUP-STAFF', 'role_id' => $theirs->id],
+            ],
+        ]);
+
+        $user = User::factory()->create();
+
+        ProviderRoles::apply($this->connect($user, $second), $second, ['groups' => ['GROUP-STAFF']]);
+
+        $slugs = $user->fresh()->roles->pluck('slug');
+        $this->assertTrue($slugs->contains('theirs'));
+        $this->assertFalse($slugs->contains('ours'));
+
+        // And the first one signing in adds its own without stripping the second's.
+        ProviderRoles::apply($this->connect($user, $first), $first, ['groups' => ['GROUP-STAFF']]);
+
+        $slugs = $user->fresh()->roles->pluck('slug');
+        $this->assertTrue($slugs->contains('ours'));
+        $this->assertTrue($slugs->contains('theirs'));
     }
 
     public function test_a_moderator_cannot_write_roles(): void

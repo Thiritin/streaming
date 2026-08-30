@@ -48,9 +48,13 @@ class AuthLocalAdminCommand extends Command
             return self::FAILURE;
         }
 
-        // Only accounts this installation holds. An account the identity provider owns
-        // keeps its subject and is left alone, even when it carries the same address.
-        $user = User::query()->whereNull('sub')->where('email', $email)->first();
+        // Only accounts this installation holds. An account a provider owns keeps its
+        // identity and is left alone, even when it carries the same address.
+        $user = User::query()
+            ->whereNull('sub')
+            ->whereDoesntHave('identities')
+            ->where('email', $email)
+            ->first();
 
         if ($user === null) {
             $user = new User(['sub' => null, 'email' => $email]);

@@ -3,19 +3,45 @@
 namespace Tests\Feature\Auth;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\URL;
+use Tests\Concerns\ConfiguresAuthProviders;
 use Tests\TestCase;
 
+/**
+ * What the shared callback does when a sign-in goes wrong, which is the only part of
+ * it that can be exercised without a provider on the other end.
+ *
+ * `/auth/callback` and `/auth/login` are still the convention provider's, because that
+ * callback URI is registered at the provider and every link already in the wild points
+ * at the second.
+ */
 class OidcCallbackTest extends TestCase
 {
+    use ConfiguresAuthProviders;
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->legacyProvider();
+
+        Http::fake([
+            '*/.well-known/openid-configuration' => Http::response([
+                'authorization_endpoint' => 'https://identity.example.org/oauth2/auth',
+                'token_endpoint' => 'https://identity.example.org/oauth2/token',
+                'userinfo_endpoint' => 'https://identity.example.org/userinfo',
+            ]),
+        ]);
+    }
+
     /**
-     * The provider can reject an authorize request for reasons that have nothing to do with
-     * this app (a replayed flow, a rotated CSRF cookie on its side, an expired flow). The
-     * callback used to answer that by redirecting to auth.login, which immediately starts
-     * another authorize round: a loop, with the error invisible.
+     * The provider can reject an authorize request for reasons that have nothing to do
+     * with this app (a replayed flow, a rotated CSRF cookie on its side, an expired
+     * flow). The callback used to answer that by redirecting to auth.login, which
+     * immediately starts another authorize round: a loop, with the error invisible.
      */
     public function test_a_provider_error_lands_on_the_sign_in_screen_and_does_not_restart_the_flow(): void
     {
@@ -47,7 +73,7 @@ class OidcCallbackTest extends TestCase
 
     public function test_a_state_mismatch_lands_on_the_sign_in_screen(): void
     {
-        Session::put('login.oauth2state', 'the-state-we-issued');
+        Session::put('state', 'the-state-we-issued');
 
         $response = $this->get('/auth/callback?'.http_build_query([
             'state' => 'a-different-state',
@@ -56,7 +82,7 @@ class OidcCallbackTest extends TestCase
 
         $response->assertRedirect(route('login'));
         $response->assertSessionHasErrors('oidc');
-        $this->assertNull(session('login.oauth2state'));
+        $this->assertNull(session('state'));
     }
 
     public function test_a_callback_with_no_state_at_all_does_not_pass_verification(): void
@@ -68,9 +94,9 @@ class OidcCallbackTest extends TestCase
     }
 
     /**
-     * Ory Hydra reports an http callback URL as `invalid_request: Redirect URL is using an
-     * insecure protocol ...`, but only after a full round trip, which reads like a login
-     * failure instead of a misconfigured APP_URL.
+     * Ory Hydra reports an http callback URL as `invalid_request: Redirect URL is using
+     * an insecure protocol ...`, but only after a full round trip, which reads like a
+     * login failure instead of a misconfigured APP_URL.
      */
     public function test_an_http_callback_url_on_a_non_localhost_host_fails_before_leaving_the_app(): void
     {
@@ -91,13 +117,17 @@ class OidcCallbackTest extends TestCase
     {
         URL::forceRootUrl('http://streaming.localhost');
 
-        // Reaches the provider setup instead of the guard, so it no longer redirects to the
-        // sign-in screen with an error.
-        $this->get(route('auth.login'))->assertSessionDoesntHaveErrors('oidc');
+        // Reaches the provider's authorize endpoint instead of the guard, so it no
+        // longer redirects to the sign-in screen with an error.
+        $this->get(route('auth.login'))
+            ->assertSessionDoesntHaveErrors('oidc')
+            ->assertRedirectContains('https://identity.example.org/oauth2/auth');
     }
 
     public function test_the_sign_in_screen_renders_the_error(): void
     {
+        $this->withoutVite();
+
         $this->get('/auth/callback?'.http_build_query([
             'error' => 'request_forbidden',
             'error_description' => 'nope',
@@ -107,5 +137,16 @@ class OidcCallbackTest extends TestCase
         $this->get(route('login'))
             ->assertSuccessful()
             ->assertSee('Sign-in was refused', false);
+    }
+
+    /**
+     * A row that is switched off is not a route, so its generated pair answers 404 the
+     * way every other switched-off route in this app does.
+     */
+    public function test_a_disabled_provider_is_not_routed(): void
+    {
+        $this->legacyProvider(['enabled' => false]);
+
+        $this->get(route('auth.provider.redirect', 'identity'))->assertNotFound();
     }
 }

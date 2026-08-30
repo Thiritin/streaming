@@ -2,34 +2,46 @@
 
 namespace App\Services;
 
-use Cache;
-use Http;
-use Illuminate\Http\Request;
-use League\OAuth2\Client\Provider\AbstractProvider;
-use League\OAuth2\Client\Provider\GenericProvider;
+use App\Models\AuthProvider;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 
+/**
+ * An OIDC provider's discovery document, cached.
+ *
+ * One key per provider row, so two installations of the same software behind two
+ * issuers do not share an answer, and so switching a row's issuer is one forget
+ * rather than a flush.
+ */
 class OpenIDService
 {
-    public function setupOIDC(Request $request, bool $clientIsAdmin): GenericProvider
+    private const TTL = 3600;
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function discover(AuthProvider $provider): array
     {
-        $config = Cache::remember('openid-configuration', now()->addHour(), function () {
-            return Http::get(config('services.oidc.url').'/.well-known/openid-configuration')->json();
+        if (blank($provider->issuer_url)) {
+            return [];
+        }
+
+        return Cache::remember(self::key($provider), self::TTL, function () use ($provider) {
+            $url = rtrim((string) $provider->issuer_url, '/').'/.well-known/openid-configuration';
+
+            $response = Http::timeout(5)->get($url);
+
+            return $response->successful() ? (array) $response->json() : [];
         });
+    }
 
-        $clientId = config('services.oidc.client_id');
-        $clientSecret = config('services.oidc.secret');
-        $clientCallback = route('auth.callback');
+    public static function forget(AuthProvider $provider): void
+    {
+        Cache::forget(self::key($provider));
+    }
 
-        return new GenericProvider([
-            'clientId' => $clientId,
-            'clientSecret' => $clientSecret,
-            'redirectUri' => $clientCallback,
-            'urlAuthorize' => $config['authorization_endpoint'],
-            'urlAccessToken' => $config['token_endpoint'],
-            'urlResourceOwnerDetails' => $config['userinfo_endpoint'],
-            'accessTokenMethod' => AbstractProvider::METHOD_POST,
-            'scopeSeparator' => ' ',
-            'scopes' => ['openid', 'profile'],
-        ]);
+    private static function key(AuthProvider $provider): string
+    {
+        return 'openid-configuration:'.$provider->key;
     }
 }

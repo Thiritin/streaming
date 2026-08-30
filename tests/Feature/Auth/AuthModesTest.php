@@ -2,9 +2,12 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Models\AuthProvider;
 use App\Support\AuthModes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Inertia\Testing\AssertableInertia;
+use Tests\Concerns\ConfiguresAuthProviders;
 use Tests\TestCase;
 
 /**
@@ -13,6 +16,7 @@ use Tests\TestCase;
  */
 class AuthModesTest extends TestCase
 {
+    use ConfiguresAuthProviders;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -27,13 +31,13 @@ class AuthModesTest extends TestCase
     private function modes(bool $oidc = false, bool $local = false, bool $registration = false, bool $guests = false): void
     {
         config([
-            'auth.modes.oidc' => $oidc,
             'auth.modes.local' => $local,
             'auth.modes.registration' => $registration,
             'auth.required' => ! $guests,
-            'services.oidc.url' => $oidc ? 'https://identity.example.org' : null,
-            'services.oidc.client_id' => $oidc ? 'streaming' : null,
         ]);
+
+        // The provider is a row, so switching it on is switching a row on.
+        $this->legacyProvider(['enabled' => $oidc]);
     }
 
     /**
@@ -52,7 +56,9 @@ class AuthModesTest extends TestCase
             $modes = $page->toArray()['props']['modes'];
         });
 
-        return $modes;
+        // The four flags the screen lays itself out from. `providers` is the list it
+        // draws one button per and has a test of its own.
+        return Arr::only($modes, ['oidc', 'local', 'registration', 'guest']);
     }
 
     public function test_the_identity_provider_alone(): void
@@ -143,15 +149,40 @@ class AuthModesTest extends TestCase
 
     /**
      * A switch with no endpoint behind it is a button that fails on the second page,
-     * so it is not offered whatever the toggle says.
+     * so it is not offered whatever the row says.
      */
     public function test_the_provider_is_not_offered_without_an_endpoint(): void
     {
         $this->modes(local: true);
-        config(['auth.modes.oidc' => true]);
+        $this->legacyProvider(['enabled' => true, 'issuer_url' => null, 'client_id' => null]);
 
         $this->assertFalse(AuthModes::oidc());
         $this->assertFalse($this->offered()['oidc']);
+    }
+
+    /**
+     * One button per enabled row, in order, which is the whole point of the table.
+     */
+    public function test_every_enabled_provider_is_offered_as_its_own_button(): void
+    {
+        $this->modes(oidc: true);
+
+        AuthProvider::factory()->create([
+            'driver' => 'github',
+            'key' => 'github',
+            'label' => 'GitHub',
+            'order' => 5,
+        ]);
+
+        $response = $this->get('/login');
+
+        $providers = null;
+        $response->assertInertia(function (AssertableInertia $page) use (&$providers) {
+            $providers = $page->toArray()['props']['modes']['providers'];
+        });
+
+        $this->assertSame(['identity', 'github'], array_column($providers, 'key'));
+        $this->assertSame(route('auth.provider.redirect', 'github'), $providers[1]['url']);
     }
 
     public function test_registration_needs_password_accounts(): void

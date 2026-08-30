@@ -142,6 +142,14 @@ class UserController extends Controller
                 'email' => $user->email,
                 'reg_id' => $user->reg_id,
                 'roles' => $user->roles->pluck('slug')->all(),
+                // Every provider this account signs in through. `sub` is the legacy
+                // column beside it and is dropped in a later release.
+                'identities' => $user->identities()->with('provider')->get()
+                    ->map(fn ($identity) => [
+                        'label' => $identity->provider?->label ?? '-',
+                        'subject' => $identity->subject,
+                        'last_login_at' => $identity->last_login_at?->diffForHumans(),
+                    ])->all(),
                 'has_password' => $user->password !== null,
                 'email_verified' => $user->hasVerifiedEmail(),
                 'created_at' => $user->created_at?->diffForHumans() ?? '-',
@@ -204,14 +212,16 @@ class UserController extends Controller
     }
 
     /**
-     * Clearing a password leaves the identity provider as the way in, so an account
-     * that has no provider behind it keeps the one it has.
+     * Clearing a password leaves whatever providers the account is connected to as the
+     * way in, so an account with none keeps the one it has. Counted rather than read
+     * off `sub`: an account whose only identity was disconnected has a subject and no
+     * way in, and clearing its password would lock it out.
      */
     public function destroyPassword(User $user): RedirectResponse
     {
         $this->authorize('managePassword', $user);
 
-        if ($user->sub === null) {
+        if ($user->signInMethodCount() <= 1) {
             Toast::flashDanger('Cannot clear password', 'This account has no other way to sign in.');
 
             return back();
@@ -292,10 +302,10 @@ class UserController extends Controller
             $actions[] = Action::delete('clear-password', 'Clear password', route('manage.users.password.destroy', $user))
                 ->icon('key')
                 ->tone(Status::WARN)
-                ->disabled($user->sub === null ? 'This account has no other way to sign in.' : null)
+                ->disabled($user->signInMethodCount() <= 1 ? 'This account has no other way to sign in.' : null)
                 ->confirm(
                     'Clear password',
-                    "'{$user->name}' will sign in through the identity provider only.",
+                    "'{$user->name}' will sign in through a provider only.",
                     'Clear',
                 );
         }

@@ -4,6 +4,7 @@ namespace Tests\Feature\Auth;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Concerns\ConfiguresAuthProviders;
 use Tests\TestCase;
 
 /**
@@ -15,6 +16,7 @@ use Tests\TestCase;
  */
 class LoginScreenTest extends TestCase
 {
+    use ConfiguresAuthProviders;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -27,13 +29,12 @@ class LoginScreenTest extends TestCase
     private function modes(bool $oidc = false, bool $local = false, bool $registration = false, bool $guests = false): void
     {
         config([
-            'auth.modes.oidc' => $oidc,
             'auth.modes.local' => $local,
             'auth.modes.registration' => $registration,
             'auth.required' => ! $guests,
-            'services.oidc.url' => $oidc ? 'https://identity.example.org' : null,
-            'services.oidc.client_id' => $oidc ? 'streaming' : null,
         ]);
+
+        $this->legacyProvider(['enabled' => $oidc]);
     }
 
     private function assertScreen(array $expected): void
@@ -43,7 +44,11 @@ class LoginScreenTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Auth/Login')
                 ->has('schedule')
-                ->where('modes', $expected));
+                ->has('modes.providers')
+                ->where('modes.oidc', $expected['oidc'])
+                ->where('modes.local', $expected['local'])
+                ->where('modes.registration', $expected['registration'])
+                ->where('modes.guest', $expected['guest']));
     }
 
     public function test_password_accounts_alone(): void

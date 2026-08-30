@@ -205,44 +205,6 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Rewrite the roles the identity provider owns from what it just told us.
-     *
-     * Ownership is decided by the role, not by this call: a role carrying an
-     * `external_id` is the provider's to give and take away, and a role without
-     * one is never touched here, however it was assigned.
-     *
-     * @param  array<int, string>  $externalIds  Group IDs and package names from the provider.
-     */
-    public function syncRolesFromLogin(array $externalIds): void
-    {
-        \Log::info('Before sync - User '.$this->id.' roles: ', $this->roles()->pluck('slug')->toArray());
-        \Log::info('Syncing roles from login: ', $externalIds);
-
-        // Drop every provider-owned role first, so one that is no longer granted
-        // actually goes away rather than lingering from a previous login.
-        $roleIdsToDetach = $this->roles()
-            ->loginAssigned()
-            ->pluck('roles.id')
-            ->toArray();
-
-        if (! empty($roleIdsToDetach)) {
-            $this->roles()->detach($roleIdsToDetach);
-        }
-
-        $roles = Role::loginAssigned()
-            ->whereIn('external_id', $externalIds)
-            ->get();
-
-        \Log::info('Adding roles: ', $roles->pluck('slug')->toArray());
-
-        foreach ($roles as $role) {
-            $role->assignTo($this, null);
-        }
-
-        \Log::info('After sync - User '.$this->id.' roles: ', $this->roles()->pluck('slug')->toArray());
-    }
-
-    /**
      * Both sign-in mails go out on a queue rather than inside the request that asked
      * for them: the row - a reset token, an account - is already written by the time
      * the message is built, so an installation whose mail is down should not answer
@@ -259,21 +221,50 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * An account this installation holds itself, rather than one the identity
-     * provider owns. Local accounts have no subject; that is the whole difference.
+     * Every provider this account can sign in through.
+     */
+    public function identities(): HasMany
+    {
+        return $this->hasMany(UserIdentity::class);
+    }
+
+    /**
+     * How many ways there are into this account: one per identity, plus a password.
+     *
+     * What "never disconnect your last way in" is measured against, and what an
+     * administrator clearing a password is held to as well.
+     *
+     * The legacy `sub` counts while the column is still there: an account backfilled
+     * before this release holds an identity, but one made by a test or a seeder from
+     * the column alone still signs in through the provider.
+     */
+    public function signInMethodCount(): int
+    {
+        $identities = $this->identities()->count();
+
+        if ($identities === 0 && $this->sub !== null) {
+            $identities = 1;
+        }
+
+        return $identities + ($this->password === null ? 0 : 1);
+    }
+
+    /**
+     * An account this installation holds itself, rather than one a provider owns.
+     * No identity and no subject; that is the whole difference.
      */
     public function isLocal(): bool
     {
-        return $this->sub === null;
+        return $this->sub === null && $this->identities()->doesntExist();
     }
 
     /**
      * Give this account the baseline role, if the installation declares one.
      *
-     * An OIDC sign-in gets it from the mapping in OidcClientController, which appends
-     * Role::BASELINE_EXTERNAL_ID to every successful sign-in. A local account has no
-     * provider to hand it one, so it is attached as the account is created and the two
-     * kinds end up the same citizen. Nothing else is granted automatically: any further
+     * A sign-in through a provider gets it from that provider's `grants_baseline`,
+     * applied by App\Support\Auth\ProviderRoles. A local account has no provider to
+     * hand it one, so it is attached as the account is created and the two kinds end
+     * up the same citizen. Nothing else is granted automatically: any further
      * role is an administrator's decision, in /manage > Users.
      */
     public function assignBaselineRole(): void

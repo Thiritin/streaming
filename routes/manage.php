@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Manage\AuthProviderController;
 use App\Http\Controllers\Manage\CategoryController;
 use App\Http\Controllers\Manage\CommentController;
 use App\Http\Controllers\Manage\DashboardController;
@@ -315,6 +316,19 @@ Route::get('settings/events/{event}', [EventController::class, 'edit'])->name('e
 Route::put('settings/events/{event}', [EventController::class, 'update'])->name('events.update');
 Route::post('settings/events/{event}/match', [EventController::class, 'match'])->name('events.match');
 Route::delete('settings/events/{event}', [EventController::class, 'destroy'])->name('events.destroy');
+
+/*
+ * Sign-in providers: the ways in that are not a password. Rows, like events and
+ * categories, and declared before the generated panes for the same reason.
+ */
+Route::get('settings/providers', [AuthProviderController::class, 'index'])->name('providers.index');
+Route::get('settings/providers/create', [AuthProviderController::class, 'create'])->name('providers.create');
+Route::post('settings/providers', [AuthProviderController::class, 'store'])->name('providers.store');
+Route::get('settings/providers/{provider}', [AuthProviderController::class, 'edit'])->name('providers.edit');
+Route::put('settings/providers/{provider}', [AuthProviderController::class, 'update'])->name('providers.update');
+Route::delete('settings/providers/{provider}', [AuthProviderController::class, 'destroy'])->name('providers.destroy');
+// A real round trip to the real provider, which writes nothing. See the controller.
+Route::get('settings/providers/{provider}/test', [AuthProviderController::class, 'test'])->name('providers.test');
 
 Route::post('settings/pretalx/test', PretalxConnectionController::class)->name('settings.pretalx.test');
 Route::get('settings', [SettingsController::class, 'edit'])->name('settings');

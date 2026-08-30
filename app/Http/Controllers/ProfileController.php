@@ -8,6 +8,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Redirect;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -38,6 +39,31 @@ class ProfileController extends Controller
         $request->user()->save();
 
         return Redirect::route('profile.edit');
+    }
+
+    /**
+     * Set or change this account's own password.
+     *
+     * A viewer could not do this before: only an administrator could, from
+     * /manage > Users. So an account with one identity and no password could never
+     * satisfy "never disconnect your last way in" from its own settings, and the only
+     * way out was a support request.
+     *
+     * The current password is asked for only when there is one. An account signed in
+     * through a provider has none to prove, and the session is already the proof.
+     */
+    public function updatePassword(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $request->validate([
+            'current_password' => $user->password === null ? ['nullable'] : ['required', 'current_password'],
+            'password' => ['required', 'confirmed', Password::defaults()],
+        ]);
+
+        $user->forceFill(['password' => $request->input('password')])->save();
+
+        return back()->with('status', 'Password set.');
     }
 
     /**

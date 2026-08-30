@@ -2,7 +2,9 @@
 
 namespace Database\Factories;
 
+use App\Models\AuthProvider;
 use App\Models\User;
+use App\Models\UserIdentity;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -39,6 +41,23 @@ class UserFactory extends Factory
             'password' => $password,
             'email_verified_at' => now(),
         ]);
+    }
+
+    /**
+     * An account signed in through a provider, with the identity row to prove it.
+     * The subject stays on `users` as well while that column is still there.
+     */
+    public function identity(?AuthProvider $provider = null): static
+    {
+        return $this->afterCreating(function (User $user) use ($provider) {
+            UserIdentity::create([
+                'user_id' => $user->id,
+                'auth_provider_id' => ($provider ?? AuthProvider::factory()->legacy()->create())->id,
+                'subject' => $user->sub ?? fake()->unique()->uuid(),
+                'email' => $user->email,
+                'name' => $user->name,
+            ]);
+        });
     }
 
     /**

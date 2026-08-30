@@ -2,39 +2,74 @@
 
 namespace App\Support;
 
+use App\Models\AuthProvider;
 use App\Models\BrandingSetting;
 use App\Models\User;
 use App\Support\Manage\Settings;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * The ways into this installation, and whether each of them actually works.
  *
- * Three independent switches - the identity provider, local username and password
- * accounts, and public self-registration on top of the second - plus guest access,
- * which is `auth.required` inverted and is not a way in at all: it is permission to
- * browse without one. Every combination is valid.
+ * Password accounts and the self-registration on top of them are switches in the
+ * settings registry; every other way in is a row in `auth_providers`, one per
+ * provider. Guest access is `auth.required` inverted and is not a way in at all: it is
+ * permission to browse without one. Every combination is valid.
  *
- * The switches live in config/auth.php as shipped defaults and in the settings table
- * once an administrator has saved them, laid back over config by RuntimeConfig. Read
- * them here rather than off config(): `oidc` on its own is a switch, and a provider
- * with no endpoint behind it is a sign-in button that fails on the second page.
+ * The two switches live in config/auth.php as shipped defaults and in the settings
+ * table once an administrator has saved them, laid back over config by RuntimeConfig.
+ * The providers are read straight off their table, because a row is not a config path
+ * and there is nothing to overlay.
+ *
+ * Read the ways in here rather than off either source: a switched-on provider with no
+ * endpoint behind it is a sign-in button that fails on the second page.
  */
 final class AuthModes
 {
     /**
-     * The identity provider: switched on, and with somewhere to send people.
+     * The sign-in switches, whichever pane they are laid out on. Everything else about
+     * a way in is a row in `auth_providers`.
+     *
+     * @var array<int, string>
      */
-    public static function oidc(): bool
+    public const KEYS = ['auth_required', 'auth_local', 'auth_oauth2', 'auth_registration'];
+
+    /**
+     * Every provider that is switched on and has an endpoint behind it, in button order.
+     *
+     * @return Collection<int, AuthProvider>
+     */
+    public static function providers(): Collection
     {
-        return (bool) config('auth.modes.oidc') && self::oidcConfigured();
+        return self::oauth2() ? AuthProvider::usable() : AuthProvider::usable()->take(0);
     }
 
     /**
-     * Whether there is a provider to talk to at all, whatever the switch says.
+     * The master switch over every provider. It sits beside password sign-in rather
+     * than in the provider table because it is one installation-wide answer, where a
+     * row's `enabled` says whether that one provider is set up and wanted. Off, no
+     * provider is offered however many rows are switched on.
+     */
+    public static function oauth2(): bool
+    {
+        return (bool) config('auth.modes.oauth2');
+    }
+
+    /**
+     * Whether any provider at all can be signed in through. Named `oidc` still because
+     * that is what the sign-in screen has always called the non-password half.
+     */
+    public static function oidc(): bool
+    {
+        return self::providers()->isNotEmpty();
+    }
+
+    /**
+     * Whether there is a provider to talk to at all, whatever its switch says.
      */
     public static function oidcConfigured(): bool
     {
-        return filled(config('services.oidc.url')) && filled(config('services.oidc.client_id'));
+        return AuthProvider::query()->get()->contains(fn (AuthProvider $provider) => $provider->isConfigured());
     }
 
     /**
@@ -74,15 +109,25 @@ final class AuthModes
     /**
      * What the sign-in screen renders itself from.
      *
-     * @return array{oidc: bool, local: bool, registration: bool, guest: bool}
+     * `oidc` survives as "is there a provider button at all", which is what the screen
+     * lays itself out from; `providers` is what it draws one button per.
+     *
+     * @return array{oidc: bool, local: bool, registration: bool, guest: bool, providers: array<int, array{key: string, label: string, url: string}>}
      */
     public static function forFrontend(): array
     {
+        $providers = self::providers();
+
         return [
-            'oidc' => self::oidc(),
+            'oidc' => $providers->isNotEmpty(),
             'local' => self::local(),
             'registration' => self::registration(),
             'guest' => self::guestAccess(),
+            'providers' => $providers->map(fn (AuthProvider $provider) => [
+                'key' => $provider->key,
+                'label' => $provider->label,
+                'url' => $provider->redirectStartUrl(),
+            ])->all(),
         ];
     }
 
@@ -106,49 +151,80 @@ final class AuthModes
         // the length of the check and the save.
         $stored = self::stored();
 
-        $local = (bool) self::posted($values, 'auth_local', $stored['auth_local'] ?? false);
+        $localBefore = (bool) ($stored['auth_local'] ?? false);
+        $oauthBefore = (bool) ($stored['auth_oauth2'] ?? self::oauth2());
 
-        // All three connection fields, the secret included: the code exchange needs it,
-        // so clearing it alone breaks sign-in exactly the way clearing the URL does.
-        $oidc = (bool) self::posted($values, 'auth_oidc', $stored['auth_oidc'] ?? false)
-            && filled(self::posted($values, 'oidc_url', $stored['oidc_url'] ?? null))
-            && filled(self::posted($values, 'oidc_client_id', $stored['oidc_client_id'] ?? null))
-            && filled(self::postedSecret($values, 'oidc_secret', $stored['oidc_secret'] ?? null));
+        $localAfter = (bool) self::posted($values, 'auth_local', $localBefore);
+        $oauthAfter = (bool) self::posted($values, 'auth_oauth2', $oauthBefore);
 
-        if (! $oidc && ! $local) {
-            return ['values.auth_local' => 'Leave at least one sign-in mode on. Guest access is not one.'];
+        // The providers are rows, so this pane cannot change them: what they stand at
+        // now is what they stand at on both sides of the save.
+        $rows = self::rawUsableProviderIds();
+
+        // The switch the operator just touched is where the message belongs. With both
+        // moved at once the providers are the more consequential half.
+        $field = $oauthAfter !== $oauthBefore ? 'auth_oauth2' : 'auth_local';
+
+        return self::worsens(
+            $oauthBefore ? $rows : [],
+            $localBefore,
+            $oauthAfter ? $rows : [],
+            $localAfter,
+            $field,
+        );
+    }
+
+    /**
+     * Why a provider row must not be switched off or deleted, or null when it is safe.
+     *
+     * The same check as the settings save and for the same reason: disabling the last
+     * enabled provider from its own page is a lockout the settings pane never sees.
+     */
+    public static function providerLockout(AuthProvider $provider, bool $enabledAfter): ?string
+    {
+        $local = (bool) (self::stored()['auth_local'] ?? false);
+        $oauth2 = self::oauth2();
+
+        $before = self::rawUsableProviderIds();
+        $after = array_values(array_diff($before, [$provider->id]));
+
+        if ($enabledAfter) {
+            $after[] = $provider->id;
         }
 
-        if (self::administratorCanSignIn($oidc, $local)) {
-            return null;
-        }
+        $errors = self::worsens(
+            $oauth2 ? $before : [],
+            $local,
+            $oauth2 ? $after : [],
+            $local,
+            'auth_local',
+        );
 
-        return [
-            'values.'.($local ? 'auth_oidc' : 'auth_local') => 'No administrator can sign in with what this leaves on.',
-        ];
+        return $errors === null ? null : reset($errors);
     }
 
     /**
      * Why the settings must not be reset, or null when it is safe.
      *
-     * Reset deletes every saved row, so what is left is the config as shipped. An
-     * installation whose provider details were typed into the pane rather than set in
-     * the environment has nothing behind them once the rows go, which is the same
-     * lockout the save path refuses and is why this is measured against the shipped
-     * config rather than against what is in force now.
+     * Reset deletes every saved row, so what is left is the config as shipped. Provider
+     * rows are not settings rows and survive it, which is why they are counted as they
+     * stand rather than as they were shipped - there is no shipped answer for a row.
      */
     public static function resetLockout(): ?string
     {
-        $oidc = (bool) RuntimeConfig::shipped('auth.modes.oidc')
-            && filled(RuntimeConfig::shipped('services.oidc.url'))
-            && filled(RuntimeConfig::shipped('services.oidc.client_id'))
-            && filled(RuntimeConfig::shipped('services.oidc.secret'));
+        $rows = self::rawUsableProviderIds();
 
-        if (self::administratorCanSignIn($oidc, (bool) RuntimeConfig::shipped('auth.modes.local'))) {
-            return null;
-        }
+        // What stands now comes off the table for the same reason the save path reads
+        // it there: config is this process's overlay and can be a save behind.
+        $errors = self::worsens(
+            self::oauth2() ? $rows : [],
+            (bool) (self::stored()['auth_local'] ?? self::local()),
+            RuntimeConfig::shipped('auth.modes.oauth2') ? $rows : [],
+            (bool) RuntimeConfig::shipped('auth.modes.local'),
+            'auth_local',
+        );
 
-        return 'No administrator could sign in afterwards.';
+        return $errors === null ? null : 'No administrator could sign in afterwards.';
     }
 
     /**
@@ -158,13 +234,25 @@ final class AuthModes
      * defined as: counting a narrower set than the gate lets in would refuse every
      * save on an installation whose roles carry `filament.access`, which is most of
      * the ones that have been running a while.
-     *
-     * An OIDC account is one with a subject; a local one is an account with a
-     * password. An account can be both.
      */
-    public static function administratorCanSignIn(bool $oidc, bool $local): bool
+    public static function administratorCanSignIn(bool $providers, bool $local): bool
     {
-        if (! $oidc && ! $local) {
+        return self::administratorCanSignInWith($providers ? self::rawUsableProviderIds() : [], $local);
+    }
+
+    /**
+     * The same question against a named set of providers, which is what the provider
+     * CRUD asks: "if this row went, would anybody be left".
+     *
+     * An account signs in through a provider by holding an identity on it. The legacy
+     * `sub` counts for as long as the column is there, because a seeder or a fixture
+     * can still write one without an identity row.
+     *
+     * @param  array<int, int>  $providerIds
+     */
+    public static function administratorCanSignInWith(array $providerIds, bool $local): bool
+    {
+        if ($providerIds === [] && ! $local) {
             return false;
         }
 
@@ -174,10 +262,20 @@ final class AuthModes
             return false;
         }
 
+        $legacy = AuthProvider::legacy();
+        $legacyOn = $legacy !== null && in_array($legacy->id, $providerIds, true);
+
         return User::query()
             ->whereHas('roles', fn ($query) => $query->whereIn('roles.id', $roleIds))
-            ->where(function ($query) use ($oidc, $local) {
-                if ($oidc) {
+            ->where(function ($query) use ($providerIds, $local, $legacyOn) {
+                if ($providerIds !== []) {
+                    $query->orWhereHas(
+                        'identities',
+                        fn ($identities) => $identities->whereIn('auth_provider_id', $providerIds),
+                    );
+                }
+
+                if ($legacyOn) {
                     $query->orWhereNotNull('sub');
                 }
 
@@ -186,6 +284,62 @@ final class AuthModes
                 }
             })
             ->exists();
+    }
+
+    /**
+     * The shared refusal, so the settings save and the provider CRUD cannot drift.
+     *
+     * Only a change that makes things worse is refused. Two installations hear
+     * nothing: one that already has no way in, where there is nothing left to protect
+     * and a refusal would only stop the operator saving the site name from the same
+     * pane, and one whose change leaves the answer where it was.
+     *
+     * Two questions, not one. "Is a mode on at all" and "can an administrator use one"
+     * fail differently, and an installation can be on the wrong side of either.
+     *
+     * @param  array<int, int>  $providersBefore
+     * @param  array<int, int>  $providersAfter
+     * @param  string  $field  The switch the message belongs against.
+     * @return array<string, string>|null
+     */
+    private static function worsens(
+        array $providersBefore,
+        bool $localBefore,
+        array $providersAfter,
+        bool $localAfter,
+        string $field,
+    ): ?array {
+        $wayInBefore = $providersBefore !== [] || $localBefore;
+        $wayInAfter = $providersAfter !== [] || $localAfter;
+
+        if ($wayInBefore && ! $wayInAfter) {
+            return ['values.'.$field => 'Leave at least one sign-in mode on. Guest access is not one.'];
+        }
+
+        if (! $wayInAfter) {
+            return null;
+        }
+
+        if (! self::administratorCanSignInWith($providersBefore, $localBefore)) {
+            return null;
+        }
+
+        if (self::administratorCanSignInWith($providersAfter, $localAfter)) {
+            return null;
+        }
+
+        return ['values.'.$field => 'No administrator can sign in with what this leaves on.'];
+    }
+
+    /**
+     * Every provider that is set up and switched on, ignoring the master switch. What
+     * the lockout arithmetic is done in, because the switch is the other term in it.
+     *
+     * @return array<int, int>
+     */
+    private static function rawUsableProviderIds(): array
+    {
+        return AuthProvider::usable()->pluck('id')->all();
     }
 
     /**
@@ -199,19 +353,55 @@ final class AuthModes
     }
 
     /**
-     * The pane's fields as declared in the registry.
+     * Whether a pane carries the sign-in switches, and so has to be saved under the
+     * lock rather than straight through.
+     */
+    public static function ownsPane(string $key): bool
+    {
+        return ($group = self::group()) !== null && ($group['key'] ?? null) === $key;
+    }
+
+    /**
+     * The sign-in switches as declared in the registry.
+     *
+     * Named rather than taken whole from the pane they sit on: since the merge they
+     * share it with the site name, the provider pages and the login copy, and none of
+     * those are rows this has any business locking or reading.
      *
      * @return array<int, array<string, mixed>>
      */
     private static function fields(): array
     {
+        $group = self::group();
+
+        if ($group === null) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            Settings::declaredFields($group),
+            fn (array $field) => in_array($field['key'] ?? null, self::KEYS, true),
+        ));
+    }
+
+    /**
+     * The group that carries the sign-in switches. Found by the switch it holds rather
+     * than by a group key, because which pane they live on is a matter of layout: they
+     * were a pane of their own and are now a card on the sign-in one.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function group(): ?array
+    {
         foreach (config('settings.groups', []) as $group) {
-            if (($group['key'] ?? null) === 'auth') {
-                return $group['fields'] ?? [];
+            foreach (Settings::declaredFields($group) as $field) {
+                if (($field['key'] ?? null) === 'auth_local') {
+                    return $group;
+                }
             }
         }
 
-        return [];
+        return null;
     }
 
     /**
@@ -259,31 +449,18 @@ final class AuthModes
     /**
      * A posted value, or what stands today for a field the pane did not send.
      *
+     * Only ever called for `auth_local` and `auth_oauth2`, and that is a condition
+     * rather than a coincidence. A registry field may declare `invert`, in which case
+     * the pane posts the opposite of what the column holds and Settings::save() turns
+     * it back on the way in - `auth_required` does, being read to the operator as
+     * "guest access". `stored()` reads the column, so comparing a posted inverted value
+     * against it here would silently reverse the meaning of the change. Anything
+     * inverted has to be un-inverted before it reaches this class.
+     *
      * @param  array<string, mixed>  $values
      */
     private static function posted(array $values, string $key, mixed $current): mixed
     {
         return array_key_exists($key, $values) ? $values[$key] : $current;
-    }
-
-    /**
-     * The same for a write-only field, which never receives the stored value and so
-     * posts the mask to mean "leave it" and the sentinel to mean "delete it".
-     *
-     * @param  array<string, mixed>  $values
-     */
-    private static function postedSecret(array $values, string $key, mixed $current): mixed
-    {
-        if (! array_key_exists($key, $values)) {
-            return $current;
-        }
-
-        $posted = is_string($values[$key]) ? trim($values[$key]) : $values[$key];
-
-        if ($posted === Settings::CLEAR_SECRET) {
-            return null;
-        }
-
-        return ($posted === null || $posted === '' || $posted === Settings::MASK_SECRET) ? $current : $posted;
     }
 }
