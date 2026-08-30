@@ -21,7 +21,7 @@ Nothing about any one convention is baked in. Names, copy, links, logo, login ba
 
 **Infrastructure.** Edge servers are provisioned on Hetzner Cloud from the panel, get their DNS record, run a generated install script, and are handed viewers by the assignment job. Health checks, viewer counts, capacity and alerts sit on one dashboard.
 
-**Access.** Four switches, composing freely: whether watching needs an account at all, OpenID Connect, password accounts this installation holds, and public registration on top of those. Roles carry permissions, and shows and recordings can require one. See [docs/admin/authentication.md](docs/admin/authentication.md).
+**Access.** Guest access, password accounts and public registration are switches; sign-in providers are a list you add to. OpenID Connect against your own identity provider, or Google, GitHub and the rest through Socialite, as many at once as you like, each mapping the groups it releases to roles here. Shows and recordings can require one. See [docs/admin/authentication.md](docs/admin/authentication.md).
 
 ## Screenshots
 
@@ -92,7 +92,7 @@ php artisan db:seed --class=DevStreamChannelsSeeder
 
 ## Configuration
 
-Almost everything is edited at `/manage` > Settings and stored in the database: the convention's name and copy, the identity provider, the sign-in modes, chat limits, the archive bucket, the playback token secrets, the container images the provisioning scripts pull. No deploy, no rebuild, no restart. See [docs/admin/settings.md](docs/admin/settings.md).
+Almost everything is edited at `/manage` > Settings and stored in the database: the convention's name and copy, the sign-in providers and modes, chat limits, the archive bucket, the playback token secrets, the container images the provisioning scripts pull. No deploy, no rebuild, no restart. See [docs/admin/settings.md](docs/admin/settings.md).
 
 `.env` is the shipped fallback for each of those, so an existing deployment keeps working and a saved row always wins. What has to stay there is the bootstrap - app, database, cache, queue, session, Redis, log, mail, Reverb, broadcasting - plus the handful of values the local video stack's containers read out of the file directly:
 

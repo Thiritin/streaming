@@ -26,17 +26,17 @@ The recording arrives **unpublished**. Someone still watches it and publishes it
 
 ## Running it
 
-`/manage` > Settings > Imports has the binaries, one per platform, linked straight from the
+`/manage` > Settings > Tokens and keys > Imports has the binaries, one per platform, linked straight from the
 latest release. They need `ffmpeg` on the machine that runs them and nothing else.
 
-First give the installation an import key: `/manage` > Settings > Imports > Generate, then
+First give the installation an import key: `/manage` > Settings > Tokens and keys > Imports > Generate, then
 Save. That row is the only source; there is no environment variable behind it, and an empty
 key means the import API refuses everything. Hand the key to whoever is importing and
 rotate it here when they are done.
 
 ```bash
 export ARCHIVER_API=https://stream.example.org
-export ARCHIVER_KEY=...        # the import key from /manage > Settings > Imports
+export ARCHIVER_KEY=...        # the import key from /manage > Settings > Tokens and keys > Imports
 
 streaming-archiver import "Opening Ceremony.mp4" --title "Opening Ceremony"
 ```

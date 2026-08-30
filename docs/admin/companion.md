@@ -12,7 +12,7 @@ running now, and if no slot has begun it starts the next one on the schedule.
 
 - A source in `/manage` > Sources, with shows scheduled on it
 - [Bitfocus Companion](https://bitfocus.io/companion) 5.x
-- The `stream-control` module, downloaded from `/manage` > Settings > **Control surfaces**
+- The `stream-control` module, downloaded from `/manage` > Settings > **Tokens and keys** > **Control surfaces**
   (or from any source page) and imported into Companion
 
 One connection controls one source: the stream name is the last part of the API URL, and
@@ -23,7 +23,7 @@ same key, and its buttons carry their own labels because every variable is per c
 
 ### 1. Set the control key, once per installation
 
-`/manage` > Settings > **Control surfaces** > **Generate**, then save. The field is readable
+`/manage` > Settings > **Tokens and keys** > **Control surfaces** > **Generate**, then save. The field is readable
 and copyable, because the key is one you hand to whoever wires the surfaces.
 
 One key for the whole installation, not one per source. Everyone who can reach one room can
@@ -247,7 +247,7 @@ since a manual run has no release to attach it to.
 | Which show Start and Stop apply to | `app/Services/ShowControlService.php` |
 | The endpoints | `app/Http/Controllers/Api/CompanionController.php` |
 | Key check | `app/Http/Middleware/CheckCompanionTokenMiddleware.php` |
-| The key itself | Settings > Control surfaces, read by `app/Support/ControlKey.php` |
+| The key itself | Settings > Tokens and keys > Control surfaces, read by `app/Support/ControlKey.php` |
 | The Companion module | `companion/module-stream-control/` |
 | Packaging and release | `scripts/companion-package.sh`, `.github/workflows/companion.yml` |
 | The download link | `stream.companion_module_url` |

@@ -10,38 +10,84 @@ field, and from then on the row wins. Nothing has two sources that can disagree.
 
 ## The panes
 
-One pane per group, each with its own URL and its own entry in the menu down the left.
+Twelve panes under three headings, plus Reset pinned under the menu. The heading says what
+a pane is about, so the rows carry a name and nothing else.
+
+### Site
 
 | Pane | What it holds |
 |---|---|
-| Identity | Convention name, site name, and what the identity provider is called on the sign-in screen |
-| Sign-in | The four switches, and the provider's URL, client ID and secret. See [authentication.md](authentication.md) |
-| Login screen | The copy on the sign-in page |
-| Look | Logo, tab icon, accent colour, login background |
-| Footer links | The links in the footer, and the source and licence credit |
+| Sign-in | Guest access, password accounts and registration, the sign-in providers, the provider's own pages, and the copy on the login screen. See [authentication.md](authentication.md) |
+| Branding | The convention and site names, logo, tab icon, accent colour, login background, footer links |
 | Announcement | The front-page banner and the page behind it |
-| Features | Chat, emotes, boops, comments, announcements, feedback, screens, Telegram, notifications |
+| Features | Chat, emotes, boops, comments, announcements, feedback, screens, Telegram |
 | Chat | Rate limits, slow mode, message length, which link domains stay clickable |
+
+### Programme
+
+| Pane | What it holds |
+|---|---|
+| Events | The convention's runs. Rows rather than knobs |
+| Categories | What a show is. Rows rather than knobs |
 | Pretalx | Instance URL, event slug, API token. See [pretalx-import.md](pretalx-import.md) |
-| Control surfaces | The control key. See [companion.md](companion.md) |
-| Imports | The import key. See [archive-import.md](archive-import.md) |
-| Archive storage | The archive bucket and its credentials, the disk, the quota, how segment URLs are handed to a player |
-| Streaming | Container images for the generated provisioning scripts, SRS console credentials, RTMP forward targets, metrics retention, the venue network overrides |
-| Playback security | The two token secrets, the token timings, the system streamkey, the recording API key |
-| Telegram | Bot token, bot @name, how early a show is announced. See [telegram.md](telegram.md) |
-| Notifications | How long a new recording is held before viewers are told |
-| Events, Categories | Sets of rows rather than sets of knobs, so they join the same menu by hand |
-| Reset | Deletes every saved row, leaving the shipped config |
+
+### System
+
+| Pane | What it holds |
+|---|---|
+| Streaming | Provisioning images and how long server metrics are kept |
+| Archive storage | Which disk the archive lives on and how big it may get, the archive bucket's credentials, how segment URLs are handed to a player |
+| Tokens and keys | The viewer and embed token secrets and their timings, and every key this installation issues: system streamkey, recording API key, control key ([companion.md](companion.md)), import key ([archive-import.md](archive-import.md)) |
+| Notifications | The Telegram bot and how early shows are announced, and how long a new recording is held before viewers are told. See [telegram.md](telegram.md) |
+
+**Reset** sits under the menu behind a divider rather than in it: it is one destructive
+button, not a pane to browse. It keeps its URL.
 
 Everything else about a convention - shows, sources, servers, recordings - is a record,
 not a setting, and lives in its own module.
+
+### Cards
+
+A pane whose fields answer several different questions is split into cards - Sign-in is
+five of them, Branding four, Tokens and keys four. A card is layout and nothing else: the
+whole pane is still one form, saved by one button, validated as one set of rules. Cards do
+not collapse; a card you have to open first is a click in front of every field it holds.
+
+A card can go inert when another field on the pane has made its contents moot: it stays
+on screen with its saved values readable and every control in it disabled, and one line
+in place of its description says why. Archive storage is the one that does this today.
+Inert is layout, like a hidden field: the values are still there and a save still carries
+them, so switching back does not hand you an emptied card.
+
+### Labels, not captions
+
+Fields carry a label and a value. Where a helper only restated the label it is gone, and
+where it carried a unit the label carries it instead - "Rate window (seconds)", "Quota
+(bytes)". What is left is the handful that say something a label cannot: what switching a
+feature off closes, what a Markdown field accepts, which header a key is sent in.
+
+### Panes that used to exist
+
+Nine panes became five. The old URLs redirect rather than 404, because they are printed in
+these docs and pasted between operators:
+
+| Old | Now |
+|---|---|
+| `/manage/settings/login` | Sign-in > Login screen |
+| `/manage/settings/auth` | Sign-in |
+| `/manage/settings/links` | Branding > Footer |
+| `/manage/settings/look` | Branding |
+| `/manage/settings/imports` | Tokens and keys > Imports |
+| `/manage/settings/control` | Tokens and keys > Control surfaces |
+| `/manage/settings/telegram` | Notifications > Telegram bot |
 
 ## How a saved value reaches the code
 
 Saving writes one row keyed by the field's flat key. `App\Support\RuntimeConfig` then lays
 those rows over the config repository, so a call site goes on reading
-`config('services.oidc.url')` and never learns that an administrator changed it. Adding a
-knob is one entry in `config/settings.php`, not a form, a request class and a page change.
+`config('chat.default.slowModeSeconds')` and never learns that an administrator changed it.
+Adding a knob is one entry in `config/settings.php`, not a form, a request class and a page
+change.
 
 The overlay is applied at boot, again on every Octane request, and again between queue
 jobs, because both of those keep a booted container alive for hours. Between jobs and
@@ -62,17 +108,43 @@ nothing:
 disk. Both are handed the shipped config with the overlay switched off, so a saved value -
 and especially an encrypted one - is never baked into `bootstrap/cache/config.php`.
 
+## The two buckets
+
+The application knows two S3 disks and they are not interchangeable.
+
+| Disk | Holds | Configured in |
+|---|---|---|
+| `s3` | Branding logo and favicon, emotes, show and recording thumbnails | `.env`, `AWS_*` |
+| `dvr` | The HLS segment archive and the generated recording playlists | Archive storage > Archive bucket |
+
+Everything on `s3` resolves the disk by name at the call site, and it has to answer before
+anyone can reach this panel - the login screen's logo is on it. So it stays ops
+configuration and the panel does not offer it.
+
+Archive storage > Disk says which of the two the archive itself is read from. `dvr` is
+production: a bucket of its own, with its own credentials. `s3` is for an installation
+running one bucket for everything, which is what local development does rather than
+configure `DVR_AWS_*` a second time. Set it to `s3` and the Archive bucket card goes
+inert, because those seven fields write the `dvr` disk whatever the archive is pointed at.
+
+Quota is a number an operator types, and it is reported, never enforced. S3 has no
+free-space call and no provider this runs against exposes a quota over the API, so nothing
+can discover the limit and nothing blocks a write at it. Left at zero the recordings page
+shows what is stored and says nothing about what is left. The totals come from an hourly
+scan of the bucket, cached with the time it was taken; the page never scans on demand.
+
 ## Secrets
 
 A field can be stored encrypted at rest. Two kinds, and the difference is who the secret
 belongs to:
 
-- **Write-only** - the identity provider's client secret, the pretalx token, the Telegram
-  bot token, the archive bucket's key and secret, the SRS console password, and the two
-  playback token secrets. These are values somebody else issued, or values the edges hold
-  a copy of. The pane shows a mask, saving the mask leaves the stored value alone, and a
-  Clear control beside it removes it. They are never read back out of the panel or out of
-  `branding:set --list`.
+- **Write-only** - the pretalx token, the Telegram bot token, the archive bucket's key and
+  secret, and the two playback token secrets. These are values
+  somebody else issued, or values the edges hold a copy of. The pane shows a mask, saving
+  the mask leaves the stored value alone, and a Clear control beside it removes it. They
+  are never read back out of the panel or out of `branding:set --list`. A sign-in
+  provider's client secret behaves the same way on its own form, though it is a row rather
+  than a settings key.
 - **Readable** - the control key, the import key, the system streamkey and the recording
   API key. These are values this installation hands out to somebody, so they can be read,
   copied and generated in place.
@@ -92,7 +164,6 @@ pane says so on the field, but the list is worth having in one place:
 | Viewer token secret, embed token secret | Every edge | Immediate. Every viewer's playback 403s until each edge is reinstalled |
 | System streamkey | Every edge | Thumbnails, the archive uploader and the operator preview stop working |
 | Expiry leeway | Every edge | Intermittent 403s at token-refresh boundaries, which is harder to diagnose than a clean break |
-| SRS console password | The origin, bcrypted into its generated config | The console stops accepting the password |
 | Transcoder and uploader images | The generated compose file | The box keeps running the image it pulled |
 | Recording API key | Whatever external tooling posts recordings | That tooling gets 401s |
 

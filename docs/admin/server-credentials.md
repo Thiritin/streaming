@@ -126,3 +126,27 @@ fixes a box posts a cleared line of its own rather than being folded into the he
 A script rendered outside the session that minted the credentials carries no plaintext. It
 does not install a box that cannot check in - it prints one line saying it was rendered
 without credentials, tells you to rotate and download again, and exits.
+
+## Reaching SRS on the origin
+
+SRS has an HTTP API and a stats page, and both are bound to loopback in the origin's
+compose file: `127.0.0.1:1985` for the API, `127.0.0.1:8082` for the stats page. They are
+reachable from the box and from nothing else, so they are read over an SSH tunnel.
+
+```bash
+ssh -N -L 1985:127.0.0.1:1985 -L 8082:127.0.0.1:8082 root@origin.example.org
+```
+
+Then `http://127.0.0.1:1985/api/v1/streams` for what is publishing, and
+`http://127.0.0.1:8082/` for the stats page. Leave the tunnel up for as long as you are
+looking and close it afterwards.
+
+**There is no console login.** The API is enabled with no authentication and never had
+any: it is not exposed, so the tunnel is the access control. `SRS_USERNAME` and
+`SRS_PASSWORD` were fields in Settings > Streaming and variables in `.env`, and nothing
+applied them - the only thing that ever read them was the `/api/file/` provisioning path,
+which is deleted. They are gone from both. **Delete them from any `.env` still carrying
+them**; they do nothing.
+
+Do not publish either port. Opening 1985 to the internet is handing over an unauthenticated
+API that can drop a publisher.
