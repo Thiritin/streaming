@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Manage\ArchiveStorageTestController;
 use App\Http\Controllers\Manage\AuthProviderController;
 use App\Http\Controllers\Manage\CategoryController;
 use App\Http\Controllers\Manage\CommentController;
@@ -331,6 +332,12 @@ Route::delete('settings/providers/{provider}', [AuthProviderController::class, '
 Route::get('settings/providers/{provider}/test', [AuthProviderController::class, 'test'])->name('providers.test');
 
 Route::post('settings/pretalx/test', PretalxConnectionController::class)->name('settings.pretalx.test');
+
+// A real round trip to the bucket, which writes and then removes one small object.
+// Throttled because it reaches a third party on request.
+Route::post('settings/storage/test', ArchiveStorageTestController::class)
+    ->middleware('throttle:10,1')
+    ->name('settings.storage.test');
 Route::get('settings', [SettingsController::class, 'edit'])->name('settings');
 // One pane per registry group; the bare /manage/settings above is the first of them.
 Route::get('settings/{group}', [SettingsController::class, 'edit'])->name('settings.group');

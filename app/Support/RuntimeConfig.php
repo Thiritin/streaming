@@ -228,8 +228,11 @@ final class RuntimeConfig
      */
     private static function resolve(): array
     {
+        // Through declaredFields, so a pane that groups its fields into cards is read
+        // the same as a flat one. A card-declared field with a config path that this
+        // missed would look saved on the page and do nothing at its call site.
         $fields = collect(config('settings.groups', []))
-            ->flatMap(fn (array $group) => $group['fields'] ?? [])
+            ->flatMap(fn (array $group) => Settings::declaredFields($group))
             ->keyBy('key');
 
         if ($fields->isEmpty()) {

@@ -24,7 +24,8 @@ const submit = () => form.post(route('manage.embed-keys.store'));
       subtitle="Name it after the screen it goes on, so a revoked key is obvious later."
     />
 
-    <form @submit.prevent="submit">
+    <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="submit">
+      <div class="flex flex-1 flex-col gap-4 p-4">
       <FormSection
         title="Key"
         description="A short code appears in the list once saved, short enough to type on a screen with no keyboard. Open it once; the screen stays signed in from then on."
@@ -37,6 +38,7 @@ const submit = () => form.post(route('manage.embed-keys.store'));
           required
         />
       </FormSection>
+      </div>
 
       <FormActions
         :processing="form.processing"

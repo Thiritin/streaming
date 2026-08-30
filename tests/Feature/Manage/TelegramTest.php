@@ -153,7 +153,7 @@ class TelegramTest extends TestCase
     public function test_saving_a_bot_token_registers_the_webhook(): void
     {
         $this->actingAs($this->admin)
-            ->put(route('manage.settings.update', 'telegram'), [
+            ->put(route('manage.settings.update', 'notifications'), [
                 'values' => [
                     'telegram_bot_token' => '654321:fresh-token',
                     'telegram_show_lead_minutes' => '7',
@@ -189,7 +189,7 @@ class TelegramTest extends TestCase
         ]);
 
         $this->actingAs($this->admin)
-            ->put(route('manage.settings.update', 'telegram'), [
+            ->put(route('manage.settings.update', 'notifications'), [
                 'values' => ['telegram_bot_token' => '654321:fresh-token'],
             ])
             ->assertRedirect();
@@ -203,7 +203,7 @@ class TelegramTest extends TestCase
         BrandingSetting::setValue(TelegramSettings::TOKEN_KEY, '123:abc');
 
         $this->actingAs($this->admin)
-            ->put(route('manage.settings.update', 'telegram'), [
+            ->put(route('manage.settings.update', 'notifications'), [
                 'values' => ['telegram_bot_token' => '__clear__'],
             ])
             ->assertRedirect();

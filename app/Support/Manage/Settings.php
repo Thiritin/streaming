@@ -90,14 +90,93 @@ final class Settings
     }
 
     /**
+     * Whether a toggle is shown as its own opposite.
+     *
+     * For the one flag whose honest question is the inverse of what it stores:
+     * `auth_required` is asked as "Guest Access". The inversion is the page's alone -
+     * save() turns it back before writing, the table keeps the column it always had,
+     * and every reader of config('auth.required') is untouched. Anything that reads a
+     * POSTED value has to un-invert it, which is why this is one declared flag rather
+     * than a rule applied by eye.
+     *
+     * @param  array<string, mixed>  $field
+     */
+    public static function isInverted(array $field): bool
+    {
+        return ($field['type'] ?? null) === 'toggle' && (bool) ($field['invert'] ?? false);
+    }
+
+    /**
+     * Whether a field is only on screen while another field holds one of a set of
+     * values. Layout, not a gate: a hidden field still posts what it holds.
+     *
+     * @param  array<string, mixed>  $field
+     * @return array{field: string, is: array<int, mixed>}|null
+     */
+    public static function visibleWhen(array $field): ?array
+    {
+        $rule = $field['visible_when'] ?? null;
+
+        if (! is_array($rule) || ! isset($rule['field'])) {
+            return null;
+        }
+
+        return [
+            'field' => (string) $rule['field'],
+            'is' => array_values((array) ($rule['is'] ?? [true])),
+        ];
+    }
+
+    /**
+     * Whether a card is on screen but inert, because another field on the pane has
+     * made its contents moot. Layout, not a gate: the fields keep their saved values
+     * and a disabled control still posts what it holds.
+     *
+     * @param  array<string, mixed>  $card
+     * @return array{field: string, is: array<int, mixed>, description: string|null}|null
+     */
+    public static function inertWhen(array $card): ?array
+    {
+        $rule = $card['inert_when'] ?? null;
+
+        if (! is_array($rule) || ! isset($rule['field'])) {
+            return null;
+        }
+
+        return [
+            'field' => (string) $rule['field'],
+            'is' => array_values((array) ($rule['is'] ?? [true])),
+            'description' => isset($rule['description']) ? (string) $rule['description'] : null,
+        ];
+    }
+
+    /**
      * Groups with every field resolved to its current value, default and preview URL.
+     *
+     * A group's cards keep their shape for the page, and their fields appear in the
+     * flat `fields` list as well: everything that validates or saves reads that list,
+     * so a pane gaining cards changes what it looks like and nothing else.
      *
      * @return array<int, array<string, mixed>>
      */
     public function groups(): array
     {
         return array_map(function (array $group) {
-            $group['fields'] = array_map(fn (array $field) => $this->field($field), $group['fields']);
+            $cards = array_map(function (array $card) {
+                $card['fields'] = array_map(fn (array $field) => $this->field($field), $card['fields'] ?? []);
+                $card['note'] = $this->note($card);
+                $card['inertWhen'] = self::inertWhen($card);
+
+                return $card;
+            }, $group['cards'] ?? []);
+
+            $group['fields'] = array_map(fn (array $field) => $this->field($field), $group['fields'] ?? []);
+
+            foreach ($cards as $card) {
+                $group['fields'] = [...$group['fields'], ...$card['fields']];
+            }
+
+            $group['cards'] = $cards;
             $group['note'] = $this->note($group);
 
             return $group;
@@ -105,20 +184,33 @@ final class Settings
     }
 
     /**
-     * A pane's note: one line of copy, optionally with a link beside it. Nothing is
-     * saved by it, so it stays out of the field list.
+     * The pane a dead pane's fields moved to, or null when the key was never one.
+     *
+     * A pane's URL is printed in the admin docs and pasted between operators, so a
+     * merge answers a redirect rather than the 404 an unknown key gets.
+     */
+    public function movedTo(string $key): ?string
+    {
+        $target = config("settings.moved.{$key}");
+
+        return is_string($target) && $this->group($target) !== null ? $target : null;
+    }
+
+    /**
+     * A pane's or a card's note: one line of copy, optionally with a link beside it.
+     * Nothing is saved by it, so it stays out of the field list.
      *
      * A note that names `url_config` takes its link from config rather than repeating
      * a URL the rest of the app already owns, and drops out entirely when that config
      * value is empty - which is how an installation with nothing published hides the
      * link instead of offering a dead one.
      *
-     * @param  array<string, mixed>  $group
+     * @param  array<string, mixed>  $owner  A group or one of its cards.
      * @return array<string, mixed>|null
      */
-    private function note(array $group): ?array
+    private function note(array $owner): ?array
     {
-        $note = $group['note'] ?? null;
+        $note = $owner['note'] ?? null;
 
         if (! is_array($note)) {
             return null;
@@ -181,65 +273,98 @@ final class Settings
     }
 
     /**
-     * The settings menu, in registry order: what each pane is called, what it is for
-     * and where it lives.
+     * The settings menu, grouped into sections in registry order.
      *
-     * @return array<int, array{key: string, label: string, blurb: ?string, icon: ?string}>
+     * Sections rather than one flat list because the rail 256px to the left already
+     * uses headings, so an undifferentiated column of panes was the odd one out in its
+     * own panel. A pane names its section in the registry; Events and Categories are
+     * rows rather than knobs, so they join Programme by hand.
+     *
+     * No blurbs. The heading carries the context they were reaching for, and six of the
+     * fifteen restated the label they sat under.
+     *
+     * Answers one shape rather than two so every page that renders the menu - the
+     * generated panes, Events, Categories, the providers - keeps passing one prop.
+     *
+     * @return array{sections: array<int, array{heading: string, items: array<int, array<string, mixed>>}>, reset: array{key: string, label: string, url: string}|null}
      */
     public function navigation(): array
     {
         $groups = config('settings.groups', []);
         $first = $groups[0]['key'] ?? null;
 
-        $panes = array_map(fn (array $group) => [
-            'key' => $group['key'],
-            'label' => $group['label'],
-            'blurb' => $group['blurb'] ?? $group['description'] ?? null,
-            'action' => $group['action'] ?? null,
-            'icon' => $group['icon'] ?? 'cog',
-            // The bare /manage/settings is the first pane rather than a redirect.
-            'url' => $group['key'] === $first
-                ? route('manage.settings')
-                : route('manage.settings.group', $group['key']),
-        ], $groups);
+        $sections = [];
+
+        foreach ($groups as $group) {
+            // Reset is a destructive button, not a pane to browse: it comes back on its
+            // own so the menu can pin it under a divider rather than list it as a peer.
+            if (($group['action'] ?? null) === 'reset' || ! isset($group['section'])) {
+                continue;
+            }
+
+            $sections[$group['section']][] = [
+                'key' => $group['key'],
+                'label' => $group['label'],
+                'icon' => $group['icon'] ?? 'cog',
+                // The bare /manage/settings is the first pane rather than a redirect.
+                'url' => $group['key'] === $first
+                    ? route('manage.settings')
+                    : route('manage.settings.group', $group['key']),
+            ];
+        }
 
         /*
-         * Events and categories are settings areas too, but sets of rows rather than
-         * sets of knobs, so the registry cannot generate them. They join the menu by
-         * hand and render their own pages inside the same shell.
-         *
          * Events first: the calendar decides whether the front page is a programme or
-         * the archive, so it is the more consequential of the two.
+         * the archive, so it is the more consequential of the two. Both lead Programme,
+         * ahead of the connection the programme is imported through.
          */
-        $rowPanes = [
+        array_unshift(
+            $sections['Programme'],
             [
                 'key' => 'events',
                 'label' => 'Events',
-                'blurb' => 'Convention dates',
-                'action' => null,
                 'icon' => 'calendar',
                 'url' => route('manage.events.index'),
             ],
             [
                 'key' => 'categories',
                 'label' => 'Categories',
-                'blurb' => 'Programme labels',
-                'action' => null,
                 'icon' => 'tags',
                 'url' => route('manage.categories.index'),
             ],
+        );
+
+        return [
+            'sections' => array_map(
+                fn (string $heading, array $items) => ['heading' => $heading, 'items' => $items],
+                array_keys($sections),
+                $sections,
+            ),
+            'reset' => $this->resetPane(),
         ];
+    }
 
-        // Ahead of the reset pane, which throws every saved value away and stays last.
-        $reset = array_search('reset', array_column($panes, 'action'), true);
-
-        if ($reset === false) {
-            return [...$panes, ...$rowPanes];
+    /**
+     * The reset pane, which the menu pins under a divider rather than listing.
+     *
+     * It keeps its URL, so a bookmark still opens it; it just stops being a row of equal
+     * weight to Chat.
+     *
+     * @return array{key: string, label: string, url: string}|null
+     */
+    public function resetPane(): ?array
+    {
+        foreach (config('settings.groups', []) as $group) {
+            if (($group['action'] ?? null) === 'reset') {
+                return [
+                    'key' => $group['key'],
+                    'label' => $group['label'],
+                    'url' => route('manage.settings.group', $group['key']),
+                ];
+            }
         }
 
-        array_splice($panes, $reset, 0, $rowPanes);
-
-        return $panes;
+        return null;
     }
 
     /**
@@ -256,7 +381,7 @@ final class Settings
         $rules = [];
 
         foreach ($this->fields($group) as $field) {
-            $rules['values.'.$field['key']] = $field['rules'] ?? ['nullable', 'string'];
+            $rules['values.'.$field['key']] = self::fieldRules($field);
 
             // A repeater validates its rows too, one rule set per column.
             foreach ($field['itemRules'] ?? [] as $column => $columnRules) {
@@ -265,6 +390,35 @@ final class Settings
         }
 
         return $rules;
+    }
+
+    /**
+     * A field's rules, with `required` made conditional on whatever puts the field on
+     * screen. A pane must not fail on a control the person saving it never saw.
+     *
+     * @param  array<string, mixed>  $field
+     * @return array<int, mixed>
+     */
+    private static function fieldRules(array $field): array
+    {
+        $rules = $field['rules'] ?? ['nullable', 'string'];
+        $visible = self::visibleWhen($field);
+
+        if ($visible === null || ! in_array('required', $rules, true)) {
+            return $rules;
+        }
+
+        $values = array_map(
+            fn (mixed $value) => is_bool($value) ? ($value ? 'true' : 'false') : (string) $value,
+            $visible['is'],
+        );
+
+        return array_map(
+            fn (mixed $rule) => $rule === 'required'
+                ? 'required_if:values.'.$visible['field'].','.implode(',', $values)
+                : $rule,
+            $rules,
+        );
     }
 
     /**
@@ -321,6 +475,11 @@ final class Settings
             // than as the empty string it would otherwise look like.
             if (($field['type'] ?? null) === 'toggle') {
                 $value = (bool) $value;
+
+                // The page showed the opposite, so this is the opposite of what is stored.
+                if (self::isInverted($field)) {
+                    $value = ! $value;
+                }
 
                 if ($value === (bool) self::defaultOf($field)) {
                     BrandingSetting::where('key', $field['key'])->get()->each->delete();
@@ -446,8 +605,27 @@ final class Settings
     {
         return collect(config('settings.groups', []))
             ->when($group !== null, fn ($groups) => $groups->where('key', $group))
-            ->flatMap(fn (array $registered) => $registered['fields'])
+            ->flatMap(fn (array $registered) => self::declaredFields($registered))
             ->all();
+    }
+
+    /**
+     * One group's fields as declared, cards flattened back into the list they would
+     * have been without them. Everything that validates or saves comes through here,
+     * which is what keeps cards a matter of layout.
+     *
+     * @param  array<string, mixed>  $group
+     * @return array<int, array<string, mixed>>
+     */
+    public static function declaredFields(array $group): array
+    {
+        $fields = $group['fields'] ?? [];
+
+        foreach ($group['cards'] ?? [] as $card) {
+            $fields = [...$fields, ...($card['fields'] ?? [])];
+        }
+
+        return $fields;
     }
 
     /**
@@ -469,6 +647,11 @@ final class Settings
         if ($field['type'] === 'toggle') {
             $value = self::toBool($value);
             $default = (bool) $default;
+
+            if (self::isInverted($field)) {
+                $value = ! $value;
+                $default = ! $default;
+            }
         }
 
         // A password is never sent to the browser: a stored one is represented by the mask,
@@ -492,6 +675,7 @@ final class Settings
                 'presets' => null,
                 'options' => null,
                 'required' => in_array('required', $field['rules'] ?? [], true),
+                'visibleWhen' => self::visibleWhen($field),
                 'value' => $stored ? self::MASK_SECRET : '',
                 'default' => '',
                 'hasValue' => $stored,
@@ -522,6 +706,10 @@ final class Settings
             // Select fields carry their choices as a list, so the order survives.
             'options' => $this->options($field),
             'required' => in_array('required', $field['rules'] ?? [], true),
+            // Which other field on the pane decides whether this one is on screen.
+            'visibleWhen' => self::visibleWhen($field),
+            // A control that is an option on the row above it rather than a peer.
+            'indent' => (bool) ($field['indent'] ?? false),
             'value' => $value,
             'default' => $default,
             // What a secret says when nothing is stored, and when it has been changed but

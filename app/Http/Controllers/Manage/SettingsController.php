@@ -27,13 +27,19 @@ use Inertia\Response;
  */
 class SettingsController extends Controller
 {
-    public function edit(Settings $settings, PretalxService $pretalx, ?string $group = null): Response
+    public function edit(Settings $settings, PretalxService $pretalx, ?string $group = null): Response|RedirectResponse
     {
         $this->authorizeSettings();
 
         // The bare /manage/settings is the first pane rather than a redirect.
         $key = $group ?? $settings->firstGroupKey();
         $resolved = $key === null ? null : $settings->group($key);
+
+        // A pane that was merged into another one keeps answering, because its URL is
+        // printed in the admin docs and pasted between operators.
+        if ($resolved === null && $key !== null && ($moved = $settings->movedTo($key))) {
+            return redirect()->route('manage.settings.group', $moved, 301);
+        }
 
         abort_if($resolved === null, 404);
 
@@ -45,6 +51,9 @@ class SettingsController extends Controller
             // A test that just ran names the instance it used, which is normally still
             // unsaved at that point.
             'pretalxEvents' => $pretalx->rememberedEvents(session('pretalx.tested_url')),
+            // The providers are rows on a page of their own; the sign-in pane only
+            // points at it, so the list itself never reaches this page.
+            'providersUrl' => route('manage.providers.index'),
         ]);
     }
 
@@ -66,7 +75,7 @@ class SettingsController extends Controller
          * accounts off - each passed their own check against a state the other was
          * about to change, and the installation ended with no way in.
          */
-        if ($group === 'auth') {
+        if (AuthModes::ownsPane($group)) {
             DB::transaction(function () use ($settings, $validated) {
                 BrandingSetting::whereIn('key', AuthModes::settingKeys())->lockForUpdate()->get();
 
@@ -84,7 +93,10 @@ class SettingsController extends Controller
 
         $settings->save($validated['values']);
 
-        if ($group === 'telegram') {
+        // The bot token moved onto the Notifications pane when Telegram merged into it;
+        // saving it still has to tell Telegram where to deliver, or the buttons in a
+        // chat do nothing.
+        if (array_key_exists('telegram_bot_token', $validated['values'])) {
             $this->syncTelegramWebhook();
 
             return back();

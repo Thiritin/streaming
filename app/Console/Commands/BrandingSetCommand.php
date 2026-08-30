@@ -31,6 +31,8 @@ class BrandingSetCommand extends Command
 
     public function handle(Settings $settings): int
     {
+        // groups() has already flattened any cards into `fields`, so this is every
+        // field of every pane whatever shape the pane is declared in.
         $fields = collect($settings->groups())
             ->flatMap(fn (array $group) => $group['fields'])
             ->keyBy('key');

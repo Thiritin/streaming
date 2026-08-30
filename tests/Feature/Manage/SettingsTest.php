@@ -13,11 +13,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Concerns\ConfiguresAuthProviders;
 use Tests\Concerns\CreatesManageUsers;
 use Tests\TestCase;
 
 class SettingsTest extends TestCase
 {
+    use ConfiguresAuthProviders;
     use CreatesManageUsers;
     use RefreshDatabase;
 
@@ -71,6 +73,16 @@ class SettingsTest extends TestCase
         return collect($page->toArray()['props']['group']['fields'])->firstWhere('key', $key);
     }
 
+    /**
+     * One card of the pane on screen.
+     *
+     * @return array<string, mixed>
+     */
+    private function card(Assert $page, string $key): array
+    {
+        return collect($page->toArray()['props']['group']['cards'])->firstWhere('key', $key);
+    }
+
     public function test_the_menu_lists_every_registered_pane(): void
     {
         $this->actingAs($this->admin)
@@ -79,17 +91,43 @@ class SettingsTest extends TestCase
             ->assertInertia(function (Assert $page) {
                 $page->component('Manage/Settings');
 
-                $keys = collect($page->toArray()['props']['navigation'])->pluck('key')->all();
+                $navigation = $page->toArray()['props']['navigation'];
 
                 /*
-                 * Every registry group, plus Events and Categories, which are settings
-                 * areas whose contents are rows rather than fields and so join the menu
-                 * by hand. They sit ahead of the reset pane, which stays last.
+                 * Three sections, in registry order within each. Events and Categories
+                 * are settings areas whose contents are rows rather than fields, so they
+                 * join Programme by hand; the sign-in providers are rows too but are not
+                 * a menu entry at all, being reached from the card on the sign-in pane.
                  */
-                $expected = collect(config('settings.groups'))->pluck('key')->all();
-                array_splice($expected, array_search('reset', $expected, true), 0, ['events', 'categories']);
+                $this->assertSame(
+                    ['Site', 'Programme', 'System'],
+                    collect($navigation['sections'])->pluck('heading')->all(),
+                );
 
-                $this->assertSame($expected, $keys);
+                $this->assertSame(
+                    [
+                        ['Sign-in', 'Branding', 'Announcement', 'Features', 'Chat'],
+                        ['Events', 'Categories', 'Pretalx'],
+                        ['Streaming', 'Archive storage', 'Tokens and keys', 'Notifications'],
+                    ],
+                    collect($navigation['sections'])
+                        ->map(fn (array $section) => collect($section['items'])->pluck('label')->all())
+                        ->all(),
+                );
+
+                // Reset is a destructive button pinned under the menu, not a row in it.
+                $keys = collect($navigation['sections'])
+                    ->flatMap(fn (array $section) => collect($section['items'])->pluck('key'))
+                    ->all();
+
+                $this->assertNotContains('reset', $keys);
+                $this->assertSame('reset', $navigation['reset']['key']);
+
+                // No blurbs: the heading carries what they were reaching for.
+                $this->assertSame([], collect($navigation['sections'])
+                    ->flatMap(fn (array $section) => $section['items'])
+                    ->filter(fn (array $item) => array_key_exists('blurb', $item))
+                    ->all());
 
                 // The bare URL is the first pane rather than a redirect.
                 $this->assertSame(config('settings.groups.0.key'), $page->toArray()['props']['group']['key']);
@@ -103,7 +141,8 @@ class SettingsTest extends TestCase
             ->assertSuccessful()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Manage/Categories/Index')
-                ->where('navigation', fn ($navigation) => collect($navigation)
+                ->where('navigation', fn ($navigation) => collect($navigation['sections'])
+                    ->flatMap(fn (array $section) => $section['items'])
                     ->firstWhere('key', 'categories')['url'] === route('manage.categories.index'))
             );
     }
@@ -122,7 +161,7 @@ class SettingsTest extends TestCase
     public function test_a_pane_carries_only_its_own_fields(): void
     {
         $this->actingAs($this->admin)
-            ->get(route('manage.settings.group', 'login'))
+            ->get(route('manage.settings.group', 'identity'))
             ->assertSuccessful()
             ->assertInertia(function (Assert $page) {
                 $keys = collect($page->toArray()['props']['group']['fields'])->pluck('key');
@@ -130,6 +169,141 @@ class SettingsTest extends TestCase
                 $this->assertContains('login_headline', $keys);
                 $this->assertNotContains('control_key', $keys);
             });
+    }
+
+    /**
+     * A merged pane is cards, and the cards are only layout: the flat field list the
+     * save posts is every card's fields in order, so nothing about validating or
+     * storing a value learns that cards exist.
+     */
+    public function test_a_merged_pane_renders_its_cards(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings.group', 'identity'))
+            ->assertSuccessful()
+            ->assertInertia(function (Assert $page) {
+                $group = $page->toArray()['props']['group'];
+
+                $this->assertSame(
+                    ['methods', 'provider_pages', 'login'],
+                    collect($group['cards'])->pluck('key')->all(),
+                );
+
+                $flat = collect($group['fields'])->pluck('key')->all();
+
+                foreach (['auth_required', 'auth_local', 'auth_oauth2', 'identity_name', 'login_headline'] as $key) {
+                    $this->assertContains($key, $flat);
+                }
+
+                // Every card's fields are in the flat list, and nothing else is.
+                $this->assertSame(
+                    collect($group['cards'])->flatMap(fn (array $card) => collect($card['fields'])->pluck('key'))->all(),
+                    $flat,
+                );
+            });
+    }
+
+    /**
+     * Every field of a merged pane still saves, whichever card it was drawn in.
+     */
+    public function test_every_field_of_a_merged_pane_still_saves(): void
+    {
+        $this->save('identity', [
+            'identity_name' => 'Example Identity',
+            'login_headline' => 'Watch live',
+            'identity_name' => 'Example Identity',
+            'auth_local' => true,
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame('Example Identity', BrandingSetting::getValue('identity_name'));
+        $this->assertSame('Watch live', BrandingSetting::getValue('login_headline'));
+        $this->assertSame('1', BrandingSetting::getValue('auth_local'));
+    }
+
+    /**
+     * A pane that declares no cards is exactly what it was: one flat list and an empty
+     * card list, so its page renders the same block it always did.
+     */
+    public function test_a_pane_with_no_cards_is_unchanged(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings.group', 'chat'))
+            ->assertSuccessful()
+            ->assertInertia(function (Assert $page) {
+                $group = $page->toArray()['props']['group'];
+
+                $this->assertSame([], $group['cards']);
+                $this->assertContains('chat_max_tries', collect($group['fields'])->pluck('key')->all());
+            });
+    }
+
+    /**
+     * The sign-in providers are rows, so they have no registry fields, no menu entry and
+     * no list on this pane: the card points at the page they are edited on.
+     */
+    public function test_the_sign_in_pane_points_at_the_providers_page(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings.group', 'identity'))
+            ->assertSuccessful()
+            ->assertInertia(function (Assert $page) {
+                $props = $page->toArray()['props'];
+
+                $this->assertSame('providers_link', $this->card($page, 'methods')['render']);
+                $this->assertSame(route('manage.providers.index'), $props['providersUrl']);
+
+                // The list itself never reaches this page any more.
+                $this->assertArrayNotHasKey('providers', $props);
+
+                $keys = collect($props['navigation']['sections'])
+                    ->flatMap(fn (array $section) => collect($section['items'])->pluck('key'))
+                    ->all();
+
+                $this->assertNotContains('providers', $keys);
+            });
+    }
+
+    /**
+     * Guest access is asked as its own opposite - the row is "Guest Access", the column
+     * is auth_required - so the page shows the inverse and the save turns it back. The
+     * table and every reader of config('auth.required') are unchanged.
+     */
+    public function test_guest_access_is_shown_inverted_and_stored_straight(): void
+    {
+        config(['auth.required' => true]);
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings.group', 'identity'))
+            ->assertInertia(function (Assert $page) {
+                // Sign-in is required, so guests are not allowed: the switch reads off.
+                $this->assertFalse($this->field($page, 'auth_required')['value']);
+            });
+
+        // Switching the row on means letting guests watch, which is auth_required false.
+        $this->save('identity', ['auth_required' => true])->assertSessionHasNoErrors();
+
+        $this->assertSame('0', BrandingSetting::getValue('auth_required'));
+
+        RuntimeConfig::apply();
+        $this->assertFalse(config('auth.required'));
+
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings.group', 'identity'))
+            ->assertInertia(fn (Assert $page) => $this->assertTrue($this->field($page, 'auth_required')['value']));
+    }
+
+    /**
+     * A pane merged into another one keeps answering: its URL is printed in the admin
+     * docs and pasted between operators, so a bookmark must not 404.
+     */
+    public function test_a_merged_pane_url_redirects_to_the_pane_that_took_it(): void
+    {
+        foreach (config('settings.moved') as $gone => $target) {
+            $this->actingAs($this->admin)
+                ->get(route('manage.settings.group', $gone))
+                ->assertRedirect(route('manage.settings.group', $target))
+                ->assertStatus(301);
+        }
     }
 
     public function test_an_unknown_pane_is_not_there(): void
@@ -144,7 +318,7 @@ class SettingsTest extends TestCase
     public function test_a_field_reports_the_shipped_default_until_it_is_overridden(): void
     {
         $this->actingAs($this->admin)
-            ->get(route('manage.settings.group', 'identity'))
+            ->get(route('manage.settings.group', 'branding'))
             ->assertInertia(function (Assert $page) {
                 $field = $this->field($page, 'site_name');
 
@@ -156,7 +330,7 @@ class SettingsTest extends TestCase
         BrandingSetting::setValue('site_name', 'Something else');
 
         $this->actingAs($this->admin)
-            ->get(route('manage.settings.group', 'identity'))
+            ->get(route('manage.settings.group', 'branding'))
             ->assertInertia(function (Assert $page) {
                 $field = $this->field($page, 'site_name');
 
@@ -168,11 +342,11 @@ class SettingsTest extends TestCase
 
     public function test_saving_stores_the_values(): void
     {
-        $this->save('identity', ['convention_name' => 'Testcon'])
-            ->assertRedirect(route('manage.settings.group', 'identity'));
+        $this->save('branding', ['convention_name' => 'Testcon'])
+            ->assertRedirect(route('manage.settings.group', 'branding'));
 
-        $this->save('look', ['primary_color' => '#ff8800']);
-        $this->save('login', ['login_headline' => 'Watch live']);
+        $this->save('branding', ['primary_color' => '#ff8800']);
+        $this->save('identity', ['login_headline' => 'Watch live']);
 
         $this->assertSame('Testcon', BrandingSetting::getValue('convention_name'));
         $this->assertSame('#ff8800', BrandingSetting::getValue('primary_color'));
@@ -192,16 +366,16 @@ class SettingsTest extends TestCase
 
         $this->assertNull($branding->faviconUrl());
 
-        $this->save('look', ['logo_path' => 'branding/logo.png']);
+        $this->save('branding', ['logo_path' => 'branding/logo.png']);
         $this->assertStringContainsString('branding/logo.png', $branding->faviconUrl());
 
-        $this->save('look', ['favicon_path' => 'branding/tab-icon.png']);
+        $this->save('branding', ['favicon_path' => 'branding/tab-icon.png']);
         $this->assertStringContainsString('branding/tab-icon.png', $branding->faviconUrl());
     }
 
     public function test_the_tab_icon_is_offered_in_the_look_pane(): void
     {
-        $field = collect(app(Settings::class)->group('look')['fields'])
+        $field = collect(app(Settings::class)->group('branding')['fields'])
             ->firstWhere('key', 'favicon_path');
 
         $this->assertNotNull($field, 'The look pane must offer a tab icon upload.');
@@ -213,15 +387,15 @@ class SettingsTest extends TestCase
     {
         BrandingSetting::setValue('control_key', 'a-long-enough-control-key');
 
-        $this->save('identity', ['convention_name' => 'Testcon']);
+        $this->save('branding', ['convention_name' => 'Testcon']);
 
         $this->assertSame('a-long-enough-control-key', ControlKey::current());
     }
 
     public function test_the_saved_values_reach_the_public_frontend_shape(): void
     {
-        $this->save('login', ['login_headline' => 'Livestream 2026']);
-        $this->save('identity', ['convention_name' => 'Testcon']);
+        $this->save('identity', ['login_headline' => 'Livestream 2026']);
+        $this->save('branding', ['convention_name' => 'Testcon']);
 
         $branding = app(BrandingService::class)->forFrontend();
 
@@ -231,7 +405,7 @@ class SettingsTest extends TestCase
 
     public function test_required_copy_cannot_be_emptied(): void
     {
-        $this->save('login', ['login_headline' => ''])->assertSessionHasErrors('values.login_headline');
+        $this->save('identity', ['login_headline' => ''])->assertSessionHasErrors('values.login_headline');
     }
 
     public function test_a_url_field_rejects_something_that_is_not_a_url(): void
@@ -242,7 +416,7 @@ class SettingsTest extends TestCase
 
     public function test_footer_links_are_stored_as_an_ordered_list(): void
     {
-        $this->save('links', [
+        $this->save('branding', [
             'footer_links' => [
                 ['label' => 'Code of Conduct', 'url' => 'https://example.test/coc'],
                 ['label' => 'Support', 'url' => 'https://example.test/help'],
@@ -259,10 +433,10 @@ class SettingsTest extends TestCase
 
     public function test_a_footer_link_needs_both_a_title_and_a_valid_url(): void
     {
-        $this->save('links', ['footer_links' => [['label' => 'Broken', 'url' => 'not a url']]])
+        $this->save('branding', ['footer_links' => [['label' => 'Broken', 'url' => 'not a url']]])
             ->assertSessionHasErrors('values.footer_links.0.url');
 
-        $this->save('links', ['footer_links' => [['label' => '', 'url' => 'https://example.test']]])
+        $this->save('branding', ['footer_links' => [['label' => '', 'url' => 'https://example.test']]])
             ->assertSessionHasErrors('values.footer_links.0.label');
     }
 
@@ -272,7 +446,7 @@ class SettingsTest extends TestCase
             ['label' => 'Support', 'url' => 'https://example.test/help'],
         ]));
 
-        $this->save('links', ['footer_links' => []]);
+        $this->save('branding', ['footer_links' => []]);
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'footer_links']);
         $this->assertSame([], app(BrandingService::class)->footerLinks());
@@ -281,7 +455,7 @@ class SettingsTest extends TestCase
 
     public function test_the_accent_colour_must_be_a_hex_value(): void
     {
-        $this->save('look', ['primary_color' => 'rebeccapurple'])
+        $this->save('branding', ['primary_color' => 'rebeccapurple'])
             ->assertSessionHasErrors('values.primary_color');
     }
 
@@ -296,15 +470,11 @@ class SettingsTest extends TestCase
     {
         /*
          * Reset is refused when it would leave no administrator a way in, so the
-         * installation has to be one that still has one afterwards: the identity
-         * provider configured in the environment rather than in the pane, which is
-         * what the reset cannot take away. See App\Support\AuthModes::resetLockout().
+         * installation has to be one that still has one afterwards. A provider row is
+         * what that takes now: rows are not settings rows, so a reset cannot take one
+         * away. See App\Support\AuthModes::resetLockout().
          */
-        config([
-            'services.oidc.url' => 'https://identity.example.org',
-            'services.oidc.client_id' => 'streaming',
-            'services.oidc.secret' => 'a-client-secret',
-        ]);
+        $this->legacyProvider();
 
         BrandingSetting::setValue('site_name', 'Something else');
 
@@ -321,7 +491,7 @@ class SettingsTest extends TestCase
     {
         BrandingSetting::setValue('login_headline', 'Something else');
 
-        $this->save('login', ['login_headline' => config('branding.login_headline')]);
+        $this->save('identity', ['login_headline' => config('branding.login_headline')]);
 
         // Not merely equal to the default: no row at all, so a later change to
         // the shipped default applies instead of being shadowed forever.
@@ -331,29 +501,29 @@ class SettingsTest extends TestCase
 
     public function test_clearing_an_optional_field_whose_default_is_empty_stores_nothing(): void
     {
-        // login_eyebrow ships empty, so clearing it is a no-op that should not
-        // leave a row behind either.
-        BrandingSetting::setValue('login_eyebrow', 'Testcon');
+        // identity_register_url ships empty, so clearing it is a no-op that should
+        // not leave a row behind either.
+        BrandingSetting::setValue('identity_register_url', 'https://identity.test/register');
 
-        $this->save('login', ['login_eyebrow' => '']);
+        $this->save('identity', ['identity_register_url' => '']);
 
-        $this->assertDatabaseMissing('branding_settings', ['key' => 'login_eyebrow']);
+        $this->assertDatabaseMissing('branding_settings', ['key' => 'identity_register_url']);
     }
 
     public function test_clearing_optional_copy_puts_the_shipped_default_back(): void
     {
-        // login_tagline ships with wording. Emptying the input is "I did not
+        // login_body ships with wording. Emptying the input is "I did not
         // choose one", not "I chose nothing": ConvertEmptyStringsToNull turns it
         // into null on the way in and a null row reads as unset, so the only
         // consistent outcome is the default.
-        $this->assertNotSame('', (string) config('branding.login_tagline'));
+        $this->assertNotSame('', (string) config('branding.login_body'));
 
-        BrandingSetting::setValue('login_tagline', 'Custom wording');
+        BrandingSetting::setValue('login_body', 'Custom wording');
 
-        $this->save('login', ['login_tagline' => '']);
+        $this->save('identity', ['login_body' => '']);
 
-        $this->assertDatabaseMissing('branding_settings', ['key' => 'login_tagline']);
-        $this->assertSame(config('branding.login_tagline'), BrandingSetting::getValue('login_tagline'));
+        $this->assertDatabaseMissing('branding_settings', ['key' => 'login_body']);
+        $this->assertSame(config('branding.login_body'), BrandingSetting::getValue('login_body'));
     }
 
     public function test_a_secret_is_never_sent_to_the_browser(): void
@@ -408,13 +578,13 @@ class SettingsTest extends TestCase
      */
     public function test_the_control_key_is_readable_on_the_page_and_saved(): void
     {
-        $this->save('control', ['control_key' => 'a-long-enough-control-key']);
+        $this->save('playback', ['control_key' => 'a-long-enough-control-key']);
 
         $this->assertSame('a-long-enough-control-key', BrandingSetting::getValue('control_key'));
         $this->assertSame('a-long-enough-control-key', ControlKey::current());
 
         $this->actingAs($this->admin)
-            ->get(route('manage.settings.group', 'control'))
+            ->get(route('manage.settings.group', 'playback'))
             ->assertSuccessful()
             ->assertInertia(function (Assert $page) {
                 $field = $this->field($page, 'control_key');
@@ -425,19 +595,24 @@ class SettingsTest extends TestCase
     }
 
     /**
-     * The pane hands over the module as well as the key, and a note saves nothing: it
+     * The card hands over the module as well as the key, and a note saves nothing: it
      * is not a field, so it never reaches the values a save posts.
+     *
+     * Per card rather than per pane, which is what lets one pane carry the Companion
+     * download and the archiver builds at the same time.
      */
     public function test_the_control_pane_links_to_the_companion_module(): void
     {
         config(['stream.companion_module_url' => 'https://example.test/stream-control.tgz']);
 
         $this->actingAs($this->admin)
-            ->get(route('manage.settings.group', 'control'))
+            ->get(route('manage.settings.group', 'playback'))
             ->assertSuccessful()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('group.note.url', 'https://example.test/stream-control.tgz')
-            );
+            ->assertInertia(function (Assert $page) {
+                $card = $this->card($page, 'surfaces');
+
+                $this->assertSame('https://example.test/stream-control.tgz', $card['note']['url']);
+            });
     }
 
     public function test_a_note_with_nothing_behind_it_is_not_shown(): void
@@ -445,22 +620,22 @@ class SettingsTest extends TestCase
         config(['stream.companion_module_url' => '']);
 
         $this->actingAs($this->admin)
-            ->get(route('manage.settings.group', 'control'))
+            ->get(route('manage.settings.group', 'playback'))
             ->assertSuccessful()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('group.note', null)
-            );
+            ->assertInertia(function (Assert $page) {
+                $this->assertNull($this->card($page, 'surfaces')['note']);
+            });
     }
 
     public function test_clearing_the_control_key_closes_the_control_api(): void
     {
         // The table is the only source, so an emptied field is not a fallback to
         // anything: it switches the control API off.
-        $this->save('control', ['control_key' => 'saved-control-key-value']);
+        $this->save('playback', ['control_key' => 'saved-control-key-value']);
 
         $this->assertSame('saved-control-key-value', ControlKey::current());
 
-        $this->save('control', ['control_key' => '']);
+        $this->save('playback', ['control_key' => '']);
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'control_key']);
         $this->assertSame('', ControlKey::current());
@@ -468,7 +643,7 @@ class SettingsTest extends TestCase
 
     public function test_a_short_control_key_is_rejected(): void
     {
-        $this->save('control', ['control_key' => 'short'])->assertSessionHasErrors('values.control_key');
+        $this->save('playback', ['control_key' => 'short'])->assertSessionHasErrors('values.control_key');
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'control_key']);
     }
@@ -478,7 +653,7 @@ class SettingsTest extends TestCase
         $this->assertTrue(app(BrandingService::class)->showSourceLink());
         $this->assertNotNull(app(BrandingService::class)->forFrontend()['source']);
 
-        $this->save('links', ['show_source_link' => false]);
+        $this->save('branding', ['show_source_link' => false]);
 
         // Stored as a string, because that is what the settings table holds.
         $this->assertSame('0', BrandingSetting::getValue('show_source_link'));
@@ -490,7 +665,7 @@ class SettingsTest extends TestCase
     {
         BrandingSetting::setValue('show_source_link', '0');
 
-        $this->save('links', ['show_source_link' => true]);
+        $this->save('branding', ['show_source_link' => true]);
 
         $this->assertDatabaseMissing('branding_settings', ['key' => 'show_source_link']);
         $this->assertTrue(app(BrandingService::class)->showSourceLink());
@@ -586,28 +761,59 @@ class SettingsTest extends TestCase
     {
         $this->save('streaming', [
             'image_ffmpeg_hls' => 'ghcr.io/example/ffmpeg-hls:v2',
-            'origin_ip' => '198.51.100.7',
             'server_metrics_retention_days' => '14',
-            'local_streaming_hostname' => 'stream.venue.test',
         ]);
 
         RuntimeConfig::apply();
 
         $this->assertSame('ghcr.io/example/ffmpeg-hls:v2', config('stream.images.ffmpeg_hls'));
-        $this->assertSame('198.51.100.7', config('services.stream.origin_ip'));
         $this->assertSame(14, config('stream.server.metrics_retention_days'));
-        $this->assertSame('stream.venue.test', config('stream.local_streaming_hostname'));
     }
 
-    public function test_the_origin_ip_has_to_be_an_address(): void
+    /**
+     * The bucket card only ever writes filesystems.disks.dvr.*, so pointing the archive
+     * at the general s3 disk has to leave it visibly inert rather than editing a disk
+     * nothing reads. The disk control comes first for the same reason: an operator has
+     * to reach it before the card it disables.
+     */
+    public function test_the_archive_bucket_card_goes_inert_when_the_disk_is_the_general_one(): void
     {
-        $this->save('streaming', ['origin_ip' => 'the-origin'])
-            ->assertSessionHasErrors('values.origin_ip');
+        $this->actingAs($this->admin)
+            ->get(route('manage.settings.group', 'storage'))
+            ->assertSuccessful()
+            ->assertInertia(function (Assert $page) {
+                $cards = collect($page->toArray()['props']['group']['cards'])->pluck('key')->all();
+
+                $this->assertSame(['disk', 'bucket', 'playback'], $cards);
+
+                $rule = $this->card($page, 'bucket')['inertWhen'];
+
+                $this->assertSame('archive_disk', $rule['field']);
+                $this->assertSame(['s3'], $rule['is']);
+                $this->assertNotNull($rule['description']);
+
+                // Every other card is unconditional.
+                $this->assertNull($this->card($page, 'disk')['inertWhen']);
+                $this->assertNull($this->card($page, 'playback')['inertWhen']);
+            });
     }
 
-    public function test_the_srs_console_password_is_never_sent_to_the_browser(): void
+    /**
+     * Inert is layout, like visible_when a level down: the credentials stay editable
+     * through the API and a save still carries them, so switching the disk back does
+     * not hand back an emptied bucket.
+     */
+    public function test_the_archive_bucket_still_saves_while_the_disk_is_the_general_one(): void
     {
-        $this->assertSecretIsNotOnThePage('streaming', 'srs_password', 'srs-console-password');
+        $this->save('storage', [
+            'archive_disk' => 's3',
+            'archive_s3_bucket' => 'ef-archive',
+        ]);
+
+        RuntimeConfig::apply();
+
+        $this->assertSame('s3', config('stream.archive_disk'));
+        $this->assertSame('ef-archive', config('filesystems.disks.dvr.bucket'));
     }
 
     public function test_a_saved_playback_setting_reaches_its_config_path(): void
@@ -673,10 +879,10 @@ class SettingsTest extends TestCase
     {
         // The moderator holds the manage gate but not admin.access.
         $this->actingAs($this->moderator)->get(route('manage.settings'))->assertForbidden();
-        $this->actingAs($this->moderator)->get(route('manage.settings.group', 'login'))->assertForbidden();
+        $this->actingAs($this->moderator)->get(route('manage.settings.group', 'identity'))->assertForbidden();
 
         $this->actingAs($this->moderator)
-            ->put(route('manage.settings.update', 'login'), ['values' => $this->values('login')])
+            ->put(route('manage.settings.update', 'identity'), ['values' => $this->values('identity')])
             ->assertForbidden();
 
         $this->actingAs($this->moderator)->post(route('manage.settings.reset'))->assertForbidden();

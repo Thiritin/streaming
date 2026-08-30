@@ -59,7 +59,8 @@ const submit = () => form.put(route('manage.telegram.update', props.chat.id));
       Telegram last said: {{ chat.last_error }}
     </p>
 
-    <form @submit.prevent="submit">
+    <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="submit">
+      <div class="flex flex-1 flex-col gap-4 p-4">
       <FormSection title="Chat" description="How this chat is named here, and whether the bot writes to it at all.">
         <FormField
           v-model="form.title"
@@ -142,6 +143,7 @@ const submit = () => form.put(route('manage.telegram.update', props.chat.id));
           helper="Anyone who can read this chat can press them. Ending a show asks for a confirmation first; starting one, publishing a recording and resolving a report do not."
         />
       </FormSection>
+      </div>
 
       <FormActions :processing="form.processing" :dirty="form.isDirty" submit-label="Save chat" />
     </form>

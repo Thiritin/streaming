@@ -30,9 +30,7 @@ class BrandingService
     public const EDITABLE = [
         'convention_name' => 'Name of the convention, used in page copy.',
         'site_name' => 'Name of this streaming site, used in the header and page titles.',
-        'login_eyebrow' => 'Small label above the login headline.',
         'login_headline' => 'Main login headline.',
-        'login_tagline' => 'One line under the headline.',
         'login_body' => 'Paragraph explaining what is needed to watch.',
         'login_button_label' => 'Label on the sign-in button.',
         'identity_name' => 'Name of the identity provider people sign in with.',
@@ -43,7 +41,6 @@ class BrandingService
         'logo_path' => 'Logo image. Leave empty to show the site name as text instead.',
         'favicon_path' => 'Tab icon. Left empty the logo is used, and with no logo the bundled mark.',
         'login_background_image' => 'Background image for the login screen.',
-        'login_background_video' => 'Background video for the login screen. Left empty, the bundled clip is used.',
         'primary_color' => 'Pick a preset or a custom hex. A full 50-950 ramp is derived from it; empty keeps the palette in the stylesheet.',
     ];
 
@@ -88,13 +85,10 @@ class BrandingService
                 'logoutUrl' => $values['identity_logout_url'],
             ],
             'login' => [
-                'eyebrow' => $values['login_eyebrow'],
                 'headline' => $values['login_headline'],
-                'tagline' => $values['login_tagline'],
                 'body' => $values['login_body'],
                 'buttonLabel' => $values['login_button_label'],
                 'backgroundImage' => $this->assetUrl($values['login_background_image']),
-                'backgroundVideo' => $this->assetUrl($values['login_background_video']),
             ],
             // A list, not a fixed set of slots: an installation names its own
             // footer links and has as many as it likes. Empty means the footer

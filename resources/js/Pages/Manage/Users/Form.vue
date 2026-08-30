@@ -79,7 +79,7 @@ const setPassword = () => passwordForm.put(route('manage.users.password.update',
     </PageHeader>
 
     <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="submit">
-      <div class="flex flex-col gap-4 p-4">
+      <div class="flex flex-1 flex-col gap-4 p-4">
         <FormSection
           v-if="!isEdit"
           title="Account"

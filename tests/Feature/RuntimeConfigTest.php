@@ -36,6 +36,73 @@ class RuntimeConfigTest extends TestCase
         RuntimeConfig::flush();
     }
 
+    /**
+     * The same registry, with its fields grouped into a card instead of listed flat.
+     *
+     * @param  array<int, array<string, mixed>>  $fields
+     */
+    private function cardRegistry(array $fields): void
+    {
+        config()->set('settings.groups', [
+            [
+                'key' => 'testing',
+                'label' => 'Testing',
+                'cards' => [
+                    ['key' => 'a_card', 'label' => 'A card', 'fields' => $fields],
+                ],
+            ],
+        ]);
+
+        RuntimeConfig::flush();
+    }
+
+    /**
+     * A field declared inside a card is overlaid exactly as a flat one is.
+     *
+     * Cards are layout, so nothing that reads the registry may care about them - but
+     * this reads it by walking `$group['fields']`, which a carded group does not have,
+     * and the failure is silent: the pane saves the row, the page shows it saved, and
+     * the call site goes on reading the shipped default forever. It shipped that way
+     * for a few hours and `auth.required`, which gates guest access site-wide, was one
+     * of the keys it swallowed.
+     */
+    public function test_a_field_declared_inside_a_card_reaches_its_config_path(): void
+    {
+        config()->set('services.carded.value', 'shipped');
+
+        $this->cardRegistry([[
+            'key' => 'carded_key',
+            'label' => 'Carded key',
+            'type' => 'text',
+            'config' => 'services.carded.value',
+        ]]);
+
+        BrandingSetting::setValue('carded_key', 'saved');
+        RuntimeConfig::apply();
+
+        $this->assertSame('saved', config('services.carded.value'));
+    }
+
+    /**
+     * The command writes and lists the same set the overlay reads, so a carded field
+     * the panel can save has to be one `branding:set` can reach as well.
+     */
+    public function test_branding_set_sees_a_field_declared_inside_a_card(): void
+    {
+        config()->set('services.carded.value', 'shipped');
+
+        $this->cardRegistry([[
+            'key' => 'carded_key',
+            'label' => 'Carded key',
+            'type' => 'text',
+            'config' => 'services.carded.value',
+        ]]);
+
+        Artisan::call('branding:set', ['pairs' => ['carded_key=from-the-cli']]);
+
+        $this->assertSame('from-the-cli', BrandingSetting::getValue('carded_key'));
+    }
+
     public function test_a_secure_value_is_not_readable_as_plaintext_but_round_trips(): void
     {
         BrandingSetting::setValue('oidc_client_secret', 'sup3r-secret', null, true);

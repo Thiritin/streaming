@@ -89,16 +89,6 @@ return [
             'resize' => null,
         ],
 
-        'branding_login_video' => [
-            'disk' => 's3',
-            'directory' => 'branding',
-            'visibility' => 'public',
-            'mimes' => ['mp4', 'webm'],
-            'max' => 51200,
-            'preserve_filename' => true,
-            'resize' => null,
-        ],
-
     ],
 
 ];

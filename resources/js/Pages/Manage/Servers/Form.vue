@@ -61,7 +61,7 @@ const submit = () => {
     </PageHeader>
 
     <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="submit">
-      <div class="flex flex-col gap-4 p-4">
+      <div class="flex flex-1 flex-col gap-4 p-4">
         <FormSection title="Identity" description="Where this server lives and how the app reaches it.">
           <FormField
             v-model="form.hostname"

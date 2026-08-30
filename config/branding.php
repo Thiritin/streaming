@@ -26,13 +26,7 @@ return [
 
     'site_name' => env('APP_NAME', 'Streaming'),
 
-    // Shown above the login headline. Keep it short. Empty by default: an
-    // installation that has not set one gets no placeholder convention name.
-    'login_eyebrow' => null,
-
     'login_headline' => 'Livestream',
-
-    'login_tagline' => 'Open to everyone',
 
     'login_body' => 'Sign in to watch the live streams and recordings.',
 
@@ -80,17 +74,8 @@ return [
      */
     'favicon_path' => null,
 
-    /*
-     | Background media for the login screen. The image is used as the video
-     | poster, so it is what visitors see before the clip has buffered.
-     */
+    // Background image for the login screen.
     'login_background_image' => null,
-
-    /*
-     | Left empty, the login screen falls back to the background clip bundled
-     | with the frontend assets.
-     */
-    'login_background_video' => null,
 
     /*
      | Base accent colour as a hex string. When set, a 50-950 ramp is derived

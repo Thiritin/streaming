@@ -56,246 +56,241 @@ return [
     | nothing. `url_config` names the config key the link comes from, and a note whose
     | key resolves to an empty value is dropped rather than shown dead.
     |
+    | A group may declare `cards` instead of a flat `fields`: a list of collapsible
+    | blocks, each with its own `label`, its own subset of the fields and, where it
+    | needs one, its own `note` - a note is per card as well as per group, or merging
+    | two panes that each carried one would silently drop the second. Settings::fields()
+    | flattens them, so rules(), attributes() and save() never learn cards exist and a
+    | group that declares none renders exactly as it did before. `render` on a card
+    | names a body the page draws itself, for a card whose contents are rows rather
+    | than registry fields.
+    |
+    | `visible_when` hides a field until another field on the same pane holds one of
+    | the listed values: ['field' => 'auth_local', 'is' => [true]]. It is copy and
+    | layout only - a hidden field still posts, and a `required` rule on one becomes
+    | conditional on the same answer so a pane cannot fail on a control nobody saw.
+    |
+    | `inert_when` is the same shape one level up, for a card whose contents another
+    | field has made moot: the card stays on screen with its saved values readable and
+    | every control in it disabled, plus the one line `description` says why. Shown
+    | rather than hidden, because a card that vanishes reads as a card that was never
+    | configured.
+    |
     */
 
     'groups' => [
 
         [
             'key' => 'identity',
-            'blurb' => 'Names and accounts',
-            'icon' => 'users',
-            'label' => 'Identity',
-            'description' => 'Who this installation belongs to, and where people get an account.',
-            'fields' => [
-                [
-                    'key' => 'convention_name',
-                    'label' => 'Convention name',
-                    'type' => 'text',
-                    'helper' => 'Name of the convention, used in page copy.',
-                    'rules' => ['required', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'site_name',
-                    'label' => 'Site name',
-                    'type' => 'text',
-                    'helper' => 'Name of this streaming site, used in the header and page titles.',
-                    'rules' => ['required', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'identity_name',
-                    'label' => 'Identity provider name',
-                    'type' => 'text',
-                    'helper' => 'Name of the identity provider people sign in with.',
-                    'rules' => ['required', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'identity_register_url',
-                    'label' => 'Register URL',
-                    'type' => 'url',
-                    'helper' => 'Where people register a new identity account.',
-                    'rules' => ['nullable', 'url', 'max:2048'],
-                ],
-                [
-                    'key' => 'identity_logout_url',
-                    'label' => 'Logout URL',
-                    'type' => 'url',
-                    'helper' => 'Identity provider logout endpoint.',
-                    'rules' => ['nullable', 'url', 'max:2048'],
-                ],
-            ],
-        ],
-
-        [
-            'key' => 'auth',
-            'blurb' => 'How people get in',
+            'section' => 'Site',
             'icon' => 'key',
             'label' => 'Sign-in',
-            'fields' => [
+            'description' => 'How people get in, and what they read on the way.',
+            'cards' => [
+                /*
+                 * One card, because "how does somebody get in" is one question. Guest
+                 * access is not a way in - it is permission to browse without one - but
+                 * it is the first thing an operator decides here, so it leads.
+                 */
                 [
-                    'key' => 'auth_required',
-                    'label' => 'Require sign-in to watch',
-                    'type' => 'toggle',
-                    'config' => 'auth.required',
-                    'rules' => ['boolean'],
-                ],
-                [
-                    'key' => 'auth_local',
-                    'label' => 'Password accounts',
-                    'type' => 'toggle',
-                    'config' => 'auth.modes.local',
-                    'rules' => ['boolean'],
-                ],
-                [
-                    'key' => 'auth_registration',
-                    'label' => 'Public registration',
-                    'type' => 'toggle',
-                    'config' => 'auth.modes.registration',
-                    'rules' => ['boolean'],
-                ],
-                [
-                    'key' => 'auth_oidc',
-                    'label' => 'Identity provider',
-                    'type' => 'toggle',
-                    'config' => 'auth.modes.oidc',
-                    'rules' => ['boolean'],
-                ],
-                [
-                    'key' => 'oidc_url',
-                    'label' => 'Provider URL',
-                    'type' => 'url',
-                    'config' => 'services.oidc.url',
-                    'rules' => ['nullable', 'url', 'max:2048'],
-                ],
-                [
-                    'key' => 'oidc_client_id',
-                    'label' => 'Client ID',
-                    'type' => 'text',
-                    'config' => 'services.oidc.client_id',
-                    'rules' => ['nullable', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'oidc_secret',
-                    'label' => 'Client secret',
-                    'type' => 'password',
-                    'config' => 'services.oidc.secret',
-                    'secure' => true,
-                    'rules' => ['nullable', 'string', 'max:255'],
-                ],
-            ],
-        ],
-
-        [
-            'key' => 'login',
-            'blurb' => 'Sign-in copy',
-            'icon' => 'lock',
-            'label' => 'Login screen',
-            'description' => 'Everything shown to visitors before they sign in.',
-            'fields' => [
-                [
-                    'key' => 'login_eyebrow',
-                    'label' => 'Eyebrow',
-                    'type' => 'text',
-                    'helper' => 'Small label above the login headline.',
-                    'rules' => ['nullable', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'login_headline',
-                    'label' => 'Headline',
-                    'type' => 'text',
-                    'helper' => 'Main login headline.',
-                    'rules' => ['required', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'login_tagline',
-                    'label' => 'Tagline',
-                    'type' => 'text',
-                    'helper' => 'One line under the headline.',
-                    'rules' => ['nullable', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'login_button_label',
-                    'label' => 'Button label',
-                    'type' => 'text',
-                    'helper' => 'Label on the sign-in button.',
-                    'rules' => ['required', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'login_body',
-                    'label' => 'Intro paragraph',
-                    'type' => 'textarea',
-                    'helper' => 'Paragraph explaining what is needed to watch.',
-                    'rules' => ['nullable', 'string', 'max:2000'],
-                    'full' => true,
-                ],
-            ],
-        ],
-
-        [
-            'key' => 'look',
-            'blurb' => 'Logo and colours',
-            'icon' => 'paintbrush',
-            'label' => 'Look',
-            'description' => 'Logo, accent colour and the login background. Uploads land on the public disk.',
-            'fields' => [
-                [
-                    'key' => 'primary_color',
-                    'label' => 'Accent colour',
-                    'type' => 'color',
-                    'helper' => 'Pick a preset or set any hex. A full 50-950 ramp is derived from it; empty keeps the built-in palette.',
-                    'rules' => ['nullable', 'string', 'regex:/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/'],
-                    'presets' => ColorPresets::PRESETS,
-                ],
-                [
-                    'key' => 'logo_path',
-                    'label' => 'Logo',
-                    'type' => 'image',
-                    'purpose' => 'branding_logo',
-                    'helper' => 'Leave empty to show the site name as text instead.',
-                    'rules' => ['nullable', 'string', 'max:2048'],
-                ],
-                [
-                    'key' => 'favicon_path',
-                    'label' => 'Tab icon',
-                    'type' => 'image',
-                    'purpose' => 'branding_favicon',
-                    'accept' => 'image/png,image/svg+xml,image/webp,image/x-icon,image/vnd.microsoft.icon',
-                    'preview_fit' => 'contain',
-                    'helper' => 'Square PNG, SVG or ICO. Left empty the logo is used, and with no logo the bundled mark.',
-                    'rules' => ['nullable', 'string', 'max:2048'],
-                ],
-                [
-                    'key' => 'login_background_image',
-                    'label' => 'Login background image',
-                    'type' => 'image',
-                    'purpose' => 'branding_login_image',
-                    'helper' => 'Also used as the poster for the background video.',
-                    'rules' => ['nullable', 'string', 'max:2048'],
-                ],
-                [
-                    'key' => 'login_background_video',
-                    'label' => 'Login background video',
-                    'type' => 'video',
-                    'purpose' => 'branding_login_video',
-                    'helper' => 'Left empty, the bundled clip is used.',
-                    'rules' => ['nullable', 'string', 'max:2048'],
-                ],
-            ],
-        ],
-
-        [
-            'key' => 'links',
-            'blurb' => 'Footer links',
-            'icon' => 'external-link',
-            'label' => 'Footer links',
-            'description' => 'Shown in the footer of the public site, in this order. Add as many as you need; with none, the footer link row is hidden.',
-            'fields' => [
-                [
-                    'key' => 'footer_links',
-                    'label' => 'Links',
-                    // A repeater of {label, url} rows, stored as JSON. `itemRules`
-                    // are expanded onto values.footer_links.* by Settings::rules().
-                    'type' => 'links',
-                    'full' => true,
-                    'helper' => 'Title and address for each link. Empty rows are dropped on save.',
-                    'rules' => ['nullable', 'array', 'max:12'],
-                    'itemRules' => [
-                        'label' => ['required', 'string', 'max:40'],
-                        'url' => ['required', 'url', 'max:2048'],
+                    'key' => 'methods',
+                    'label' => 'Sign-in Methods',
+                    'render' => 'providers_link',
+                    'fields' => [
+                        [
+                            'key' => 'auth_required',
+                            'label' => 'Guest Access',
+                            'type' => 'toggle',
+                            'config' => 'auth.required',
+                            // Shown as its own opposite: the row asks whether a guest may
+                            // watch, the column stores whether sign-in is required. Only
+                            // the page inverts; the table and every reader are unchanged.
+                            'invert' => true,
+                            'helper' => 'Enables viewing stream content without an account.',
+                            'rules' => ['boolean'],
+                        ],
+                        [
+                            'key' => 'auth_local',
+                            'label' => 'Password',
+                            'type' => 'toggle',
+                            'config' => 'auth.modes.local',
+                            'helper' => 'Allows logging in with usernames and passwords.',
+                            'rules' => ['boolean'],
+                        ],
+                        [
+                            'key' => 'auth_registration',
+                            'label' => 'Registration',
+                            'type' => 'toggle',
+                            'config' => 'auth.modes.registration',
+                            // Registration is an option on password accounts, not a mode
+                            // of its own, so it is indented under them and not offered
+                            // while they are off.
+                            'visible_when' => ['field' => 'auth_local', 'is' => [true]],
+                            'indent' => true,
+                            'helper' => 'Allows anyone to create a password account.',
+                            'rules' => ['boolean'],
+                        ],
+                        [
+                            'key' => 'auth_oauth2',
+                            'label' => 'OAuth2',
+                            'type' => 'toggle',
+                            'config' => 'auth.modes.oauth2',
+                            'helper' => 'Allows login via configured OAuth2 providers.',
+                            'rules' => ['boolean'],
+                        ],
                     ],
                 ],
                 [
-                    'key' => 'show_source_link',
-                    'label' => 'Source and licence credit',
-                    'type' => 'toggle',
-                    'helper' => 'Show "Open source, GPL-3.0" in the footer, linking to the project on GitHub.',
-                    'rules' => ['boolean'],
+                    'key' => 'provider_pages',
+                    'label' => 'Provider pages',
+                    'fields' => [
+                        [
+                            'key' => 'identity_name',
+                            'label' => 'Identity provider name',
+                            'type' => 'text',
+                            'rules' => ['required', 'string', 'max:255'],
+                        ],
+                        [
+                            'key' => 'identity_register_url',
+                            'label' => 'Register URL',
+                            'type' => 'url',
+                            'rules' => ['nullable', 'url', 'max:2048'],
+                        ],
+                        [
+                            'key' => 'identity_logout_url',
+                            'label' => 'Logout URL',
+                            'type' => 'url',
+                            'rules' => ['nullable', 'url', 'max:2048'],
+                        ],
+                    ],
+                ],
+                [
+                    'key' => 'login',
+                    'label' => 'Login screen',
+                    'fields' => [
+                        [
+                            'key' => 'login_headline',
+                            'label' => 'Headline',
+                            'type' => 'text',
+                            'rules' => ['required', 'string', 'max:255'],
+                        ],
+                        [
+                            'key' => 'login_button_label',
+                            'label' => 'Button label',
+                            'type' => 'text',
+                            'rules' => ['required', 'string', 'max:255'],
+                        ],
+                        [
+                            'key' => 'login_body',
+                            'label' => 'Intro paragraph',
+                            'type' => 'textarea',
+                            'rules' => ['nullable', 'string', 'max:2000'],
+                            'full' => true,
+                        ],
+                    ],
+                ],
+            ],
+        ],
+
+        [
+            'key' => 'branding',
+            'section' => 'Site',
+            'icon' => 'paintbrush',
+            'label' => 'Branding',
+            'description' => 'What this installation is called, and what it looks like. Uploads land on the public disk.',
+            'cards' => [
+                [
+                    'key' => 'site',
+                    'label' => 'Site',
+                    'fields' => [
+                        [
+                            'key' => 'convention_name',
+                            'label' => 'Convention name',
+                            'type' => 'text',
+                            'rules' => ['required', 'string', 'max:255'],
+                        ],
+                        [
+                            'key' => 'site_name',
+                            'label' => 'Site name',
+                            'type' => 'text',
+                            'rules' => ['required', 'string', 'max:255'],
+                        ],
+                    ],
+                ],
+                [
+                    'key' => 'brand',
+                    'label' => 'Logo and colours',
+                    'fields' => [
+                        [
+                            'key' => 'primary_color',
+                            'label' => 'Accent colour',
+                            'type' => 'color',
+                            'rules' => ['nullable', 'string', 'regex:/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/'],
+                            'presets' => ColorPresets::PRESETS,
+                        ],
+                        [
+                            'key' => 'logo_path',
+                            'label' => 'Logo',
+                            'type' => 'image',
+                            'purpose' => 'branding_logo',
+                            'rules' => ['nullable', 'string', 'max:2048'],
+                        ],
+                        [
+                            'key' => 'favicon_path',
+                            'label' => 'Tab icon',
+                            'type' => 'image',
+                            'purpose' => 'branding_favicon',
+                            'accept' => 'image/png,image/svg+xml,image/webp,image/x-icon,image/vnd.microsoft.icon',
+                            'preview_fit' => 'contain',
+                            'rules' => ['nullable', 'string', 'max:2048'],
+                        ],
+                    ],
+                ],
+                [
+                    'key' => 'login_background',
+                    'label' => 'Login background',
+                    'fields' => [
+                        [
+                            'key' => 'login_background_image',
+                            'label' => 'Login background image',
+                            'type' => 'image',
+                            'purpose' => 'branding_login_image',
+                            'rules' => ['nullable', 'string', 'max:2048'],
+                        ],
+                    ],
+                ],
+                [
+                    'key' => 'footer',
+                    'label' => 'Footer',
+                    'fields' => [
+                        [
+                            'key' => 'footer_links',
+                            'label' => 'Links',
+                            // A repeater of {label, url} rows, stored as JSON. `itemRules`
+                            // are expanded onto values.footer_links.* by Settings::rules().
+                            'type' => 'links',
+                            'full' => true,
+                            'rules' => ['nullable', 'array', 'max:12'],
+                            'itemRules' => [
+                                'label' => ['required', 'string', 'max:40'],
+                                'url' => ['required', 'url', 'max:2048'],
+                            ],
+                        ],
+                        [
+                            'key' => 'show_source_link',
+                            'label' => 'Source and licence credit',
+                            'type' => 'toggle',
+                            'helper' => 'Show "Open source, GPL-3.0" in the footer, linking to the project on GitHub.',
+                            'rules' => ['boolean'],
+                        ],
+                    ],
                 ],
             ],
         ],
 
         [
             'key' => 'announcement',
-            'blurb' => 'Front page banner',
+            'section' => 'Site',
             'icon' => 'triangle-alert',
             'label' => 'Announcement',
             'description' => 'One banner across the top of the public site, for whatever everybody watching needs to know right now. Write the short version on the banner and the rest below it, which becomes a page of its own. Clearing the banner text takes the whole thing down whatever the switch says.',
@@ -305,7 +300,6 @@ return [
                     'label' => 'Show the banner',
                     'type' => 'toggle',
                     'store' => 'announcement',
-                    'helper' => 'Off hides it everywhere without losing the text you wrote.',
                     'rules' => ['boolean'],
                 ],
                 [
@@ -314,7 +308,7 @@ return [
                     'type' => 'select',
                     'store' => 'announcement',
                     'options' => Announcement::LEVELS,
-                    'helper' => 'Colour only. Critical is loud; save it for something that is actually going wrong.',
+                    'helper' => 'Colour only. It gates nothing.',
                     'rules' => ['nullable', 'string', 'in:'.implode(',', array_keys(Announcement::LEVELS))],
                 ],
                 [
@@ -323,7 +317,6 @@ return [
                     'type' => 'text',
                     'store' => 'announcement',
                     'full' => true,
-                    'helper' => 'Optional bold line above the text. The banner reads fine without one.',
                     'rules' => ['nullable', 'string', 'max:120'],
                 ],
                 [
@@ -358,7 +351,6 @@ return [
                     'label' => 'Link label',
                     'type' => 'text',
                     'store' => 'announcement',
-                    'helper' => 'What the read-more link is called, wherever it points. Empty reads "Read more".',
                     'rules' => ['nullable', 'string', 'max:40'],
                 ],
                 [
@@ -375,7 +367,7 @@ return [
 
         [
             'key' => 'features',
-            'blurb' => 'What is switched on',
+            'section' => 'Site',
             'icon' => 'sliders-horizontal',
             'label' => 'Features',
             'description' => 'Parts of the site an installation can switch off. Turning one off hides it and closes its endpoints, so nothing can be reached by hand either.',
@@ -449,7 +441,7 @@ return [
 
         [
             'key' => 'chat',
-            'blurb' => 'Limits and links',
+            'section' => 'Site',
             'icon' => 'message-square',
             'label' => 'Chat',
             'description' => 'The limits every chat room runs under. Whether chat exists at all is in Features, and slow mode can be overridden per source from the mod tools.',
@@ -465,32 +457,29 @@ return [
                 ],
                 [
                     'key' => 'chat_rate_decay',
-                    'label' => 'Rate window',
+                    'label' => 'Rate window (seconds)',
                     'type' => 'text',
                     'store' => 'chat',
                     'config' => 'chat.default.rateDecay',
                     'cast' => 'int',
-                    'helper' => 'Seconds.',
                     'rules' => ['nullable', 'integer', 'min:1', 'max:3600'],
                 ],
                 [
                     'key' => 'chat_slow_mode_seconds',
-                    'label' => 'Slow mode gap',
+                    'label' => 'Slow mode gap (seconds)',
                     'type' => 'text',
                     'store' => 'chat',
                     'config' => 'chat.default.slowModeSeconds',
                     'cast' => 'int',
-                    'helper' => 'Seconds. Zero switches it off.',
                     'rules' => ['nullable', 'integer', 'min:0', 'max:3600'],
                 ],
                 [
                     'key' => 'chat_max_message_length',
-                    'label' => 'Message length limit',
+                    'label' => 'Message length limit (characters)',
                     'type' => 'text',
                     'store' => 'chat',
                     'config' => 'chat.default.maxMessageLength',
                     'cast' => 'int',
-                    'helper' => 'Characters.',
                     'rules' => ['nullable', 'integer', 'min:1', 'max:2000'],
                 ],
                 [
@@ -508,7 +497,7 @@ return [
 
         [
             'key' => 'pretalx',
-            'blurb' => 'Programme import',
+            'section' => 'Programme',
             'icon' => 'calendar',
             'label' => 'Pretalx',
             'description' => 'Where the programme comes from. With these set, /manage > Shows can import sessions from the published schedule.',
@@ -518,7 +507,6 @@ return [
                     'label' => 'Instance URL',
                     'type' => 'url',
                     'store' => 'pretalx',
-                    'helper' => 'Root of the pretalx instance, for example https://cfp.example.org.',
                     'rules' => ['nullable', 'url', 'max:2048'],
                 ],
                 [
@@ -526,7 +514,6 @@ return [
                     'label' => 'Event slug',
                     'type' => 'text',
                     'store' => 'pretalx',
-                    'helper' => 'The slug in the pretalx URL, for example my-con-2026.',
                     'rules' => ['nullable', 'string', 'max:255'],
                 ],
                 [
@@ -535,185 +522,18 @@ return [
                     'type' => 'password',
                     'store' => 'pretalx',
                     'full' => true,
-                    'helper' => 'From the pretalx user account, under API tokens. Only needed while the schedule is unpublished or the event is private.',
+                    'helper' => 'Only needed while the schedule is unpublished or the event is private.',
                     'rules' => ['nullable', 'string', 'max:255'],
-                ],
-            ],
-        ],
-
-        [
-            'key' => 'control',
-            'blurb' => 'Hardware surfaces',
-            'icon' => 'radio-tower',
-            'label' => 'Control surfaces',
-            'description' => 'The key a hardware control surface authenticates with; see docs/admin/companion.md. One key for the installation: a surface names the source it drives in its request, and the people who run the rooms are the same people either way.',
-            'columns' => 1,
-            'note' => [
-                'label' => 'Download the Companion module',
-                'icon' => 'download',
-                'text' => 'Companion does not ship the Stream Control module. On the Companion machine: Modules, then Import module package. The link serves the newest released build.',
-                'url_config' => 'stream.companion_module_url',
-            ],
-            'fields' => [
-                [
-                    'key' => 'control_key',
-                    'label' => 'Control key',
-                    'type' => 'secret',
-                    'store' => 'stream',
-                    'full' => true,
-                    'helper' => 'Sent by the surface as X-Companion-Token. Generating a new one rotates it, and every surface has to be reconfigured. Empty switches the control API off.',
-                    'rules' => ['nullable', 'string', 'min:16', 'max:255'],
-                    'empty_note' => 'Nothing set: the control API answers every request with 401.',
-                    'dirty_note' => 'Not in effect until you save, and every surface has to be given the new key.',
-                ],
-            ],
-        ],
-
-        [
-            'key' => 'imports',
-            'blurb' => 'Archive imports',
-            'icon' => 'archive',
-            'label' => 'Imports',
-            'columns' => 1,
-            'note' => [
-                'text' => 'The tool encodes on the importing machine and uploads straight to the archive. It needs ffmpeg installed; see docs/admin/archive-import.md.',
-                'downloads_config' => 'stream.import_cli_base_url',
-            ],
-            'fields' => [
-                [
-                    'key' => 'import_key',
-                    'label' => 'Import key',
-                    'type' => 'secret',
-                    'store' => 'stream',
-                    'full' => true,
-                    'helper' => 'Sent by streaming-archiver as X-Import-Key, or set as ARCHIVER_KEY in its environment. Generating a new one rotates it. Empty switches importing off.',
-                    'rules' => ['nullable', 'string', 'min:16', 'max:255'],
-                    'empty_note' => 'Nothing set: the import API answers every request with 401.',
-                    'dirty_note' => 'Not in effect until you save, and anyone importing has to be given the new key.',
-                ],
-            ],
-        ],
-
-        [
-            'key' => 'storage',
-            'blurb' => 'Bucket and quota',
-            'icon' => 'database',
-            'label' => 'Archive storage',
-            'description' => 'The bucket recordings are cut from, and how a player is handed their segments.',
-            'fields' => [
-                [
-                    'key' => 'archive_s3_endpoint',
-                    'label' => 'Endpoint',
-                    'type' => 'url',
-                    'config' => 'filesystems.disks.dvr.endpoint',
-                    'rules' => ['nullable', 'url', 'max:2048'],
-                ],
-                [
-                    'key' => 'archive_s3_bucket',
-                    'label' => 'Bucket',
-                    'type' => 'text',
-                    'config' => 'filesystems.disks.dvr.bucket',
-                    'rules' => ['nullable', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'archive_s3_region',
-                    'label' => 'Region',
-                    'type' => 'text',
-                    'config' => 'filesystems.disks.dvr.region',
-                    'rules' => ['nullable', 'string', 'max:64'],
-                ],
-                [
-                    'key' => 'archive_s3_key',
-                    'label' => 'Access key ID',
-                    'type' => 'password',
-                    'config' => 'filesystems.disks.dvr.key',
-                    'secure' => true,
-                    'rules' => ['nullable', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'archive_s3_secret',
-                    'label' => 'Secret access key',
-                    'type' => 'password',
-                    'config' => 'filesystems.disks.dvr.secret',
-                    'secure' => true,
-                    'rules' => ['nullable', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'archive_s3_url',
-                    'label' => 'Public base URL',
-                    'type' => 'url',
-                    'config' => 'filesystems.disks.dvr.url',
-                    'rules' => ['nullable', 'url', 'max:2048'],
-                ],
-                [
-                    'key' => 'archive_s3_path_style',
-                    'label' => 'Path-style addressing',
-                    'type' => 'toggle',
-                    'config' => 'filesystems.disks.dvr.use_path_style_endpoint',
-                    'rules' => ['boolean'],
-                ],
-                [
-                    'key' => 'archive_disk',
-                    'label' => 'Disk',
-                    'type' => 'select',
-                    'store' => 'stream',
-                    'config' => 'stream.archive_disk',
-                    'options' => [
-                        'dvr' => 'dvr - dedicated archive bucket',
-                        's3' => 's3 - one bucket for everything',
-                    ],
-                    'rules' => ['nullable', 'string', 'in:dvr,s3'],
-                ],
-                [
-                    'key' => 'archive_quota_bytes',
-                    'label' => 'Quota',
-                    'type' => 'text',
-                    'store' => 'stream',
-                    'config' => 'stream.archive_quota_bytes',
-                    'cast' => 'int',
-                    'helper' => 'Bytes. Zero for no quota.',
-                    'rules' => ['nullable', 'integer', 'min:0'],
-                ],
-                [
-                    'key' => 'archive_url_mode',
-                    'label' => 'Segment URLs',
-                    'type' => 'select',
-                    'store' => 'stream',
-                    'config' => 'stream.archive_url_mode',
-                    'options' => [
-                        'signed' => 'Signed URLs',
-                        'proxy' => 'Proxy through this app',
-                    ],
-                    'rules' => ['required', 'string', 'in:signed,proxy'],
-                ],
-                [
-                    'key' => 'archive_url_ttl',
-                    'label' => 'Signed URL lifetime',
-                    'type' => 'text',
-                    'store' => 'stream',
-                    'config' => 'stream.archive_url_ttl',
-                    'cast' => 'int',
-                    'helper' => 'Seconds.',
-                    'rules' => ['nullable', 'integer', 'min:300', 'max:604800'],
-                ],
-                [
-                    'key' => 'archive_source_in_master',
-                    'label' => 'Advertise the source rendition',
-                    'type' => 'toggle',
-                    'store' => 'stream',
-                    'config' => 'stream.archive_source_in_master',
-                    'helper' => 'Adds the archived original to a recording\'s master playlist.',
-                    'rules' => ['boolean'],
                 ],
             ],
         ],
 
         [
             'key' => 'streaming',
-            'blurb' => 'Origin and edges',
+            'section' => 'System',
             'icon' => 'radio-tower',
             'label' => 'Streaming',
-            'description' => 'What the generated provisioning scripts are built from, and the overrides for viewers on the venue\'s own network.',
+            'description' => 'What the generated provisioning scripts are built from.',
             'fields' => [
                 [
                     'key' => 'image_ffmpeg_hls',
@@ -733,210 +553,344 @@ return [
                     'rules' => ['nullable', 'string', 'max:255'],
                 ],
                 [
-                    'key' => 'srs_username',
-                    'label' => 'SRS console username',
-                    'type' => 'text',
-                    'config' => 'services.srs.username',
-                    'rules' => ['nullable', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'srs_password',
-                    'label' => 'SRS console password',
-                    'type' => 'password',
-                    'config' => 'services.srs.password',
-                    'secure' => true,
-                    'rules' => ['nullable', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'rtmp_forward_url',
-                    'label' => 'RTMP forward target',
-                    'type' => 'text',
-                    'config' => 'services.forward.url',
-                    'rules' => ['nullable', 'string', 'max:2048'],
-                ],
-                [
-                    'key' => 'rtmp_forward_vrchat_url',
-                    'label' => 'Second RTMP forward target',
-                    'type' => 'text',
-                    'config' => 'services.forward.vrchaturl',
-                    'rules' => ['nullable', 'string', 'max:2048'],
-                ],
-                [
-                    'key' => 'origin_ip',
-                    'label' => 'Origin IP',
-                    'type' => 'text',
-                    'config' => 'services.stream.origin_ip',
-                    'helper' => 'Address SRS callbacks are accepted from. Empty accepts any known server.',
-                    'rules' => ['nullable', 'ip'],
-                ],
-                [
                     'key' => 'server_metrics_retention_days',
-                    'label' => 'Keep server metrics for',
+                    'label' => 'Keep server metrics for (days)',
                     'type' => 'text',
                     'store' => 'stream',
                     'config' => 'stream.server.metrics_retention_days',
                     'cast' => 'int',
-                    'helper' => 'Days.',
                     'rules' => ['nullable', 'integer', 'min:1', 'max:365'],
                 ],
+            ],
+        ],
+
+        [
+            'key' => 'storage',
+            'section' => 'System',
+            'icon' => 'database',
+            'label' => 'Archive storage',
+            'description' => 'The bucket recordings are cut from, and how a player is handed their segments.',
+            'cards' => [
                 [
-                    'key' => 'local_streaming_ipv4_subnet',
-                    'label' => 'Local IPv4 subnet',
-                    'type' => 'text',
-                    'store' => 'stream',
-                    'config' => 'stream.local_streaming_ipv4_subnet',
-                    'helper' => 'CIDR.',
-                    'rules' => ['nullable', 'string', 'max:64'],
+                    'key' => 'disk',
+                    'label' => 'Disk and quota',
+                    'fields' => [
+                        [
+                            'key' => 'archive_disk',
+                            'label' => 'Disk',
+                            'type' => 'select',
+                            'store' => 'stream',
+                            'config' => 'stream.archive_disk',
+                            'options' => [
+                                'dvr' => 'dvr - dedicated archive bucket',
+                                's3' => 's3 - one bucket for everything',
+                            ],
+                            'rules' => ['nullable', 'string', 'in:dvr,s3'],
+                        ],
+                        [
+                            'key' => 'archive_quota_bytes',
+                            'label' => 'Quota (bytes)',
+                            'type' => 'text',
+                            'store' => 'stream',
+                            'config' => 'stream.archive_quota_bytes',
+                            'cast' => 'int',
+                            'rules' => ['nullable', 'integer', 'min:0'],
+                        ],
+                    ],
                 ],
                 [
-                    'key' => 'local_streaming_ipv6_subnet',
-                    'label' => 'Local IPv6 subnet',
-                    'type' => 'text',
-                    'store' => 'stream',
-                    'config' => 'stream.local_streaming_ipv6_subnet',
-                    'helper' => 'CIDR.',
-                    'rules' => ['nullable', 'string', 'max:64'],
+                    'key' => 'bucket',
+                    'label' => 'Archive bucket (dvr)',
+                    // These seven write filesystems.disks.dvr.*, whatever the disk
+                    // above is set to. The general s3 disk is bootstrap infrastructure -
+                    // branding, emotes and thumbnails resolve it by name at every call
+                    // site - so it stays in .env and this card goes inert instead of
+                    // pretending to edit it.
+                    'inert_when' => [
+                        'field' => 'archive_disk',
+                        'is' => ['s3'],
+                        'description' => 'The s3 disk is configured in .env.',
+                    ],
+                    // The card that carries the credentials carries the button that
+                    // proves them.
+                    'render' => 'storage_test',
+                    'fields' => [
+                        [
+                            'key' => 'archive_s3_endpoint',
+                            'label' => 'Endpoint',
+                            'type' => 'url',
+                            'config' => 'filesystems.disks.dvr.endpoint',
+                            'rules' => ['nullable', 'url', 'max:2048'],
+                        ],
+                        [
+                            'key' => 'archive_s3_bucket',
+                            'label' => 'Bucket',
+                            'type' => 'text',
+                            'config' => 'filesystems.disks.dvr.bucket',
+                            'rules' => ['nullable', 'string', 'max:255'],
+                        ],
+                        [
+                            'key' => 'archive_s3_region',
+                            'label' => 'Region',
+                            'type' => 'text',
+                            'config' => 'filesystems.disks.dvr.region',
+                            'rules' => ['nullable', 'string', 'max:64'],
+                        ],
+                        [
+                            'key' => 'archive_s3_key',
+                            'label' => 'Access key ID',
+                            'type' => 'password',
+                            'config' => 'filesystems.disks.dvr.key',
+                            'secure' => true,
+                            'rules' => ['nullable', 'string', 'max:255'],
+                        ],
+                        [
+                            'key' => 'archive_s3_secret',
+                            'label' => 'Secret access key',
+                            'type' => 'password',
+                            'config' => 'filesystems.disks.dvr.secret',
+                            'secure' => true,
+                            'rules' => ['nullable', 'string', 'max:255'],
+                        ],
+                        [
+                            'key' => 'archive_s3_url',
+                            'label' => 'Public base URL',
+                            'type' => 'url',
+                            'config' => 'filesystems.disks.dvr.url',
+                            'rules' => ['nullable', 'url', 'max:2048'],
+                        ],
+                        [
+                            'key' => 'archive_s3_path_style',
+                            'label' => 'Path-style addressing',
+                            'type' => 'toggle',
+                            'config' => 'filesystems.disks.dvr.use_path_style_endpoint',
+                            'rules' => ['boolean'],
+                        ],
+                    ],
                 ],
                 [
-                    'key' => 'local_streaming_hostname',
-                    'label' => 'Local streaming hostname',
-                    'type' => 'text',
-                    'store' => 'stream',
-                    'config' => 'stream.local_streaming_hostname',
-                    'helper' => 'Where viewers inside those subnets are sent instead of an edge.',
-                    'rules' => ['nullable', 'string', 'max:255'],
+                    'key' => 'playback',
+                    'label' => 'Playback',
+                    'fields' => [
+                        [
+                            'key' => 'archive_url_mode',
+                            'label' => 'Segment URLs',
+                            'type' => 'select',
+                            'store' => 'stream',
+                            'config' => 'stream.archive_url_mode',
+                            'options' => [
+                                'signed' => 'Signed URLs',
+                                'proxy' => 'Proxy through this app',
+                            ],
+                            'rules' => ['required', 'string', 'in:signed,proxy'],
+                        ],
+                        [
+                            'key' => 'archive_url_ttl',
+                            'label' => 'Signed URL lifetime (seconds)',
+                            'type' => 'text',
+                            'store' => 'stream',
+                            'config' => 'stream.archive_url_ttl',
+                            'cast' => 'int',
+                            'rules' => ['nullable', 'integer', 'min:300', 'max:604800'],
+                        ],
+                        [
+                            'key' => 'archive_source_in_master',
+                            'label' => 'Advertise the source rendition',
+                            'type' => 'toggle',
+                            'store' => 'stream',
+                            'config' => 'stream.archive_source_in_master',
+                            'rules' => ['boolean'],
+                        ],
+                    ],
                 ],
             ],
         ],
 
         [
             'key' => 'playback',
-            'blurb' => 'Tokens and keys',
+            'section' => 'System',
             'icon' => 'shield-check',
-            'label' => 'Playback security',
-            'description' => 'The secrets a viewer\'s access is signed with, and the keys this installation\'s own tools authenticate with.',
-            'fields' => [
+            'label' => 'Tokens and keys',
+            'description' => 'The secrets a viewer\'s access is signed with, and the keys this installation hands to its own tools.',
+            'cards' => [
                 [
-                    'key' => 'hls_viewer_secret',
-                    'label' => 'Viewer token secret',
-                    'type' => 'password',
-                    'store' => 'stream',
-                    'config' => 'stream.token.viewer_secret',
-                    'secure' => true,
-                    'full' => true,
-                    'rules' => ['nullable', 'string', 'min:32', 'max:255'],
+                    'key' => 'viewer_tokens',
+                    'label' => 'Viewer tokens',
+                    'fields' => [
+                        [
+                            'key' => 'hls_viewer_secret',
+                            'label' => 'Viewer token secret',
+                            'type' => 'password',
+                            'store' => 'stream',
+                            'config' => 'stream.token.viewer_secret',
+                            'secure' => true,
+                            'full' => true,
+                            'rules' => ['nullable', 'string', 'min:32', 'max:255'],
+                        ],
+                        [
+                            'key' => 'hls_embed_secret',
+                            'label' => 'Embed token secret',
+                            'type' => 'password',
+                            'store' => 'stream',
+                            'config' => 'stream.token.embed_secret',
+                            'secure' => true,
+                            'full' => true,
+                            'rules' => ['nullable', 'string', 'min:32', 'max:255'],
+                        ],
+                        [
+                            'key' => 'hls_token_ttl',
+                            'label' => 'Viewer token lifetime (seconds)',
+                            'type' => 'text',
+                            'store' => 'stream',
+                            'config' => 'stream.token.ttl',
+                            'cast' => 'int',
+                            'rules' => ['nullable', 'integer', 'min:60', 'max:86400'],
+                        ],
+                        [
+                            'key' => 'hls_token_leeway',
+                            'label' => 'Expiry leeway (seconds)',
+                            'type' => 'text',
+                            'store' => 'stream',
+                            'config' => 'stream.token.leeway',
+                            'cast' => 'int',
+                            'rules' => ['nullable', 'integer', 'min:0', 'max:600'],
+                        ],
+                        [
+                            'key' => 'hls_token_bucket',
+                            'label' => 'Segment token reuse window (seconds)',
+                            'type' => 'text',
+                            'store' => 'stream',
+                            'config' => 'stream.token.bucket',
+                            'cast' => 'int',
+                            'rules' => ['nullable', 'integer', 'min:1', 'max:600'],
+                        ],
+                        [
+                            'key' => 'hls_token_refresh_margin',
+                            'label' => 'Token refresh margin (seconds)',
+                            'type' => 'text',
+                            'store' => 'stream',
+                            'config' => 'stream.token.refresh_margin',
+                            'cast' => 'int',
+                            'rules' => ['nullable', 'integer', 'min:30', 'max:3600'],
+                        ],
+                    ],
                 ],
                 [
-                    'key' => 'hls_embed_secret',
-                    'label' => 'Embed token secret',
-                    'type' => 'password',
-                    'store' => 'stream',
-                    'config' => 'stream.token.embed_secret',
-                    'secure' => true,
-                    'full' => true,
-                    'rules' => ['nullable', 'string', 'min:32', 'max:255'],
+                    'key' => 'service_keys',
+                    'label' => 'Service keys',
+                    'fields' => [
+                        [
+                            'key' => 'system_streamkey',
+                            'label' => 'System streamkey',
+                            'type' => 'secret',
+                            'store' => 'stream',
+                            'config' => 'stream.system_streamkey',
+                            'secure' => true,
+                            'full' => true,
+                            'helper' => 'What the thumbnailer, the archive uploader and the operator preview authenticate with.',
+                            'rules' => ['nullable', 'string', 'min:16', 'max:255'],
+                        ],
+                        [
+                            'key' => 'recording_api_key',
+                            'label' => 'Recording API key',
+                            'type' => 'secret',
+                            'store' => 'app',
+                            'config' => 'app.recording_api_key',
+                            'secure' => true,
+                            'full' => true,
+                            'helper' => 'Sent by the recording API as X-Recording-Api-Key. Generating a new one rotates it.',
+                            'rules' => ['nullable', 'string', 'min:16', 'max:255'],
+                            'empty_note' => 'Nothing set: the recording API answers every request with 401.',
+                            'dirty_note' => 'Not in effect until you save, and every caller has to be given the new key.',
+                        ],
+                    ],
                 ],
                 [
-                    'key' => 'hls_token_ttl',
-                    'label' => 'Viewer token lifetime',
-                    'type' => 'text',
-                    'store' => 'stream',
-                    'config' => 'stream.token.ttl',
-                    'cast' => 'int',
-                    'helper' => 'Seconds.',
-                    'rules' => ['nullable', 'integer', 'min:60', 'max:86400'],
+                    'key' => 'surfaces',
+                    'label' => 'Control surfaces',
+                    'description' => 'One key for the installation: a surface names the source it drives in its request, and the people who run the rooms are the same people either way.',
+                    'note' => [
+                        'label' => 'Download the Companion module',
+                        'icon' => 'download',
+                        'text' => 'Companion does not ship the Stream Control module. On the Companion machine: Modules, then Import module package. The link serves the newest released build.',
+                        'url_config' => 'stream.companion_module_url',
+                    ],
+                    'fields' => [
+                        [
+                            'key' => 'control_key',
+                            'label' => 'Control key',
+                            'type' => 'secret',
+                            'store' => 'stream',
+                            'full' => true,
+                            'helper' => 'Sent by the surface as X-Companion-Token. Generating a new one rotates it, and every surface has to be reconfigured. Empty switches the control API off.',
+                            'rules' => ['nullable', 'string', 'min:16', 'max:255'],
+                            'empty_note' => 'Nothing set: the control API answers every request with 401.',
+                            'dirty_note' => 'Not in effect until you save, and every surface has to be given the new key.',
+                        ],
+                    ],
                 ],
                 [
-                    'key' => 'hls_token_leeway',
-                    'label' => 'Expiry leeway',
-                    'type' => 'text',
-                    'store' => 'stream',
-                    'config' => 'stream.token.leeway',
-                    'cast' => 'int',
-                    'helper' => 'Seconds a token is still accepted past expiry.',
-                    'rules' => ['nullable', 'integer', 'min:0', 'max:600'],
-                ],
-                [
-                    'key' => 'hls_token_bucket',
-                    'label' => 'Segment token reuse window',
-                    'type' => 'text',
-                    'store' => 'stream',
-                    'config' => 'stream.token.bucket',
-                    'cast' => 'int',
-                    'helper' => 'Seconds.',
-                    'rules' => ['nullable', 'integer', 'min:1', 'max:600'],
-                ],
-                [
-                    'key' => 'hls_token_refresh_margin',
-                    'label' => 'Token refresh margin',
-                    'type' => 'text',
-                    'store' => 'stream',
-                    'config' => 'stream.token.refresh_margin',
-                    'cast' => 'int',
-                    'helper' => 'Seconds before expiry.',
-                    'rules' => ['nullable', 'integer', 'min:30', 'max:3600'],
-                ],
-                [
-                    'key' => 'system_streamkey',
-                    'label' => 'System streamkey',
-                    'type' => 'secret',
-                    'store' => 'stream',
-                    'config' => 'stream.system_streamkey',
-                    'secure' => true,
-                    'full' => true,
-                    'helper' => 'What the thumbnailer, the archive uploader and the operator preview authenticate with.',
-                    'rules' => ['nullable', 'string', 'min:16', 'max:255'],
-                ],
-                [
-                    'key' => 'recording_api_key',
-                    'label' => 'Recording API key',
-                    'type' => 'secret',
-                    'store' => 'app',
-                    'config' => 'app.recording_api_key',
-                    'secure' => true,
-                    'full' => true,
-                    'helper' => 'Sent by the recording API as X-Recording-Api-Key. Generating a new one rotates it.',
-                    'rules' => ['nullable', 'string', 'min:16', 'max:255'],
-                    'empty_note' => 'Nothing set: the recording API answers every request with 401.',
-                    'dirty_note' => 'Not in effect until you save, and every caller has to be given the new key.',
+                    'key' => 'imports',
+                    'label' => 'Imports',
+                    'note' => [
+                        'text' => 'The tool encodes on the importing machine and uploads straight to the archive. It needs ffmpeg installed; see docs/admin/archive-import.md.',
+                        'downloads_config' => 'stream.import_cli_base_url',
+                    ],
+                    'fields' => [
+                        [
+                            'key' => 'import_key',
+                            'label' => 'Import key',
+                            'type' => 'secret',
+                            'store' => 'stream',
+                            'full' => true,
+                            'helper' => 'Sent by streaming-archiver as X-Import-Key, or set as ARCHIVER_KEY in its environment. Generating a new one rotates it. Empty switches importing off.',
+                            'rules' => ['nullable', 'string', 'min:16', 'max:255'],
+                            'empty_note' => 'Nothing set: the import API answers every request with 401.',
+                            'dirty_note' => 'Not in effect until you save, and anyone importing has to be given the new key.',
+                        ],
+                    ],
                 ],
             ],
         ],
 
         [
-            'key' => 'telegram',
-            'blurb' => 'Bot and chats',
-            'icon' => 'send',
-            'label' => 'Telegram',
+            'key' => 'notifications',
+            'section' => 'System',
+            'icon' => 'bell',
+            'label' => 'Notifications',
             'columns' => 1,
-            'description' => 'One bot for the installation, and as many chats as there are rooms worth telling. Saving a token registers the webhook with Telegram straight away; which chats hear what is decided per chat in /manage > Telegram.',
-            'fields' => [
+            'description' => 'How long the installation keeps its hand on the send button, and the bot it sends through. Which chats hear what is decided per chat in /manage > Telegram; a viewer subscribes for themselves.',
+            'cards' => [
                 [
-                    'key' => 'telegram_bot_token',
-                    'label' => 'Bot token',
-                    'type' => 'password',
-                    'store' => 'telegram',
-                    'config' => 'telegram.bot_token',
-                    'full' => true,
-                    'helper' => 'From @BotFather, of the form 123456:ABC-DEF. Saving one registers the webhook; clearing it takes the bot off the air and leaves the linked chats alone.',
-                    'rules' => ['nullable', 'string', 'max:255'],
-                ],
-                [
-                    'key' => 'telegram_show_lead_minutes',
-                    'label' => 'Announce shows this early',
-                    'type' => 'text',
-                    'store' => 'telegram',
-                    'config' => 'telegram.show_lead_minutes',
-                    'cast' => 'int',
-                    'helper' => 'Minutes before a scheduled start.',
-                    'rules' => ['nullable', 'integer', 'min:1', 'max:120'],
+                    'key' => 'bot',
+                    'label' => 'Telegram bot',
+                    'fields' => [
+                        [
+                            'key' => 'telegram_bot_token',
+                            'label' => 'Bot token',
+                            'type' => 'password',
+                            'store' => 'telegram',
+                            'config' => 'telegram.bot_token',
+                            'full' => true,
+                            'helper' => 'From @BotFather, of the form 123456:ABC-DEF. Saving one registers the webhook; clearing it takes the bot off the air and leaves the linked chats alone.',
+                            'rules' => ['nullable', 'string', 'max:255'],
+                        ],
+                        [
+                            'key' => 'telegram_show_lead_minutes',
+                            'label' => 'Announce shows this early (minutes)',
+                            'type' => 'text',
+                            'store' => 'telegram',
+                            'config' => 'telegram.show_lead_minutes',
+                            'cast' => 'int',
+                            'rules' => ['nullable', 'integer', 'min:1', 'max:120'],
+                        ],
+                    ],
                 ],
             ],
         ],
 
         [
             'key' => 'reset',
-            'blurb' => 'Back to the defaults',
             'icon' => 'refresh-cw',
             'label' => 'Reset',
             'description' => 'Delete every saved value and go back to what the software ships with.',
@@ -945,6 +899,21 @@ return [
             'fields' => [],
         ],
 
+    ],
+
+    /*
+     | Panes that were merged into another one. A pane's URL is printed in the admin
+     | docs and pasted between operators, so a key that stops existing answers a
+     | redirect to the pane its fields now live on rather than a 404.
+     */
+    'moved' => [
+        'login' => 'identity',
+        'auth' => 'identity',
+        'links' => 'branding',
+        'look' => 'branding',
+        'imports' => 'playback',
+        'control' => 'playback',
+        'telegram' => 'notifications',
     ],
 
     /*
