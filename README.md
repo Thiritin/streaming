@@ -100,7 +100,7 @@ Almost everything is edited at `/manage` > Settings and stored in the database: 
 |---|---|
 | `AWS_*` | The general bucket: emotes, thumbnails, the branding logo |
 | `DVR_AWS_*` | The archive bucket. Also in /manage > Settings > Archive storage |
-| `HLS_VIEWER_SECRET`, `HLS_EMBED_SECRET`, `HLS_TOKEN_LEEWAY` | Playback tokens the edges verify. Also in /manage > Settings > Playback security |
+| `HLS_VIEWER_SECRET`, `HLS_EMBED_SECRET`, `HLS_TOKEN_LEEWAY` | Playback tokens the edges verify. Also in /manage > Settings > Tokens and keys |
 | `STREAM_SYSTEM_STREAMKEY` | Shared secret between the app and the video stack. Same pane |
 | `HETZNER_TOKEN`, `DNS_*` | Server provisioning and DNS records |
 | `REVERB_*`, `VITE_REVERB_*` | Websockets. The `VITE_` half is baked into the bundle at build time |

@@ -43,7 +43,7 @@ streaming-archiver import "Opening Ceremony.mp4" --title "Opening Ceremony"
 
 The key travels as `X-Import-Key`. It is not the same as the recording API key, which still
 guards the older `/api/recording/shows` and `/api/recording/create` endpoints and is set at
-`/manage` > Settings > Playback security (`RECORDING_API_KEY` is its shipped fallback); the
+`/manage` > Settings > Tokens and keys (`RECORDING_API_KEY` is its shipped fallback); the
 import API does not accept it.
 
 It encodes on whatever hardware the importing machine has - Apple's media engine on a Mac,

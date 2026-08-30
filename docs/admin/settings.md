@@ -17,7 +17,7 @@ a pane is about, so the rows carry a name and nothing else.
 
 | Pane | What it holds |
 |---|---|
-| Sign-in | Guest access, password accounts and registration, the sign-in providers, the provider's own pages, and the copy on the login screen. See [authentication.md](authentication.md) |
+| Sign-in | Guest access, password accounts, registration and the OAuth2 master switch, a link to the sign-in providers, the provider's own pages, and the copy on the login screen. See [authentication.md](authentication.md) |
 | Branding | The convention and site names, logo, tab icon, accent colour, login background, footer links |
 | Announcement | The front-page banner and the page behind it |
 | Features | Chat, emotes, boops, comments, announcements, feedback, screens, Telegram |
@@ -48,10 +48,15 @@ not a setting, and lives in its own module.
 
 ### Cards
 
-A pane whose fields answer several different questions is split into cards - Sign-in is
-five of them, Branding four, Tokens and keys four. A card is layout and nothing else: the
-whole pane is still one form, saved by one button, validated as one set of rules. Cards do
-not collapse; a card you have to open first is a click in front of every field it holds.
+A pane whose fields answer several different questions is split into cards - Branding is
+four of them, Tokens and keys four, Archive storage three. A card is layout and nothing
+else: the whole pane is still one form, saved by one button, validated as one set of rules.
+Cards do not collapse; a card you have to open first is a click in front of every field it
+holds.
+
+A card can hold something that is not a field. Sign-in's Sign-in Methods card carries a
+link to the providers page, because the providers are rows in their own table rather than
+settings keys.
 
 A card can go inert when another field on the pane has made its contents moot: it stays
 on screen with its saved values readable and every control in it disabled, and one line
@@ -68,8 +73,8 @@ feature off closes, what a Markdown field accepts, which header a key is sent in
 
 ### Panes that used to exist
 
-Nine panes became five. The old URLs redirect rather than 404, because they are printed in
-these docs and pasted between operators:
+Seven pane URLs stopped existing when the menu was consolidated. They redirect rather than
+404, because they are printed in these docs and pasted between operators:
 
 | Old | Now |
 |---|---|
@@ -151,6 +156,11 @@ belongs to:
 
 Encryption is against `APP_KEY`. Losing `APP_KEY` loses these rows, the same way it loses
 every other encrypted thing in the application.
+
+A provider's client secret is encrypted on its own row rather than through the settings
+table's mechanism. Same `APP_KEY`, so a key rotation has to cover both, but it never
+reaches the config repository, so the `config:cache` protection above was never something
+it needed.
 
 ## Values that also live somewhere else
 

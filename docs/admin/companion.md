@@ -50,8 +50,9 @@ for, so a connection can be wired without leaving it.
 ### 3. Install the module
 
 Companion does not ship this module, so it has to be handed over as a package. The panel
-links to a built one: **Download the Companion module**, on `/manage` > Settings > **Control
-surfaces** and on every source page under **Control surface**. The link is
+links to a built one: **Download the Companion module**, on `/manage` > Settings > **Tokens
+and keys** > **Control surfaces** and on every source page under **Control surface**. The
+link is
 `releases/latest/download/stream-control-companion.tgz` on the repo, so it keeps answering
 with the newest build and never has to be updated per release.
 

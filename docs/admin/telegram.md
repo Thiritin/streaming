@@ -20,7 +20,7 @@ info-only. That is the "one bot, n chats" shape: one token in Settings, one row 
 
 ### 1. Save the token
 
-`/manage` > Settings > **Telegram** > **Bot token**, then save.
+`/manage` > Settings > **Notifications** > **Telegram bot** > **Bot token**, then save.
 
 Saving registers the webhook with Telegram straight away, pointing at `/api/telegram/webhook`
 on this installation, with a secret token Telegram has to echo back on every call. There is

@@ -1,22 +1,33 @@
 # Sign-in
 
-Everything here is at `/manage` > Settings > **Sign-in**, in cards down the page.
+Everything here is at `/manage` > Settings > **Sign-in**, in three cards down the page.
 
-| Card | What it decides |
+**Sign-in Methods** is four switches, because "how does somebody get in" is one question:
+
+| Switch | What it decides |
 |---|---|
-| Guest access | Whether a guest may browse and watch without an account |
-| Password sign-in | Accounts this installation holds itself, and whether anybody can create one |
-| Providers | The ways in that are not a password, one row each |
-| This installation | Convention name and site name |
-| Provider pages | What the provider is called, and where it sends people to register or sign out |
-| Login screen | The copy on the sign-in page |
+| Guest Access | Whether a guest may browse and watch without an account |
+| Password | Accounts this installation holds itself |
+| Registration | Whether anybody can create one. Indented under Password, and not offered while it is off |
+| OAuth2 | Whether the sign-in providers are offered at all |
 
-Guest access is not a way in. It is permission to browse without one, which is why it
-never counts when the lockout guard asks whether anybody can still sign in.
+Beside them, a link to the providers themselves - they are rows rather than switches, so
+they have a page of their own.
 
-Public registration sits on top of password accounts rather than beside them: with
-nowhere to create an account, there is nothing to open. The switch is not offered while
-password accounts are off.
+**Provider pages** is what the provider is called and where it sends people to register or
+sign out. **Login screen** is the copy on the sign-in page.
+
+Guest Access is not a way in. It is permission to browse without one, which is why it never
+counts when the lockout guard asks whether anybody can still sign in. It reads as its own
+opposite - the switch is on when guests may watch, while the column stores whether sign-in
+is required. Only the page inverts it; every reader in the application is unchanged.
+
+Public registration sits on top of password accounts rather than beside them: with nowhere
+to create an account, there is nothing to open.
+
+OAuth2 is the master switch over every provider. Off, no provider button is offered however
+many rows are enabled, which is the one control that turns the whole list off without
+editing it.
 
 ## Providers
 
@@ -25,9 +36,9 @@ declares a static field list, so N providers with M fields each cannot live in i
 delete would have to sweep an unknown key prefix. Events and categories set the same
 precedent: a settings area whose contents are rows.
 
-Managed at `/manage/settings/providers`, reached from the Providers card. There is no menu
-entry of its own - a provider is part of how people sign in, and the card is where an
-operator is already looking.
+Managed at `/manage/settings/providers`, reached from the link on the Sign-in Methods card.
+There is no menu entry of its own - a provider is part of how people sign in, and the card
+is where an operator is already looking.
 
 Each row carries a driver, a URL key, a label, the client ID and secret, optional scopes,
 whether it is switched on, and where it sits in the button order. Adding one is a driver, a
@@ -208,7 +219,7 @@ An address nobody holds gets the same answer as one that does. On an installatio
 addresses come from a provider, telling the two apart tells a stranger which of them has an
 account here.
 
-Both the reset mail and the confirmation mail are branded from `/manage` > Settings > Look
+Both the reset mail and the confirmation mail are branded from `/manage` > Settings > Branding
 and go out on the queue, so an installation whose mail is down does not answer 500 on a
 request that half succeeded.
 
