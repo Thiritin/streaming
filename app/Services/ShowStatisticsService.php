@@ -28,12 +28,7 @@ class ShowStatisticsService
             // Get active viewer count from source_users table
             $currentViewerCount = $source->activeViewers()->count();
 
-            // For unique viewers, count distinct users who have watched this source today
-            $uniqueViewers = DB::table('source_users')
-                ->where('source_id', $source->id)
-                ->where('joined_at', '>=', now()->startOfDay())
-                ->distinct('user_id')
-                ->count('user_id');
+            $uniqueViewers = $this->uniqueViewers($source, $show->actual_start);
 
             // Also check cache as fallback (in case edge servers are reporting)
             $cachedCount = Cache::get("stream_total_viewers:{$source->slug}", 0);
@@ -56,6 +51,38 @@ class ShowStatisticsService
         }
 
         $show->update(['viewer_count' => $currentViewerCount]);
+    }
+
+    /**
+     * How many different viewers this show has had, counted from the moment it went
+     * on air.
+     *
+     * Not "today, on this source", which is what it used to be. That window belonged
+     * to the calendar rather than the show: a source running a morning slot and an
+     * evening one folded the morning's audience into the evening's figure, and a show
+     * crossing midnight started again from nothing - `getShowStatistics` reports the
+     * maximum across the samples, so the small hours were discarded rather than added.
+     *
+     * The window cannot open onto the whole table: `recordStatistics` returns before
+     * this for a show without an `actual_start`, which is the only way it could be
+     * null.
+     *
+     * Counted per viewer and not per row. `HlsController::trackUserAccess` matches an
+     * open session, so a viewer who drops and comes back gets a second `source_users`
+     * row and counting rows would read a reconnect as another person. Two queries
+     * rather than one over `coalesce(user_id, guest_key)`, which needs a cast on every
+     * engine: a row carries one or the other, so the two counts add. A guest counts
+     * once, by the key that identifies them across requests - they are watching either
+     * way, and leaving them out made one row on the sample count two populations.
+     */
+    private function uniqueViewers(Source $source, Carbon $since): int
+    {
+        $sessions = DB::table('source_users')
+            ->where('source_id', $source->id)
+            ->where('joined_at', '>=', $since);
+
+        return (clone $sessions)->whereNotNull('user_id')->distinct()->count('user_id')
+            + (clone $sessions)->whereNull('user_id')->distinct()->count('guest_key');
     }
 
     public function getShowStatistics(Show $show): array

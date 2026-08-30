@@ -132,6 +132,7 @@ The root `Dockerfile` builds the app image. `docker/` holds the images for the v
 - [docs/admin/server-credentials.md](docs/admin/server-credentials.md): how servers authenticate, and rotating their credentials
 - [docs/admin/pretalx-import.md](docs/admin/pretalx-import.md): importing the programme
 - [docs/admin/auto-mode.md](docs/admin/auto-mode.md): starting and stopping shows without a human
+- [docs/admin/show-statistics.md](docs/admin/show-statistics.md): what the viewer numbers on a show count
 - [docs/dvr-archive-plan.md](docs/dvr-archive-plan.md): how the archive and cutting work
 
 ## Contributing
