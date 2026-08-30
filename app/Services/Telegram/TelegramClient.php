@@ -119,6 +119,68 @@ class TelegramClient
     }
 
     /**
+     * Post to a chat that is somebody's private conversation with the bot rather than a
+     * row in `telegram_chats`: a viewer's own notifications.
+     *
+     * Answers null when Telegram took it, and the refusal otherwise. There is no chat
+     * row to disable on failure, so a viewer who blocked the bot is reported back to
+     * the caller and unlinked there instead - a dead chat id left on an account would
+     * otherwise be retried for every recording published for the rest of the run.
+     *
+     * A photo turns the message into a card: Telegram captions are limited to 1024
+     * characters against 4096 for text, so anything longer is sent as text with the
+     * image dropped rather than truncated.
+     *
+     * @param  array<int, array<int, array<string, string>>>|null  $keyboard
+     */
+    public function sendToChat(
+        string $chatId,
+        string $text,
+        ?string $photoUrl = null,
+        ?array $keyboard = null,
+    ): ?string {
+        $usePhoto = $photoUrl !== null && mb_strlen($text) <= 1024;
+
+        $response = $this->call($usePhoto ? 'sendPhoto' : 'sendMessage', array_filter([
+            'chat_id' => $chatId,
+            $usePhoto ? 'photo' : 'text' => $usePhoto ? $photoUrl : $text,
+            $usePhoto ? 'caption' : 'disable_web_page_preview' => $usePhoto ? $text : true,
+            'parse_mode' => 'HTML',
+            'reply_markup' => $keyboard ? json_encode(['inline_keyboard' => $keyboard]) : null,
+        ], fn ($value) => $value !== null));
+
+        if ($response['ok'] ?? false) {
+            return null;
+        }
+
+        // A photo Telegram will not fetch - an expired presigned URL, a host it cannot
+        // reach - must not cost the viewer the message itself.
+        if ($usePhoto) {
+            return $this->sendToChat($chatId, $text, null, $keyboard);
+        }
+
+        return (string) ($response['description'] ?? 'Unknown Telegram error');
+    }
+
+    /**
+     * Whether a failed send means this chat is gone for good rather than briefly
+     * unhappy. The caller decides what to do about it; for a viewer that is unlinking
+     * their account, for an operator chat it is disabling the row.
+     */
+    public function isFatal(string $description): bool
+    {
+        $lower = mb_strtolower($description);
+
+        foreach (self::FATAL_DESCRIPTIONS as $needle) {
+            if (str_contains($lower, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Every callback query has to be answered, or the button spins in the client for
      * a while before giving up. The text is the little toast Telegram shows.
      */

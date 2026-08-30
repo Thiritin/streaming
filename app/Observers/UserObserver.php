@@ -3,10 +3,19 @@
 namespace App\Observers;
 
 use App\Models\User;
+use App\Support\BanCarryOver;
 
 class UserObserver
 {
-    public function created(User $user): void {}
+    /**
+     * A sanction parked when this identity deleted its last account goes back on.
+     * Here rather than in the OIDC controller so any path that remakes an account
+     * picks it up.
+     */
+    public function created(User $user): void
+    {
+        BanCarryOver::claim($user);
+    }
 
     public function updated(User $user): void {}
 

@@ -2,7 +2,7 @@
   <div class="min-h-screen">
     <Head title="Archive" />
 
-    <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-6 pb-4 sm:pt-8 sm:pb-6">
+    <div class="mx-auto max-w-page page-gutter pt-6 pb-4 sm:pt-8 sm:pb-6">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-5">
         <div class="space-y-1.5 sm:space-y-2">
           <p class="text-xs font-semibold uppercase tracking-[0.14em] text-primary-300">Archive</p>
@@ -13,14 +13,17 @@
           </p>
         </div>
 
-        <ArchiveSearch v-model="searchQuery" @submit="applySearch" />
+        <div class="flex w-full items-center gap-2 sm:w-auto">
+          <ArchiveSearch v-model="searchQuery" @submit="applySearch" />
+          <ArchiveBell v-if="notifications" :notifications="notifications" />
+        </div>
       </div>
     </div>
 
     <!-- The chip bar rides the top of the viewport: on a long grid it is the only
          way back out of a filter without scrolling to the top. -->
     <div class="chip-dock">
-      <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 py-2 sm:py-3">
+      <div class="mx-auto max-w-page page-gutter py-2 sm:py-3">
         <div class="flex items-center gap-2 sm:gap-3">
           <ArchiveChips class="min-w-0 flex-1" :chips="chips" :filters="filters" @select="applyFilters" />
 
@@ -61,7 +64,12 @@
       </div>
     </div>
 
-    <div class="mx-auto max-w-page px-4 sm:px-6 lg:px-8 pt-6 pb-16">
+    <!-- Neither gutter nor width cap on the column: the shelf rails inside it
+         scroll sideways and have to reach the edge of the window, or a rail is
+         cut off mid-tile in the middle of a wide page. The gutter and the cap
+         come back on each section - and inside the shelf, on its heading and as
+         the rail's own inner padding. See `.page-gutter` in app.css. -->
+    <div class="pt-6 pb-16">
       <!-- The only shelf: what this viewer has half-watched. Gone the moment a
            filter is on, because then the grid is the answer. -->
       <RecordingShelf
@@ -71,59 +79,76 @@
         eager
       />
 
-      <!-- One count, in one place. Grouped, each row carries its own in the same
-           lettering, so the page does not say how many there are and then say it
-           again per run directly underneath. -->
-      <div v-if="!sections.length" class="flex flex-wrap items-center justify-between gap-3 pb-4">
-        <h2 class="results-label">{{ resultsLabel }}</h2>
-      </div>
-
-      <!-- Read run by run when a category is on and no run is picked: this run's
-           four theatre pieces are not the tail of last run's nine. -->
-      <template v-if="sections.length">
-        <section v-for="section in sections" :key="section.key" class="pb-8">
-          <h2 class="results-label pb-3">{{ section.heading }}</h2>
-
-          <div class="stream-grid">
-            <RecordingTile
-              v-for="(recording, index) in section.recordings"
-              :key="recording.id"
-              :recording="recording"
-              :priority="section.first && index < 8"
-            />
-          </div>
-        </section>
+      <!-- Unfiltered: one rail per category, most watched category first. Ask
+           anything of the page and it becomes the grid underneath instead. -->
+      <template v-if="shelves.length">
+        <RecordingShelf
+          v-for="(shelf, index) in shelves"
+          :key="shelf.key"
+          :title="shelf.title"
+          :href="shelf.count > shelf.recordings.length ? shelf.href : null"
+          :recordings="shelf.recordings"
+          :eager="index === 0 && !continueWatching.length"
+        />
       </template>
 
-      <div v-else-if="tiles.length" class="stream-grid">
-        <RecordingTile
-          v-for="(recording, index) in tiles"
-          :key="recording.id"
-          :recording="recording"
-          :priority="index < 8"
-        />
+      <div v-else class="mx-auto max-w-page">
+        <!-- One count, in one place. Grouped, each row carries its own in the same
+             lettering, so the page does not say how many there are and then say it
+             again per run directly underneath. -->
+        <div v-if="!sections.length" class="page-gutter flex flex-wrap items-center justify-between gap-3 pb-4">
+          <h2 class="results-label">{{ resultsLabel }}</h2>
+        </div>
+
+        <!-- Read run by run when a category is on and no run is picked: this run's
+             four theatre pieces are not the tail of last run's nine. -->
+        <template v-if="sections.length">
+          <section v-for="section in sections" :key="section.key" class="page-gutter pb-8">
+            <h2 class="results-label pb-3">{{ section.heading }}</h2>
+
+            <div class="stream-grid">
+              <RecordingTile
+                v-for="(recording, index) in section.recordings"
+                :key="recording.id"
+                :recording="recording"
+                :priority="section.first && index < 8"
+              />
+            </div>
+          </section>
+        </template>
+
+        <div v-else-if="tiles.length" class="page-gutter stream-grid">
+          <RecordingTile
+            v-for="(recording, index) in tiles"
+            :key="recording.id"
+            :recording="recording"
+            :priority="index < 8"
+          />
+        </div>
+
+        <p v-else class="page-gutter py-16 text-center text-primary-400">
+          {{ isFiltered ? 'Nothing matches that.' : 'Nothing here yet.' }}
+        </p>
       </div>
 
-      <p v-else-if="!tiles.length" class="py-16 text-center text-primary-400">
-        {{ isFiltered ? 'Nothing matches that.' : 'Nothing here yet.' }}
-      </p>
-
       <!-- Next page loads when this comes into view. -->
-      <WhenVisible
-        v-if="hasMore && !filtering"
-        :key="`more-${filters.event ?? filters.year ?? 'all'}-${filters.category ?? 'any'}-${filters.sort}`"
-        :params="{
-          data: { page: pagination.page + 1 },
-          only: ['recordings', 'pagination'],
-          preserveUrl: true,
-        }"
-        always
-      >
-        <template #fallback>
-          <p class="py-10 text-center text-sm text-primary-400">Loading more...</p>
-        </template>
-        <p class="py-10 text-center text-sm text-primary-400">Loading more...</p>
-      </WhenVisible>
+      <div class="mx-auto max-w-page">
+        <WhenVisible
+          v-if="hasMore && !filtering"
+          :key="`more-${filters.event ?? filters.year ?? 'all'}-${filters.category ?? 'any'}-${filters.sort}`"
+          :params="{
+            data: { page: pagination.page + 1 },
+            only: ['recordings', 'pagination'],
+            preserveUrl: true,
+          }"
+          always
+        >
+          <template #fallback>
+            <p class="page-gutter py-10 text-center text-sm text-primary-400">Loading more...</p>
+          </template>
+          <p class="page-gutter py-10 text-center text-sm text-primary-400">Loading more...</p>
+        </WhenVisible>
+      </div>
     </div>
   </div>
 </template>
@@ -136,6 +161,7 @@ import RecordingTile from '@/Components/Recordings/RecordingTile.vue';
 import RecordingShelf from '@/Components/Recordings/RecordingShelf.vue';
 import ArchiveChips from '@/Components/Recordings/ArchiveChips.vue';
 import ArchiveSearch from '@/Components/Recordings/ArchiveSearch.vue';
+import ArchiveBell from '@/Components/Recordings/ArchiveBell.vue';
 
 defineOptions({
   layout: AuthenticatedLayout,
@@ -143,6 +169,9 @@ defineOptions({
 
 const props = defineProps({
   recordings: { type: Array, default: () => [] },
+  // One rail per category, most watched category first. The unfiltered page only:
+  // empty as soon as a chip, a search or a sort is on, and the grid takes over.
+  shelves: { type: Array, default: () => [] },
   // Half-watched, most recent first. Empty for a guest and on a filtered page.
   continueWatching: { type: Array, default: () => [] },
   // Shows that ended but have not been published yet. Page one only.
@@ -156,6 +185,10 @@ const props = defineProps({
     default: () => ({ search: null, event: null, year: null, category: null, sort: 'newest' }),
   },
   totalRecordings: { type: Number, default: 0 },
+  // The whole notification settings payload: the bell opens it in a dialog. Null for
+  // a guest and for an installation with the feature off, which is what keeps the bell
+  // off the page rather than on it and inert.
+  notifications: { type: Object, default: null },
 });
 
 const searchQuery = ref(props.filters.search ?? '');
@@ -297,7 +330,14 @@ const applyFilters = (changes) => {
      * from props.
      */
     preserveState: false,
-    preserveScroll: true,
+    /*
+     * Back to the top, deliberately. A filter is asked from the dock, which is
+     * sticky, so it can be pressed from halfway down a page of rails - and
+     * keeping that offset lands the viewer in the middle of a grid that is now
+     * a fraction of the length, sometimes past the end of it entirely. The
+     * answer to a filter starts at the top of the answer.
+     */
+    preserveScroll: false,
     replace: true,
     onFinish: () => (filtering.value = false),
     /*

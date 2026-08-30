@@ -17,9 +17,19 @@ const props = defineProps({
   can: { type: Object, default: () => ({}) },
   actions: { type: Array, default: () => [] },
   messages: { type: Array, default: () => [] },
+  // Null when the installation has notifications switched off.
+  notifications: { type: Object, default: null },
 });
 
 const isEdit = computed(() => Boolean(props.user));
+
+// The delivery log is the answer to "I never got it", so a failure has to read as a
+// failure with the refusal on it rather than as an absence.
+const deliveryTone = (status) =>
+  ({ sent: 'text-state-ok', failed: 'text-state-danger', pending: 'text-state-warn' })[status] ?? 'text-fg-2';
+
+const deliveryLabel = (type) =>
+  ({ 'recording.published': 'Recording published', 'show.live': 'Show went live' })[type] ?? type;
 
 /*
  * Roles are the only thing an operator owns on an existing record. `sub`, `name` and
@@ -164,6 +174,76 @@ const setPassword = () => passwordForm.put(route('manage.users.password.update',
               empty-label="No roles attached: this account has attendee access only."
             />
           </FormField>
+        </FormSection>
+
+        <FormSection
+          v-if="isEdit && notifications"
+          title="Notifications"
+          description="What this account subscribed to, and what has actually been sent to it."
+          :columns="1"
+        >
+          <div class="grid gap-3 sm:grid-cols-2">
+            <FormField :model-value="notifications.email ?? '—'" label="Email" disabled />
+            <FormField :model-value="notifications.telegram ?? '—'" label="Telegram" disabled />
+            <FormField
+              v-for="(scope, label) in notifications.scopes"
+              :key="label"
+              :model-value="scope"
+              :label="label"
+              disabled
+            />
+            <FormField
+              :model-value="notifications.channels.length ? notifications.channels.join(', ') : 'None'"
+              label="Channels"
+              disabled
+            />
+          </div>
+
+          <div v-if="notifications.followed_shows.length" class="mt-3">
+            <p class="mb-1.5 text-[11px] uppercase tracking-wide text-fg-2">Shows followed</p>
+            <ul class="flex flex-wrap gap-1.5">
+              <li
+                v-for="show in notifications.followed_shows"
+                :key="show.id"
+                class="rounded border border-hairline bg-surface-2 px-2 py-1 text-[12px] text-fg-1"
+              >
+                {{ show.title }}
+              </li>
+            </ul>
+          </div>
+
+          <div v-if="notifications.deliveries.length" class="mt-3 overflow-x-auto rounded border border-hairline">
+            <table class="w-full text-[13px]">
+              <thead>
+                <tr class="border-b border-hairline bg-surface-2 text-[11px] uppercase tracking-wide text-fg-2">
+                  <th class="h-7 px-3 text-left">Notification</th>
+                  <th class="h-7 px-3 text-left">Channel</th>
+                  <th class="h-7 px-3 text-left">State</th>
+                  <th class="h-7 px-3 text-left">Sent</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="delivery in notifications.deliveries"
+                  :key="delivery.id"
+                  class="border-b border-hairline/60 last:border-b-0"
+                >
+                  <td class="h-8 px-3 text-fg-1">
+                    {{ deliveryLabel(delivery.type) }}
+                    <span class="text-fg-3">#{{ delivery.subject_id }}</span>
+                  </td>
+                  <td class="h-8 px-3 text-fg-2">{{ delivery.channel }}</td>
+                  <td class="h-8 px-3" :class="deliveryTone(delivery.status)">
+                    {{ delivery.status }}
+                    <span v-if="delivery.error" class="text-fg-3">· {{ delivery.error }}</span>
+                  </td>
+                  <td class="h-8 px-3 tabular-nums text-fg-2">{{ delivery.sent_at ?? delivery.created_at }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p v-else class="mt-3 text-[12px] text-fg-3">Nothing sent to this account yet.</p>
         </FormSection>
 
         <FormSection v-if="isEdit && messages.length" title="Recent chat messages" :columns="1">

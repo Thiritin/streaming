@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Notifications\ResetPassword;
 use App\Notifications\VerifyEmail;
+use App\Support\NotificationCategories;
+use App\Support\NotificationScope;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -26,12 +28,28 @@ class User extends Authenticatable implements MustVerifyEmail
     protected $appends = ['role', 'chat_color'];
 
     /**
+     * The column defaults, repeated here because Eloquent does not read them off the
+     * schema: a freshly created account would otherwise answer null for its scopes and
+     * read as "notifications off" until it was reloaded from the database.
+     */
+    protected $attributes = [
+        'notify_shows_live' => NotificationScope::SUBSCRIBED,
+        'notify_recordings' => NotificationScope::SUBSCRIBED,
+    ];
+
+    /**
      * The attributes that should be hidden for serialization.
      *
      * @var array<int, string>
      */
     protected $hidden = [
         'remember_token',
+        // A whole user is serialised into chat payloads and Inertia props in more
+        // places than is worth auditing; the address is only ever wanted where it is
+        // asked for by name.
+        'email',
+        'telegram_chat_id',
+        'streamkey',
     ];
 
     /**
@@ -45,6 +63,8 @@ class User extends Authenticatable implements MustVerifyEmail
         // Only the features this viewer has switched off, keyed as in
         // config/features.php. See App\Support\Features::forUser().
         'feature_preferences' => 'array',
+        'notification_channels' => 'array',
+        'telegram_linked_at' => 'datetime',
     ];
 
     /**
@@ -437,6 +457,127 @@ class User extends Authenticatable implements MustVerifyEmail
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * Shows this viewer asked to be told about.
+     */
+    public function showSubscriptions(): HasMany
+    {
+        return $this->hasMany(ShowSubscription::class);
+    }
+
+    public function subscribedShows()
+    {
+        return $this->belongsToMany(Show::class, 'show_subscriptions')->withTimestamps();
+    }
+
+    public function notificationDeliveries(): HasMany
+    {
+        return $this->hasMany(NotificationDelivery::class)->latest('id');
+    }
+
+    public function subscribesTo(Show $show): bool
+    {
+        return $this->showSubscriptions()->where('show_id', $show->id)->exists();
+    }
+
+    /**
+     * Where mail goes. Null is a viewer the identity provider gave us no address for,
+     * and Laravel skips the mail channel rather than throwing.
+     */
+    public function routeNotificationForMail(): ?string
+    {
+        return $this->email ?: null;
+    }
+
+    public function routeNotificationForTelegram(): ?string
+    {
+        return $this->telegram_chat_id ?: null;
+    }
+
+    public function hasTelegramLink(): bool
+    {
+        return (bool) $this->telegram_chat_id;
+    }
+
+    /**
+     * The transports this viewer can actually be reached on, in the order they are
+     * offered on the settings page.
+     *
+     * @return array<int, string>
+     */
+    public function availableNotificationChannels(): array
+    {
+        return array_values(array_filter([
+            $this->email ? 'mail' : null,
+            $this->telegram_chat_id ? 'telegram' : null,
+        ]));
+    }
+
+    /**
+     * What a notification for this viewer should be sent over.
+     *
+     * A null preference means every transport they have. That is deliberately not the
+     * same as an empty one: somebody who pressed the bell in the archive without ever
+     * opening settings asked to be told, not to pick a transport, whereas somebody who
+     * cleared both boxes asked for nothing.
+     *
+     * @return array<int, string>
+     */
+    public function notificationChannels(): array
+    {
+        $available = $this->availableNotificationChannels();
+        $chosen = $this->notification_channels;
+
+        if ($chosen === null) {
+            return $available;
+        }
+
+        return array_values(array_intersect($available, array_map('strval', $chosen)));
+    }
+
+    /**
+     * How wide a category is drawn for this viewer: off, subscribed or any.
+     */
+    public function notificationScope(string $category): string
+    {
+        $column = NotificationCategories::column($category);
+
+        return $column ? (string) ($this->{$column} ?? NotificationScope::OFF) : NotificationScope::OFF;
+    }
+
+    /**
+     * Whether this viewer is subscribed to anything at all. What the counts on the
+     * users page report, and what "unsubscribe from everything" leaves behind.
+     *
+     * A category set to `subscribed` with no show followed is not a subscription: it
+     * is the shipped default sitting there waiting for somebody to press a bell.
+     */
+    public function wantsNotifications(): bool
+    {
+        foreach (NotificationCategories::keys() as $category) {
+            if ($this->notificationScope($category) === NotificationScope::ANY) {
+                return true;
+            }
+        }
+
+        return $this->showSubscriptions()->exists();
+    }
+
+    /**
+     * Stop everything: both categories and every show followed. Used by the
+     * "unsubscribe from all" link in an email footer, which has to mean all of it or
+     * the next message makes a liar of it.
+     */
+    public function unsubscribeFromEverything(): void
+    {
+        $this->forceFill([
+            'notify_shows_live' => NotificationScope::OFF,
+            'notify_recordings' => NotificationScope::OFF,
+        ])->save();
+
+        $this->showSubscriptions()->delete();
     }
 
     protected static function badgeLabelFor(Role $role): string

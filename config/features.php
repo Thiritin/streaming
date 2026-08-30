@@ -69,4 +69,12 @@ return [
      */
     'telegram' => true,
 
+    /*
+     | Email and Telegram notifications to viewers. Off hides the bell, the
+     | notification settings and the subscribe buttons, and stops the dispatcher
+     | sending anything; nothing anybody subscribed to is forgotten, so switching
+     | it back on resumes with the subscriptions intact.
+     */
+    'notifications' => true,
+
 ];

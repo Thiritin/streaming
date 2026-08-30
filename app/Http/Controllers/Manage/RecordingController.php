@@ -914,11 +914,21 @@ class RecordingController extends Controller
      */
     private function pageActions(): array
     {
+        // The plan is the other half of this page - what was promised against what
+        // has been cut - so it sits beside New Recording rather than being reachable
+        // only from the rail. Offered before the create check: reading the plan is
+        // not creating anything, and a read-only operator is exactly who wants it.
+        $actions = [
+            Action::link('plan', 'Recording plan', route('manage.recordings.plan'))
+                ->icon('clipboard-list'),
+        ];
+
         if (! request()->user()->can('create', Recording::class)) {
-            return [];
+            return $actions;
         }
 
         return [
+            ...$actions,
             Action::link('create', 'New Recording', route('manage.recordings.create'))->icon('plus'),
             Action::post('rescan_storage', 'Rescan Storage', route('manage.recordings.storage.rescan'))
                 ->icon('refresh-cw')

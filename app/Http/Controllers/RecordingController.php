@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Recording;
 use App\Models\RecordingProgress;
 use App\Models\Show;
+use App\Support\Features;
 use App\Support\RecordingViews;
 use App\Support\SkipSegments;
+use App\Support\ViewerNotificationProps;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -15,6 +17,9 @@ use Inertia\Inertia;
 
 class RecordingController extends Controller
 {
+    /** @var array<int, int>|null */
+    private ?array $followedShowIds = null;
+
     /**
      * How many recordings Continue watching carries.
      */
@@ -61,6 +66,10 @@ class RecordingController extends Controller
             'totalRecordings' => Recording::where('is_published', true)->accessibleBy($user)->count(),
             'continueWatching' => $shelved ? $this->continueWatching($user) : [],
             'shelves' => $shelved ? $this->categoryShelves($user) : [],
+            // The whole settings panel, because the bell beside the search box opens
+            // it in a dialog rather than toggling anything. Absent for a guest and for
+            // an installation with the feature off.
+            'notifications' => ViewerNotificationProps::for($user),
         ] + ($shelved ? $this->emptyGridProps() : $this->gridProps($request, $user, $filters)));
     }
 
@@ -158,6 +167,29 @@ class RecordingController extends Controller
             'search' => $request->get('search'),
             'sort' => $request->get('sort'),
         ]));
+    }
+
+    /**
+     * The recording's still, at an address that does not expire.
+     *
+     * `thumbnail_url` on the model is a presigned URL good for an hour, which is right
+     * for a page being rendered now and wrong for an email somebody opens next week -
+     * the picture would simply be gone. This redirects to a freshly signed one on every
+     * request instead.
+     *
+     * Only for a recording anybody may watch. A restricted one has no business having a
+     * frame of itself readable without a session, and nobody is sent one anyway.
+     */
+    public function thumbnail(Recording $recording)
+    {
+        abort_unless($recording->is_published && ! $recording->hasAccessRestriction(), 404);
+
+        $url = $recording->thumbnail_url;
+
+        abort_unless((bool) $url, 404);
+
+        return redirect()->away($url)
+            ->header('Cache-Control', 'public, max-age=600');
     }
 
     /**
@@ -717,7 +749,33 @@ class RecordingController extends Controller
             'preview_url' => null,
             'progress' => null,
             'is_pending' => true,
+            // A tile with nothing to open is the one place a bell earns its keep: the
+            // show it belongs to is exactly what somebody looking at it wants told
+            // about, and following it is the only thing they can do here.
+            'show_id' => $show->id,
+            'followed' => in_array($show->id, $this->followedShowIds(), true),
         ];
+    }
+
+    /**
+     * The shows this viewer follows, resolved once per request.
+     *
+     * Pending tiles are built one at a time in two different places, and asking per
+     * tile would be a query per unpublished show on the page.
+     *
+     * @return array<int, int>
+     */
+    private function followedShowIds(): array
+    {
+        if ($this->followedShowIds !== null) {
+            return $this->followedShowIds;
+        }
+
+        $user = Auth::user();
+
+        return $this->followedShowIds = $user && Features::enabled('notifications')
+            ? $user->showSubscriptions()->pluck('show_id')->map(fn ($id) => (int) $id)->all()
+            : [];
     }
 
     public function show(Request $request, Recording $recording)

@@ -5,6 +5,7 @@ namespace App\Observers;
 use App\Events\ShowCancelled;
 use App\Events\ShowEnded;
 use App\Events\ShowWentLive;
+use App\Jobs\Notifications\NotifyShowSubscribersJob;
 use App\Jobs\Telegram\SyncTelegramMessagesJob;
 use App\Models\Show;
 use App\Models\Source;
@@ -64,6 +65,13 @@ class ShowObserver
                         }
                         event(new ShowWentLive($show));
                         Log::info('ShowWentLive event fired for show', ['show_id' => $show->id]);
+
+                        // Viewers who followed this show, and only them. Sent straight
+                        // away: unlike a recording, a show that started has nothing to
+                        // gain from being held back and everything to lose.
+                        if (Features::enabled('notifications')) {
+                            NotifyShowSubscribersJob::dispatch($show->id);
+                        }
                     }
                     break;
 

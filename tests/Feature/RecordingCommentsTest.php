@@ -244,16 +244,24 @@ class RecordingCommentsTest extends TestCase
             );
     }
 
-    public function test_a_viewer_who_hid_comments_gets_an_empty_section_but_the_endpoint_stays_open(): void
+    public function test_a_viewer_cannot_switch_comments_off_for_themselves(): void
     {
         $recording = $this->recording();
         $user = User::factory()->create(['feature_preferences' => ['comments' => false]]);
 
+        RecordingComment::create([
+            'recording_id' => $recording->id,
+            'user_id' => $user->id,
+            'body' => 'Good set',
+        ]);
+
+        $this->assertNotContains('comments', Features::switchableKeys());
+
         $this->actingAs($user)
             ->get(route('recordings.show', $recording))
             ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('commentsEnabled', false)
-                ->has('comments', 0)
+                ->where('commentsEnabled', true)
+                ->has('comments', 1)
             );
     }
 

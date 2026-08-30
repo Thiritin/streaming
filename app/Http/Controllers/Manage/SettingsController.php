@@ -9,6 +9,7 @@ use App\Services\Telegram\TelegramClient;
 use App\Support\AuthModes;
 use App\Support\Manage\Settings;
 use App\Support\Manage\Toast;
+use App\Support\TelegramSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -119,6 +120,10 @@ class SettingsController extends Controller
         $client = app(TelegramClient::class);
 
         if (! $client->enabled()) {
+            // A stale @name would point every viewer at a bot this installation no
+            // longer runs, so it goes with the token.
+            TelegramSettings::forgetUsername();
+
             Toast::flashSuccess('Settings saved', 'No bot token, so the bot is off and its webhook is closed.');
 
             return;
@@ -128,6 +133,10 @@ class SettingsController extends Controller
 
         if ($result['ok'] ?? false) {
             $me = $client->me();
+
+            // The handle belongs to Telegram, so it is read off the token rather than
+            // typed. An operator who filled the field in themselves keeps their answer.
+            TelegramSettings::rememberUsername($me['username'] ?? null);
 
             Toast::flashSuccess(
                 'Settings saved',

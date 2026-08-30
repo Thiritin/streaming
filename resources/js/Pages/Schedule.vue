@@ -37,8 +37,11 @@
 
           <!-- `reveal` is a scroll-driven fade handled entirely in CSS; a full day's
                programme is a long list and this gives it a sense of arriving. -->
-          <li class="reveal">
-            <Link :href="route('show.view', entry.slug)" class="agenda-row" :class="rowClass(entry)">
+          <!-- The card is the row, not the link: the bell has to sit inside it as a
+               cell of its own, and a button nested in an anchor is neither valid nor
+               clickable without also opening the show. -->
+          <li class="reveal agenda-item" :class="rowClass(entry)">
+            <Link :href="route('show.view', entry.slug)" class="agenda-row">
               <span class="agenda-time">
                 <span class="agenda-start tabular-nums">{{ formatClock(entry.scheduled_start) }}</span>
                 <span class="agenda-end tabular-nums">{{ formatClock(entry.scheduled_end) }}</span>
@@ -58,8 +61,7 @@
                   <span
                     v-if="entry.will_be_available && entry.status !== 'cancelled'"
                     class="agenda-available"
-                    title="This show is planned to be published afterwards, so you can watch it later if you miss it live."
-                  >Available later</span>
+                  >Watchable later in the streaming archive</span>
                 </span>
               </span>
 
@@ -74,6 +76,19 @@
                 <span v-else class="status-muted">{{ countdown(entry) }}</span>
               </span>
             </Link>
+
+            <button
+              v-if="canFollow"
+              type="button"
+              class="agenda-follow"
+              :class="{ 'agenda-follow-on': entry.followed }"
+              :aria-pressed="entry.followed"
+              :aria-label="entry.followed ? `Stop following ${entry.title}` : `Follow ${entry.title}`"
+              :title="entry.followed ? 'Following' : 'Follow'"
+              @click="toggleFollow(entry)"
+            >
+              <BellRing class="size-4" :stroke-width="1.8" :fill="entry.followed ? 'currentColor' : 'none'" />
+            </button>
           </li>
         </template>
       </ol>
@@ -87,7 +102,8 @@
 </template>
 
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { BellRing } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { useNow } from '@/composables/useNow';
@@ -100,7 +116,23 @@ const props = defineProps({
   days: { type: Array, default: () => [] },
   primaryChannel: { type: String, default: null },
   currentTime: { type: String, required: false },
+  // False for a guest and for an installation with notifications switched off.
+  canFollow: { type: Boolean, default: false },
 });
+
+function toggleFollow(entry) {
+  // Preserved: a reload that remounts the list replays its entry animation, so
+  // pressing a bell looked like the whole day had been re-fetched.
+  const options = { preserveScroll: true, preserveState: true };
+
+  if (entry.followed) {
+    router.delete(route('notifications.shows.unfollow', entry.id), options);
+
+    return;
+  }
+
+  router.post(route('notifications.shows.follow', entry.id), {}, options);
+}
 
 const now = useNow();
 const activeDate = ref(props.days.find((day) => day.is_today)?.date ?? props.days[0]?.date ?? null);
@@ -191,12 +223,18 @@ const formatClock = (value) => new Date(value).toLocaleTimeString([], {
   @apply m-0 flex list-none flex-col gap-2 p-0;
 }
 
-.agenda-row {
-  @apply grid grid-cols-[64px_minmax(0,1fr)] items-center gap-x-4 gap-y-1 rounded-xl bg-primary-950/45 px-4 py-3 ring-1 ring-white/5 transition-colors sm:grid-cols-[72px_minmax(0,1fr)_auto];
+/* The card. The link fills it and the follow bell sits beside them, so the two
+   never overlap however wide the status pill gets. */
+.agenda-item {
+  @apply flex items-center rounded-xl bg-primary-950/45 ring-1 ring-white/5 transition-colors;
 }
 
-.agenda-row:hover {
+.agenda-item:hover {
   @apply bg-primary-800/50 ring-white/10;
+}
+
+.agenda-row {
+  @apply grid min-w-0 flex-1 grid-cols-[64px_minmax(0,1fr)] items-center gap-x-4 gap-y-1 px-4 py-3 sm:grid-cols-[72px_minmax(0,1fr)_auto];
 }
 
 .agenda-row:focus-visible {
@@ -220,6 +258,14 @@ const formatClock = (value) => new Date(value).toLocaleTimeString([], {
 .agenda-row-cancelled .agenda-title,
 .agenda-row-cancelled .agenda-time {
   @apply line-through decoration-primary-500;
+}
+
+.agenda-follow {
+  @apply mr-2 ml-1 flex size-9 shrink-0 items-center justify-center rounded-lg text-primary-400 transition-colors hover:bg-primary-800/60 hover:text-primary-100;
+}
+
+.agenda-follow-on {
+  @apply bg-primary-500/20 text-primary-50;
 }
 
 .agenda-time {

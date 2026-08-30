@@ -73,9 +73,24 @@
         <div class="absolute inset-0 flex items-center justify-center px-4">
           <span class="pending-chip">
             <span class="pending-dot" aria-hidden="true" />
-            Processing
+            Available later
           </span>
         </div>
+
+        <!-- The only thing that can be done with a tile that has nothing to open:
+             follow the show and be told when its recording lands. -->
+        <button
+          v-if="canFollow"
+          type="button"
+          class="pending-bell"
+          :class="{ 'pending-bell-on': recording.followed }"
+          :aria-pressed="recording.followed"
+          :aria-label="recording.followed ? `Stop following ${recording.title}` : `Follow ${recording.title}`"
+          :title="recording.followed ? 'Following' : 'Follow'"
+          @click.prevent.stop="toggleFollow"
+        >
+          <BellRing class="size-4" :stroke-width="1.8" :fill="recording.followed ? 'currentColor' : 'none'" />
+        </button>
       </template>
 
       <template v-else>
@@ -135,19 +150,18 @@
         {{ recording.title }}
       </h3>
 
-      <!-- One metadata line: views, then how long ago, the way a video card reads. -->
+      <!-- One metadata line: how long ago, then which run it came out of. The
+           view count is not repeated here - it is already on the still, and a
+           rail that mixes runs needs the run more than it needs the number
+           twice. -->
       <p class="text-primary-500 text-sm mt-1">
-        <template v-if="!isPending && recording.views > 0">
-          {{ formatViews(recording.views) }} {{ recording.views === 1 ? 'view' : 'views' }}
-          <span aria-hidden="true"> · </span>
-        </template>
         {{ formatDate(recording.date) }}
+        <template v-if="collectionLabel">
+          <span aria-hidden="true"> · </span>{{ collectionLabel }}
+        </template>
       </p>
 
-      <p v-if="isPending" class="text-primary-400 text-xs mt-1">
-        Still processing, check back later.
-      </p>
-      <p v-else-if="resumeLabel" class="text-primary-400 text-xs mt-1">
+      <p v-if="!isPending && resumeLabel" class="text-primary-400 text-xs mt-1">
         {{ resumeLabel }}
       </p>
     </div>
@@ -155,7 +169,8 @@
 </template>
 
 <script setup>
-import { Link } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
+import { BellRing } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 import TilePlaceholder from '../TilePlaceholder.vue';
 import FaPlayIcon from '../Icons/FaPlayIcon.vue';
@@ -193,6 +208,25 @@ const thumbnail = ref(null);
 // as everything else, dimmed and unclickable, so the year does not look like it is
 // missing shows without explanation.
 const isPending = computed(() => Boolean(props.recording.is_pending));
+
+// Read off the shared payload rather than threaded through every rail and grid that
+// renders a tile. Absent for a guest and for an installation with the feature off.
+const page = usePage();
+const canFollow = computed(() => isPending.value && Boolean(page.props.notifications));
+
+function toggleFollow() {
+  // Preserved: a reload that remounts the section replays its entry animation, so
+  // pressing a bell looked like the whole row had been re-fetched.
+  const options = { preserveScroll: true, preserveState: true };
+
+  if (props.recording.followed) {
+    router.delete(route('notifications.shows.unfollow', props.recording.show_id), options);
+
+    return;
+  }
+
+  router.post(route('notifications.shows.follow', props.recording.show_id), {}, options);
+}
 
 const {
   mounted: previewMounted,
@@ -255,6 +289,12 @@ const resumeLabel = computed(() => {
 const recordingYear = computed(() =>
   props.recording.date ? String(new Date(props.recording.date).getFullYear()) : null
 );
+
+// Which run this came out of. The rails are not filtered by convention, so the
+// tile has to say it or a shelf of theatre from four years reads as one year's.
+// A recording filed under no run falls back to its year, which is the same
+// question answered less precisely rather than left blank.
+const collectionLabel = computed(() => props.recording.event_label || recordingYear.value);
 
 // Both activation paths, because Enter on a focused link fires `click` without
 // ever firing `pointerdown`: without the keydown the old page would be captured
@@ -321,6 +361,14 @@ const formatViews = (views) => {
 
 <style>
 @reference "../../../css/app.css";
+
+.pending-bell {
+  @apply absolute right-2 top-2 z-20 flex size-8 items-center justify-center rounded-lg border border-primary-700/70 bg-primary-950/70 text-primary-300 backdrop-blur transition-colors hover:border-primary-500 hover:text-primary-50;
+}
+
+.pending-bell-on {
+  @apply border-primary-500 bg-primary-500/25 text-primary-50;
+}
 
 .line-clamp-2 {
   display: -webkit-box;

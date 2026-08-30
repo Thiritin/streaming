@@ -164,13 +164,35 @@ class StreamController extends Controller
             });
 
         // Get shows that should have started but haven't (starting soon)
-        $startingSoonShows = Show::with('source')
+        $soon = Show::with('source')
             ->accessibleBy($user)
             ->scheduled()
             ->where('scheduled_start', '<=', now())
             ->orderBy('scheduled_start', 'desc')
-            ->get()
-            ->map(function ($show) {
+            ->get();
+
+        // Get upcoming shows (next 24 hours)
+        $upcoming = Show::with('source')
+            ->accessibleBy($user)
+            ->scheduled()
+            ->where('scheduled_start', '>', now())
+            ->where('scheduled_start', '<=', now()->addDay())
+            ->orderBy('scheduled_start')
+            ->get();
+
+        // Which of these the viewer already follows, in one query for the page
+        // rather than a flag resolved per tile.
+        $canFollow = (bool) $user && Features::enabled('notifications');
+
+        $followed = $canFollow
+            ? $user->showSubscriptions()
+                ->whereIn('show_id', $soon->pluck('id')->merge($upcoming->pluck('id')))
+                ->pluck('show_id')
+                ->all()
+            : [];
+
+        $startingSoonShows = $soon
+            ->map(function ($show) use ($followed) {
                 return [
                     'id' => $show->id,
                     'title' => $show->title,
@@ -183,18 +205,12 @@ class StreamController extends Controller
                     'scheduled_start' => $show->scheduled_start,
                     'scheduled_end' => $show->scheduled_end,
                     'is_restricted' => $show->hasAccessRestriction(),
+                    'followed' => in_array($show->id, $followed, true),
                 ];
             });
 
-        // Get upcoming shows (next 24 hours)
-        $upcomingShows = Show::with('source')
-            ->accessibleBy($user)
-            ->scheduled()
-            ->where('scheduled_start', '>', now())
-            ->where('scheduled_start', '<=', now()->addDay())
-            ->orderBy('scheduled_start')
-            ->get()
-            ->map(function ($show) {
+        $upcomingShows = $upcoming
+            ->map(function ($show) use ($followed) {
                 return [
                     'id' => $show->id,
                     'title' => $show->title,
@@ -207,6 +223,7 @@ class StreamController extends Controller
                     'scheduled_start' => $show->scheduled_start,
                     'scheduled_end' => $show->scheduled_end,
                     'is_restricted' => $show->hasAccessRestriction(),
+                    'followed' => in_array($show->id, $followed, true),
                 ];
             });
 
@@ -337,6 +354,9 @@ class StreamController extends Controller
             'primaryChannel' => $primarySource?->name,
             'channels' => $channels,
             'currentTime' => now()->toIso8601String(),
+            // False for a guest and for an installation with notifications off, so a
+            // bell is not rendered as something to sign in for.
+            'canFollow' => $canFollow,
         ]);
     }
 

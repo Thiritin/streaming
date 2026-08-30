@@ -32,7 +32,7 @@ final class Features
      *
      * @var array<int, string>
      */
-    private const INSTALLATION_ONLY = ['announcement', 'feedback', 'screens', 'telegram'];
+    private const INSTALLATION_ONLY = ['announcement', 'comments', 'feedback', 'screens', 'telegram', 'notifications'];
 
     private const TTL = 3600;
 
@@ -151,8 +151,7 @@ final class Features
     }
 
     /**
-     * Comments under a recording. The installation's answer; a viewer who has
-     * hidden them for themselves is answered by enabledFor().
+     * Comments under a recording. Installation-wide only; a viewer has no say.
      */
     public static function comments(): bool
     {

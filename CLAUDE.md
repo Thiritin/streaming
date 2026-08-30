@@ -144,16 +144,36 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      for an installation with no calendar.
 
 8. **The archive page**
-   - `/archive` is one grid, newest first until asked otherwise, paged in through
-     `Inertia::merge` and `WhenVisible` as it is scrolled. Chips (events, then the
-     categories inside the selected one) and a sort narrow it in place. There are no
-     source chips: which room a recording came out of is not how anyone looks for it.
-     The category chips are counted against the run that is selected, so a chip never
-     says four and hands back one. The archive runs to around
-     twenty recordings a year, so a wall of shelves would show the same recordings
-     three times over; the one shelf left is Continue watching, on the unfiltered
-     page only. `/archive/year/{year}` is now a redirect into `?year=`, kept for
-     links already handed out.
+   - `/archive` has two shapes. Unfiltered it is a rail per category
+     (`RecordingController::categoryShelves()`), because "what kind of thing is
+     this" is the question somebody arriving at an archive has and a flat grid
+     answers it by making them read every tile. The rails are ordered by the
+     category's *mean* views per recording, never its total: a category that ran
+     twelve panels would outrank two packed theatre nights on a sum purely by
+     having more rows to add up. Each rail is capped at `RAIL_SIZE` with See all
+     into `?category=` for the rest - deliberately lower than the Continue
+     watching shelf's `SHELF_SIZE`, since a cap so high it never overflows is a
+     See all nobody is ever offered. Unpublished-but-promised shows ride their own
+     category's rail at the front (kept out of the mean, having no views), and
+     anything filed under no category is one rail at the end, never ranked.
+   - The rails are never narrowed by run: a category is read across every
+     convention at once. So the tile names the run it came out of on its metadata
+     line, next to how long ago it was - falling back to the year for a recording
+     filed nowhere - and the view count is not repeated there, being already on
+     the still. A filter visit scrolls back to the top, because a filter is asked
+     from the sticky dock halfway down a page of rails and its answer is a much
+     shorter page.
+   - Ask anything of it - a chip, a search, a sort - and it collapses to one grid,
+     newest first until asked otherwise, paged in through `Inertia::merge` and
+     `WhenVisible` as it is scrolled. `isFiltered()` is the switch and the two
+     modes are exclusive: the shelved page sends `shelves` and an empty grid, the
+     filtered one the reverse. Chips (events, then the categories inside the
+     selected one) and a sort narrow it in place. There are no source chips: which
+     room a recording came out of is not how anyone looks for it. The category
+     chips are counted against the run that is selected, so a chip never says four
+     and hands back one. Continue watching leads either way, on the unfiltered page
+     only. `/archive/year/{year}` is now a redirect into `?year=`, kept for links
+     already handed out.
    - A category on its own is read run by run: the grid is ordered by run and split
      into a section per run, headed with how many that run holds ("4 Theater
      recordings for EF30"). Picking a run already answers the question, so the
@@ -223,8 +243,9 @@ Feature switches (chat, emotes, boops, announcement, feedback, screens, telegram
      They save with the rest of the form.
    - Comments live under the recording on its watch page, in `recording_comments`,
      and are switched by the `comments` feature flag (installation-wide in
-     /manage > Settings > Features, and a viewer can hide them for themselves in
-     /settings). The thread is one level: a row with a `parent_id` is a reply, a
+     /manage > Settings > Features only; it is in `Features::INSTALLATION_ONLY`,
+     so a viewer is not offered it in /settings).
+     The thread is one level: a row with a `parent_id` is a reply, a
      row without one is not, and `RecordingCommentController::store()` re-points a
      reply-to-a-reply at the top of its thread rather than letting depth grow.
      Deleting takes the replies with it, by cascade, because a reply left behind
@@ -490,11 +511,20 @@ The admin panel is the Inertia panel at `/manage`. Filament is gone; `/admin` is
   same rule as the control key, and `RECORDING_API_KEY` does not open it
 - Telegram: the installation's bot and the chats it posts into. One token in Settings >
   Telegram registers the webhook; each chat then decides what it hears (shows, recordings,
-  source alerts, feedback, and which sources those cover) and whether its messages carry
+  source alerts, feedback, health alerts, and which sources those cover) and whether its
+  messages carry
   buttons. A show message starts as Start,
   becomes End with a confirmation step, and is kept in step whoever changed the show;
   a report message carries Resolve and a draft recording carries Publish. Source alerts are
-  a log: posted, never edited, and suppressed when the state is one the chat already holds. Groups link with `/link <code>`, direct messages by
+  a log: posted, never edited, and suppressed when the state is one the chat already holds.
+  Health alerts are the dashboard's alert list turned into a stream of changes by
+  `App\Support\HealthAlertDigest` and posted by `SendHealthAlertsJob` every minute: each
+  alert from `Overview::alerts()` carries a stable `key`, a condition has to survive
+  `HOLD_TICKS` before it is posted so a single failed health check is not a message, a
+  warning escalating to a danger is posted again, and a condition going away posts a
+  cleared line. Installation-wide alerts reach every chat that asked for them, whatever
+  its source list; only the ones naming a source are filtered by it. With no chat
+  listening the tracked state is dropped, so switching one on reports what is wrong now. Groups link with `/link <code>`, direct messages by
   chat id. A forum group's topics each link as a row of their own, so one group can split
   shows and reports across topics. See docs/admin/telegram.md. Administrators only, since an interactive chat can
   take a show on and off air

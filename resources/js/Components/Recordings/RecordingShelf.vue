@@ -1,6 +1,6 @@
 <template>
   <section class="shelf">
-    <div class="flex items-end justify-between gap-4 pb-3">
+    <div class="shelf-head mx-auto flex max-w-page items-end justify-between gap-4 pb-3">
       <h2 class="shelf-title">{{ title }}</h2>
 
       <div class="flex items-center gap-2">
@@ -129,21 +129,43 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateEdges));
 }
 
 /*
- * Scroll padding matches the page gutter, so a keyboard tab into a tile at the
- * edge does not park it half under the fade.
+ * The rail runs the full width of the window, so on a screen wider than the page
+ * cap the inset that lines the first tile up with the heading is the gutter plus
+ * whatever the cap leaves at the side. A percentage, not a vw: 100% is the
+ * content width, which a vertical scrollbar has already been taken out of.
+ */
+.shelf-rail {
+  --shelf-inset: max(
+    var(--page-gutter),
+    calc((100% - var(--container-page)) / 2 + var(--page-gutter))
+  );
+}
+
+.shelf-head {
+  padding-inline: var(--page-gutter);
+}
+
+/*
+ * The rail is the one thing on the page that is not inset by the gutter: it
+ * scrolls sideways, so its track has to run the full width of the page or the
+ * tiles disappear under a padding that is not theirs. The gutter comes back as
+ * the rail's own inner padding, which puts the first tile under the heading
+ * where it belongs while still letting the rest scroll out to the edge.
+ *
+ * Scroll padding matches it, so a keyboard tab into a tile at the edge does not
+ * park it half under the fade.
  */
 .shelf-rail {
   display: flex;
   gap: 1rem;
   overflow-x: auto;
   scroll-snap-type: x proximity;
-  scroll-padding-inline: 0.25rem;
+  scroll-padding-inline: var(--shelf-inset);
   scrollbar-width: none;
-  padding-bottom: 0.25rem;
-  /* Room for the tile's hover ring and lift, which would otherwise be clipped
-     by the scroll container. */
-  padding-inline: 0.25rem;
-  margin-inline: -0.25rem;
+  /* Vertical room for the tile's hover ring and lift, which the scroll
+     container would otherwise clip. */
+  padding-block: 0.25rem;
+  padding-inline: var(--shelf-inset);
 }
 
 .shelf-rail::-webkit-scrollbar {
@@ -156,51 +178,54 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateEdges));
   scroll-snap-align: start;
 }
 
-/* On a phone the rail bleeds into the page gutter, so a tile scrolls off the
-   screen edge rather than off an inset box, and the fade sits flush with it. */
 @media (max-width: 640px) {
   .shelf-item {
     width: 210px;
   }
-
-  .shelf-rail {
-    scroll-padding-inline: 1rem;
-    padding-inline: 1rem;
-    margin-inline: -1rem;
-  }
 }
 
-/* A hint that the rail continues, dropped at whichever end it has reached. */
-.shelf-viewport::before,
-.shelf-viewport::after {
-  content: '';
-  @apply pointer-events-none absolute inset-y-0 z-10 w-10 opacity-0 transition-opacity duration-(--dur-base);
+/*
+ * A hint that the rail continues, dropped at whichever end it has reached. The
+ * end is masked out rather than covered by a gradient: an overlay has to be
+ * painted in the colour behind the rail, and a colour that is a shade off shows
+ * up as a band with two hard edges. The fade widths are registered properties so
+ * the hint can still be faded in and out.
+ */
+@property --shelf-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
 }
 
-.shelf-viewport::before {
-  left: -0.25rem;
-  background: linear-gradient(to right, var(--surface-0), transparent);
+@property --shelf-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
 }
 
-.shelf-viewport::after {
-  right: -0.25rem;
-  background: linear-gradient(to left, var(--surface-0), transparent);
+.shelf-rail {
+  --shelf-fade-start: 2.5rem;
+  --shelf-fade-end: 2.5rem;
+  transition:
+    --shelf-fade-start var(--dur-base),
+    --shelf-fade-end var(--dur-base);
+  -webkit-mask-image: var(--shelf-mask);
+  mask-image: var(--shelf-mask);
+  --shelf-mask: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--shelf-fade-start),
+    #000 calc(100% - var(--shelf-fade-end)),
+    transparent 100%
+  );
 }
 
-.shelf-viewport:has(.shelf-rail:not(.is-start))::before,
-.shelf-viewport:has(.shelf-rail:not(.is-end))::after {
-  opacity: 1;
+.shelf-rail.is-start {
+  --shelf-fade-start: 0px;
 }
 
-/* The fades follow the rail out to the screen edge. After the base rules, since
-   they are the same selector. */
-@media (max-width: 640px) {
-  .shelf-viewport::before {
-    left: -1rem;
-  }
-
-  .shelf-viewport::after {
-    right: -1rem;
-  }
+.shelf-rail.is-end {
+  --shelf-fade-end: 0px;
 }
+
 </style>

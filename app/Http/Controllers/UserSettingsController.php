@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Support\Auth\ConnectionProps;
 use App\Support\Features;
+use App\Support\ViewerNotificationProps;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -17,6 +18,11 @@ use Inertia\Response;
  * only ever offered features that exist. Anything the installation has off is not shown
  * and not accepted on save either, which keeps the two layers from disagreeing: a
  * viewer can subtract, never add.
+ *
+ * Notifications are the same shape one level down: the transports offered are the ones
+ * this account can actually be reached on, so an installation whose identity provider
+ * releases no email address offers Telegram alone rather than a box that quietly never
+ * delivers.
  */
 class UserSettingsController extends Controller
 {
@@ -64,6 +70,7 @@ class UserSettingsController extends Controller
                 'helper' => self::COPY[$key]['helper'] ?? '',
                 'enabled' => $effective[$key] ?? false,
             ], Features::switchableKeys()),
+            'notifications' => ViewerNotificationProps::for($request->user()),
             'connections' => ConnectionProps::for($request->user()),
             'account' => [
                 'name' => $request->user()->name,
@@ -83,6 +90,14 @@ class UserSettingsController extends Controller
     private function sections(Request $request): array
     {
         $sections = [];
+
+        if (Features::enabled('notifications')) {
+            $sections['notifications'] = [
+                'key' => 'notifications',
+                'label' => 'Notifications',
+                'icon' => 'bell',
+            ];
+        }
 
         if (Features::switchableKeys() !== []) {
             $sections['features'] = [

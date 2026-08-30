@@ -2,8 +2,23 @@
   <div
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave"
-    class="show-tile-wrapper media-tile"
+    class="show-tile-wrapper media-tile relative"
   >
+    <!-- Outside the link rather than inside it: a button nested in an anchor is
+         one press with two meanings, and the reminder is not the tile's errand. -->
+    <button
+      v-if="canFollow && (isUpcoming || isStartingSoon)"
+      type="button"
+      class="tile-bell"
+      :class="{ 'tile-bell-on': followed }"
+      :aria-pressed="followed"
+      :title="followLabel"
+      :aria-label="followLabel"
+      @click="toggleFollow"
+    >
+      <Bell class="size-4" :stroke-width="1.8" :fill="followed ? 'currentColor' : 'none'" />
+    </button>
+
     <!-- `prefetch` is what makes the view transition worth having: the response is
          usually already cached by the time the click lands, so the morph starts
          immediately instead of after a round trip spent frozen. -->
@@ -137,7 +152,8 @@
 </template>
 
 <script setup>
-import { Link } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
+import { Bell } from 'lucide-vue-next';
 import { ref, computed, onUnmounted, nextTick, watch, Transition } from 'vue';
 import TilePlaceholder from '../TilePlaceholder.vue';
 import FaPlayIcon from '../Icons/FaPlayIcon.vue';
@@ -158,7 +174,13 @@ const props = defineProps({
   priority: {
     type: Boolean,
     default: false,
-  }
+  },
+  // False for a guest and for an installation with notifications off, so the bell
+  // is not rendered as something to sign in for.
+  canFollow: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 // Reactive state
@@ -176,6 +198,35 @@ const now = useNow();
 const isLive = computed(() => props.show.status === 'live');
 const isStartingSoon = computed(() => props.show.status === 'starting_soon');
 const isUpcoming = computed(() => props.show.status === 'scheduled');
+
+// One press, one thing changed. Held on the tile so the row answers before the
+// reload lands; the server's value takes over when the props come back.
+const followed = ref(Boolean(props.show.followed));
+
+watch(() => props.show.followed, (value) => followed.value = Boolean(value));
+
+const followLabel = computed(() => (followed.value ? 'Reminder on' : 'Remind me when this starts'));
+
+const toggleFollow = () => {
+  const wasFollowed = followed.value;
+  followed.value = !wasFollowed;
+
+  const options = {
+    preserveScroll: true,
+    // Preserved: remounting the section replays its entry animation, which reads as
+    // the whole row reloading for one press.
+    preserveState: true,
+    onError: () => followed.value = wasFollowed,
+  };
+
+  if (wasFollowed) {
+    router.delete(route('notifications.shows.unfollow', props.show.id), options);
+
+    return;
+  }
+
+  router.post(route('notifications.shows.follow', props.show.id), {}, options);
+};
 
 const liveDuration = computed(() => liveFor(props.show.started_at, now.value));
 const timeUntilStart = computed(() => formatTimeUntil(props.show.scheduled_start, now.value));
@@ -385,6 +436,25 @@ onUnmounted(() => {
 .starting-soon-badge {
   @apply bg-orange-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide;
   animation: pulse 2s ease-in-out infinite;
+}
+
+/* Sits over the still's top right, opposite the state badge. */
+.tile-bell {
+  @apply absolute top-2 right-2 z-30 inline-flex h-8 w-8 items-center justify-center rounded-lg
+         border border-white/10 bg-black/60 text-white/80 backdrop-blur-sm
+         transition-colors duration-(--dur-base);
+}
+
+.tile-bell:hover {
+  @apply border-white/20 text-white;
+}
+
+.tile-bell-on {
+  @apply border-primary-400/70 bg-primary-500/80 text-white;
+}
+
+.tile-bell:focus-visible {
+  @apply outline-none ring-2 ring-primary-400;
 }
 
 .time-badge {

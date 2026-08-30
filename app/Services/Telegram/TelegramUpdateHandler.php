@@ -10,6 +10,7 @@ use App\Models\Show;
 use App\Models\TelegramChat;
 use App\Models\TelegramLinkCode;
 use App\Models\TelegramMessage;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -85,7 +86,12 @@ class TelegramUpdateHandler
                 .($threadId > 0 ? "\nTopic id: <code>{$threadId}</code>" : ''),
                 $threadId,
             ),
-            'start', 'help' => $this->client->reply($chatId, $this->help(), $threadId),
+            // Telegram delivers the deep link's payload as "/start CODE", which is how
+            // the connect button attaches an account without anything being pasted.
+            'start' => $argument === ''
+                ? $this->client->reply($chatId, $this->help(), $threadId)
+                : $this->link($message, $argument),
+            'help' => $this->client->reply($chatId, $this->help(), $threadId),
             default => null,
         };
     }
@@ -137,7 +143,13 @@ class TelegramUpdateHandler
         $link = TelegramLinkCode::where('code', $code)->first();
 
         if (! $link || ! $link->usable()) {
-            $this->client->reply($chatId, '❌ That code is not valid any more. Generate a new one in Settings > Telegram.', $threadId);
+            $this->client->reply($chatId, '❌ That code is not valid any more. Generate a new one on the site.', $threadId);
+
+            return;
+        }
+
+        if ($link->isViewerCode()) {
+            $this->linkViewer($message, $link);
 
             return;
         }
@@ -194,31 +206,109 @@ class TelegramUpdateHandler
         Log::info('Telegram chat linked', ['chat_id' => $chatId, 'thread_id' => $threadId, 'code' => $code]);
     }
 
-    private function unlink(string $chatId, ?TelegramChat $chat): void
+    /**
+     * A viewer attaching this conversation to their account.
+     *
+     * Only in a private chat: a code pasted into a group would otherwise send one
+     * person's notifications to a room, and the group would have no way to stop them
+     * short of finding whoever pasted it.
+     *
+     * @param  array<string, mixed>  $message
+     */
+    private function linkViewer(array $message, TelegramLinkCode $link): void
     {
+        $chatId = (string) $message['chat']['id'];
+        $threadId = $this->threadId($message);
+
+        if (($message['chat']['type'] ?? '') !== 'private') {
+            $this->client->reply($chatId, '❌ That is a personal code. Send it to me in a direct message, not in a group.', $threadId);
+
+            return;
+        }
+
+        $user = $link->creator;
+
+        if (! $user) {
+            $this->client->reply($chatId, '❌ That code no longer belongs to an account.', $threadId);
+
+            return;
+        }
+
+        // One Telegram account is one viewer. Whoever links last wins, and the account
+        // that had it is told nothing has been sent to them since - it is their own
+        // chat id being taken, and the alternative is refusing a link they cannot see
+        // the reason for.
+        User::where('telegram_chat_id', $chatId)
+            ->whereKeyNot($user->id)
+            ->update(['telegram_chat_id' => null, 'telegram_username' => null, 'telegram_linked_at' => null]);
+
+        $user->forceFill([
+            'telegram_chat_id' => $chatId,
+            'telegram_username' => $message['from']['username'] ?? null,
+            'telegram_linked_at' => now(),
+        ])->save();
+
+        $link->forceFill(['used_at' => now()])->save();
+
+        $this->client->reply(
+            $chatId,
+            '✅ <b>Connected to '.e($user->name).".</b>\nChoose what you are sent under Settings on the site. Send /unlink here to stop.",
+            $threadId,
+        );
+
+        Log::info('Telegram linked to a viewer account', ['user_id' => $user->id]);
+    }
+
+    private function unlink(string $chatId, int $threadId, ?TelegramChat $chat): void
+    {
+        // A viewer's private chat has no row in `telegram_chats`; it is a column on
+        // their account. Unlinking it here is the same act as pressing Disconnect in
+        // /settings, and somebody who blocked the bot expects both to be true.
+        $user = User::where('telegram_chat_id', $chatId)->first();
+
+        if ($user) {
+            $user->forceFill([
+                'telegram_chat_id' => null,
+                'telegram_username' => null,
+                'telegram_linked_at' => null,
+            ])->save();
+
+            $this->client->reply($chatId, '👋 Disconnected. Nothing more will be sent here. Your subscriptions are kept, so linking again brings them back.', $threadId);
+
+            return;
+        }
+
         if (! $chat) {
-            $this->client->reply($chatId, 'This chat is not linked.');
+            $this->client->reply($chatId, 'This chat is not linked.', $threadId);
 
             return;
         }
 
         $chat->delete();
 
-        $this->client->reply($chatId, '👋 Unlinked. Nothing more will be posted here until a new code is used.');
+        $this->client->reply($chatId, '👋 Unlinked. Nothing more will be posted here until a new code is used.', $threadId);
     }
 
-    private function status(string $chatId, ?TelegramChat $chat): void
+    private function status(string $chatId, int $threadId, ?TelegramChat $chat): void
     {
+        $user = User::where('telegram_chat_id', $chatId)->first();
+
+        if ($user) {
+            $this->client->reply($chatId, 'Connected to <b>'.e($user->name).'</b>. Choose what you are sent on the site, under Settings.', $threadId);
+
+            return;
+        }
+
         $this->client->reply($chatId, $chat
             ? e($this->notifier->summary($chat)).($chat->enabled ? '' : "\n⚠️ Switched off in the panel.")
-            : 'This chat is not linked. Send <code>/link CODE</code> with a code from Settings > Telegram.');
+            : 'This chat is not linked. Send <code>/link CODE</code> with a code from Settings > Telegram.', $threadId);
     }
 
     private function help(): string
     {
         return implode("\n", [
             '<b>Stream bot</b>',
-            '/link CODE - link this chat, using a code from the panel',
+            '/link CODE - link this chat, using a code from the panel or from your account settings',
             '/status - what this chat is set to receive',
             '/chatid - this chat\'s id, for adding it by hand',
             '/unlink - stop posting here',

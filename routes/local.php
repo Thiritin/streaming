@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Local\DebugController;
+use App\Http\Controllers\Local\MailPreviewController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
@@ -17,6 +18,14 @@ use Illuminate\Support\Facades\Storage;
 
 Route::prefix('debug')->name('debug.')->group(function () {
     Route::get('/', [DebugController::class, 'index'])->name('index');
+
+    /*
+     * The notification emails, in a browser. Rendered from the same MailMessage the
+     * mailer would send, so the preview cannot drift from the real thing.
+     */
+    Route::get('/mail', [MailPreviewController::class, 'index'])->name('mail.index');
+    Route::get('/mail/{template}', [MailPreviewController::class, 'show'])->name('mail.show');
+
     Route::post('/login/{user}', [DebugController::class, 'loginAs'])->name('login');
     Route::post('/persona', [DebugController::class, 'persona'])->name('persona');
     Route::post('/reset', [DebugController::class, 'reset'])->name('reset');

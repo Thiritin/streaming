@@ -876,6 +876,15 @@ return [
                             'rules' => ['nullable', 'string', 'max:255'],
                         ],
                         [
+                            'key' => 'telegram_bot_username',
+                            'label' => 'Bot @name',
+                            'type' => 'text',
+                            'store' => 'telegram',
+                            'config' => 'telegram.bot_username',
+                            'helper' => 'Filled in from the token when one is saved. Without the @.',
+                            'rules' => ['nullable', 'string', 'max:64', 'regex:/^@?[A-Za-z0-9_]+$/'],
+                        ],
+                        [
                             'key' => 'telegram_show_lead_minutes',
                             'label' => 'Announce shows this early (minutes)',
                             'type' => 'text',
@@ -883,6 +892,22 @@ return [
                             'config' => 'telegram.show_lead_minutes',
                             'cast' => 'int',
                             'rules' => ['nullable', 'integer', 'min:1', 'max:120'],
+                        ],
+                    ],
+                ],
+                [
+                    'key' => 'recordings',
+                    'label' => 'Recordings',
+                    'fields' => [
+                        [
+                            'key' => 'notification_delay_hours',
+                            'label' => 'Hold new recordings for (hours)',
+                            'type' => 'text',
+                            'store' => 'notifications',
+                            'config' => 'notifications.delay_hours',
+                            'cast' => 'int',
+                            'helper' => 'Nothing is queued during the window, so unpublishing inside it cancels the send.',
+                            'rules' => ['nullable', 'integer', 'min:1', 'max:168'],
                         ],
                     ],
                 ],

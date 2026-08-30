@@ -141,6 +141,38 @@
     }
 }
 
+/*
+ * The page gutter, held as a value rather than only as a class.
+ *
+ * A page that puts `px-4 sm:px-6 lg:px-8` on one wrapper cannot have a child
+ * that bleeds past it: a shelf rail scrolls sideways and has to run to the edge
+ * of the page, not stop short at a padding the wrapper imposed. Negative margins
+ * to cancel it are a guess at what the wrapper used at this breakpoint, and the
+ * guess was already wrong at two of the three. So the sections carry the gutter
+ * themselves - `.page-gutter` where a section wants it - and the one that has to
+ * bleed simply does not, applying the same value to its own inner padding so its
+ * content still lines up with everything above it.
+ */
+:root {
+    --page-gutter: 1rem;
+}
+
+@media (min-width: 640px) {
+    :root {
+        --page-gutter: 1.5rem;
+    }
+}
+
+@media (min-width: 1024px) {
+    :root {
+        --page-gutter: 2rem;
+    }
+}
+
+@utility page-gutter {
+    padding-inline: var(--page-gutter);
+}
+
 /* Animation keyframes */
 @keyframes pulse {
     0%, 100% {

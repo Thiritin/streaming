@@ -33,6 +33,15 @@ return [
      */
     'show_lead_minutes' => 5,
 
+    /*
+     | The bot's @name, without the @. Never typed in normal use: it is read off
+     | the token with getMe when the token is saved, because a bot's handle
+     | belongs to Telegram rather than to this installation. The field in the
+     | panel exists so an operator can see it, and override it in the one case
+     | where Telegram's answer is not what people are told to talk to.
+     */
+    'bot_username' => null,
+
     'api_url' => 'https://api.telegram.org',
 
     /*

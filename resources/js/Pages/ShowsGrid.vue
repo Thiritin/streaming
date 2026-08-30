@@ -118,7 +118,7 @@
             :is="item.kind === 'archive' ? RecordingTile : ShowTile"
             v-for="(item, index) in group.items"
             :key="`${item.kind}-${item.id}`"
-            v-bind="item.kind === 'archive' ? { recording: item.data } : { show: item.data }"
+            v-bind="item.kind === 'archive' ? { recording: item.data } : { show: item.data, canFollow }"
             :priority="group.key === 'live' && index < 8"
             :style="{ '--stagger': Math.min(index, 12) }"
           />
@@ -215,6 +215,8 @@ const props = defineProps({
   primaryChannel: { type: String, default: null },
   channels: { type: Array, default: () => [] },
   currentTime: { type: String, required: false },
+  // False for a guest and for an installation with notifications off.
+  canFollow: { type: Boolean, default: false },
 });
 
 const liveShows = ref([...props.liveShows]);

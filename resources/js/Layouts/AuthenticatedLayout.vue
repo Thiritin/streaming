@@ -5,6 +5,7 @@ import DropdownLink from '@/Components/DropdownLink.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import { Link, usePage } from '@inertiajs/vue3';
+import FlashToast from '@/Components/FlashToast.vue';
 import Logo from "@/Components/Logo.vue";
 import FeedbackButton from '@/Components/Feedback/FeedbackButton.vue';
 
@@ -346,6 +347,8 @@ const initial = computed(() => user.value?.name?.charAt(0)?.toUpperCase() || 'U'
         </div>
       </footer>
     </div>
+
+    <FlashToast />
   </div>
 </template>
 

@@ -50,6 +50,9 @@ class HandleInertiaRequests extends Middleware
                 // handler, where a request that never reached the web group has
                 // no session to read.
                 'status' => fn () => $request->hasSession() ? $request->session()->get('status') : null,
+                // A one-line confirmation shown over the page it was triggered from.
+                // Separate from `status`, which pages render inline next to a form.
+                'toast' => fn () => $request->hasSession() ? $request->session()->get('toast') : null,
             ],
             'branding' => fn () => app(BrandingService::class)->forFrontend(),
             /*

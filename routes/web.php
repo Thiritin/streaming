@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\DisplayController;
 use App\Http\Controllers\EmoteController;
 use App\Http\Controllers\FeedbackController;
 use App\Http\Controllers\MessageController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecordingCommentController;
 use App\Http\Controllers\RecordingController;
@@ -26,6 +28,7 @@ use App\Http\Controllers\RecordingPlaylistController;
 use App\Http\Controllers\RecordingProgressController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\StreamController;
+use App\Http\Controllers\UnsubscribeController;
 use App\Http\Controllers\UserSettingsController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -220,6 +223,13 @@ Route::middleware(['auth.optional:web'])->group(function () {
     Route::get('/archive/{slug}/{rendition}.m3u8', [RecordingPlaylistController::class, 'media'])
         ->name('recordings.playlist.media');
 
+    /*
+     * A permanent address for a recording's still, redirecting to a freshly signed
+     * one. Declared before /archive/{recording} so the path is not read as a slug.
+     */
+    Route::get('/archive/{recording}/thumbnail', [RecordingController::class, 'thumbnail'])
+        ->name('recordings.thumbnail');
+
     Route::get('/archive/{recording}', [RecordingController::class, 'show'])->name('recordings.show');
 
     /*
@@ -286,6 +296,15 @@ Route::middleware('auth:web')->group(function () {
     Route::patch('/settings', [UserSettingsController::class, 'update'])->name('settings.update');
 
     /*
+     * The account itself: a copy of it, and closing it. Both sit under the Account
+     * section of the same page.
+     */
+    Route::get('/settings/account/export', [AccountController::class, 'export'])
+        ->middleware('throttle:6,1')
+        ->name('account.export');
+    Route::delete('/settings/account', [AccountController::class, 'destroy'])->name('account.destroy');
+
+    /*
      * The ways into this account. Connecting hands over to the same provider redirect
      * the sign-in button uses, with the intent in the session, so there is one OAuth
      * path and one place the collision rule lives.
@@ -307,6 +326,42 @@ Route::middleware('auth:web')->group(function () {
     Route::put('/settings/password', [ProfileController::class, 'updatePassword'])
         ->middleware(['auth.local', 'throttle:auth'])
         ->name('settings.password.update');
+});
+
+/*
+ * Subscriptions: what a viewer wants to be told about, and where. Signed-in only -
+ * there is nothing to address a message to otherwise - and behind the installation's
+ * switch, which is what makes the bell and the follow buttons stop existing rather
+ * than stop working.
+ */
+Route::middleware(['auth:web', 'notifications.enabled'])->group(function () {
+    Route::patch('/notifications', [NotificationController::class, 'update'])
+        ->name('notifications.update');
+
+    // Following one show, from the guide.
+    Route::post('/shows/{show}/follow', [NotificationController::class, 'subscribeToShow'])
+        ->middleware('throttle:60,1')
+        ->name('notifications.shows.follow');
+    Route::delete('/shows/{show}/follow', [NotificationController::class, 'unsubscribeFromShow'])
+        ->name('notifications.shows.unfollow');
+
+    Route::delete('/notifications/telegram', [NotificationController::class, 'unlinkTelegram'])
+        ->name('notifications.telegram.unlink');
+});
+
+/*
+ * The unsubscribe link in the footer of every email. Signed rather than authenticated,
+ * and deliberately outside the feature switch: a promise printed in a message already
+ * sent has to keep working whatever is turned off afterwards.
+ *
+ * Two steps on one URL. Nothing changes on the GET, because mail scanners fetch every
+ * link in a message and would otherwise unsubscribe people who never opened it.
+ */
+Route::middleware('signed')->group(function () {
+    Route::get('/notifications/unsubscribe/{user}/{category}', [UnsubscribeController::class, 'show'])
+        ->name('notifications.unsubscribe');
+    Route::post('/notifications/unsubscribe/{user}/{category}', [UnsubscribeController::class, 'store'])
+        ->name('notifications.unsubscribe.confirm');
 });
 
 /*

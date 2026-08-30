@@ -3,14 +3,18 @@
 namespace App\Http\Controllers\Manage;
 
 use App\Http\Controllers\Controller;
+use App\Models\NotificationDelivery;
 use App\Models\Role;
+use App\Models\ShowSubscription;
 use App\Models\User;
+use App\Support\Features;
 use App\Support\Manage\Action;
 use App\Support\Manage\Column;
 use App\Support\Manage\Filter;
 use App\Support\Manage\Status;
 use App\Support\Manage\Table;
 use App\Support\Manage\Toast;
+use App\Support\NotificationScope;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -64,7 +68,48 @@ class UserController extends Controller
 
         return inertia('Manage/Users/Index', [
             'table' => $table->toArray($request),
+            'subscribers' => $this->subscriberCounts(),
         ]);
+    }
+
+    /**
+     * How many people can actually be reached, per transport.
+     *
+     * Counted as "wants something and can be sent it", not as "has an address": an
+     * account exists for everybody who ever signed in, so a raw count of addresses says
+     * nothing about how many messages a publish is about to produce. Absent when the
+     * installation has notifications switched off, and the cards are not rendered.
+     *
+     * @return array<string, int>|null
+     */
+    private function subscriberCounts(): ?array
+    {
+        if (! Features::enabled('notifications')) {
+            return null;
+        }
+
+        // Subscribed to anything at all: the standing archive bell, or at least one
+        // show followed.
+        $subscribed = fn () => User::query()->where(
+            fn ($query) => $query
+                ->where('notify_shows_live', NotificationScope::ANY)
+                ->orWhere('notify_recordings', NotificationScope::ANY)
+                ->orWhereHas('showSubscriptions'),
+        );
+
+        // A null channel list means every transport the account has, which is what
+        // somebody who pressed the bell without opening settings chose.
+        $wants = fn ($query, string $channel) => $query->where(
+            fn ($inner) => $inner
+                ->whereNull('notification_channels')
+                ->orWhereJsonContains('notification_channels', $channel),
+        );
+
+        return [
+            'email' => $wants($subscribed()->whereNotNull('email'), 'mail')->count(),
+            'telegram' => $wants($subscribed()->whereNotNull('telegram_chat_id'), 'telegram')->count(),
+            'shows' => ShowSubscription::count(),
+        ];
     }
 
     public function create(): Response
@@ -175,7 +220,59 @@ class UserController extends Controller
                     'created_at' => $message->created_at?->format('M j, Y H:i'),
                 ])
                 ->all(),
+            'notifications' => $this->notificationPanel($user),
         ]);
+    }
+
+    /**
+     * What this account is subscribed to and what has actually been sent to it.
+     *
+     * The log is the answer to "I never got it", which is the only reason anybody opens
+     * a user record about notifications. It is read from `notification_deliveries`, so a
+     * failed send shows as failed with the refusal on it rather than as nothing at all.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function notificationPanel(User $user): ?array
+    {
+        if (! Features::enabled('notifications')) {
+            return null;
+        }
+
+        return [
+            'email' => $user->email,
+            'telegram' => $user->telegram_chat_id ? ($user->telegram_username ?: 'linked') : null,
+            'telegram_linked_at' => $user->telegram_linked_at?->format('M j, Y H:i'),
+            'scopes' => [
+                'Shows going live' => $user->notify_shows_live,
+                'New recordings' => $user->notify_recordings,
+            ],
+            'channels' => $user->notificationChannels(),
+            'followed_shows' => $user->subscribedShows()
+                ->orderByDesc('scheduled_start')
+                ->limit(25)
+                ->get()
+                ->map(fn ($show) => [
+                    'id' => $show->id,
+                    'title' => $show->title,
+                    'status' => $show->status,
+                ])
+                ->all(),
+            'deliveries' => $user->notificationDeliveries()
+                ->limit(50)
+                ->get()
+                ->map(fn (NotificationDelivery $delivery) => [
+                    'id' => $delivery->id,
+                    'type' => $delivery->type,
+                    'subject_id' => $delivery->subject_id,
+                    'channel' => $delivery->channel,
+                    'status' => $delivery->status,
+                    'error' => $delivery->error,
+                    'sent_at' => $delivery->sent_at?->format('M j, Y H:i'),
+                    'created_at' => $delivery->created_at?->format('M j, Y H:i'),
+                ])
+                ->all(),
+        ];
     }
 
     public function update(Request $request, User $user): RedirectResponse

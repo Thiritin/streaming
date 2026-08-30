@@ -36,6 +36,7 @@ class Recording extends Model
         'thumbnail_capture_error',
         'views',
         'is_published',
+        'published_at',
         'required_roles',
     ];
 
@@ -49,6 +50,8 @@ class Recording extends Model
         'archive_bytes' => 'integer',
         'views' => 'integer',
         'is_published' => 'boolean',
+        'published_at' => 'datetime',
+        'notified_at' => 'datetime',
         'skip_segments' => 'array',
         'thumbnail_updated_at' => 'datetime',
         'required_roles' => 'array',
@@ -62,6 +65,41 @@ class Recording extends Model
     protected static function boot()
     {
         parent::boot();
+
+        /*
+         * When this became visible, which is the only thing the notification delay can
+         * honestly count from. `updated_at` cannot: processing rewrites a recording for
+         * hours after it appears, and every rewrite would push the send further out.
+         *
+         * Unpublishing clears both, so a recording taken down inside the delay window
+         * and put back up later starts its window again. Nobody is written to twice by
+         * that - `notification_deliveries` is what guarantees once - but somebody who
+         * subscribed in between is not skipped either.
+         */
+        static::saving(function (Recording $recording) {
+            // A new row that never mentioned is_published still gets the column
+            // default, which is published - so the stamp cannot be left to isDirty.
+            if (! $recording->exists) {
+                $recording->published_at = ($recording->is_published ?? true)
+                    ? ($recording->published_at ?? now())
+                    : null;
+
+                return;
+            }
+
+            if (! $recording->isDirty('is_published')) {
+                return;
+            }
+
+            if ($recording->is_published) {
+                $recording->published_at ??= now();
+
+                return;
+            }
+
+            $recording->published_at = null;
+            $recording->notified_at = null;
+        });
 
         static::creating(function ($recording) {
             if (empty($recording->slug)) {

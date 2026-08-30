@@ -10,6 +10,7 @@ use App\Http\Middleware\EnsureCommentsAreEnabled;
 use App\Http\Middleware\EnsureEmotesAreEnabled;
 use App\Http\Middleware\EnsureFeedbackIsEnabled;
 use App\Http\Middleware\EnsureLocalAuthIsEnabled;
+use App\Http\Middleware\EnsureNotificationsAreEnabled;
 use App\Http\Middleware\EnsureRegistrationIsEnabled;
 use App\Http\Middleware\EnsureScreensAreEnabled;
 use App\Http\Middleware\EnsureTelegramIsEnabled;
@@ -125,6 +126,7 @@ class Kernel extends HttpKernel
         'feedback.enabled' => EnsureFeedbackIsEnabled::class,
         'telegram.enabled' => EnsureTelegramIsEnabled::class,
         'screens.enabled' => EnsureScreensAreEnabled::class,
+        'notifications.enabled' => EnsureNotificationsAreEnabled::class,
         'auth.session' => AuthenticateSession::class,
         'cache.headers' => SetCacheHeaders::class,
         'can' => Authorize::class,

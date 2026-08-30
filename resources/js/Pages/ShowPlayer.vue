@@ -716,34 +716,38 @@ onUnmounted(() => {
                     </div>
 
                     <!-- Stream Information -->
-                    <Container v-if="!isTheaterMode" class="bg-primary-800 border-t-2 border-primary-700" padding="p-6">
-                        <h2 class="text-2xl font-bold text-white mb-3">{{ activeShow?.title || 'Stream' }}</h2>
-                        <MarkdownText
-                            v-if="activeShow?.description"
-                            :html="activeShow.description_html"
-                            :text="activeShow.description"
-                            class="text-primary-200 text-lg leading-relaxed mb-4"
-                        />
-                        <div v-if="activeShow?.source" class="flex items-center gap-2 text-sm">
-                            <span class="font-semibold text-primary-300">Source:</span>
-                            <span class="text-primary-400">{{ activeShow.source.name || activeShow.source }}</span>
-                        </div>
-                    </Container>
+                    <div v-if="!isTheaterMode" class="bg-primary-800 border-t-2 border-primary-700">
+                        <Container padding="p-6">
+                            <h2 class="text-2xl font-bold text-white mb-3">{{ activeShow?.title || 'Stream' }}</h2>
+                            <MarkdownText
+                                v-if="activeShow?.description"
+                                :html="activeShow.description_html"
+                                :text="activeShow.description"
+                                class="text-primary-200 text-lg leading-relaxed mb-4"
+                            />
+                            <div v-if="activeShow?.source" class="flex items-center gap-2 text-sm">
+                                <span class="font-semibold text-primary-300">Source:</span>
+                                <span class="text-primary-400">{{ activeShow.source.name || activeShow.source }}</span>
+                            </div>
+                        </Container>
+                    </div>
 
                     <!-- Other Live Shows -->
-                    <Container v-if="otherLiveShows.length > 0 && !isTheaterMode" class="bg-black/50 border-t border-primary-800" padding="p-6">
-                        <div class="flex items-center mb-6">
-                            <h2 class="text-xl font-semibold text-white">Other Live Shows</h2>
-                            <span class="ml-3 bg-red-600 text-white px-2 py-1 rounded text-xs font-bold uppercase animate-pulse">
-                                {{ otherLiveShows.length }} LIVE
-                            </span>
-                        </div>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                            <div v-for="show in otherLiveShows" :key="show.id" class="transform transition-transform hover:scale-105">
-                                <ShowTile :show="show" />
+                    <div v-if="otherLiveShows.length > 0 && !isTheaterMode" class="bg-black/50 border-t border-primary-800">
+                        <Container padding="p-6">
+                            <div class="flex items-center mb-6">
+                                <h2 class="text-xl font-semibold text-white">Other Live Shows</h2>
+                                <span class="ml-3 bg-red-600 text-white px-2 py-1 rounded text-xs font-bold uppercase animate-pulse">
+                                    {{ otherLiveShows.length }} LIVE
+                                </span>
                             </div>
-                        </div>
-                    </Container>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                <div v-for="show in otherLiveShows" :key="show.id" class="transform transition-transform hover:scale-105">
+                                    <ShowTile :show="show" />
+                                </div>
+                            </div>
+                        </Container>
+                    </div>
                     </div>
                     <!-- Show Status Pages -->
                     <div v-else-if="activeShow?.status === 'scheduled'" class="flex flex-1">
@@ -780,34 +784,38 @@ onUnmounted(() => {
                     </div>
                     
                     <!-- Stream Information for non-player states -->
-                    <Container v-if="!showPlayer && activeShow" class="bg-primary-800 border-t-2 border-primary-700" padding="p-6">
-                        <h2 class="text-2xl font-bold text-white mb-3">{{ activeShow.title }}</h2>
-                        <MarkdownText
-                            v-if="activeShow.description"
-                            :html="activeShow.description_html"
-                            :text="activeShow.description"
-                            class="text-primary-200 text-lg leading-relaxed mb-4"
-                        />
-                        <div v-if="activeShow.source" class="flex items-center gap-2 text-sm">
-                            <span class="font-semibold text-primary-300">Source:</span>
-                            <span class="text-primary-400">{{ activeShow.source.name || activeShow.source }}</span>
-                        </div>
-                    </Container>
+                    <div v-if="!showPlayer && activeShow" class="bg-primary-800 border-t-2 border-primary-700">
+                        <Container padding="p-6">
+                            <h2 class="text-2xl font-bold text-white mb-3">{{ activeShow.title }}</h2>
+                            <MarkdownText
+                                v-if="activeShow.description"
+                                :html="activeShow.description_html"
+                                :text="activeShow.description"
+                                class="text-primary-200 text-lg leading-relaxed mb-4"
+                            />
+                            <div v-if="activeShow.source" class="flex items-center gap-2 text-sm">
+                                <span class="font-semibold text-primary-300">Source:</span>
+                                <span class="text-primary-400">{{ activeShow.source.name || activeShow.source }}</span>
+                            </div>
+                        </Container>
+                    </div>
                     
                     <!-- Other Live Shows for non-player states -->
-                    <Container v-if="!showPlayer && otherLiveShows.length > 0" class="bg-black/50 border-t border-primary-800" padding="p-6">
-                        <div class="flex items-center mb-6">
-                            <h2 class="text-xl font-semibold text-white">Other Live Shows</h2>
-                            <span class="ml-3 bg-red-600 text-white px-2 py-1 rounded text-xs font-bold uppercase animate-pulse">
-                                {{ otherLiveShows.length }} LIVE
-                            </span>
-                        </div>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                            <div v-for="show in otherLiveShows" :key="show.id" class="transform transition-transform hover:scale-105">
-                                <ShowTile :show="show" />
+                    <div v-if="!showPlayer && otherLiveShows.length > 0" class="bg-black/50 border-t border-primary-800">
+                        <Container padding="p-6">
+                            <div class="flex items-center mb-6">
+                                <h2 class="text-xl font-semibold text-white">Other Live Shows</h2>
+                                <span class="ml-3 bg-red-600 text-white px-2 py-1 rounded text-xs font-bold uppercase animate-pulse">
+                                    {{ otherLiveShows.length }} LIVE
+                                </span>
                             </div>
-                        </div>
-                    </Container>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                <div v-for="show in otherLiveShows" :key="show.id" class="transform transition-transform hover:scale-105">
+                                    <ShowTile :show="show" />
+                                </div>
+                            </div>
+                        </Container>
+                    </div>
                 </div>
             </div>
             <!-- Chat - Desktop Only -->
