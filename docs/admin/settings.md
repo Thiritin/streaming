@@ -8,6 +8,9 @@ restart between saving a value and it being in force.
 environment is what the installation answers with until somebody saves a row for that
 field, and from then on the row wins. Nothing has two sources that can disagree.
 
+Upgrading an installation that configured everything in `.env`? Start at
+[Moving an existing `.env` into the table](#moving-an-existing-env-into-the-table).
+
 ## The panes
 
 Twelve panes under three headings, plus Reset pinned under the menu. The heading says what
@@ -180,6 +183,88 @@ pane says so on the field, but the list is worth having in one place:
 Rotating any of the first four is an outage, not a save. Do it between shows, and see
 [server-credentials.md](server-credentials.md) for how a server is reinstalled.
 
+## Moving an existing `.env` into the table
+
+An installation that predates this table keeps its configuration in the environment.
+Deploying does not lose it: most fields kept their `env()` call as the shipped default, so
+a path nobody has saved a row for still answers with whatever `.env` says. Not every field
+did, though, and a variable that quietly stopped being read is the kind of thing that is
+found during a show rather than before one. The state to be in is the table holding the
+values and `.env` holding only what the table cannot.
+
+`php artisan settings:import-env` is that move. It reads the environment the application is
+actually running with and writes one settings row per field the environment is supplying.
+
+```bash
+php artisan migrate                        # first: two migrations read .env, see below
+php artisan settings:import-env            # dry run. This is the default
+php artisan settings:import-env --write
+php artisan branding:set --list            # read it back
+```
+
+`migrate` goes first because two migrations read the environment once and copy what they
+find into tables of their own. Prune `.env` before they run and the values are gone.
+
+### What it refuses to do
+
+- **Overwrite a saved row.** A row in the table is a decision somebody made in the panel,
+  and the environment does not get to argue with it. Those are reported as skipped.
+- **Write a value that is already the shipped default.** `AUTH_REQUIRED=true` and
+  `HLS_TOKEN_TTL=900` are the config file's own fallbacks said out loud; a row for one of
+  them is a no-op that looks like an action. The comparison is against what the config file
+  answers with the variable taken out of the environment, not against what it answers now -
+  those are the same value while the variable is still there, which is the trap.
+- **Print a secret.** A secure field is reported as set and encrypted, never as itself.
+- **Guess.** Every field in `config/settings.php` is classified by hand in
+  `App\Support\EnvImport`. A field with no entry fails the command and exits non-zero
+  rather than being skipped by the one thing that exists to find it.
+
+Running it twice writes nothing the second time: every field it touched has a saved row,
+and a saved row wins.
+
+### The four kinds of variable
+
+| Kind | Examples | What a deploy does on its own | What the import does |
+|---|---|---|---|
+| Still feeds its field | `AUTH_REQUIRED`, `CHAT_*`, `DVR_AWS_*`, `HLS_*`, `DNS_*`, `HETZNER_*`, `RECORDING_API_KEY` | Nothing changes. The env value is the default for the path | Copies it into a row, after which the variable can go |
+| Reads differently now | `STREAM_KEY` | The SRS play and stop hooks read `stream.system_streamkey`; they read `app.stream_key`, which was `STREAM_KEY`, before | Pins the key the installation is running with. The command says so under a **READ THIS** heading |
+| Moved to a table | `OIDC_URL`, `OIDC_CLIENT_ID`, `OIDC_SECRET`, `OIDC_GROUP_ROLE_MAP`, `COMPANION_API_KEY` | A migration copies each one into the table that owns it now | Nothing. It reports which migration will, and leaves them alone |
+| Gone with its feature | `RTMP_FORWARD`, `RTMP_VRCHAT_URL`, `LOCAL_STREAMING_*`, `SRS_USERNAME`, `SRS_PASSWORD`, `SRS_ORIGIN`, `ORIGIN_IP`, `STREAM_RTMP_*`, `SIGNAGE_STREAMKEY` | Nothing reads them | Nothing. It lists the ones you still set, so they can be deleted |
+
+### If you deploy without running it
+
+Worth being explicit about, because the four kinds fail differently:
+
+- **Still feeds its field.** Nothing breaks. The installation behaves exactly as it did,
+  and the panel reports each field as following config rather than overridden. The cost is
+  that `.env` is still the source, so an operator who saves that pane later is surprised by
+  which value the form was showing.
+- **Reads differently now.** `STREAM_KEY` and `STREAM_SYSTEM_STREAMKEY` are read as one
+  chain, the second name winning. Set both to the same key and nothing changes. Set them to
+  *different* keys - which they were, before - and whatever pushed with `STREAM_KEY` is
+  refused from the moment the deploy lands.
+- **Moved to a table.** The migration has to see the variable. `php artisan migrate` with
+  `OIDC_*` already deleted seeds a provider row with no endpoint behind it, and it comes
+  out disabled, which is an installation nobody can sign in to. Same for
+  `COMPANION_API_KEY` and the control surfaces.
+- **Gone with its feature.** Nothing, except that `ORIGIN_IP` used to make the SRS hook
+  authorise unconditionally. The hook route is behind a shared secret now, so deleting it
+  is a tightening rather than a change.
+
+### Afterwards
+
+The command ends with the variables the import made redundant, which is a shorter list than
+the one it imported. A variable stays in `.env` when something outside this application
+reads it too: `APP_NAME` and the rest of the bootstrap, which has to answer before there is
+a database; `DVR_AWS_*`, read by `scripts/vod-to-archive.sh` and the local video stack;
+`STREAM_SYSTEM_STREAMKEY`, `HLS_VIEWER_SECRET`, `HLS_EMBED_SECRET` and `HLS_TOKEN_LEEWAY`,
+which every edge holds its own copy of. Those are not a second source of truth - a saved row
+still wins for the application - but deleting them breaks the container that reads the file.
+
+The obsolete list can go straight away, and so can any saved row the command names under
+**Saved rows nothing reads any more**: `login_eyebrow`, `login_tagline` and
+`login_background_video` left the registry with the login screen they belonged to.
+
 ## From the command line
 
 `branding:set` is the same write from a shell, for a deploy that wants to arrive already
@@ -193,6 +278,9 @@ php artisan branding:set footer_links='[{"label":"Privacy","url":"https://exampl
 
 `--list` prints each key with its current value and its shipped default. A field stored
 encrypted prints as a mask: it is written from here, never read back out of it.
+
+`settings:import-env` is the other one, and it runs once per installation rather than once
+per value. See [above](#moving-an-existing-env-into-the-table).
 
 ## Reset
 

@@ -127,6 +127,7 @@ The root `Dockerfile` builds the app image. `docker/` holds the images for the v
 ## Documentation
 
 - [docs/dev-stack.md](docs/dev-stack.md): the local video stack
+- [docs/admin/release-checklist.md](docs/admin/release-checklist.md): the order to deploy a release in, and what to verify afterwards
 - [docs/admin/settings.md](docs/admin/settings.md): what lives in the database and what stays in `.env`
 - [docs/admin/authentication.md](docs/admin/authentication.md): the sign-in modes, accounts and recovery
 - [docs/admin/server-credentials.md](docs/admin/server-credentials.md): how servers authenticate, and rotating their credentials
