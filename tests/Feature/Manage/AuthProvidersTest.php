@@ -121,7 +121,11 @@ class AuthProvidersTest extends TestCase
             ],
         ])->assertRedirect();
 
-        $this->assertSame(
+        // assertEquals, not assertSame: MySQL's JSON type stores object keys in its own
+        // order, so an identical rule read back off the column compares unequal by key
+        // order alone. These four happen to be stored in the order they are written; a
+        // rename would silently change that.
+        $this->assertEquals(
             [['claim' => 'groups', 'match' => 'exact', 'value' => 'GROUP-STAFF', 'role_id' => $role->id]],
             AuthProvider::where('key', 'second')->first()->role_map,
         );

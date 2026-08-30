@@ -201,7 +201,7 @@ class RecordingSkipsTest extends TestCase
                 ['start' => 540, 'end' => 840, 'label' => 'Intermission'],
                 ['start' => 1740, 'end' => 1800, 'label' => 'Wait'],
             ],
-            $recording->fresh()->skip_segments,
+            $recording->fresh()->skips(),
         );
     }
 
@@ -282,7 +282,7 @@ class RecordingSkipsTest extends TestCase
 
         $this->assertSame(
             [['start' => 600, 'end' => 900, 'label' => 'Intermission']],
-            $recording->fresh()->skip_segments,
+            $recording->fresh()->skips(),
         );
     }
 
@@ -323,7 +323,7 @@ class RecordingSkipsTest extends TestCase
                 ['start' => 100, 'end' => 150, 'label' => null],
                 ['start' => 300, 'end' => 420, 'label' => 'Intermission'],
             ],
-            $recording->fresh()->skip_segments,
+            $recording->fresh()->skips(),
         );
     }
 
